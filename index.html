@@ -7,14 +7,22 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
   </head>
   <script type="text/javascript" src="index.html">
-      function matchTest() {
-	// テキストボックスに入力された値を取得
-	let string = 'test';
-let isMatch = string === 'test'; //true
+      function matchTest() const mystr = '1234';
+const result = mystr.match(/\d{2,4}/);
+console.log(result);
+if (result!=null){
+ 
+	console.log('正規表現パターンにマッチしました');
+ 
+}
+else{
+ 
+	console.log('正規表現パターンにマッチしませんでした');
+ 
 }
       </script>
   <body>
-    <section class="hero is-access">
+    <section class="hero is-info">
       <div class="hero-body">
         <div class="container">
           <p class="is-size-3" class="title">
