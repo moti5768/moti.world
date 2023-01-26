@@ -6,6 +6,27 @@
     <title>おモチのサイト</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
   </head>
+  <script>
+      function matchTest() {
+	// テキストボックスに入力された値を取得
+	let string = 'test';
+let isMatch = string === 'test'; //true
+	var str = document.submit.match.value;
+
+	// 入力されたか判定
+	if (str == '') {
+		alert('何も入力されていません');
+	}
+	// 数字（半角全角含む）が入力されたか判定
+	else if(str.match(/^[0-9０-９]+$/)) {
+		alert('数字が入力されました')
+	}
+	// 英字（小文字大文字含む）が入力されたか判定
+	else if(str.match(/^[a-zA-Z]+$/)) {
+		alert('英字が入力されました')
+	}
+}
+      </script>
   <body>
     <section class="hero is-info">
       <div class="hero-body">
@@ -60,9 +81,9 @@
     <p class="is-size-4"><u><font color="#1e90ff"><a href="access.html" class="button is-size-5">次のページへ</a></font></u></p><br>
   </div>
   <div class="container">
-    <form action="access.html" method="get" name="test">
-      <input id="test" type="text" name="test" required placeholder="コマンド入力 何でもよい">
-      <input type="submit" value="実行">
+    <form action="access.html" method="get" name="match">
+      <input id="match" type="text" name="match" required placeholder="コマンド入力 何でもよい">
+      <input type="submit" value="実行" id="match" value="match"  onclick="matchTest()">
     </form>
     <p>※上のコマンド実行欄はテストです。</p><br>
   </div>  
