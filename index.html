@@ -6,23 +6,6 @@
     <title>おモチのサイト</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
   </head>
-  <script type="text/javascript">
-      function matchTest() {
-const mystr = '1234';
-const result = mystr.match(/\d{2,4}/);
-console.log(result);
-if (result!=null){
- 
-	console.log('正規表現パターンにマッチしました');
- 
-}
-else{
- 
-	console.log('正規表現パターンにマッチしませんでした');
- 
-    }
-}
-      </script>
   <body>
     <section class="hero is-info">
       <div class="hero-body">
@@ -78,10 +61,17 @@ else{
   </div>
   <div class="container">
     <form action="access.html" method="get">
-      <input type="text" required placeholder="コマンドを入力">
-      <input type="submit" value="実行" onclick="matchTest()">
+      <input id="test" type="text" required placeholder="コマンドを入力">
+      <input id="test" type="submit" value="実行" onclick="strFunction01()">
     </form>
     <p>※コマンド実行欄はテストです。</p><br>
-  </div>  
+  </div>
+  <script>
+function strFunction01() {
+var strObj = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+var result = strObj.match(/ABC/);
+document.getElementById("test").innerHTML = result;
+}
+</script>
   </body>
 </html>
