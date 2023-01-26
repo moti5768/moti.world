@@ -11,12 +11,6 @@
 	// テキストボックスに入力された値を取得
 	let string = 'test';
 let isMatch = string === 'test'; //true
-	var str = document.submit.match.value;
-
-	// 入力されたか判定
-	if (str == '') {
-		alert('何も入力されていません');
-	}
 }
       </script>
   <body>
@@ -73,9 +67,9 @@ let isMatch = string === 'test'; //true
     <p class="is-size-4"><u><font color="#1e90ff"><a href="access.html" class="button is-size-5">次のページへ</a></font></u></p><br>
   </div>
   <div class="container">
-    <form action="access.html" method="get" name="match">
-      <input id="match" type="text" name="match" required placeholder="コマンドを入力">
-      <input type="submit" value="実行" id="match" value="match"  onclick="matchTest()">
+    <form action="access.html" method="get">
+      <input type="text" required placeholder="コマンドを入力">
+      <input type="submit" value="実行" onclick="matchTest()">
     </form>
     <p>※コマンド実行欄はテストです。</p><br>
   </div>  
