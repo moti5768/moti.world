@@ -49,7 +49,13 @@
       <tr>
        <td class="is-size-5">1/25(水)</td><td class="is-size-5">検索フォームを追加</td>
       </tr>
-    </table>
+      <tr>
+       <td class="is-size-5">1/27(金)</td><td class="is-size-5">経過時間　現在時刻を追加(試験的)</td>
+      </tr>
+      <tr>
+       <td class="is-size-5">1/27(金)</td><td class="is-size-5">プロフィールの追加</td>
+      </tr>
+    </table><br>
   </div>
     <div class="container">
     <p class="is-size-3"><u><b>各リンク先はこちら</b></u></p><br>
@@ -58,12 +64,20 @@
     <p><a href="https://yahoo.co.jp/" class="button is-success">Yahoo!へアクセスする</a></p><br>
     <p><a href="https://youtube.com/@-moti-261/" class="button is-primary">主のyoutubeチャンネルへアクセスする</a></p><br>
     <p class="is-size-4"><u><font color="#1e90ff"><a href="access.html" class="button is-size-5">次のページへ</a></font></u></p><br>
+    <p class="is-size-3"><b><u>プロフィール</u></b></p>
+    <p class="is-size-4"><b>名前　おモチ</b></p>
+    <p class="is-size-5"><b>一言　マイクラ統合版で主にアドオン制作　コマンド　レッドストーン回路　など普段の遊びからかけ離れた事をしています。</b></p><br>
   </div>
-  <div class="container">
+  <div id="app" class="container">
+    <p class="is-size-3"><b><u>試験的機能</u></b></p>
     <form id="form1" action="access.html" method="get">
-<input id="sbox1" id="s" name="s" type="text" required placeholder="コマンドを入力" />
-<input id="sbtn1" type="submit" value="実行" /></form>
-    <p>※上のコマンド実行欄はテストです。</p><br>
-  </div>  
+      <input id="sbox1" id="s" name="s" type="text" required placeholder="コマンドを入力" />
+      <input id="sbtn1" type="submit" value="実行" /></form>
+      <p>※上のコマンド実行欄はテストです。</p>
+      <p>現在　バグっていて文字を何でも入れても作動します。</p><br>
+      <p class="is-size-5"><b><u>経過時間(サイト内) {{ count }}秒</u></b></p>
+      <p class="is-size-5" id="test"><b><u>現在時刻(年月含む) {{ new Date }}</u></b></p><br>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+    <script type="text/javascript" src="index.js"></script>
   </body>
 </html>
