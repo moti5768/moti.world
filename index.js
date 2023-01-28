@@ -7,6 +7,6 @@ const app = new Vue({
    setInterval(() => {
      this.count = this.count + 1
     }, 1000)
-   $("#test").text(new Date())
+   $("#time").text(new Date().toLocaleString());
   }
 })
