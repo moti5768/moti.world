@@ -14,12 +14,14 @@
             アドオンサイト
           </b></p>
           <p class="is-size-5" class="subtitle"><b>
-            完全初心者が試しにサイトを作りました。<br>周1回を目安に更新していきます。
+            完全初心者が試しにサイトを作りました。<br>※不定期更新
           </b></p>
         </div>
       </div>
     </section>
     <div class="container">
+      <br><p class="is-size-3"><u><b>最初に</b></u></p>
+      <p class="is-size-5">このサイトは<strong>あくまでテスト</strong>です。更新タイミングは不明です。ご了承ください。</p><br>
      <br><p class="is-size-3"><u><b>サイト情報</b></u></p>
     <table class="table is-striped is-fullwidth">
       <tr>
@@ -47,10 +49,10 @@
        <td class="is-size-5">1/24(火)</td><td class="is-size-5">画面下部に次ページ　ボタン追加</td>
       </tr>
       <tr>
-       <td class="is-size-5">1/25(水)</td><td class="is-size-5">コマンド入力欄を追加</td>
+       <td class="is-size-5">1/25(水)</td><td class="is-size-5">コマンド入力欄を追加 (試験的)</td>
       </tr>
       <tr>
-       <td class="is-size-5">1/27(金)</td><td class="is-size-5">経過時間　現在時刻を追加(試験的)</td>
+       <td class="is-size-5">1/27(金)</td><td class="is-size-5">経過時間　現在時刻を追加 (試験的)</td>
       </tr>
       <tr>
        <td class="is-size-5">1/27(金)</td><td class="is-size-5">プロフィールの追加</td>
@@ -58,24 +60,23 @@
       <tr>
        <td class="is-size-5">1/28(土)</td><td class="is-size-5"><font color="#ff0000">New!</font> 様々な機能の追加(めんどいので省略)</td>
       </tr>
-    </table><br>
+    </table>
   </div>
     <div class="container">
-    <p class="is-size-3"><u><b>各ブラウザリンク先はこちら</b></u></p><br>
+    <p class="is-size-3"><u><b>各ブラウザ</b></u></p><br>
     <p><a href="https://youtube.com/" class="button is-danger">youtubeへアクセスする</a></p><br>
     <p><a href="https://google.co.jp/" class="button is-link">Googleへアクセスする</a></p><br>
     <p><a href="https://yahoo.co.jp/" class="button is-success">Yahoo!へアクセスする</a></p><br>
-    <p><a href="https://youtube.com/@-moti-261/" class="button is-primary">主のyoutubeチャンネルへアクセスする</a></p><br>
     <p class="is-size-4"><u><font color="#1e90ff"><a href="access.html" class="button is-size-5">次のページへ</a></font></u></p><br>
     <p class="is-size-3"><b><u>プロフィール</u></b></p>
     <p class="is-size-4"><b>名前　おモチ</b></p>
-    <p class="is-size-5"><b>一言　マイクラ統合版で主にアドオン制作　コマンド　レッドストーン回路　など普段の遊びからかけ離れた事をしています。</b></p><br>
+    <p class="is-size-5"><b>一言　マイクラ統合版で主にアドオン制作　コマンド　レッドストーン回路　などをメインで遊んでいます。</b></p><br>
   </div>
   <script type="text/javascript" src="search.js"></script>
   <div id="app" class="container">
     <p class="is-size-3"><b><u>試験的機能</u></b></p>
     <form action="listpage.html" method="get" name="search_form">
-      <input type="text" placeholder="コマンドを入力" name="search" required>
+      <input type="text" style="width: 20%;" placeholder="コマンドを入力" name="search" required>
       <input type="submit" value="実行" onclick="return check();">
     </form>
       <p>※上のコマンド実行欄はテストです。</p>
@@ -83,9 +84,15 @@
       <p class="is-size-5"><b><u>経過時間(サイト内) {{ count }}秒</u></b></p>
       <p class="is-size-5" id="time"><b><u>現在時刻(年月含む) {{ new Date().toLocaleString() }}</u></b></p><br>
       <a class="is-size-5" href="#"><u>トップページへ戻る</u></a>
+    </div>
     <section class="hero">
-      <tag class="has-background-dark"><p class="title"><font color="#ffffff">おモチのサイト</font></p>
-        <tag class="has-background-dark"><p class="subtitle"><font color="#ffffff">Twitter: @omoti3718</font></p></tag><br>
+      <tag class="has-background-dark">
+        <div  class="column is-8  is-offset-2">
+        <p><font color="#ffffff">&copy;2023 omoti addon site</font></p><br>
+        <p class="is-size-5"><font color="#ffffff"><u>Twitter: @omoti3718</u> <u>Youtube: おモチ-moti-</u></font></p></tag><br>
+      </div>
+    </tag>
+  </section>
     <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
     <script type="text/javascript" src="index.js"></script>
   </body>
