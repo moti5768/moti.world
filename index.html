@@ -20,9 +20,18 @@
       </div>
     </section>
     <div class="container">
-      <br><p class="is-size-3"><u><b>最初に</b></u></p>
-      <p class="is-size-5">このサイトは<strong>あくまでテスト</strong>です。更新タイミングは不明です。ご了承ください。</p><br>
-     <br><p class="is-size-3"><u><b>サイト情報</b></u></p>
+      <section class="hero is-warning">
+        <div class="hero-body">
+          <p class="title"><u><b><font color="#dc143f">最初に</font></b></u></p>
+          <p class="subtitle"><font color="#dc143f">このサイトは<strong><font color="ff0000">あくまでテスト</font></strong>です。ご了承ください。</font></p>
+        </div>
+      </section>
+      <p><b class="is-size-3"><u>目次</u></b></p>
+      <a href="#1" class="is-size-4"><u>サイト情報</u></a><br>
+      <a href="#2" class="is-size-4"><u>更新情報</u></a><br>
+      <a href="#3" class="is-size-4"><u>各ブラウザ</u></a><br>
+      <a href="#4" class="is-size-4"><u>試験的機能</u></a><br>
+     <br><p id="1" class="is-size-3"><u><b>サイト情報</b></u></p>
     <table class="table is-striped is-fullwidth">
       <tr>
         <td class="is-size-5">アドオン名</td><td class="is-size-5">リンク先</td>
@@ -31,19 +40,13 @@
         <td class="is-size-5">近日公開</td><td class="is-size-5">coming soon...</td>
       </tr>
     </table>
-    <p class="is-size-3"><u><b>更新情報</b></u></p>
+    <p id="2" class="is-size-3"><u><b>更新情報</b></u></p>
     <table class="table is-striped is-fullwidth">
       <tr>
-        <td class="is-size-5">1/22(日)</td><td class="is-size-5">サイト設立</td>
+        <td class="is-size-5">1/22(日)</td><td class="is-size-5">サイト設立・説明　各リンク先追加</td>
       </tr>
       <tr>
-        <td class="is-size-5">1/22(日)</td><td class="is-size-5">説明　各リンク先追加</td>
-      </tr>
-      <tr>
-        <td class="is-size-5">1/23(月)</td><td class="is-size-5">デザイン変更</td>
-      </tr>
-      <tr>
-        <td class="is-size-5">1/23(月)</td><td class="is-size-5">更新情報　サイト情報追加</td>
+        <td class="is-size-5">1/23(月)</td><td class="is-size-5">デザイン変更・更新情報　サイト情報追加</td>
       </tr>
       <tr>
        <td class="is-size-5">1/24(火)</td><td class="is-size-5">画面下部に次ページ　ボタン追加</td>
@@ -58,14 +61,15 @@
        <td class="is-size-5">1/27(金)</td><td class="is-size-5">プロフィールの追加</td>
       </tr>
       <tr>
-       <td class="is-size-5">1/28(土)</td><td class="is-size-5"><font color="#ff0000">New!</font> 様々な機能の追加(めんどいので省略)</td>
+       <td class="is-size-5">2/7(火)</td><td class="is-size-5"><font color="#ff0000">New!</font>　目次など様々な機能の追加<br>(デザイン調整を含む)</td>
       </tr>
     </table>
   </div>
     <div class="container">
-    <p><a href="https://youtube.com/" class="button is-danger">youtubeへアクセスする</a></p><br>
-    <p><a href="https://google.co.jp/" class="button is-link">Googleへアクセスする</a></p><br>
-    <p><a href="https://yahoo.co.jp/" class="button is-success">Yahoo!へアクセスする</a></p><br>
+    <p id="3" class="is-size-3"><u><b>各ブラウザ</b></u></p><br>
+    <p><a href="https://youtube.com/" class="button is-danger is-size-5">youtubeへアクセスする</a></p><br>
+    <p><a href="https://google.co.jp/" class="button is-link is-size-5">Googleへアクセスする</a></p><br>
+    <p><a href="https://yahoo.co.jp/" class="button is-success is-size-5">Yahoo!へアクセスする</a></p><br>
     <p class="is-size-4"><u><font color="#1e90ff"><a href="access.html" class="button is-size-5">次のページへ</a></font></u></p><br>
     <p class="is-size-3"><b><u>プロフィール</u></b></p>
     <p class="is-size-4"><b>名前　おモチ</b></p>
@@ -73,7 +77,7 @@
   </div>
   <script type="text/javascript" src="search.js"></script>
   <div id="app" class="container">
-    <p class="is-size-3"><b><u>試験的機能</u></b></p>
+    <p id="4" class="is-size-3"><b><u>試験的機能</u></b></p>
     <form action="listpage.html" method="get" name="search_form">
       <input type="text" placeholder="コマンドを入力" name="search" required>
       <input type="submit" value="実行" onclick="return check();">
@@ -84,15 +88,17 @@
       <p class="is-size-5" id="time"><b><u>現在時刻(年月含む) {{ new Date().toLocaleString() }}</u></b></p><br>
       <a class="is-size-5" href="#"><u>トップページへ戻る</u></a>
     </div>
+    <footer>
     <section class="hero">
       <tag class="has-background-dark">
         <div  class="column is-8  is-offset-2">
         <p><font color="#ffffff">&copy;2023 omoti addon site</font></p><br>
-        <p><font color="#ffffff"><u>Twitter: @omoti3718</u> <u>Youtube: おモチ-moti-</u></font></p></tag><br>
+        <p><u><a href="https://twitter.com/omoti3718"><font color="#00bfff"><b>Twitter: @omoti3718</b></font></a></u>&emsp;&emsp;<u><a href="https://youtube.com/@-moti-261"><font color="#ff0000"><b>Youtube: おモチ-moti-</b></font></u></a></p></tag><br>
       </div>
     </tag>
   </section>
-    <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
-    <script type="text/javascript" src="index.js"></script>
-  </body>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+<script type="text/javascript" src="index.js"></script>
+</body>
 </html>
