@@ -4,9 +4,30 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>おモチのサイト</title>
+    <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
   </head>
   <body>
+    <div id="navArea">
+      <nav>
+        <div class="inner">
+          <ul>
+            <li><a href="#">Home</a></li>
+            <li><a href="#">Detail</a></li>
+            <li><a href="#">Contact</a></li>
+          </ul>
+        </div>
+      </nav>
+
+      <div class="toggle-btn">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+
+      <div id="mask"></div>
+    </div>
+    <script src="script.js"></script>
     <section class="hero is-info">
       <div class="hero-body">
         <div class="container">
@@ -30,7 +51,7 @@
       <a href="#1" class="is-size-4"><u>サイト情報</u></a><br>
       <a href="#2" class="is-size-4"><u>更新情報</u></a><br>
       <a href="#3" class="is-size-4"><u>各ブラウザ</u></a><br>
-      <a href="#4" class="is-size-4"><u>試験的機能</u></a><br>
+      <a href="#4" class="is-size-4"><u>試験的機能<br></u><font class="is-size-6" color="ff0000">(おみくじもあるよ！)</font></a><br>
      <br><p id="1" class="is-size-3"><u><b>サイト情報</b></u></p>
     <table class="table is-striped is-fullwidth">
       <tr>
@@ -71,9 +92,6 @@
     <p><a href="https://google.co.jp/" class="button is-link is-size-5">Googleへアクセスする</a></p><br>
     <p><a href="https://yahoo.co.jp/" class="button is-success is-size-5">Yahoo!へアクセスする</a></p><br>
     <p class="is-size-4"><u><font color="#1e90ff"><a href="access.html" class="button is-size-5">次のページへ</a></font></u></p><br>
-    <p class="is-size-3"><b><u>プロフィール</u></b></p>
-    <p class="is-size-4"><b>名前　おモチ</b></p>
-    <p class="is-size-5"><b>一言　マイクラ統合版で主にアドオン制作　コマンド　レッドストーン回路　などをメインで遊んでいます。</b></p><br>
   </div>
   <script type="text/javascript" src="search.js"></script>
   <div id="app" class="container">
@@ -84,8 +102,15 @@
     </form>
       <p>※上のコマンド実行欄はテストです。</p>
       <p>コマンド: #listpage#</p><br>
+      <p class="is-size-4"><b><u>今日のおみくじ(試験的)</u></b></p>
+      <form>
+      <input type="button" value="一回だけ引けます" onclick="disabled = true;omikuji()">
+    </form><br>
       <p class="is-size-5"><b><u>経過時間(サイト内) {{ count }}秒</u></b></p>
       <p class="is-size-5" id="time"><b><u>現在時刻(年月含む) {{ new Date().toLocaleString() }}</u></b></p><br>
+      <p class="is-size-3"><b><u>プロフィール</u></b></p>
+      <p class="is-size-4"><b>名前　おモチ</b></p>
+      <p class="is-size-5"><b>一言　マイクラ統合版で主にアドオン制作　コマンド　レッドストーン回路　などをメインで遊んでいます。</b></p><br>
       <a class="is-size-5" href="#"><u>トップページへ戻る</u></a>
     </div>
     <footer>
@@ -100,5 +125,19 @@
 </footer>
 <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
 <script type="text/javascript" src="index.js"></script>
+<script type="text/javascript">
+  function omikuji() {
+    rand = Math.floor(Math.random()*8);
+    if (rand == 0) msg = "大吉";
+    if (rand == 1) msg = "吉";
+    if (rand == 2) msg = "中吉";
+    if (rand == 3) msg = "小吉";
+    if (rand == 4) msg = "末吉";
+    if (rand == 5) msg = "凶";
+    if (rand == 6) msg = "大凶";
+    if (rand == 7) msg = "残念！今日はおみくじがなかったみたい...";
+    alert(msg);
+  }
+</script>
 </body>
 </html>
