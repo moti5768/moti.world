@@ -10,3 +10,28 @@ const app = new Vue({
    $("#time").text(new Date().toLocaleString());
   }
 })
+
+function v0122a(){
+    alert('ホームページ設立・説明　各リンク先追加')
+}
+function v0123a(){
+    alert('デザイン変更・更新情報　サイト情報追加')
+}
+function v0124a(){
+    alert('画面下部に次ページ　ボタン追加')
+}
+function v0125a(){
+    alert('コマンド入力欄を追加 (試験的)')
+}
+function v0126a(){
+    alert('配布所・リストページ　設立')
+}
+function v0127a(){
+    alert('経過時間　現在時刻を追加 (試験的)　プロフィールの追加')
+}
+function v0207a(){
+    alert('目次など様々な機能の追加(デザイン調整を含む)')
+}
+function v0210a(){
+    alert('メニュー欄を表示した際に一部ボタンが手前に出てた問題の修正　その他機能の追加・微調整')
+}
