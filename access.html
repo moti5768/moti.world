@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>おモチのサイト2</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="style.css">
   </head>
   <body>
   	<section class="hero is-success">
@@ -22,21 +23,43 @@
 <section>
   <div class="container">
   </table>
-    <p class="is-size-3"><u><b>更新情報</b></u></p>
+    <p class="is-size-3"><u><b>情報</b></u></p>
     <table class="table is-striped is-fullwidth">
       <tr>
-        <td class="is-size-5">1/26(木)</td><td class="is-size-5">配布所サイト設立</td>
-      </tr>
-      <tr>
-        <td class="is-size-5">1/27(金)</td><td class="is-size-5">更新情報　追加</td>
+        <td class="is-size-5">test</td><td class="is-size-5">coming soon</td>
       </tr>
         </table>
   	  </div>
   	</section>
   	<section>
-  	  <div class="container">
-  	  	 <br><p class="is-size-5"><u><a href="index.html" class="button is-link is-size-4">ホームページへ戻る</a></u></p><br>
-  	  </div>
+  	  <div class="container" id="button">
+        <span><font color="#1e90ff"><a href="index.html" class="button">1</a></font></span>
+        <span><font color="#1e90ff"><a href="access.html" class="button">2</a></font></span>
+        <span><font color="#1e90ff"><a href="listpage.html" class="button">3</a></font></span>
+    　</div>
+
   	</section>
+
+  	<div id="navArea">
+      <nav>
+        <div class="inner">
+          <ul>
+            <li><a href="index.html">ホーム</a></li>
+            <li><a href="#">配布所</a></li>
+            <li><a href="listpage.html">リストページ</a></li>
+            <li><a href="">coming soon</a></li>
+            <li><a href="">coming soon</a></li>
+          </ul>
+        </div>
+      </nav>
+      <div class="toggle-btn">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <div id="mask"></div>
+    </div>
+
+    <script src="script.js"></script>
   </body>
 </html>
