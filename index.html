@@ -87,7 +87,7 @@
       <p>コマンド: #test#<br><font color="ff0000">メニュー欄にリストページが追加されたため　一時使用不可になっています。</font></p><br>
       <p class="is-size-4"><b><u>今日のおみくじ(試験的)</u></b></p>
       <form>
-      <input type="button" value="一回だけ引けます" onclick="disabled = true;omikuji()">
+      <button onclick="disabled = true;omikuji()"><font size="3">一回のみ引けます</font></button>
     </form><br>
 
     <p class="is-size-4"><u><b>今日のニュース(試験的)</b></u>
@@ -111,7 +111,7 @@ sec = nowdate.getSeconds(); //秒
 when = hour + "時" + min + "分、"; //時間と分を使って文章を作成
 
 //誰が
-  rand = Math.floor(Math.random()*10); //0～4の乱数を発生
+  rand = Math.floor(Math.random()*12); //0～4の乱数を発生
 
   if (rand == 0) who = "シェリ君が";
   if (rand == 1) who = "オモチ君が";
@@ -123,11 +123,13 @@ when = hour + "時" + min + "分、"; //時間と分を使って文章を作成
   if (rand == 7) who = "全人類が";
   if (rand == 8) who = "爆弾が";
   if (rand == 9) who = "先生が";
+  if (rand == 10) who = "力士が";
+  if (rand == 11) who = "友達が";
 
   msg = when + who; //文章の結合
 
 //どこで
-  rand = Math.floor(Math.random()*11);
+  rand = Math.floor(Math.random()*15);
 
   if (rand == 0) where = "学校で";
   if (rand == 1) where = "家で";
@@ -140,11 +142,15 @@ when = hour + "時" + min + "分、"; //時間と分を使って文章を作成
   if (rand == 8) where = "外で";
   if (rand == 9) where = "すみっこで";
   if (rand == 10) where = "天空で";
+  if (rand == 11) where = "地獄で";
+  if (rand == 12) where = "お店で";
+  if (rand == 13) where = "食べ過ぎで";
+  if (rand == 14) where = "食べさな過ぎで";
 
   msg = msg + where; //msgは前のセクションから引き継いだものにwhereを追加して、新しくmsgに上書きしている。
 
 //どうした
-  rand = Math.floor(Math.random()*13);
+  rand = Math.floor(Math.random()*17);
 
   if (rand == 0) what = "大爆発した。";
   if (rand == 1) what = "地球外生命体を食べた。";
@@ -159,6 +165,10 @@ when = hour + "時" + min + "分、"; //時間と分を使って文章を作成
   if (rand == 10) what = "盗撮をした。";
   if (rand == 11) what = "死亡した。";
   if (rand == 12) what = "太った。";
+  if (rand == 13) what = "猫に引っ掻かれた。";
+  if (rand == 14) what = "未来へタイムスリップした。";
+  if (rand == 15) what = "過去へタイムスリップした。";
+  if (rand == 16) what = "やせ細った。";
 
  msg = msg + what;
 
