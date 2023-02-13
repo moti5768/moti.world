@@ -11,6 +11,65 @@ const app = new Vue({
   }
 })
 
+function color1(){
+    document.getElementById("color").classList.remove("addColor-red")
+    document.getElementById("color").classList.remove("addColor-blue")
+    document.getElementById("color").classList.remove("addColor-green")
+    document.getElementById("color").classList.remove("addColor-yellow")
+    document.getElementById("color").classList.remove("addColor-black")
+    document.getElementById("color").classList.remove("addColor-darkmode")
+    document.getElementById("color").classList.add("addColor-red");
+}
+function color2(){
+    document.getElementById("color").classList.remove("addColor-red")
+    document.getElementById("color").classList.remove("addColor-blue")
+    document.getElementById("color").classList.remove("addColor-green")
+    document.getElementById("color").classList.remove("addColor-yellow")
+    document.getElementById("color").classList.remove("addColor-black")
+    document.getElementById("color").classList.remove("addColor-darkmode")
+    document.getElementById('color').classList.add('addColor-blue');
+}
+function color3(){
+    document.getElementById("color").classList.remove("addColor-red")
+    document.getElementById("color").classList.remove("addColor-blue")
+    document.getElementById("color").classList.remove("addColor-green")
+    document.getElementById("color").classList.remove("addColor-yellow")
+    document.getElementById("color").classList.remove("addColor-black")
+    document.getElementById("color").classList.remove("addColor-darkmode")
+    document.getElementById('color').classList.add('addColor-green');
+}
+function color4(){
+    document.getElementById("color").classList.remove("addColor-red")
+    document.getElementById("color").classList.remove("addColor-blue")
+    document.getElementById("color").classList.remove("addColor-green")
+    document.getElementById("color").classList.remove("addColor-yellow")
+    document.getElementById("color").classList.remove("addColor-black")
+    document.getElementById("color").classList.remove("addColor-darkmode")
+    document.getElementById('color').classList.add('addColor-yellow');
+}
+function color5(){
+    document.getElementById("color").classList.remove("addColor-red")
+    document.getElementById("color").classList.remove("addColor-blue")
+    document.getElementById("color").classList.remove("addColor-green")
+    document.getElementById("color").classList.remove("addColor-yellow")
+    document.getElementById("color").classList.remove("addColor-black")
+    document.getElementById("color").classList.remove("addColor-darkmode")
+    document.getElementById('color').classList.add('addColor-black');
+}
+
+function darkmode(){
+    document.getElementById("color").classList.remove("addColor-red")
+    document.getElementById("color").classList.remove("addColor-blue")
+    document.getElementById("color").classList.remove("addColor-green")
+    document.getElementById("color").classList.remove("addColor-yellow")
+    document.getElementById("color").classList.remove("addColor-black")
+    document.getElementById("color").classList.remove("addColor-darkmode")
+    document.getElementById('color').classList.add('addColor-darkmode');
+}
+
+
+
+
 function v0122a(){
     alert('ホームページ設立・説明　各リンク先追加')
 }
@@ -34,4 +93,7 @@ function v0207a(){
 }
 function v0210a(){
     alert('メニュー欄を表示した際に一部ボタンが手前に出てた問題の修正　その他機能の追加・微調整')
+}
+function v0214a(){
+    alert('文字色変更ボタンの追加・微調整')
 }
