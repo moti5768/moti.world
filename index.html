@@ -7,10 +7,10 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <link rel="stylesheet" href="style.css">
   </head>
-  <body>
+  <body id="color">
     
     <section class="hero is-info">
-      <div class="hero-body">
+      <div id="title" class="hero-body">
         <div class="container">
           <p class="is-size-3" class="title"><b>
             アドオンサイト
@@ -22,13 +22,12 @@
       </div>
     </section>
     <div class="container">
-      <section class="hero is-warning is-small">
-        <div class="hero-body">
-          <p class="title"><u><b><font color="#dc143f">最初に</font></b></u></p>
-          <p class="subtitle"><font color="#dc143f">このサイトは<strong><font color="ff0000">あくまでテスト</font></strong>です。ご了承ください。</font></p>
+      <section class="hero is-small" class="background-yellow">
+        <div class="hero-body" id="warning">
+          <p class="title warning"><u><b>最初に</b></u></p>
+          <p class="subtitle warning">このサイトは<b class="warning">あくまでテスト</b>です。</p>
         </div>
       </section>
-      <p><b class="is-size-4"><u>[期間限定] 文字をほぼ赤色に変えました。<br>※一定時間経過後　元に戻ります。</u></b></p><br>
       <p><b class="is-size-3"><u>目次</u></b></p>
       <a href="#1" class="is-size-4"><u>サイト情報</u></a><br>
       <a href="#2" class="is-size-4"><u>更新情報</u></a><br>
@@ -68,6 +67,9 @@
       </tr>
       <tr>
         <td><a onclick="v0210a()"><font color="0000ff">0.23.0210a</font></a></td>
+      </tr>
+      <tr>
+        <td><a onclick="v0214a()"><font color="0000ff">0.23.0214a</font></a></td>
       </tr>
     </table>
   </div>
@@ -189,17 +191,27 @@ document.write(msg);
 </td></tr>
 </tbody></table><br>
 
+<p>
+<span><button type="button" onClick="color1()">赤</button></span>
+<span><button type="button" onClick="color2()">青</button></span>
+<span><button type="button" onClick="color3()">緑</button></span>
+<span><button type="button" onClick="color4()">黄</button></span>
+<span><button type="button" onClick="color5()">黒</button></span>
+<span><button type="button" onClick="darkmode()">ダークモード</button></span>
+</p>
 
       <p class="is-size-5"><b><u>経過時間(サイト内) {{ count }}秒</u></b></p>
       <p class="is-size-5" id="time"><b><u>現在時刻(年月含む) {{ new Date().toLocaleString() }}</u></b></p><br>
       <p class="is-size-3"><b><u>プロフィール</u></b></p>
       <p class="is-size-4"><b>名前　おモチ</b></p>
       <p class="is-size-5"><b>一言　マイクラ統合版で主にアドオン制作　コマンド　レッドストーン回路　などをメインで遊んでいます。</b></p><br>
-      <div id="button">
-        <span><font color="#1e90ff"><a href="index.html" class="button">1</a></font></span>
-        <span><font color="#1e90ff"><a href="access.html" class="button">2</a></font></span>
-        <span><font color="#1e90ff"><a href="listpage.html" class="button">3</a></font></span>
+    </div>
+      <div class="container">
+        <span><a href="index.html" class="button">1</a></span>
+        <span><a href="access.html" class="button">2</a></span>
+        <span><a href="listpage.html" class="button">3</a></span>
       </div>
+      <div class="container">
       <br><a class="is-size-5" href="#"><u>トップページへ戻る</u></a>
     </div>
 
