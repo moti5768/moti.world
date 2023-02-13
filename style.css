@@ -103,56 +103,56 @@ nav .inner ul li a:hover {
 	cursor: pointer;
 }
 
-.button.youtube{
+#warning {
+	background-color: #ffff00;
+}
+
+.warning {
+	color: #ff0000;
+}
+
+.title.warning {
+	color: #ff0000;
+}
+
+.subtitle.warning {
+	color: #ff0000;
+}
+
+.button.youtube {
 	background-color: #ff0000;
 	color: #ffffff;
 }
 
-.button.google{
-	background-color: #ff0000;
+.button.google {
+	background-color: #0000ff;
 	color: #ffffff;
 }
 
-.button.yahoo{
-	background-color: #ff0000;
+.button.yahoo {
+	background-color: #ff4500;
 	color: #ffffff;
 }
 
 
 
-
-body {
+.addColor-red {
 	color: #ff0000;
 }
-
-.hero-body {
-	color: #ff0000;
+.addColor-blue {
+	color: #0000ff;
+}
+.addColor-green {
+	color: #008000;
+}
+.addColor-yellow {
+	color: #ffff00;
+}
+.addColor-black {
+	color: #000000;
 }
 
-a {
-	color: #ff0000;
-}
-
-input {
-	color: #ff0000;
-}
-
-p {
-	color: #ff0000;
-}
-
-.title {
-	color: #ff0000;
-}
-
-td {
-	color: #ff0000;
-}
-
-font {
-	color: #ff0000;
-}
-
-.button {
-	color: #ff0000;
+.addColor-darkmode {
+	background-color: #000000;
+	color: #a9a9a9;
 }
