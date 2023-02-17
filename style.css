@@ -23,6 +23,11 @@ a {
 
 .link {
     text-decoration: none;
+    color: blue;
+}
+
+.center {
+    text-align: center;
 }
 
 .google {
@@ -38,4 +43,23 @@ a {
 .youtube {
     background-color:rgb(207, 34, 34);
     color: white;
-}v
+}
+
+footer {
+    background-color: black;
+    color: white;
+}
+
+.foot1 {
+    margin-left: 450px;
+    font-size: large;
+    text-decoration: none;
+    color: white;
+}
+
+.foot2 {
+    margin-left: 200px;
+    font-size: large;
+    text-decoration: none;
+    color: white;
+}
