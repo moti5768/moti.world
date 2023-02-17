@@ -6,18 +6,27 @@ body {
     color: black;
 }
 
+.left {
+    margin-left: 25px;
+}
+
+div.backcolor {
+    background-color: black;
+    opacity: 0.8;
+}
+
 a {
     font-weight: bold;
 }
 
-.title.head {
-    background-color:black;
+.head {
+    font-size:xx-large;
     color: white;
-    opacity: 0.8;
     font-weight:bold;
 }
 
 .title {
+    text-decoration: underline;
     font-weight:bold;
     font-size: larger;
 }
@@ -76,22 +85,31 @@ footer {
         color: black;
     }
     
+    .left {
+        margin-left: 25px;
+    }
+    
+    div.backcolor {
+        background-color: black;
+        opacity: 0.8;
+    }
+    
     a {
         font-weight: bold;
     }
     
-    .title.head {
-        background-color:black;
+    .head {
+        font-size:xx-large;
         color: white;
-        opacity: 0.8;
         font-weight:bold;
     }
     
     .title {
+        text-decoration: underline;
         font-weight:bold;
         font-size: larger;
     }
-
+    
     .small {
         font-size: medium;
     }
