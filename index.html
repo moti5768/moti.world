@@ -1,266 +1,38 @@
 <!DOCTYPE html>
-<html lang="ja" dir="ltr">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>おモチのサイト</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="style.css">
-  </head>
-  <body id="color">
-    
-    <section class="hero is-info">
-      <div id="title" class="hero-body">
-        <div class="container">
-          <p class="is-size-3" class="title"><b>
-            アドオンサイト
-          </b></p>
-          <p class="is-size-5" class="subtitle"><b>
-            完全初心者が試しにサイトを作りました。<br>※不定期更新
-          </b></p>
-        </div>
-      </div>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>testpage</title>
+</head>
+<body>
+    <section class="group1">
+        <h1 class="title">おモチのサイト</h1>
+        <p>目次</p>
+        <p>
+        <a href="#">page</a>
+        <a href="#">page2</a>
+        <a href="#">page3</a>
+        </p>
     </section>
-    <div class="container">
-      <section class="hero is-small" class="background-yellow">
-        <div class="hero-body" id="warning">
-          <p class="title warning"><u><b>最初に</b></u></p>
-          <p class="subtitle warning">このサイトは<b class="warning">あくまでテスト</b>です。</p>
-        </div>
-      </section>
-      <p><b class="is-size-3"><u>目次</u></b></p>
-      <a href="#1" class="is-size-4"><u>サイト情報</u></a><br>
-      <a href="#2" class="is-size-4"><u>更新情報</u></a><br>
-      <a href="#3" class="is-size-4"><u>各ブラウザ</u></a><br>
-      <a href="#4" class="is-size-4"><u>試験的機能<br></u><font class="is-size-6" color="ff0000">(おみくじもあるよ！)</font></a><br>
-     <br><p id="1" class="is-size-3"><u><b>サイト情報</b></u></p>
-    <table class="table is-striped is-fullwidth">
-      <tr>
-        <td class="is-size-5">アドオン名</td><td class="is-size-5">リンク先</td>
-      </tr>
-      <tr>
-        <td class="is-size-5">近日公開</td><td class="is-size-5">coming soon...</td>
-      </tr>
-    </table>
-    <p id="2" class="is-size-3"><b>更新情報<br><font class="is-size-5" color="ff0000">(<u>0.23.0210aからバージョン表記になりました。</u>)</font></b></p>
-    <table class="table is-striped is-fullwidth">
-      <tr>
-        <td><a onclick="v0122a()"><font color="0000ff">0.23.0122a</font></a></td>
-      </tr>
-      <tr>
-        <td><a onclick="v0123a()"><font color="0000ff">0.23.0123a</font></a></td>
-      </tr>
-      <tr>
-        <td><a onclick="v0124a()"><font color="0000ff">0.23.0124a</font></a></td>
-      </tr>
-      <tr>
-        <td><a onclick="v0125a()"><font color="0000ff">0.23.0125a</font></a></td>
-      </tr>
-      <tr>
-        <td><a onclick="v0126a()"><font color="0000ff">0.23.0126a</font></a></td>
-      </tr>
-      <tr>
-        <td><a onclick="v0127a()"><font color="0000ff">0.23.0127a</font></a></td>
-      </tr>
-      <tr>
-        <td><a onclick="v0207a()"><font color="0000ff">0.23.0207a</font></a></td>
-      </tr>
-      <tr>
-        <td><a onclick="v0210a()"><font color="0000ff">0.23.0210a</font></a></td>
-      </tr>
-      <tr>
-        <td><a onclick="v0214a()"><font color="0000ff">0.23.0214a</font></a></td>
-      </tr>
-    </table>
-  </div>
-    <div class="container">
-    <p id="3" class="is-size-3"><u><b>各ブラウザ</b></u></p><br>
-    <p><a href="https://youtube.com/" class="button youtube is-size-5">youtubeへアクセスする</a></p><br>
-    <p><a href="https://google.co.jp/" class="button google is-size-5">Googleへアクセスする</a></p><br>
-    <p><a href="https://yahoo.co.jp/" class="button yahoo is-size-5">Yahoo!へアクセスする</a></p><br>
-  </div>
-  <script type="text/javascript" src="search.js"></script>
-  <div id="app" class="container">
-    <p id="4" class="is-size-3"><b><u>試験的機能</u></b></p>
-    <form action="#" method="get" name="search_form">
-      <input type="text" placeholder="コマンドを入力" name="search" required>
-      <input type="submit" value="実行" onclick="return check();">
-    </form>
-      <p>※上のコマンド実行欄はテストです。</p>
-      <p>コマンド: #test#<br><font color="ff0000">メニュー欄にリストページが追加されたため　一時使用不可になっています。</font></p><br>
-      <p class="is-size-4"><b><u>今日のおみくじ(試験的)</u></b></p>
-      <form>
-      <button onclick="disabled = true;omikuji()"><font size="3">一回のみ引けます</font></button>
-    </form><br>
-
-    <p class="is-size-4"><u><b>今日のニュース(試験的)</b></u>
-  <script language="javascript">
-<!--
-//文章作成部
-
-//メッセージの初期化
-msg = "";
-
-//日付と時間の設定
-nowdate = new Date(); //現在の時間（以下の行で各部に分解）
-year = nowdate.getYear(); //西暦
-mon = nowdate.getMonth(); //月
-day = nowdate.getDate(); //日
-hour = nowdate.getHours(); //時間
-min = nowdate.getMinutes(); //分
-sec = nowdate.getSeconds(); //秒
-
-//いつ
-when = hour + "時" + min + "分、"; //時間と分を使って文章を作成
-
-//誰が
-  rand = Math.floor(Math.random()*12); //0～4の乱数を発生
-
-  if (rand == 0) who = "シェリ君が";
-  if (rand == 1) who = "オモチ君が";
-  if (rand == 2) who = "生徒が";
-  if (rand == 3) who = "地球が";
-  if (rand == 4) who = "山岡君が";
-  if (rand == 5) who = "悪魔くんが";
-  if (rand == 6) who = "みんなが";
-  if (rand == 7) who = "全人類が";
-  if (rand == 8) who = "爆弾が";
-  if (rand == 9) who = "先生が";
-  if (rand == 10) who = "力士が";
-  if (rand == 11) who = "友達が";
-
-  msg = when + who; //文章の結合
-
-//どこで
-  rand = Math.floor(Math.random()*15);
-
-  if (rand == 0) where = "学校で";
-  if (rand == 1) where = "家で";
-  if (rand == 2) where = "ど真ん中で";
-  if (rand == 3) where = "都会で";
-  if (rand == 4) where = "田舎で";
-  if (rand == 5) where = "病院で";
-  if (rand == 6) where = "映画館で";
-  if (rand == 7) where = "職場で";
-  if (rand == 8) where = "外で";
-  if (rand == 9) where = "すみっこで";
-  if (rand == 10) where = "天空で";
-  if (rand == 11) where = "地獄で";
-  if (rand == 12) where = "お店で";
-  if (rand == 13) where = "食べ過ぎで";
-  if (rand == 14) where = "食べさな過ぎで";
-
-  msg = msg + where; //msgは前のセクションから引き継いだものにwhereを追加して、新しくmsgに上書きしている。
-
-//どうした
-  rand = Math.floor(Math.random()*17);
-
-  if (rand == 0) what = "大爆発した。";
-  if (rand == 1) what = "地球外生命体を食べた。";
-  if (rand == 2) what = "溶岩浴びをした。";
-  if (rand == 3) what = "熊と戯れた。";
-  if (rand == 4) what = "犬に倒された。";
-  if (rand == 5) what = "盗み食いした。";
-  if (rand == 6) what = "強盗集団を食べた。";
-  if (rand == 7) what = "何もしなかった。";
-  if (rand == 8) what = "万引きをした。";
-  if (rand == 9) what = "仲間外れにされた。";
-  if (rand == 10) what = "盗撮をした。";
-  if (rand == 11) what = "死亡した。";
-  if (rand == 12) what = "太った。";
-  if (rand == 13) what = "猫に引っ掻かれた。";
-  if (rand == 14) what = "未来へタイムスリップした。";
-  if (rand == 15) what = "過去へタイムスリップした。";
-  if (rand == 16) what = "やせ細った。";
-
- msg = msg + what;
-
-//乱数の発生から、文字列の追加までのセクションを増やせば、長い文章も作成可能
-//各セクションの文章選択肢を増やすときは乱数の数字に注意
--->
-  </script>
-</p>
-<table border="2" bgcolor="#ffffff">
-<tbody><tr><td>
-<script language="javascript">
-<!--
-//文章表示部
-document.write(msg);
--->
-</script>
-</td></tr>
-</tbody></table><br>
-
-<p>
-<span><button type="button" onClick="color1()">赤</button></span>
-<span><button type="button" onClick="color2()">青</button></span>
-<span><button type="button" onClick="color3()">緑</button></span>
-<span><button type="button" onClick="color4()">黄</button></span>
-<span><button type="button" onClick="color5()">黒</button></span>
-<span><button type="button" onClick="darkmode()">ダークモード</button></span>
-</p>
-
-      <p class="is-size-5"><b><u>経過時間(サイト内) {{ count }}秒</u></b></p>
-      <p class="is-size-5" id="time"><b><u>現在時刻(年月含む) {{ new Date().toLocaleString() }}</u></b></p><br>
-      <p class="is-size-3"><b><u>プロフィール</u></b></p>
-      <p class="is-size-4"><b>名前　おモチ</b></p>
-      <p class="is-size-5"><b>一言　マイクラ統合版で主にアドオン制作　コマンド　レッドストーン回路　などをメインで遊んでいます。</b></p><br>
-    </div>
-      <div class="container">
-        <span><a href="index.html" class="button">1</a></span>
-        <span><a href="access.html" class="button">2</a></span>
-        <span><a href="listpage.html" class="button">3</a></span>
-      </div>
-      <div class="container">
-      <br><a class="is-size-5" href="#"><u>トップページへ戻る</u></a>
-    </div>
-
-    <div id="navArea">
-      <nav>
-        <div class="inner">
-          <ul>
-            <li><a href="#">ホーム</a></li>
-            <li><a href="access.html">配布所</a></li>
-            <li><a href="listpage.html">リストページ</a></li>
-            <li><a href="">coming soon</a></li>
-            <li><a href="">coming soon</a></li>
-          </ul>
-        </div>
-      </nav>
-      <div class="toggle-btn">
-        <span></span>
-        <span></span>
-        <span></span>
-      </div>
-      <div id="mask"></div>
-    </div>
-
+    <section class="group2">
+        <h1>内容</h1>
+        <p>リンク</p>
+    </section>
+    <section class="group3">
+        <h1>各ブラウザ</h1>
+        <a href="https://google.com">google</a>
+        <a href="https://yahoo.co.jp">yahoo!</a>
+        <a href="https://youtube.com">youtube</a>
+        <a href="#">toppage</a>
+    </section>
     <footer>
-    <section class="hero">
-      <tag class="has-background-dark">
-        <div  class="column is-8  is-offset-2">
-        <p><font color="#ffffff">&copy;2023 omoti addon site</font></p><br>
-        <p><u><a href="https://twitter.com/omoti3718"><font color="#00bfff"><b>Twitter: @omoti3718</b></font></a></u>&emsp;&emsp;<u><a href="https://youtube.com/@-moti-261"><font color="#ff0000"><b>Youtube: おモチ-moti-</b></font></u></a></p></tag><br>
-      </div>
-    </tag>
-  </section>
-  </footer>
-  <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
-  <script type="text/javascript" src="index.js"></script>
-  <script src="script.js"></script>
-  <script type="text/javascript">
-  function omikuji() {
-    rand = Math.floor(Math.random()*8);
-    if (rand == 0) msg = "大吉";
-    if (rand == 1) msg = "吉";
-    if (rand == 2) msg = "中吉";
-    if (rand == 3) msg = "小吉";
-    if (rand == 4) msg = "末吉";
-    if (rand == 5) msg = "凶";
-    if (rand == 6) msg = "大凶";
-    if (rand == 7) msg = "残念！今日はおみくじがなかったみたい...";
-    alert(msg);
-  }
-</script>
+        <section class="footer">
+            <p>omoti site</p>
+            <a href="#">my youtube</a>
+            <a href="#">my Twitter</a>
+        </section>
+    </footer>
 </body>
 </html>
