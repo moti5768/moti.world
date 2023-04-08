@@ -33,6 +33,10 @@ a {
     padding-left: 20px;
 }
 
+table {
+    width: 100%;
+}
+
 .tabletext {
     margin-top: 20px;
     margin-bottom: 20px;
@@ -41,12 +45,12 @@ a {
 td {
     margin-top: 20px;
     margin-bottom: 20px;
-    border-top: solid 3px royalblue;
-    border-right: solid 3px royalblue;
-    border-left: solid 3px royalblue;
-    border-bottom: solid 3px royalblue;
-    background-color: white;
-    color: blue;
+    border-top: solid 2px gray;
+    border-bottom: solid 2px gray;
+    color: black;
+}
+table tr:nth-child(odd) td {
+    background-color:silver;
 }
 
 .small {
