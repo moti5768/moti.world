@@ -66,10 +66,12 @@ table tr:nth-child(odd) td {
     display: inline-block;
     margin-top: 10px;
     margin-bottom: 10px;
-    border-top: solid 3px royalblue;
-    border-right: solid 3px royalblue;
-    border-left: solid 3px royalblue;
-    border-bottom: solid 3px royalblue;
+    background-color: royalblue;
+    color: white;
+    border-top: solid 3px blue;
+    border-right: solid 3px blue;
+    border-left: solid 3px blue;
+    border-bottom: solid 3px blue;
     text-decoration: none;
     color: blue;
 }
