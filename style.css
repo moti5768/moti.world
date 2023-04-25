@@ -73,7 +73,6 @@ table tr:nth-child(odd) td {
     border-left: solid 3px blue;
     border-bottom: solid 3px blue;
     text-decoration: none;
-    color: blue;
 }
 
 .browser {
