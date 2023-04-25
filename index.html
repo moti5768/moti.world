@@ -8,13 +8,14 @@
     <link rel="stylesheet" href="./sanitize.css">
     <link rel="stylesheet" href="./style.css">
 </head>
-<body>
+<body id="backgroundColor">
+    <div id="color" class="group">
     <div class="backcolor">
-        <h1 class="head container">オモチのサイト</h1>
+        <p class="head container">オモチのサイト</p>
     </div>
     <div class="group1 container">
         <span class="title">目次　</span><br>
-        <a class="page " href="#">　page　</a><br>
+        <a class="page" href="#">　page　</a><br>
         <a class="page" href="#">　page2　</a><br>
         <a class="page" href="#">　page3　</a>
     </div>
@@ -33,43 +34,61 @@
 
     <div class="group4 container">
         <span class="title">更新情報　</span>
-        <table class="tabletext">
+        <table class="tabletext medium">
             <tr>
-                <td class="small2">0.23.0217</td><td class="small2">　サイト設立</td>
+                <td>0.23.0217</td><td>　サイト設立</td>
             </tr>
             <tr>
-                <td class="small2">0.23.0218</td><td class="small2">　デザイン追加</td>
+                <td>0.23.0218</td><td>　デザイン追加</td>
             </tr>
             <tr>
-                <td class="small2">0.23.0408</td><td class="small2">　デザイン変更</td>
+                <td>0.23.0408</td><td>　デザイン変更</td>
             </tr>
             <tr>
-                <td class="small2">0.23.0425</td><td class="small2">　デザイン変更.新機能追加</td>
+                <td>0.23.0425</td><td>　デザイン変更・新機能追加</td>
             </tr>
         </table>
     </div>
 
     <div class="group5 container">
         <span class="title">プロフィール　</span>
-        <p class="small">始めまして！オモチといいます。<br>
+        <p class="medium">始めまして！オモチといいます。<br>
             主にマイクラをプレイしています。(最近はサイト作成で低浮上ですが...)<br>
             完全初心者が html css など基本知識しかない状態で作ったため、不具合があるかもしれません。
             ご了承ください。</p>
+    </div>
+    <div class="group6 container">
+        <span class="title">新機能(ボタン)　</span>
         <form>
-        <button class="button">test button</button>
+            <input class="button" type="button" value="testbutton" onclick="alertbutton()">
+            <input class="button" type="button" value="testbutton2" onclick="alertbutton2()">
+        </form>
+        <form>
+            <input class="button" type="button" value="textcolor red" onclick="color_red()">
+            <input class="button" type="button" value="backcolor red" onclick="backgroundColor_red()">
+        </form>
+        <form>
+            <input class="button" type="button" value="textcolor blue" onclick="color_blue()">
+            <input class="button" type="button" value="backcolor blue" onclick="backgroundColor_blue()">
+        </form>
+        <form>
+            <input class="button" type="button" value="textcolor black" onclick="color_black()">
+            <input class="button" type="button" value="backcolor white" onclick="backgroundColor_white()">
         </form>
     </div>
 
-    <div class="group6 left">
+    <div class="group7">
         <a class="link container" href="#">トップページへ戻る</a>
     </div>
 
     <footer>
-        <div class="group7">
+        <div class="group8">
         <p class="center">&copy;omoti site</p>
         <a class="foot1" href="https://twitter.com/omoti3718">my Twitter</a>
         <a class="foot2" href="https://www.youtube.com/@-moti-261">my Youtube</a>
         </div>
     </footer>
+    </div>
+    <script src="index.js"></script>
 </body>
 </html>
