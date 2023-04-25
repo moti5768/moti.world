@@ -1,18 +1,17 @@
 @charset "utf-8";
 
 body {
-    font-size: x-large;
-    background-color: white;
-    color: black;
+    font-family: sans-serif;
+    font-size: large;
 }
 
 .container {
-    margin-left: 10px;
+    margin-left: 5px;
 }
 
 div.backcolor {
     background-color: black;
-    opacity: 0.8;
+    opacity: 0.9;
 }
 
 a {
@@ -20,6 +19,8 @@ a {
 }
 
 .head {
+    margin-top: 10px;
+    margin-bottom: 15px;
     font-size:xx-large;
     color: white;
     font-weight:bold;
@@ -29,7 +30,7 @@ a {
     background-color: orangered;
     color: white;
     font-weight:bold;
-    font-size: larger;
+    font-size: x-large;
     padding-left: 20px;
 }
 
@@ -54,29 +55,33 @@ table tr:nth-child(odd) td {
 }
 
 .small {
-    font-size: medium;
-}
-
-.small2 {
     font-size: small;
 }
 
+.medium {
+    font-size: medium;
+}
+
 .link {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: start;
     text-decoration: none;
+    font-size: x-large;
     color: blue;
 }
 
 .page {
     display: inline-block;
-    margin-top: 10px;
-    margin-bottom: 10px;
+    margin-top: 8px;
+    margin-bottom: 8px;
     background-color: royalblue;
-    color: white;
     border-top: solid 3px blue;
     border-right: solid 3px blue;
     border-left: solid 3px blue;
     border-bottom: solid 3px blue;
     text-decoration: none;
+    color: white;
 }
 
 .browser {
@@ -104,8 +109,19 @@ table tr:nth-child(odd) td {
     color: white;
 }
 
+.button {
+    margin-top: 3px;
+    border-top: solid 2px black;
+    border-right: solid 2px black;
+    border-left: solid 2px black;
+    border-bottom: solid 2px black;
+    width: 10em;
+    height: 3em;
+}
+
 footer {
     background-color: black;
+    opacity: 0.9;
     color: white;
 }
 
@@ -126,6 +142,7 @@ footer {
 @media screen and (max-width: 768px){
     footer {
         background-color: black;
+        opacity: 0.9;
         color: white;
     }
 
