@@ -47,6 +47,7 @@ td {
     margin-bottom: 20px;
     border-top: solid 2px gray;
     border-bottom: solid 2px gray;
+    font-size: small;
     color: black;
 }
 table tr:nth-child(odd) td {
