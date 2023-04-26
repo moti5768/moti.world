@@ -1,3 +1,11 @@
+window.onload = function() {
+    setTimeout(() => {
+    //loaderを消す
+    const loader = document.querySelector(".loader")
+    loader.classList.add("loaded");
+    }, 1300);
+};
+
 let test = 'test hello';
 const test2 = 'test2 hello';
 console.log(test);
