@@ -1,8 +1,10 @@
 window.onload = function() {
     setTimeout(() => {
     //loaderを消す
-    const loader = document.querySelector(".loader")
+    const loader = document.querySelector(".loader");
     loader.classList.add("loaded");
+    const loaded = document.querySelector(".loader");
+    loader.style.visibility = "hidden";
     }, 1300);
 };
 
