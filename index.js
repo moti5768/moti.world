@@ -34,3 +34,11 @@ function color_black(){
 function backgroundColor_white(){
     document.getElementById("backgroundColor").style.backgroundColor = "white";
 }
+
+function color_white(){
+    document.getElementById("color").style.color = "white";
+}
+
+function backgroundColor_windows95(){
+    document.getElementById("backgroundColor").style.backgroundColor = "#008080";
+}
