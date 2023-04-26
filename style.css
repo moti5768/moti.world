@@ -13,7 +13,6 @@ body {
     visibility: visible;
     z-index: 1;
     text-align: center;
-    pointer-events: none;
 }
 
 .loader h2 {
@@ -25,7 +24,6 @@ body {
 .loaded {
     opacity: 0;
     transition: all 0.3s;
-    pointer-events: auto;
 }
 
 .container {
