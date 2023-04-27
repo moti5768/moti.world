@@ -5,6 +5,8 @@ window.onload = function() {
     loader.classList.add("loaded");
     const loaded = document.querySelector(".loader");
     loader.style.visibility = "hidden";
+    const body = document.querySelector(".noscroll");
+    body.style.overflow = "visible";
     }, 1300);
 };
 
