@@ -8,12 +8,22 @@
 </head>
 <body>
     <div class="content">
+        <span class="icon"></span>
+        <span class="icon2"></span>
+        <span class="icon3"></span>
     <a href="#" class="test1 white">test text</a>
     <a href="#" class="test2 white">test2 text</a>
     <a href="#" class="test3 white">test3 text</a>
     </div>
     <div class="underbar">
-        <a class="black bottom" href="index.html">戻る</a>
+        <span class="button"></span>
+        <a class="blacktext bottom bold" href="index.html">戻る</a>
+        <span>　　　</span>
+        <a class="blacktext bottom bold underbarcontent" href="https://google.com">Google</a>
+        <span></span>
+        <a class="blacktext bottom bold underbarcontent" href="https://yahoo.co.jp">Yahoo</a>
+        <span></span>
+        <a class="blacktext bottom bold underbarcontent" href="https://youtube.com">Youtube</a>
         <span></span>
     </div>
 
@@ -26,12 +36,16 @@
         body {
             background-color: #008080;
         }
+
+        .bold {
+            font-weight: bold;
+        }
     
         .white {
             color: white;
         }
 
-        .black {
+        .blacktext {
             color: black;
         }
 
@@ -41,6 +55,49 @@
             height: 40px;
             position: absolute;
             bottom: 0px;
+            border-top: solid 3px white;
+        }
+
+        a.underbarcontent {
+            font-size: small;
+            display: inline;
+            position: relative;
+            bottom: 3px;
+            border-top: solid 3px white;
+            border-left: solid 2px white;
+            border-bottom: solid 3px black;
+            border-right: solid 2px black;
+        }
+
+        .icon {
+            margin-left: 10px;
+            margin-top: 45px;
+            background: khaki;
+            width: 65px;
+            height: 50px;
+            position: absolute;
+            border-bottom: solid 3px black;
+            border-right: solid 2px black;
+        }
+        .icon2 {
+            margin-left: 10px;
+            margin-top: 145px;
+            background: khaki;
+            width: 65px;
+            height: 50px;
+            position: absolute;
+            border-bottom: solid 3px black;
+            border-right: solid 2px black;
+        }
+        .icon3 {
+            margin-left: 10px;
+            margin-top: 245px;
+            background: khaki;
+            width: 65px;
+            height: 50px;
+            position: absolute;
+            border-bottom: solid 3px black;
+            border-right: solid 2px black;
         }
 
         .test1 {
@@ -60,10 +117,25 @@
         }
 
         .bottom {
+            display: flex;
             margin-left: 10px;
-            position: relative;
+            position: absolute;
             top: 8px;
         }
+
+        .button {
+            margin-left: 3px;
+            background: darkgray;
+            width: 50px;
+            height: 30px;
+            position: absolute;
+            bottom: 3px;
+            border-top: solid 3px white;
+            border-left: solid 2px white;
+            border-bottom: solid 3px black;
+            border-right: solid 2px black;
+        }
+
     </style>
 </body>
 </html>
