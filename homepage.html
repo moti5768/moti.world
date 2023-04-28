@@ -13,13 +13,18 @@
     </div>
 
     <div class="content">
-        <span class="icon"></span>
-        <span class="icon2"></span>
-        <span class="icon3"></span>
+    <a href="#" class="icon1"></a>
     <a href="#" class="test1 white">test text</a>
+    <a href="#" class="icon2"></a>
     <a href="#" class="test2 white">test2 text</a>
+    <a href="#" class="icon3"></a>
     <a href="#" class="test3 white">test3 text</a>
     </div>
+
+    <div class="bar contentbar">
+        <span>test textbar</span>
+    </div>
+
     <div class="underbar">
         <span class="button"></span>
         <a class="blacktext bottom bold" href="index.html">戻る</a>
@@ -30,7 +35,8 @@
         <span></span>
         <a class="blacktext bottom bold underbarcontent" href="https://youtube.com">Youtube</a>
         <span></span>
-        <span class="timer bottom" id="timer">time　</span><span class="timer2 bottom" id="ampm">test</span>
+        <span class="timer bottom" id="timer">time　</span>
+        <span class="timer2 bottom" id="ampm">test</span>
     </div>
 
     <style>
@@ -76,6 +82,19 @@
             color: black;
         }
 
+        .contentbar {
+            background: darkgray;
+            width: 250px;
+            height: 30px;
+            position: absolute;
+            right: 2px;
+            bottom: 43px;
+            border-top: solid 2px white;
+            border-right: solid 2px black;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+        }
+
         .underbar {
             background: darkgray;
             width: 100%;
@@ -97,7 +116,7 @@
             border-right: solid 2px black;
         }
 
-        .icon {
+        .icon1 {
             margin-left: 10px;
             margin-top: 45px;
             background: khaki;
@@ -130,6 +149,7 @@
 
         .test1 {
             margin-left: 10px;
+            margin-bottom: 50px;
             position: absolute;
             top: 100px;
         }
