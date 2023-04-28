@@ -9,7 +9,7 @@
 <body>
     <div class="title">
         <span class="titleline"></span>
-        <p class="bold white">Windows95</p>
+        <p class="bold white">Windows95　</p>
     </div>
 
     <div class="content">
@@ -30,6 +30,7 @@
         <span></span>
         <a class="blacktext bottom bold underbarcontent" href="https://youtube.com">Youtube</a>
         <span></span>
+        <span class="timer bottom" id="timer">time　</span><span class="timer2 bottom" id="ampm">test</span>
     </div>
 
     <style>
@@ -143,6 +144,31 @@
             top: 300px;
         }
 
+        span.timer {
+            background: darkgray;
+            font-size: small;
+            display: inline;
+            text-decoration: none;
+            position: absolute;
+            right: 50px;
+            bottom: 8px;
+            border-top: solid 2px gray;
+            border-left: solid 2px gray;
+            border-bottom: solid 2px white;
+        }
+        span.timer2 {
+            background: darkgray;
+            font-size: small;
+            display: inline;
+            text-decoration: none;
+            position: absolute;
+            right: 29px;
+            bottom: 8px;
+            border-top: solid 2px gray;
+            border-bottom: solid 2px white;
+            border-right: solid 2px gray;
+        }
+
         .bottom {
             display: flex;
             margin-left: 10px;
@@ -164,5 +190,23 @@
         }
 
     </style>
+    <script text="javascript">
+    function showClock() {
+        const nowDate = new Date();
+        let nowTime = new Date();
+        let nowHour = nowTime.getHours();
+        let nowMin = nowTime.getMinutes();
+        if(nowHour>=12){
+            document.getElementById('ampm').textContent = 'PM';
+        }else {
+            document.getElementById('ampm').textContent = 'AM';
+        }
+
+        let msg = "" + nowHour + ":" + nowMin;
+
+        document.getElementById("timer").innerHTML = msg;
+    }
+    setInterval('showClock()',1000);
+    </script>
 </body>
 </html>
