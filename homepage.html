@@ -22,7 +22,7 @@
     </div>
 
     <div class="contentbar">
-        <span>test textbar</span>
+        <span class="bar">testbar</span>
     </div>
 
     <div class="underbar">
@@ -93,6 +93,12 @@
             border-right: solid 2px black;
             border-left: solid 2px white;
             border-bottom: solid 2px black;
+        }
+
+        .bar {
+            position: absolute;
+            top: 5px;
+            right: 100px;
         }
 
         .underbar {
@@ -211,6 +217,14 @@
 
     </style>
     <script text="javascript">
+        function nowTime(num) {
+            let ret;
+            if( num < 10)
+            ret = "0" + num;
+            else
+            ret = num;
+            return ret;
+        }
     function showClock() {
         const nowDate = new Date();
         let nowTime = new Date();
