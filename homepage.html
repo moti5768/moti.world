@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>windows95homepage beta</title>
 </head>
-<body>
+<body id="backcolor">
     <div class="title">
         <span class="titleline"></span>
         <p class="bold white">Windows95　</p>
@@ -22,14 +22,24 @@
     <a href="#" class="test3 white">test3 text</a>
     </div>
 
+    <div class="backcolor_menu border">
+        <button class="closebutton border" onclick="backcolormenu_close()">X</button>
+        <button class="backcolor_blue border" onclick="backcolor_blue()">blue</button>
+        <button class="backcolor_reset border" onclick="backcolor_reset()">reset</button>
+    </div>
+
     <div class="contentbar">
-        <span class="bar">testbar</span>
+        <span class="contentbar_blue"></span>
+        <button class="bar_button" onclick="backcolormenu_open()">C</button>
+        <button class="bar_button">T</button>
+        <button class="bar_button">T</button>
+        <button class="bar_button">T</button>
     </div>
 
     <div class="underbar">
         <span class="button"></span>
-        <a class="blacktext bottom bold" href="index.html">戻る</a>
-        <span>　　　</span>
+        <a class="blacktext bottom bold" href="index.html">スタート</a>
+        <span>　　　　</span>
         <a class="blacktext bottom bold underbarcontent" href="https://google.com">Google</a>
         <span></span>
         <a class="blacktext bottom bold underbarcontent" href="https://yahoo.co.jp">Yahoo</a>
@@ -96,20 +106,54 @@
         .contentbar {
             background: darkgray;
             width: 250px;
-            height: 30px;
+            height: 45px;
             position: absolute;
-            right: 2px;
+            right: 1px;
             bottom: 43px;
             border-top: solid 2px white;
             border-right: solid 2px black;
             border-left: solid 2px white;
             border-bottom: solid 2px black;
         }
-
-        .bar {
+        .contentbar_blue {
+            background: blue;
+            width: 100%;
+            height: 10px;
             position: absolute;
-            top: 5px;
-            right: 100px;
+            top: 2px;
+        }
+
+        .bar_button {
+            margin-left: 0px;
+            background: darkgray;
+            width: 30px;
+            height: 30px;
+            position: relative;
+            top: 14px;
+            left: 0px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .backcolor_blue {
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            right: 50px;
+            bottom: 50px;
+            z-index: 2;
+        }
+
+        .backcolor_menu {
+            background: gray;
+            width: 150px;
+            height: 250px;
+            position: absolute;
+            top: 320px;
+            right: 101px;
+            visibility: hidden;
         }
 
         .underbar {
@@ -216,7 +260,7 @@
         .button {
             margin-left: 3px;
             background: darkgray;
-            width: 50px;
+            width: 70px;
             height: 30px;
             position: absolute;
             bottom: 3px;
@@ -224,6 +268,21 @@
             border-left: solid 2px white;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
+        }
+
+        .border {
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .closebutton {
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            top: 0px;
+            right: 0px;
         }
 
     </style>
@@ -252,6 +311,23 @@
         document.getElementById("timer").innerHTML = msg;
     }
     setInterval('showClock()',1000);
+
+    function backcolor_blue(){
+        document.getElementById("backcolor").style.backgroundColor = "blue";
+    }
+    function backcolor_reset(){
+        document.getElementById("backcolor").style.backgroundColor = "#008080";
+    }
+
+    function backcolormenu_close(){
+        const backcolor_menu = document.querySelector(".backcolor_menu");
+        backcolor_menu.style.visibility = "hidden";
+    }
+    function backcolormenu_open(){
+        const backcolor_menu = document.querySelector(".backcolor_menu");
+        backcolor_menu.style.visibility = "visible";
+    }
+
     </script>
 </body>
 </html>
