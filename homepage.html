@@ -217,7 +217,7 @@
 
     </style>
     <script text="javascript">
-        function nowTime(num) {
+        function twoDigit(num) {
             let ret;
             if( num < 10)
             ret = "0" + num;
@@ -228,8 +228,8 @@
     function showClock() {
         const nowDate = new Date();
         let nowTime = new Date();
-        let nowHour = ( nowTime.getHours() );
-        let nowMin = ( nowTime.getMinutes() );
+        let nowHour = twoDigit( nowTime.getHours() );
+        let nowMin = twoDigit( nowTime.getMinutes() );
         if(nowHour>=12){
             document.getElementById('ampm').textContent = 'PM';
         }else {
