@@ -228,8 +228,8 @@
     function showClock() {
         const nowDate = new Date();
         let nowTime = new Date();
-        let nowHour = nowTime.getHours();
-        let nowMin = nowTime.getMinutes();
+        let nowHour = ( nowTime.getHours() );
+        let nowMin = ( nowTime.getMinutes() );
         if(nowHour>=12){
             document.getElementById('ampm').textContent = 'PM';
         }else {
