@@ -1,6 +1,7 @@
 @charset "utf-8";
 
 body {
+    overflow: hidden;
     font-family: sans-serif;
     font-size: large;
     pointer-events: auto;
@@ -140,6 +141,12 @@ table tr:nth-child(odd) td {
     border-bottom: solid 2px black;
     width: 10em;
     height: 3em;
+}
+
+.windows95 {
+    background: #008080;
+    color: white;
+    text-decoration: none;
 }
 
 footer {
