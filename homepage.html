@@ -26,6 +26,7 @@
         <button class="blacktext closebutton border" onclick="backcolormenu_close()">X</button>
         <button class="blacktext backcolor_blue border" onclick="backcolor_blue()">blue</button>
         <button class="blacktext backcolor_red border" onclick="backcolor_red()">red</button>
+        <button class="blacktext backcolor_black border" onclick="backcolor_black()">black</button>
         <button class="blacktext backcolor_reset border" onclick="backcolor_reset()">reset</button>
     </div>
 
@@ -144,7 +145,7 @@
             position: absolute;
             right: 50px;
             bottom: 50px;
-            z-index: 2;
+            z-index: 1;
         }
         .backcolor_red {
             width: 30px;
@@ -152,7 +153,15 @@
             position: absolute;
             right: 50px;
             bottom: 20px;
-            z-index: 2;
+            z-index: 1;
+        }
+        .backcolor_black {
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            right: 50px;
+            bottom: 80px;
+            z-index: 1;
         }
 
         .backcolor_menu {
@@ -326,6 +335,9 @@
     }
     function backcolor_red(){
         document.getElementById("backcolor").style.backgroundColor = "red";
+    }
+    function backcolor_black(){
+        document.getElementById("backcolor").style.backgroundColor = "black";
     }
     function backcolor_reset(){
         document.getElementById("backcolor").style.backgroundColor = "#008080";
