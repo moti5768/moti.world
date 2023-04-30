@@ -13,21 +13,29 @@
         <p class="bold white medium subtitle">beta</p>
     </div>
 
+    <div class="start_menu border">
+        <span class="menu_bluebar white">起動オプション</span>
+        <button class="blacktext closebutton border" onclick="startmenu_close()">X</button>
+        <a class="blacktext border bold finish" href="index.html">終了する</a>
+    </div>
+
     <div class="content">
     <a href="index.html" class="icon1"></a>
     <a href="index.html" class="test1 white">オモチのサイト</a>
-    <a href="#" class="icon2"></a>
-    <a href="#" class="test2 white">test2 text</a>
+    <a class="icon2" onclick="Credit()"></a>
+    <a class="test2 white" onclick="Credit()">クレジット</a>
     <a href="#" class="icon3"></a>
     <a href="#" class="test3 white">test3 text</a>
-    <input class="border "type="text" id="name" name="name">
     </div>
 
     <div class="backcolor_menu border">
+        <span class="menu_bluebar white">画面の背景</span>
         <button class="blacktext closebutton border" onclick="backcolormenu_close()">X</button>
-        <button class="blacktext backcolor_blue border" onclick="backcolor_blue()">blue</button>
-        <button class="blacktext backcolor_red border" onclick="backcolor_red()">red</button>
-        <button class="blacktext backcolor_black border" onclick="backcolor_black()">black</button>
+        <button class="backcolor_button border" onclick="backcolor_darkblue()">青</button>
+        <button class="backcolor_button border" onclick="backcolor_red()">赤</button>
+        <button class="backcolor_button border" onclick="backcolor_yellow()">黄</button>
+        <button class="backcolor_button border" onclick="backcolor_green()">緑</button>
+        <button class="backcolor_button border" onclick="backcolor_black()">黒</button>
         <button class="blacktext backcolor_reset border" onclick="backcolor_reset()">reset</button>
     </div>
 
@@ -40,8 +48,7 @@
     </div>
 
     <div class="underbar">
-        <span class="button"></span>
-        <a class="blacktext bottom bold" href="index.html">スタート</a>
+        <a class="blacktext bottom bold start_button border" onclick="startmenu_open()">スタート</a>
         <span>　　　　</span>
         <a class="blacktext bottom bold underbarcontent" href="https://google.com">Google</a>
         <span></span>
@@ -51,6 +58,10 @@
         <span></span>
         <span class="timer bottom" id="timer">time　</span>
         <span class="timer2 bottom" id="ampm">test</span>
+    </div>
+
+    <div class="Credit">
+        <p class="bigtext white bold Credit_text">Windows95 beta</p>
     </div>
 
     <style>
@@ -94,8 +105,28 @@
             font-weight: bold;
         }
 
+        .small {
+            font-size: small;
+        }
+
         .medium {
             font-size: medium;
+        }
+
+        .large {
+            font-size: large;
+        }
+
+        .x-large {
+            font-size: x-large;
+        }
+
+        .xx-large {
+            font-size: xx-large;
+        }
+
+        .bigtext {
+            font-size: 300%;
         }
     
         .white {
@@ -133,36 +164,55 @@
             height: 30px;
             position: relative;
             top: 14px;
-            left: 0px;
+            left: 1px;
             border-top: solid 2px white;
             border-left: solid 2px white;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
 
-        .backcolor_blue {
+        .backcolor_button {
             width: 30px;
             height: 30px;
-            position: absolute;
-            right: 50px;
-            bottom: 50px;
+            position: relative;
+            top: 35px;
+            left: 7px;
             z-index: 1;
         }
-        .backcolor_red {
-            width: 30px;
+        .backcolor_reset {
+            width: 40px;
             height: 30px;
             position: absolute;
-            right: 50px;
-            bottom: 20px;
+            top: 212px;
+            right: 0px;
             z-index: 1;
         }
-        .backcolor_black {
-            width: 30px;
+
+        a.start_button {
+            margin-top: 0px;
+            background: darkgray;
+            width: 70px;
             height: 30px;
             position: absolute;
-            right: 50px;
-            bottom: 80px;
-            z-index: 1;
+            top: 3px;
+            left: -8px;
+        }
+
+        .start_menu {
+            background: darkgray;
+            width: 150px;
+            height: 100px;
+            position: absolute;
+            bottom: 40px;
+            left: 1px;
+            visibility: hidden;
+        }
+        .finish {
+            width: 65px;
+            height: 25px;
+            position: absolute;
+            top: 30px;
+            bottom: 0px;
         }
 
         .backcolor_menu {
@@ -173,6 +223,12 @@
             top: 320px;
             right: 101px;
             visibility: hidden;
+        }
+        .menu_bluebar {
+            background: darkblue;
+            width: 100%;
+            height: 25px;
+            position: absolute;
         }
 
         .underbar {
@@ -297,15 +353,37 @@
         }
 
         .closebutton {
-            width: 30px;
-            height: 30px;
+            width: 25px;
+            height: 25px;
             position: absolute;
             top: 0px;
             right: 0px;
         }
 
+        .Credit {
+            background-color: black;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            visibility: hidden;
+            z-index: 10;
+        }
+        .Credit_text {
+            text-align: center;
+            margin-top: 300px;
+        }
+
     </style>
     <script text="javascript">
+     function Credit() {
+        const Credit = document.querySelector(".Credit");
+            Credit.style.visibility = "visible";
+        setTimeout(() => {
+            const Credit = document.querySelector(".Credit");
+            Credit.style.visibility = "hidden";
+    }, 2000);
+};
+
         function twoDigit(num) {
             let ret;
             if( num < 10)
@@ -331,17 +409,32 @@
     }
     setInterval('showClock()',1000);
 
-    function backcolor_blue(){
+    function backcolor_darkblue(){
         document.getElementById("backcolor").style.backgroundColor = "darkblue";
     }
     function backcolor_red(){
         document.getElementById("backcolor").style.backgroundColor = "red";
+    }
+    function backcolor_yellow(){
+        document.getElementById("backcolor").style.backgroundColor = "yellow";
+    }
+    function backcolor_green(){
+        document.getElementById("backcolor").style.backgroundColor = "green";
     }
     function backcolor_black(){
         document.getElementById("backcolor").style.backgroundColor = "black";
     }
     function backcolor_reset(){
         document.getElementById("backcolor").style.backgroundColor = "#008080";
+    }
+    
+    function startmenu_close(){
+        const start_menu = document.querySelector(".start_menu");
+        start_menu.style.visibility = "hidden";
+    }
+    function startmenu_open(){
+        const start_menu = document.querySelector(".start_menu");
+        start_menu.style.visibility = "visible";
     }
 
     function backcolormenu_close(){
