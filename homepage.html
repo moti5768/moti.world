@@ -16,7 +16,9 @@
     <div class="start_menu border">
         <span class="menu_bluebar white">起動オプション</span>
         <button class="blacktext closebutton border" onclick="startmenu_close()">X</button>
-        <a class="blacktext border bold finish" href="index.html">終了する</a>
+        <button class="blacktext programbutton border bold" onclick="programmenu_open()">プログラム</button>
+        <button class="blacktext settingbutton border bold" onclick="settingmenu_open()">設定</button>
+        <a class="blacktext border bold finish" href="index.html">Windowsの終了</a>
     </div>
 
     <div class="content">
@@ -46,6 +48,39 @@
         <button class="blacktext bar_button">T</button>
         <button class="blacktext bar_button">T</button>
         <button class="blacktext bar_button">T</button>
+    </div>
+
+    <div class="program_menu border">
+        <span class="menu_bluebar white">program</span>
+        <button class="blacktext closebutton border" onclick="programmenu_close()">X</button>
+        <button class="blacktext accessorybutton" onclick="appmenu_open()">アクセサリ</button>
+        <span class="accessory_icon"></span>
+    </div>
+
+    <div class="app_menu border">
+        <span class="menu_bluebar white">アプリ</span>
+        <button class="blacktext closebutton border" onclick="appmenu_close()">X</button>
+        <button class="blacktext appbutton" onclick="memo_open()">メモ帳</button>
+        <span class="accessory_icon"></span>
+    </div>
+
+    <div class="app_memo border">
+        <button class="closebutton border" onclick="memo_close()">X</button>
+        <p>メモ帳</p>
+        <form name="form1">
+            <textarea name="Memo" class="memo"></textarea>
+        </form>
+        <p>
+            <input type="button" class="border" value="保存" onclick=save(); ></input>
+            <input type="button" class="border" value="読込" onclick=load(); ></input>
+        </p>
+    </div>
+
+    <div class="setting_menu border">
+        <span class="menu_bluebar white">設定</span>
+        <button class="blacktext closebutton border" onclick="settingmenu_close()">X</button>
+        <button class="blacktext devicebutton">端末情報</button>
+        <span class="device_icon"></span>
     </div>
 
     <div class="underbar">
@@ -149,6 +184,7 @@
             border-right: solid 2px black;
             border-left: solid 2px white;
             border-bottom: solid 2px black;
+            visibility: visible;
         }
         .contentbar_blue {
             background: darkblue;
@@ -201,18 +237,18 @@
 
         .start_menu {
             background: darkgray;
-            width: 150px;
-            height: 100px;
+            width: 140px;
+            height: 130px;
             position: absolute;
             bottom: 40px;
             left: 1px;
             visibility: hidden;
         }
         .finish {
-            width: 65px;
+            width: 135px;
             height: 25px;
             position: absolute;
-            top: 30px;
+            top: 95px;
             bottom: 0px;
         }
 
@@ -222,7 +258,7 @@
             height: 250px;
             position: absolute;
             top: 320px;
-            right: 101px;
+            right: 31px;
             visibility: hidden;
         }
         .menu_bluebar {
@@ -280,6 +316,30 @@
             width: 65px;
             height: 50px;
             position: absolute;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .accessory_icon {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 30px;
+            left: -5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .device_icon {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 30px;
+            left: -5px;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
@@ -361,6 +421,23 @@
             right: 0px;
         }
 
+        .programbutton {
+            background: darkgray;
+            width: 135px;
+            height: 25px;
+            position: absolute;
+            top: 35px;
+        }
+
+        .settingbutton {
+            background: darkgray;
+            width: 135px;
+            height: 25px;
+            position: absolute;
+            top: 65px;
+            bottom: 0px;
+        }
+
         .Credit {
             background-color: black;
             width: 100%;
@@ -374,8 +451,103 @@
             margin-top: 300px;
         }
 
+        .program_menu {
+            background: darkgray;
+            width: 100px;
+            height: 50px;
+            position: absolute;
+            top: 483px;
+            left: 145px;
+            visibility: hidden;
+        }
+        .accessorybutton {
+            background: darkgray;
+            position: absolute;
+            top: 30px;
+            left: 30px;
+            border: none;
+        }
+
+        .app_menu {
+            background: darkgray;
+            width: 100px;
+            height: 50px;
+            position: absolute;
+            top: 483px;
+            left: 145px;
+            visibility: hidden;
+        }
+        .appbutton {
+            background: darkgray;
+            position: absolute;
+            top: 30px;
+            left: 30px;
+            border: none;
+        }
+
+        .setting_menu {
+            background: darkgray;
+            width: 100px;
+            height: 50px;
+            position: absolute;
+            top: 537px;
+            left: 145px;
+            visibility: hidden;
+        }
+        .devicebutton {
+            background: darkgray;
+            position: absolute;
+            top: 30px;
+            left: 30px;
+            border: none;
+        }
+
+        .app_memo {
+            background: gray;
+            width: 600px;
+            height: 100px;
+            top: 250px;
+            position: absolute;
+            left: 480px;
+            visibility: hidden;
+        }
+        textarea {
+            width: 90%;
+        }
+        
+    @media screen and (max-width: 768px){
+        .app_memo {
+            background: gray;
+            width: 230px;
+            height: 100px;
+            top: 250px;
+            position: absolute;
+            left: 100px;
+            visibility: hidden;
+        }
+        textarea {
+            width: 90%;
+        }
+}
+
     </style>
     <script text="javascript">
+    // 読込
+    function load() {
+        var MemoData = "";
+        if(!localStorage.getItem('MemoData')) {
+            MemoData = "メモは登録されていません。";
+        } else {
+            MemoData = localStorage.getItem('MemoData');
+        }
+        document.form1.Memo.value = MemoData;
+    }
+    // 保存
+    function save() {
+        var MemoData = document.form1.Memo.value;
+        localStorage.setItem('MemoData', MemoData);
+    }
+
      function Credit() {
         const Credit = document.querySelector(".Credit");
             Credit.style.visibility = "visible";
@@ -432,10 +604,20 @@
     function startmenu_close(){
         const start_menu = document.querySelector(".start_menu");
         start_menu.style.visibility = "hidden";
+        const contentbar = document.querySelector(".contentbar");
+        contentbar.style.visibility = "visible";
+        const program_menu = document.querySelector(".program_menu");
+        program_menu.style.visibility = "hidden";
+        const app_menu = document.querySelector(".app_menu");
+        app_menu.style.visibility = "hidden";
+        const setting_menu = document.querySelector(".setting_menu");
+        setting_menu.style.visibility = "hidden";
     }
     function startmenu_open(){
         const start_menu = document.querySelector(".start_menu");
         start_menu.style.visibility = "visible";
+        const contentbar = document.querySelector(".contentbar");
+        contentbar.style.visibility = "hidden";
     }
 
     function backcolormenu_close(){
@@ -445,6 +627,44 @@
     function backcolormenu_open(){
         const backcolor_menu = document.querySelector(".backcolor_menu");
         backcolor_menu.style.visibility = "visible";
+    }
+
+    function programmenu_close(){
+        const program_menu = document.querySelector(".program_menu");
+        program_menu.style.visibility = "hidden";
+    }
+    function programmenu_open(){
+        const program_menu = document.querySelector(".program_menu");
+        program_menu.style.visibility = "visible";
+    }
+
+    function appmenu_open(){
+        const app_menu = document.querySelector(".app_menu");
+        app_menu.style.visibility = "visible";
+        const program_menu = document.querySelector(".program_menu");
+        program_menu.style.visibility = "hidden";
+    }
+    function appmenu_close(){
+        const app_menu = document.querySelector(".app_menu");
+        app_menu.style.visibility = "hidden";
+    }
+
+    function settingmenu_open(){
+        const setting_menu = document.querySelector(".setting_menu");
+        setting_menu.style.visibility = "visible";
+    }
+    function settingmenu_close(){
+        const setting_menu = document.querySelector(".setting_menu");
+        setting_menu.style.visibility = "hidden";
+    }
+
+    function memo_open(){
+        const app_memo = document.querySelector(".app_memo");
+        app_memo.style.visibility = "visible";
+    }
+    function memo_close(){
+        const app_memo = document.querySelector(".app_memo");
+        app_memo.style.visibility = "hidden";
     }
 
     </script>
