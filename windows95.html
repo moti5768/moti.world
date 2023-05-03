@@ -7,28 +7,85 @@
     <title>windows95 beta</title>
 </head>
 <body id="backcolor">
-    <div class="test border2">
-        <span class="menu_bluebar2 white">メンテナンスのお知らせ</span>
-        <p class="bold blacktext testtext small">システムのメンテナンスを行っております。ご了承ください</p>
+    <div class="screen">
+        <span class="screencolor_blue"></span>
+        <span class="screencolor_blue2"></span>
+        <span class="screencolor_blue3"></span>
+        <p class="screentext xx-large">Windows95&nbsp;beta1.0</p>
+        <button class="screenbutton border" onclick="screen_open()">スタート</button>
     </div>
 
+    <div class="popupwrap">
+        <span class="popup_window border">
+        <p class="popup_window_text">Windows<span class="white">95</span>　へようこそ</p>
+        <span class="popup_window_white border"></span>
+        <span class="menu_bluebar white">ようこそ</span>
+        <p class="popup_window_text2">Windows95&nbsp;beta1.0&nbsp;へようこそ<br>
+        このアップデートには新機能の追加とバグ修正が含まれています。<br>
+        <br>
+        ・電卓の追加<br>
+        ・メモ帳のデザイン変更<br>
+        ・メモ帳にクリア機能を追加<br>
+        ・背景色に紫色を追加<br>
+        ・コントロールパネルの追加<br>
+        ・おモチのサイトはサブページとなり、<br>
+        windows95がサブページからメインページに変わりました。<br>
+        ・起動画面　終了画面の追加
+        </p>
+        <button class="blacktext closebutton border" onclick="popupwindow_close()">X</button>
+    </div>
+
+    </div>
     <div class="title">
         <span class="titleline"></span>
-        <p class="bold white">Windows95　</p>
-        <p class="bold white medium subtitle">beta　0.1</p>
+        <span class="window_icon_red"></span>
+        <span class="window_icon_blue"></span>
+        <span class="window_icon_green"></span>
+        <span class="window_icon_yellow"></span>
+        <p class="bold white">Windows95　　</p>
+        <p class="bold white medium subtitle">beta&nbsp;1.0</p>
     </div>
 
     <div class="start_menu border">
         <span class="menu_bluebar white">起動オプション</span>
         <button class="blacktext closebutton border" onclick="startmenu_close()">X</button>
-        <a class="blacktext border bold finish">Windowsの終了</a>
+        <button class="blacktext programbutton border bold" onclick="programmenu_open()">プログラム</button>
+        <button class="blacktext settingbutton border bold" onclick="settingmenu_open()">設定</button>
+        <a class="blacktext border bold finish" onclick="screen_close(),startmenu_close()">Windowsの終了</a>
     </div>
 
     <div class="content">
+    <a class="icon1" href="index.html"></a>
+    <a class="test1 white" href="index.html">オモチのサイト</a>
+    <a class="icon2" onclick="Credit()"></a>
+    <a class="test2 white" onclick="Credit()">クレジット</a>
+    <a href="#" class="icon3"></a>
+    <a href="#" class="test3 white">test3 text</a>
+    </div>
+
+    <div class="backcolor_menu border">
+        <span class="menu_bluebar white">背景色の変更</span>
+        <button class="blacktext closebutton border" onclick="backcolormenu_close()">X</button>
+        <button class="blacktext backcolor_button border" onclick="backcolor_darkblue()">青</button>
+        <button class="blacktext backcolor_button border" onclick="backcolor_red()">赤</button>
+        <button class="blacktext backcolor_button border" onclick="backcolor_yellow()">黄</button>
+        <button class="blacktext backcolor_button border" onclick="backcolor_green()">緑</button>
+        <button class="blacktext backcolor_button border" onclick="backcolor_purple()">紫</button>
+        <button class="blacktext backcolor_button border" onclick="backcolor_black()">黒</button>
+        <button class="blacktext backcolor_reset border" onclick="backcolor_reset()">reset</button>
+    </div>
+
+    <div class="contentbar">
+        <span class="contentbar_blue"></span>
+        <button class="blacktext bar_button" onclick="backcolormenu_open(),popupwindow_close()">C</button>
+        <button class="blacktext bar_button">T</button>
+        <button class="blacktext bar_button">T</button>
+        <button class="blacktext bar_button">T</button>
+        <button class="blacktext bar_button">T</button>
     </div>
 
     <div class="program_menu border">
-        <span class="menu_bluebar white">program</span>
+        <span class="menu_bluebar white">プログラム</span>
         <button class="blacktext closebutton border" onclick="programmenu_close()">X</button>
         <button class="blacktext accessorybutton" onclick="appmenu_open()">アクセサリ</button>
         <span class="accessory_icon"></span>
@@ -37,38 +94,88 @@
     <div class="app_menu border">
         <span class="menu_bluebar white">アプリ</span>
         <button class="blacktext closebutton border" onclick="appmenu_close()">X</button>
-        <button class="blacktext appbutton" onclick="memo_open()">メモ帳</button>
-        <span class="accessory_icon"></span>
+        <button class="blacktext appbutton" onclick="memo_open(),startmenu_close()">メモ帳</button>
+        <button class="blacktext appbutton2" onclick="calc_open(),startmenu_close()">電卓</button>
+        <span class="app_icon"></span>
+        <span class="app_icon2"></span>
     </div>
 
     <div class="app_memo border">
-        <button class="closebutton blacktext border" onclick="memo_close()">X</button>
-        <p>メモ帳</p>
+        <p class="menu_bluebar white">無題-メモ帳</p>
         <form name="form1">
-            <textarea name="Memo" class="mem border"></textarea>
+            <textarea name="Memo" class="Memo border"></textarea>
         </form>
         <p>
-            <input type="button" class="blacktext border" value="保存" onclick=save(); ></input>
-            <input type="button" class="blacktext border" value="読込" onclick=load(); ></input>
+            <input type="button" class="blacktext memo_button_save" value="保存" onclick=save(); ></input>
+            <input type="button" class="blacktext memo_button_load" value="読込" onclick=load(); ></input>
+            <input type="button" id="cleartextbtn" class="blacktext memo_button_clear" value="クリア"></input>
         </p>
+        <button class="closebutton blacktext border" onclick="memo_close()">X</button>
     </div>
+
+    <div class="app_calc border">
+            <span class="menu_bluebar white">電卓</span>
+            <p class="white">　</p>
+        <input class="calc textcalc" style="text-align: right;"></input><br>
+        <button class="closebutton blacktext border" onclick="calc_close()">X</button>
+        
+        <button class="calc button_calc" onclick="append( '1' )" >1</button>
+        <button class="calc button_calc" onclick="append( '2' )" >2</button>
+        <button class="calc button_calc" onclick="append( '3' )" >3</button>
+        <button class="calc button_calc" onclick="append( '4' )" >4</button>
+        <button class="calc button_calc" onclick="append( '5' )" >5</button><br />
+        <button class="calc button_calc" onclick="append( '6' )" >6</button>
+        <button class="calc button_calc" onclick="append( '7' )" >7</button>
+        <button class="calc button_calc" onclick="append( '8' )" >8</button>
+        <button class="calc button_calc" onclick="append( '9' )" >9</button>
+        <button class="calc button_calc" onclick="append( '0' )" >0</button><br />
+        <button class="calc button_calc" onclick="append( '.' )" >.</button>
+        <button class="calc button_calc" onclick="append( '+' )" >+</button>
+        <button class="calc button_calc" onclick="append( '-' )" >-</button>
+        <button class="calc button_calc" onclick="append( '*' )" >*</button>
+        <button class="calc button_calc" onclick="append( '/' )" >/</button><br />
+        <button class="calc button_calc" onclick="append( '**' )" >^</button>
+        <button class="calc button_calc" onclick="append( '**0.5' )" >√</button>
+        
+        <button class="calc button_calc" onclick="calc()">=</button>
+
+        <button class="calc button_calc" onclick="update( '' ) " >CLR</button>
+    </div>
+
 
     <div class="setting_menu border">
         <span class="menu_bluebar white">設定</span>
         <button class="blacktext closebutton border" onclick="settingmenu_close()">X</button>
-        <button class="blacktext devicebutton">端末情報</button>
+        <button class="blacktext devicebutton x-small" onclick="controlpanel_open()">コントロールパネル</button>
         <span class="device_icon"></span>
     </div>
 
+    <div class="controlpanel">
+        <div class="controlpanel_window border">
+        <span class="menu_bluebar white">　　コントロールパネル</span>
+        <span class="controlpanel_white border"></span>
+        <p class="controlpanel_text">テスト</p>
+        <span class="controlpanel_icon"></span>
+        <span class="controlpanel_icon2"></span>
+        <button class="blacktext closebutton border" onclick="controlpanel_close()">X</button>
+    </div>
+    </div>
+
     <div class="underbar">
+        <a class="blacktext bottom bold start_button border" onclick="startmenu_open(),popupwindow_close()">スタート</a>
         <span>　　　　</span>
+        <a class="blacktext bottom bold underbarcontent" href="https://google.com">Google</a>
+        <span></span>
+        <a class="blacktext bottom bold underbarcontent" href="https://yahoo.co.jp">Yahoo</a>
+        <span></span>
+        <a class="blacktext bottom bold underbarcontent" href="https://youtube.com">Youtube</a>
         <span></span>
         <span class="timer bottom" id="timer">time　</span>
         <span class="timer2 bottom" id="ampm">test</span>
     </div>
 
     <div class="Credit">
-        <p class="bigtext white bold Credit_text">Windows95 beta</p>
+        <p class="bigtext white bold Credit_text">Windows95 beta1.0</p>
     </div>
 
     <style>
@@ -82,22 +189,132 @@
             background-color: #008080;
         }
 
-        .test {
-            background: white;
-            width: 280px;
-            height: 300px;
-            top: 170px;
-            position: absolute;
-            left: 50px;
-        }
-
-        .testtext {
-            top: 60px;
-            position: absolute;
-        }
-
         a {
             text-decoration: none;
+        }
+
+        .screen {
+            visibility: hidden;
+        }
+        .screen.active {
+            visibility: visible;
+        }
+
+        .screenbutton {
+            background: darkgray;
+            width: 150px;
+            height: 50px;
+            position: absolute;
+            top: 300px;
+            left: 700px;
+            z-index: 101;
+        }
+
+        .screentext {
+            color: black;
+            position: absolute;
+            top: 300px;
+            left: 300px;
+            z-index: 101;
+        }
+        .screencolor_blue {
+            background-color: skyblue;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            z-index: 100;
+        }
+        .screencolor_blue2 {
+            background-color: #6495ed;
+            width: 100%;
+            height: 15%;
+            position: absolute;
+            z-index: 101;
+        }
+        .screencolor_blue3 {
+            background-color: #6495ed;
+            width: 100%;
+            height: 15%;
+            position: absolute;
+            bottom: 0px;
+            z-index: 101;
+        }
+
+        .popupwrap {
+            visibility: hidden;
+        }
+        .popupwrap.active {
+            visibility: visible;
+        }
+
+        .popup_window {
+            background: darkgray;
+            width: 550px;
+            height: 350px;
+            top: 150px;
+            position: absolute;
+            left: 180px;
+            z-index: 10;
+        }
+        .popup_window_white {
+            background: white;
+            width: 500px;
+            height: 260px;
+            position: absolute;
+            top: 70px;
+            left: 20px;
+        }
+        .popup_window_text {
+            font-size: x-large;
+            position: absolute;
+            top: 35px;
+            left: 20px;
+        }
+        .popup_window_text2 {
+            font-size: small;
+            position: absolute;
+            top: 80px;
+            left: 30px;
+        }
+
+        .window_icon_red {
+            background: red;
+            width: 10px;
+            height: 10px;
+            position: absolute;
+            top: 3px;
+            right: 20px;
+            border: solid black 1px;
+        }
+        .window_icon_blue {
+            background: blue;
+            width: 9px;
+            height: 10px;
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            border-top: solid black 1px;
+            border-bottom: solid black 1px;
+            border-right: solid black 2px;
+            border-left: solid black 1px;
+        }
+        .window_icon_green {
+            background: green;
+            width: 10px;
+            height: 10px;
+            position: absolute;
+            top: 3px;
+            right: 8px;
+            border: solid black 0.5px;
+        }
+        .window_icon_yellow {
+            background: yellow;
+            width: 10px;
+            height: 10px;
+            position: absolute;
+            top: 15px;
+            right: 8px;
+            border: solid black 0.5px;
         }
 
         .title {
@@ -124,6 +341,14 @@
         .bold {
             text-decoration: none;
             font-weight: bold;
+        }
+
+        .xx-small {
+            font-size: xx-small;
+        }
+
+        .x-small {
+            font-size: x-small;
         }
 
         .small {
@@ -209,6 +434,14 @@
             right: 0px;
             z-index: 1;
         }
+        .backcolor_save {
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 212px;
+            left: 0px;
+            z-index: 1;
+        }
 
         a.start_button {
             margin-top: 0px;
@@ -230,6 +463,7 @@
             visibility: hidden;
         }
         .finish {
+            background: darkgray;
             width: 135px;
             height: 25px;
             position: absolute;
@@ -247,12 +481,6 @@
             visibility: hidden;
         }
         .menu_bluebar {
-            background: darkblue;
-            width: 100%;
-            height: 25px;
-            position: absolute;
-        }
-        .menu_bluebar2 {
             background: darkblue;
             width: 100%;
             height: 25px;
@@ -335,6 +563,61 @@
             border-right: solid 2px black;
         }
 
+        .controlpanel_text {
+            font-size: small;
+            margin-left: 10px;
+            width: 50px;
+            height: 15px;
+            position: absolute;
+            top: 90px;
+            left: 15px;
+        }
+        .controlpanel_icon {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 5px;
+            left: -3px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .controlpanel_icon2 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 40px;
+            left: 5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .app_icon {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 30px;
+            left: -5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .app_icon2 {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 55px;
+            left: -5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
         .test1 {
             margin-left: 10px;
             margin-bottom: 50px;
@@ -396,14 +679,23 @@
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
-
-        .border {
+        .button_calc {
+            color: black;
+            margin-top: 5px;
+            margin-left: 10px;
+            background: darkgray;
+            width: 35px;
+            height: 30px;
+            position: relative;
+            top: 20px;
+            left: 0px;
             border-top: solid 2px white;
             border-left: solid 2px white;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
-        .border2 {
+
+        .border {
             border-top: solid 2px white;
             border-left: solid 2px white;
             border-bottom: solid 2px black;
@@ -450,7 +742,7 @@
 
         .program_menu {
             background: darkgray;
-            width: 100px;
+            width: 130px;
             height: 50px;
             position: absolute;
             top: 483px;
@@ -467,10 +759,10 @@
 
         .app_menu {
             background: darkgray;
-            width: 100px;
-            height: 50px;
+            width: 130px;
+            height: 80px;
             position: absolute;
-            top: 483px;
+            top: 453px;
             left: 145px;
             visibility: hidden;
         }
@@ -481,10 +773,17 @@
             left: 30px;
             border: none;
         }
+        .appbutton2 {
+            background: darkgray;
+            position: absolute;
+            top: 55px;
+            left: 30px;
+            border: none;
+        }
 
         .setting_menu {
             background: darkgray;
-            width: 100px;
+            width: 130px;
             height: 50px;
             position: absolute;
             top: 537px;
@@ -499,39 +798,289 @@
             border: none;
         }
 
-        .app_memo {
-            background: gray;
-            width: 600px;
-            height: 100px;
-            top: 250px;
-            position: absolute;
-            left: 480px;
+        .controlpanel {
             visibility: hidden;
         }
+        .controlpanel_window {
+            background: darkgray;
+            width: 600px;
+            height: 400px;
+            top: 50px;
+            position: absolute;
+            left: 180px;
+            z-index: 3;
+        }
+        .controlpanel_white {
+            background: white;
+            width: 580px;
+            height: 350px;
+            top: 35px;
+            position: absolute;
+            left: 7px;
+        }
+
+        .app_memo {
+            background: darkgray;
+            width: 600px;
+            height: 300px;
+            top: 150px;
+            position: absolute;
+            left: 180px;
+            visibility: hidden;
+        }
+        .app_calc {
+            background: darkgray;
+            width: 300px;
+            height: 220px;
+            top: 150px;
+            position: absolute;
+            left: 180px;
+            visibility: hidden;
+        }
+        .textcalc {
+            margin-left: 10px;
+            font-size: large;
+            border-radius: 0;
+            width: 80%;
+            height: 30px;
+            position: absolute;
+            top: 32px;
+            border-radius: 0;
+        }
+
         textarea {
-            width: 90%;
+            font-size: x-large;
+            width: 585px;
+            height: 238px;
+            position: absolute;
+            top: 55px;
+            right: 5px;
+            border-radius: 0;
+        }
+        .memo_button_save {
+            background: darkgray;
+            border-radius: 0;
+            border: none;
+            position: absolute;
+            top: 30px;
+            left: 50px;
+        }
+        .memo_button_load {
+            background: darkgray;
+            border-radius: 0;
+            border: none;
+            position: absolute;
+            top: 30px;
+            left: 10px;
+        }
+        .memo_button_clear {
+            background: darkgray;
+            border-radius: 0;
+            border: none;
+            position: absolute;
+            top: 30px;
+            left: 90px;
         }
         
     @media screen and (max-width: 768px){
+        .screenbutton {
+            background: darkgray;
+            width: 80px;
+            height: 40px;
+            position: absolute;
+            top: 320px;
+            left: 250px;
+            z-index: 101;
+        }
+
+        .screentext {
+            font-size: large;
+            color: black;
+            position: absolute;
+            top: 330px;
+            left: 70px;
+            z-index: 101;
+        }
+        .screencolor_blue {
+            background-color: skyblue;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            z-index: 100;
+        }
+        .screencolor_blue2 {
+            background-color: #6495ed;
+            width: 100%;
+            height: 15%;
+            position: absolute;
+            z-index: 101;
+        }
+        .screencolor_blue3 {
+            background-color: #6495ed;
+            width: 100%;
+            height: 15%;
+            position: absolute;
+            bottom: 0px;
+            z-index: 101;
+        }
+
+        .popup_window {
+            background: darkgray;
+            width: 250px;
+            height: 300px;
+            top: 150px;
+            position: absolute;
+            left: 80px;
+            z-index: 10;
+        }
+        .popup_window_white {
+            background: white;
+            width: 238px;
+            height: 230px;
+            position: absolute;
+            top: 60px;
+            left: 5px;
+        }
+        .popup_window_text {
+            font-size: large;
+            position: absolute;
+            top: 35px;
+            left: 20px;
+        }
+        .popup_window_text2 {
+            font-size: x-small;
+            position: absolute;
+            top: 65px;
+            left: 10px;
+        }
+
         .app_memo {
             background: gray;
-            width: 230px;
-            height: 100px;
-            top: 250px;
+            width: 280px;
+            height: 300px;
+            top: 170px;
             position: absolute;
-            left: 100px;
+            left: 80px;
             visibility: hidden;
         }
+        .app_calc {
+            background: gray;
+            width: 240px;
+            height: 200px;
+            top: 170px;
+            position: absolute;
+            left: 80px;
+            visibility: hidden;
+        }
+        .button_calc {
+            margin: none;
+            color: black;
+            background: darkgray;
+            width: 30px;
+            height: 25px;
+            position: relative;
+            top: 20px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
         textarea {
-            width: 90%;
+            border-radius: 0;
+            width: 265px;
+            height: 238px;
+            position: absolute;
+            top: 55px;
+            right: 5px;
+        }
+
+        .controlpanel {
+            visibility: hidden;
+        }
+
+        .controlpanel_window {
+            background: darkgray;
+            width: 250px;
+            height: 300px;
+            top: 100px;
+            position: absolute;
+            left: 100px;
+        }
+        .controlpanel_white {
+            background: white;
+            width: 230px;
+            height: 250px;
+            top: 35px;
+            position: absolute;
+            left: 7px;
+        }
+        .controlpanel_text {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 50px;
+            height: 15px;
+            position: absolute;
+            top: 75px;
+            left: 10px;
+        }
+        .controlpanel_icon {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 5px;
+            left: -3px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .controlpanel_icon2 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 40px;
+            left: 5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
         }
 }
 
     </style>
     <script text="javascript">
+     window.addEventListener('load', function() {
+            if ( !sessionStorage.getItem('disp_popup') ) {
+                sessionStorage.setItem('disp_popup', 'on');
+
+                let popup = document.getElementsByClassName('popupwrap');
+                popup[0].classList.add('active');
+            }
+        });
+
+        window.addEventListener('load', function() {
+            if ( !sessionStorage.getItem('disp_screen') ) {
+                sessionStorage.setItem('disp_screen', 'on');
+
+                let screen = document.getElementsByClassName('screen');
+                screen[0].classList.add('active');
+            }
+        });
+
+        function screen_open() {
+            let screen = document.getElementsByClassName('screen');
+            screen[0].classList.remove('active');
+        }
+        function screen_close() {
+            let screen = document.getElementsByClassName('screen');
+            screen[0].classList.add('active');
+        }
+
+        const test = 'hello';
     // 読込
     function load() {
-        var MemoData = "";
+        let MemoData = "";
         if(!localStorage.getItem('MemoData')) {
             MemoData = "メモは登録されていません。";
         } else {
@@ -541,9 +1090,36 @@
     }
     // 保存
     function save() {
-        var MemoData = document.form1.Memo.value;
+        let MemoData = document.form1.Memo.value;
         localStorage.setItem('MemoData', MemoData);
     }
+
+    document.getElementById('cleartextbtn').addEventListener('click',function (){
+        document.getElementsByClassName("Memo")[0].value = '';
+    });
+
+
+    function update( _v ) // input tag を更新する関数
+    {
+        document.querySelector( ".calc" ).value = _v
+    }
+
+    function append( _v ) // 数字ボタンが押されたので数字を後ろに追加する
+    {
+        document.querySelector( ".calc" ).value += _v
+    }
+
+    function calc() // 「＝」ボタンが押されたので計算する
+    {
+        const v = document.querySelector( ".calc" ).value
+        try {
+            const f = new Function( 'return ' + v )
+            update( f().toString() )
+        } catch( _error ) {
+            update( _error ) // 計算に失敗した場合は、そのエラーの内容を表示する
+        }
+    }
+
 
      function Credit() {
         const Credit = document.querySelector(".Credit");
@@ -591,6 +1167,9 @@
     function backcolor_green(){
         document.getElementById("backcolor").style.backgroundColor = "green";
     }
+    function backcolor_purple(){
+        document.getElementById("backcolor").style.backgroundColor = "purple";
+    }
     function backcolor_black(){
         document.getElementById("backcolor").style.backgroundColor = "black";
     }
@@ -615,7 +1194,24 @@
         start_menu.style.visibility = "visible";
         const contentbar = document.querySelector(".contentbar");
         contentbar.style.visibility = "hidden";
+        const backcolor_menu = document.querySelector(".backcolor_menu");
+        backcolor_menu.style.visibility = "hidden";
     }
+
+    function popupwindow_close(){
+        const popupwrap = document.querySelector(".popupwrap");
+        popupwrap.style.visibility = "hidden";
+    }
+
+    function controlpanel_open(){
+        const controlpanel = document.querySelector(".controlpanel");
+        controlpanel.style.visibility = "visible";
+    }
+    function controlpanel_close(){
+        const controlpanel = document.querySelector(".controlpanel");
+        controlpanel.style.visibility = "hidden";
+    }
+
 
     function backcolormenu_close(){
         const backcolor_menu = document.querySelector(".backcolor_menu");
@@ -644,6 +1240,16 @@
     function appmenu_close(){
         const app_menu = document.querySelector(".app_menu");
         app_menu.style.visibility = "hidden";
+    }
+
+    function calc_open(){
+        const app_calc = document.querySelector(".app_calc");
+        app_calc.style.visibility = "visible";
+    }
+
+    function calc_close(){
+        const app_calc = document.querySelector(".app_calc");
+        app_calc.style.visibility = "hidden";
     }
 
     function settingmenu_open(){
