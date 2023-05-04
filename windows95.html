@@ -71,6 +71,7 @@
         <button class="blacktext backcolor_button border" onclick="backcolor_yellow()">黄</button>
         <button class="blacktext backcolor_button border" onclick="backcolor_green()">緑</button>
         <button class="blacktext backcolor_button border" onclick="backcolor_purple()">紫</button>
+        <button class="blacktext backcolor_button border" onclick="backcolor_deepskyblue()">水色</button>
         <button class="blacktext backcolor_button border" onclick="backcolor_black()">黒</button>
         <button class="blacktext backcolor_reset border" onclick="backcolor_reset()">reset</button>
     </div>
@@ -132,8 +133,8 @@
         <button class="calc button_calc" onclick="append( '.' )" >.</button>
         <button class="calc button_calc" onclick="append( '+' )" >+</button>
         <button class="calc button_calc" onclick="append( '-' )" >-</button>
-        <button class="calc button_calc" onclick="append( '×' )" >×</button>
-        <button class="calc button_calc" onclick="append( '÷' )" >÷</button><br />
+        <button class="calc button_calc" onclick="append( '*' )" >*</button>
+        <button class="calc button_calc" onclick="append( '/' )" >/</button><br />
         <button class="calc button_calc" onclick="append( '**' )" >^</button>
         <button class="calc button_calc" onclick="append( '**0.5' )" >√</button>
         
@@ -1169,6 +1170,9 @@
     }
     function backcolor_purple(){
         document.getElementById("backcolor").style.backgroundColor = "purple";
+    }
+    function backcolor_deepskyblue(){
+        document.getElementById("backcolor").style.backgroundColor = "#00bfff";
     }
     function backcolor_black(){
         document.getElementById("backcolor").style.backgroundColor = "black";
