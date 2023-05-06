@@ -318,6 +318,7 @@
         }
 
         .taskbar {
+            display: block;
             background: darkgray;
             width: 180px;
             height: 45px;
@@ -328,7 +329,6 @@
             border-right: solid 2px black;
             border-left: solid 2px white;
             border-bottom: solid 2px black;
-            visibility: visible;
         }
         .taskbar_blue {
             background: darkblue;
@@ -1114,7 +1114,7 @@
         const start_menu = document.querySelector(".start_menu");
         start_menu.style.visibility = "hidden";
         const taskbar = document.querySelector(".taskbar");
-        taskbar.style.visibility = "visible";
+        taskbar.style.display = "block";
         const program_menu = document.querySelector(".program_menu");
         program_menu.style.visibility = "hidden";
         const app_menu = document.querySelector(".app_menu");
@@ -1126,9 +1126,9 @@
         const start_menu = document.querySelector(".start_menu");
         start_menu.style.visibility = "visible";
         const taskbar = document.querySelector(".taskbar");
-        taskbar.style.visibility = "hidden";
+        taskbar.style.display = "none";
         const backcolor_menu = document.querySelector(".backcolor_menu");
-        backcolor_menu.style.visibility = "hidden";
+        backcolor_menu.style.display = "none";
     }
 
     function popupwindow_close(){
