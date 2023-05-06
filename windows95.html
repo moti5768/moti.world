@@ -8,29 +8,19 @@
 </head>
 <body id="backcolor">
     <div class="screen">
-        <span class="screencolor_blue"></span>
-        <span class="screencolor_blue2"></span>
-        <span class="screencolor_blue3"></span>
-        <p class="screentext xx-large">Windows95&nbsp;beta1.0</p>
-        <button class="screenbutton border" onclick="screen_open()">スタート</button>
+        <span class="screencolor"></span>
+        <p class="screentext xx-large white">Windows95&nbsp;beta1.1</p>
+        <button class="screenbutton" onclick="screen_open()">スタート</button>
     </div>
 
-    <div class="popupwrap">
-        <span class="popup_window border">
-        <p class="popup_window_text">Windows<span class="white">95</span>　へようこそ</p>
-        <span class="popup_window_white border"></span>
-        <span class="menu_bluebar white">ようこそ</span>
-        <p class="popup_window_text2">Windows95&nbsp;beta1.0&nbsp;へようこそ<br>
-        このアップデートには新機能の追加とバグ修正が含まれています。<br>
+    <div class="popupwrap popup_window border">
+        <p class="popup_window_text">Windows<span class="white">95</span>&nbsp;へようこそ</p>
+        <div class="popup_window_white border"></div>
+        <span class="menu_bluebar">ようこそ</span>
+        <p class="popup_window_text2">Windows95&nbsp;beta1.1へようこそ<br>
+        このアップデートにはパフォーマンスの向上と修正が含まれています。<br>
         <br>
-        ・電卓の追加<br>
-        ・メモ帳のデザイン変更<br>
-        ・メモ帳にクリア機能を追加<br>
-        ・背景色に紫色を追加<br>
-        ・コントロールパネルの追加<br>
-        ・おモチのサイトはサブページとなり、<br>
-        windows95がサブページからメインページに変わりました。<br>
-        ・起動画面　終了画面の追加
+        ・様々なバグ修正<br>
         </p>
         <button class="blacktext closebutton border" onclick="popupwindow_close()">X</button>
     </div>
@@ -38,12 +28,9 @@
     </div>
     <div class="title">
         <span class="titleline"></span>
-        <span class="window_icon_red"></span>
-        <span class="window_icon_blue"></span>
-        <span class="window_icon_green"></span>
-        <span class="window_icon_yellow"></span>
+
         <p class="bold white">Windows95　　</p>
-        <p class="bold white medium subtitle">beta&nbsp;1.0</p>
+        <p class="bold white medium subtitle">beta&nbsp;1.1</p>
     </div>
 
     <div class="start_menu border">
@@ -55,6 +42,7 @@
     </div>
 
     <div class="content">
+        <div class="content-icons">
     <a class="icon1" href="index.html"></a>
     <a class="test1 white" href="index.html">オモチのサイト</a>
     <a class="icon2" onclick="Credit()"></a>
@@ -62,9 +50,10 @@
     <a href="#" class="icon3"></a>
     <a href="#" class="test3 white">test3 text</a>
     </div>
+    </div>
 
     <div class="backcolor_menu border">
-        <span class="menu_bluebar white">背景色の変更</span>
+        <span class="menu_bluebar">背景色の変更</span>
         <button class="blacktext closebutton border" onclick="backcolormenu_close()">X</button>
         <button class="blacktext backcolor_button border" onclick="backcolor_darkblue()">青</button>
         <button class="blacktext backcolor_button border" onclick="backcolor_red()">赤</button>
@@ -75,8 +64,8 @@
         <button class="blacktext backcolor_reset border" onclick="backcolor_reset()">reset</button>
     </div>
 
-    <div class="contentbar">
-        <span class="contentbar_blue"></span>
+    <div class="taskbar">
+        <span class="taskbar_blue"></span>
         <button class="blacktext bar_button" onclick="backcolormenu_open(),popupwindow_close()">C</button>
         <button class="blacktext bar_button">T</button>
         <button class="blacktext bar_button">T</button>
@@ -85,14 +74,14 @@
     </div>
 
     <div class="program_menu border">
-        <span class="menu_bluebar white">プログラム</span>
+        <span class="menu_bluebar">プログラム</span>
         <button class="blacktext closebutton border" onclick="programmenu_close()">X</button>
         <button class="blacktext accessorybutton" onclick="appmenu_open()">アクセサリ</button>
         <span class="accessory_icon"></span>
     </div>
 
     <div class="app_menu border">
-        <span class="menu_bluebar white">アプリ</span>
+        <span class="menu_bluebar">アプリ</span>
         <button class="blacktext closebutton border" onclick="appmenu_close()">X</button>
         <button class="blacktext appbutton" onclick="memo_open(),startmenu_close()">メモ帳</button>
         <button class="blacktext appbutton2" onclick="calc_open(),startmenu_close()">電卓</button>
@@ -101,7 +90,7 @@
     </div>
 
     <div class="app_memo border">
-        <p class="menu_bluebar white">無題-メモ帳</p>
+        <p class="menu_bluebar">無題-メモ帳</p>
         <form name="form1">
             <textarea name="Memo" class="Memo border"></textarea>
         </form>
@@ -114,11 +103,10 @@
     </div>
 
     <div class="app_calc border">
-            <span class="menu_bluebar white">電卓</span>
+            <span class="menu_bluebar">電卓</span>
             <p class="white">　</p>
         <input class="calc textcalc" style="text-align: right;"></input><br>
         <button class="closebutton blacktext border" onclick="calc_close()">X</button>
-        
         <button class="calc button_calc" onclick="append( '1' )" >1</button>
         <button class="calc button_calc" onclick="append( '2' )" >2</button>
         <button class="calc button_calc" onclick="append( '3' )" >3</button>
@@ -136,23 +124,21 @@
         <button class="calc button_calc" onclick="append( '/' )" >/</button><br />
         <button class="calc button_calc" onclick="append( '**' )" >^</button>
         <button class="calc button_calc" onclick="append( '**0.5' )" >√</button>
-        
         <button class="calc button_calc" onclick="calc()">=</button>
-
         <button class="calc button_calc" onclick="update( '' ) " >CLR</button>
     </div>
 
 
     <div class="setting_menu border">
-        <span class="menu_bluebar white">設定</span>
+        <span class="menu_bluebar">設定</span>
         <button class="blacktext closebutton border" onclick="settingmenu_close()">X</button>
-        <button class="blacktext devicebutton x-small" onclick="controlpanel_open()">コントロールパネル</button>
+        <button class="blacktext devicebutton x-small" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
         <span class="device_icon"></span>
     </div>
 
     <div class="controlpanel">
         <div class="controlpanel_window border">
-        <span class="menu_bluebar white">　　コントロールパネル</span>
+        <span class="menu_bluebar">　　コントロールパネル</span>
         <span class="controlpanel_white border"></span>
         <p class="controlpanel_text">テスト</p>
         <span class="controlpanel_icon"></span>
@@ -175,7 +161,7 @@
     </div>
 
     <div class="Credit">
-        <p class="bigtext white bold Credit_text">Windows95 beta1.0</p>
+        <p class="bigtext bold Credit_text">Windows95 beta1.1</p>
     </div>
 
     <style>
@@ -201,12 +187,15 @@
         }
 
         .screenbutton {
-            background: darkgray;
+            background-color: black;
+            color: white;
             width: 150px;
             height: 50px;
             position: absolute;
             top: 300px;
             left: 700px;
+            border: solid 2px white;
+            border-radius: 0;
             z-index: 101;
         }
 
@@ -217,27 +206,12 @@
             left: 300px;
             z-index: 101;
         }
-        .screencolor_blue {
-            background-color: skyblue;
+        .screencolor {
+            background-color: black;
             width: 100%;
             height: 100%;
             position: absolute;
             z-index: 100;
-        }
-        .screencolor_blue2 {
-            background-color: #6495ed;
-            width: 100%;
-            height: 15%;
-            position: absolute;
-            z-index: 101;
-        }
-        .screencolor_blue3 {
-            background-color: #6495ed;
-            width: 100%;
-            height: 15%;
-            position: absolute;
-            bottom: 0px;
-            z-index: 101;
         }
 
         .popupwrap {
@@ -252,7 +226,7 @@
             width: 550px;
             height: 350px;
             top: 150px;
-            position: absolute;
+            position: relative;
             left: 180px;
             z-index: 10;
         }
@@ -275,46 +249,6 @@
             position: absolute;
             top: 80px;
             left: 30px;
-        }
-
-        .window_icon_red {
-            background: red;
-            width: 10px;
-            height: 10px;
-            position: absolute;
-            top: 3px;
-            right: 20px;
-            border: solid black 1px;
-        }
-        .window_icon_blue {
-            background: blue;
-            width: 9px;
-            height: 10px;
-            position: absolute;
-            top: 15px;
-            right: 20px;
-            border-top: solid black 1px;
-            border-bottom: solid black 1px;
-            border-right: solid black 2px;
-            border-left: solid black 1px;
-        }
-        .window_icon_green {
-            background: green;
-            width: 10px;
-            height: 10px;
-            position: absolute;
-            top: 3px;
-            right: 8px;
-            border: solid black 0.5px;
-        }
-        .window_icon_yellow {
-            background: yellow;
-            width: 10px;
-            height: 10px;
-            position: absolute;
-            top: 15px;
-            right: 8px;
-            border: solid black 0.5px;
         }
 
         .title {
@@ -383,7 +317,7 @@
             color: black;
         }
 
-        .contentbar {
+        .taskbar {
             background: darkgray;
             width: 180px;
             height: 45px;
@@ -396,7 +330,7 @@
             border-bottom: solid 2px black;
             visibility: visible;
         }
-        .contentbar_blue {
+        .taskbar_blue {
             background: darkblue;
             width: 100%;
             height: 10px;
@@ -472,16 +406,17 @@
         }
 
         .backcolor_menu {
+            display: none;
             background: gray;
             width: 150px;
             height: 250px;
             position: absolute;
             top: 320px;
             right: 31px;
-            visibility: hidden;
         }
         .menu_bluebar {
             background: darkblue;
+            color: white;
             width: 100%;
             height: 25px;
             position: absolute;
@@ -508,13 +443,22 @@
             border-right: solid 2px black;
         }
 
+        .content {
+            position: relative;
+            top: -400px;
+        }
+        .content-icons {
+            position: relative;
+            width: 200px;
+            top: 15px;
+        }
         .icon1 {
             margin-left: 10px;
             margin-top: 45px;
             background: khaki;
             width: 65px;
             height: 50px;
-            position: absolute;
+            position: absolute; 
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
@@ -537,6 +481,23 @@
             position: absolute;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
+        }
+
+        .test1 {
+            margin-left: 10px;
+            margin-bottom: 50px;
+            position: absolute;
+            top: 100px;
+        }
+        .test2 {
+            margin-left: 10px;
+            position: absolute;
+            top: 200px;
+        }
+        .test3 {
+            margin-left: 10px;
+            position: absolute;
+            top: 300px;
         }
 
         .accessory_icon {
@@ -616,23 +577,6 @@
             left: -5px;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
-        }
-
-        .test1 {
-            margin-left: 10px;
-            margin-bottom: 50px;
-            position: absolute;
-            top: 100px;
-        }
-        .test2 {
-            margin-left: 10px;
-            position: absolute;
-            top: 200px;
-        }
-        .test3 {
-            margin-left: 10px;
-            position: absolute;
-            top: 300px;
         }
 
         span.timer {
@@ -729,9 +673,11 @@
 
         .Credit {
             background-color: black;
+            color: white;
             width: 100%;
             height: 100%;
             position: absolute;
+            top: 0px;
             visibility: hidden;
             z-index: 10;
         }
@@ -884,7 +830,6 @@
         
     @media screen and (max-width: 768px){
         .screenbutton {
-            background: darkgray;
             width: 80px;
             height: 40px;
             position: absolute;
@@ -892,36 +837,20 @@
             left: 250px;
             z-index: 101;
         }
-
         .screentext {
             font-size: large;
-            color: black;
+            color: white;
             position: absolute;
             top: 330px;
             left: 70px;
             z-index: 101;
         }
-        .screencolor_blue {
-            background-color: skyblue;
+        .screencolor {
+            background-color: black;
             width: 100%;
             height: 100%;
             position: absolute;
             z-index: 100;
-        }
-        .screencolor_blue2 {
-            background-color: #6495ed;
-            width: 100%;
-            height: 15%;
-            position: absolute;
-            z-index: 101;
-        }
-        .screencolor_blue3 {
-            background-color: #6495ed;
-            width: 100%;
-            height: 15%;
-            position: absolute;
-            bottom: 0px;
-            z-index: 101;
         }
 
         .popup_window {
@@ -1180,8 +1109,8 @@
     function startmenu_close(){
         const start_menu = document.querySelector(".start_menu");
         start_menu.style.visibility = "hidden";
-        const contentbar = document.querySelector(".contentbar");
-        contentbar.style.visibility = "visible";
+        const taskbar = document.querySelector(".taskbar");
+        taskbar.style.visibility = "visible";
         const program_menu = document.querySelector(".program_menu");
         program_menu.style.visibility = "hidden";
         const app_menu = document.querySelector(".app_menu");
@@ -1192,8 +1121,8 @@
     function startmenu_open(){
         const start_menu = document.querySelector(".start_menu");
         start_menu.style.visibility = "visible";
-        const contentbar = document.querySelector(".contentbar");
-        contentbar.style.visibility = "hidden";
+        const taskbar = document.querySelector(".taskbar");
+        taskbar.style.visibility = "hidden";
         const backcolor_menu = document.querySelector(".backcolor_menu");
         backcolor_menu.style.visibility = "hidden";
     }
@@ -1215,11 +1144,11 @@
 
     function backcolormenu_close(){
         const backcolor_menu = document.querySelector(".backcolor_menu");
-        backcolor_menu.style.visibility = "hidden";
+        backcolor_menu.style.display = "none";
     }
     function backcolormenu_open(){
         const backcolor_menu = document.querySelector(".backcolor_menu");
-        backcolor_menu.style.visibility = "visible";
+        backcolor_menu.style.display = "block";
     }
 
     function programmenu_close(){
