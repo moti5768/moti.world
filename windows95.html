@@ -38,7 +38,10 @@
     </div>
     <div class="title">
         <span class="titleline"></span>
-        <div class="microsoft_logo"></div>
+        <span class="window_icon_red"></span>
+        <span class="window_icon_blue"></span>
+        <span class="window_icon_green"></span>
+        <span class="window_icon_yellow"></span>
         <p class="bold white">Windows95　　</p>
         <p class="bold white medium subtitle">beta&nbsp;1.0</p>
     </div>
@@ -68,7 +71,6 @@
         <button class="blacktext backcolor_button border" onclick="backcolor_yellow()">黄</button>
         <button class="blacktext backcolor_button border" onclick="backcolor_green()">緑</button>
         <button class="blacktext backcolor_button border" onclick="backcolor_purple()">紫</button>
-        <button class="blacktext backcolor_button border" onclick="backcolor_deepskyblue()">水色</button>
         <button class="blacktext backcolor_button border" onclick="backcolor_black()">黒</button>
         <button class="blacktext backcolor_reset border" onclick="backcolor_reset()">reset</button>
     </div>
@@ -239,7 +241,7 @@
         }
 
         .popupwrap {
-            visibility: hidden;
+            visibility: visible;
         }
         .popupwrap.active {
             visibility: visible;
@@ -275,17 +277,36 @@
             left: 30px;
         }
 
-        .microsoft_logo {
-    background-color: #f25022;
-    box-shadow: 
-            40px 0 0 0 #7fba00,
-            0 40px 0 0 #00a4ef,
-            40px 40px 0 0 #ffb900;
-    height: 20px;
-    width: 20px;
+        .window_icon_red {
+            background: red;
+            width: 10px;
+            height: 10px;
             position: absolute;
             top: 3px;
-}
+            right: 20px;
+            border: solid black 1px;
+        }
+        .window_icon_blue {
+            background: blue;
+            width: 9px;
+            height: 10px;
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            border-top: solid black 1px;
+            border-bottom: solid black 1px;
+            border-right: solid black 2px;
+            border-left: solid black 1px;
+        }
+        .window_icon_green {
+            background: green;
+            width: 10px;
+            height: 10px;
+            position: absolute;
+            top: 3px;
+            right: 8px;
+            border: solid black 0.5px;
+        }
         .window_icon_yellow {
             background: yellow;
             width: 10px;
@@ -1148,9 +1169,6 @@
     }
     function backcolor_purple(){
         document.getElementById("backcolor").style.backgroundColor = "purple";
-    }
-    function backcolor_deepskyblue(){
-        document.getElementById("backcolor").style.backgroundColor = "#00bfff";
     }
     function backcolor_black(){
         document.getElementById("backcolor").style.backgroundColor = "black";
