@@ -1136,7 +1136,7 @@
     function popupwindow_close(){
         const popupwrap = document.querySelector(".popupwrap");
         popupwrap.style.visibility = "hidden";
-        const popupwrap = document.getElementsByClassName('popupwrap');
+        let popupwrap = document.getElementsByClassName('popupwrap');
         popupwrap[0].classList.remove('active');
     }
 
