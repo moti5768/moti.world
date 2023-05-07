@@ -1128,15 +1128,13 @@
         backcolor_menu.style.display = "none";
     }
 
-    function popup_open() {
-            let popupwrap = document.getElementsByClassName('popupwrap');
-            popupwrap[0].classList.add('active');
-        }
+    function popupwindow_open(){
+        const popupwrap = document.getElementsByClassName('popupwrap');
+        popupwrap[0].classList.add('active');
+    }
 
     function popupwindow_close(){
-        const popupwrap = document.querySelector(".popupwrap");
-        popupwrap.style.visibility = "hidden";
-        let popupwrap = document.getElementsByClassName('popupwrap');
+        const popupwrap = document.getElementsByClassName('popupwrap');
         popupwrap[0].classList.remove('active');
     }
 
