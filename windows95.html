@@ -1136,6 +1136,8 @@
     function popupwindow_close(){
         const popupwrap = document.querySelector(".popupwrap");
         popupwrap.style.visibility = "hidden";
+　　　　　let popup = document.getElementsByClassName('popupwrap');
+        popup[0].classList.remove('active');
     }
 
     function controlpanel_open(){
