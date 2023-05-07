@@ -998,11 +998,6 @@
             }
         });
 
-        function popup_open() {
-            let popup = document.getElementsByClassName('popupwrap');
-            popup[0].classList.add('active');
-        }
-
         function screen_open() {
             let screen = document.getElementsByClassName('screen');
             screen[0].classList.remove('active');
@@ -1133,11 +1128,16 @@
         backcolor_menu.style.display = "none";
     }
 
+    function popup_open() {
+            let popupwrap = document.getElementsByClassName('popupwrap');
+            popupwrap[0].classList.add('active');
+        }
+
     function popupwindow_close(){
         const popupwrap = document.querySelector(".popupwrap");
         popupwrap.style.visibility = "hidden";
-　　　　　let popup = document.getElementsByClassName('popupwrap');
-        popup[0].classList.remove('active');
+        const popupwrap = document.getElementsByClassName('popupwrap');
+        popupwrap[0].classList.remove('active');
     }
 
     function controlpanel_open(){
