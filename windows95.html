@@ -47,8 +47,8 @@
     <a class="test1 white" href="index.html">オモチのサイト</a>
     <a class="icon2" onclick="Credit()"></a>
     <a class="test2 white" onclick="Credit()">クレジット</a>
-    <a href="#" class="icon3"></a>
-    <a href="#" class="test3 white">test3 text</a>
+    <a class="icon3" onclick="popup_open()"></a>
+    <a class="test3 white" onclick="popup_open()">ようこそ</a>
     </div>
     </div>
 
@@ -997,6 +997,11 @@
                 screen[0].classList.add('active');
             }
         });
+
+        function popup_open() {
+            let popup = document.getElementsByClassName('popupwrap');
+            popup[0].classList.add('active');
+        }
 
         function screen_open() {
             let screen = document.getElementsByClassName('screen');
