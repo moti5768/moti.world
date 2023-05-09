@@ -138,7 +138,7 @@
         <div class="menu_bluebar">コマンド入力</div>
         <button class="blacktext closebutton border" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
-    <form method="get" name="mail_form">
+    <form method="get" name="mail_form" onsubmit="return false;">
         <input type="text" class="textcommand_area border" name="mail" placeholder="command">
         <input type="submit" class="textcommand_area border" value="送信" onclick="check()">
     </form>
@@ -1240,7 +1240,7 @@
         setTimeout(function() {
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.remove('active');
-            document.getElementById("backcolor").style.backgroundColor = "#008080";
+            document.getElementById("backcolor").style.backgroundColor = "";
 
         setTimeout(function() {
             const screen_open = document.querySelector(".Windows95_group");
@@ -1561,10 +1561,10 @@
     function check(){
         if (mail_form.mail.value === "test"){
             //条件に一致する場合(メールアドレスが空の場合)
-            alert('Yes!!!!!');
+            alert('コマンドが実行されました！');
         }else{
             //条件に一致しない場合(メールアドレスが入力されている場合)
-            alert('no! fucking you!!!!!');
+            alert('コマンドが正しくありません！');
         }
     }
 
