@@ -9,7 +9,7 @@
 <body id="backcolor">
     <div class="screen">
         <span class="screencolor"></span>
-        <p class="screentext xx-large white">Windows95&nbsp;beta2.0</p>
+        <p class="screentext xx-large white">Windows95&nbsp;beta2.0&nbsp;test</p>
         <button class="screenbutton" onclick="screen_start()">スタート</button>
     </div>
 
@@ -76,7 +76,7 @@
     <div class="css_menu border">
         <span class="menu_bluebar">CSSの削除</span>
         <button class="css_box border" onclick="stylebox()">CSSを削除する</button>
-        <button class="blacktext closebutton border" onclick="cssmenu_close()">X</button>
+        <button class="closebutton border" onclick="cssmenu_close()">X</button>
     </div>
 
     <div class="backcolor_menu border">
@@ -590,6 +590,7 @@
         }
         .css_box {
             background: darkgray;
+            color: black;
             width: 100px;
             height: 30px;
             position: absolute;
@@ -857,6 +858,7 @@
         }
 
         .closebutton {
+            color: black;
             width: 25px;
             height: 25px;
             position: absolute;
@@ -1220,6 +1222,7 @@
         function screen_close() {
             let screen_close = document.getElementsByClassName('screen_close');
             screen_close[0].classList.add('active');
+            document.getElementById("backcolor").style.backgroundColor = "black";
             setTimeout(function() {
             let screen = document.getElementsByClassName('screen');
             screen[0].classList.add('active');
@@ -1237,6 +1240,7 @@
         setTimeout(function() {
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.remove('active');
+            document.getElementById("backcolor").style.backgroundColor = "#008080";
 
         setTimeout(function() {
             const screen_open = document.querySelector(".Windows95_group");
