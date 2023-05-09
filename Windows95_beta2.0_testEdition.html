@@ -86,15 +86,15 @@
 
         <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()"></input>
         <p class="backcolor_text">表示を2色にする。</p>
-        <button class="backcolor_button backbutton_white" onclick="backcolor_white()"></button>
         <button class="backcolor_button backbutton_black" onclick="backcolor_black()"></button>
+        <button class="backcolor_button backbutton_gray" onclick="backcolor_gray()"></button>
 
         <div class="colorbtn">
-        <button class="backcolor_button backbutton_gray" onclick="backcolor_gray()"></button>
         <button class="backcolor_button backbutton_silver" onclick="backcolor_silver()"></button>
         <button class="backcolor_button backbutton_blue" onclick="backcolor_darkblue()"></button>
         <button class="backcolor_button backbutton_lightskyblue" onclick="backcolor_lightskyblue()"></button>
         <button class="backcolor_button backbutton_red" onclick="backcolor_red()"></button>
+        <button class="backcolor_button backbutton_orange" onclick="backcolor_orange()"></button>
         <button class="backcolor_button backbutton_yellow" onclick="backcolor_yellow()"></button>
         <button class="backcolor_button backbutton_green" onclick="backcolor_green()"></button>
         <button class="backcolor_button backbutton_lime" onclick="backcolor_lime()"></button>
@@ -482,9 +482,6 @@
             left: 10px;
             bottom: 43px;
         }
-        .backbutton_white {
-            background: white;
-        }
         .backbutton_black {
             background: black;
         }
@@ -502,6 +499,9 @@
         }
         .backbutton_red {
             background: red;
+        }
+        .backbutton_orange {
+            background: orange;
         }
         .backbutton_yellow {
             background: yellow;
@@ -1363,9 +1363,6 @@
     }
 }
 
-    function backcolor_white(){
-        document.getElementById("backcolor").style.backgroundColor = "white";
-    }
     function backcolor_black(){
         document.getElementById("backcolor").style.backgroundColor = "black";
     }
@@ -1383,6 +1380,9 @@
     }
     function backcolor_red(){
         document.getElementById("backcolor").style.backgroundColor = "red";
+    }
+    function backcolor_orange(){
+        document.getElementById("backcolor").style.backgroundColor = "orange";
     }
     function backcolor_yellow(){
         document.getElementById("backcolor").style.backgroundColor = "yellow";
