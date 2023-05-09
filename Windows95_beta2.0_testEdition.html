@@ -1216,8 +1216,6 @@
             if (window.performance.navigation.type === 1) {
             const screen_open = document.querySelector(".Windows95_group");
             screen_open.style.display = "block";
-            const screenblack = document.querySelector(".screen");
-            screenblack.style.backgroundColor = "yellow";
             }
         }
 
@@ -1243,6 +1241,8 @@
         setTimeout(function() {
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.remove('active');
+            let screenblack = document.querySelector([".screen",".active"]);
+            screenblack.style.backgroundColor = "green";
             document.getElementById("backcolor").style.backgroundColor = "";
 
         setTimeout(function() {
@@ -1258,6 +1258,9 @@
 
                 let popup = document.getElementsByClassName('popupwrap');
                 popup[0].classList.add('active');
+
+                let screenblack = document.querySelector([".screen",".active"]);
+                screenblack.style.backgroundColor = "yellow";
             }
         });
 
