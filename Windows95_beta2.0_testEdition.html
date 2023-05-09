@@ -249,6 +249,7 @@
         }
         .screen.active {
             display: block;
+            background-color: black;
         }
 
         .screen_start {
@@ -1216,8 +1217,6 @@
             if (window.performance.navigation.type === 1) {
             const screen_open = document.querySelector(".Windows95_group");
             screen_open.style.display = "block";
-            let backblack = document.querySelector(['.screen','active']);
-            backblack.style.backgroundColor = "black";
             }
         }
 
