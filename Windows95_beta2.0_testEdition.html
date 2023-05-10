@@ -34,13 +34,14 @@
                 ・背景色変更画面の刷新<br>
                 ・背景色の変更から画面のプロパティへ名前変更<br>
                 ・背景色の種類を増やし、16色&nbsp;2色の切り替えができるようになりました。<br>
-                ・起動オプション画面のデザイン変更<br>
+                ・ウィンドウをタスクバーへ格納できるようになりました。(Xボタン横の一ボタンから可)<br>
                 ・ようこそ画面表示のファイル追加<br>
                 ・Windows終了時、起動したままのアプリが強制終了するようになりました。<br>
                 ・タスクバーにある各ブラウザボタンのデザイン変更<br>
                 ・CSS削除機能の追加(試験的)<br>
                 ・コマンド入力欄の追加(試験的)<br>
                 ・起動画面&nbsp;終了画面の追加<br>
+                ・新ファイルの追加<br>
                 ・その他バグ修正
                 </p>
         </div>
@@ -64,13 +65,15 @@
 
     <div class="content">
         <div class="content-icons">
-    <a class="icon1" href="index.html"></a>
-    <a class="test1 white" href="index.html">オモチのサイト</a>
-    <a class="icon2" onclick="Credit()"></a>
-    <a class="test2 white" onclick="Credit()">クレジット</a>
-    <a class="icon3" onclick="popupwindow_open()"></a>
-    <a class="test3 white" onclick="popupwindow_open()">ようこそ</a>
-    </div>
+            <a class="icon1" onclick="mycomputer_open(),popupwindow_close()"></a>
+            <a class="test1 white" onclick="mycomputer_open(),popupwindow_close()">マイコンピュータ</a>
+            <a class="icon2" onclick="Credit()"></a>
+            <a class="test2 white" onclick="Credit()">クレジット</a>
+            <a class="icon3" onclick="popupwindow_open()"></a>
+            <a class="test3 white" onclick="popupwindow_open()">ようこそ</a>
+            <a class="icon4" href="index.html"></a>
+            <a class="test4 white" href="index.html">オモチのサイト</a>
+        </div>
     </div>
 
     <div class="css_menu border">
@@ -140,7 +143,7 @@
         <div class="textcommand_area">
     <form method="get" name="mail_form" onsubmit="return false;">
         <input type="text" class="textcommand_area border" name="mail" placeholder="command">
-        <input type="submit" class="textcommand_area border" value="実行" onclick="check()">
+        <input type="submit" class="textcommand_area border" value="送信" onclick="check()">
     </form>
     </div>
     </div>
@@ -194,24 +197,47 @@
 
     <div class="controlpanel">
         <div class="controlpanel_window border">
-        <span class="menu_bluebar">　　コントロールパネル</span>
-        <span class="controlpanel_white border"></span>
-        <p class="controlpanel_text">テスト</p>
-        <span class="controlpanel_icon"></span>
-        <span class="controlpanel_icon2"></span>
-        <button class="blacktext closebutton border" onclick="controlpanel_close()">X</button>
+            <span class="menu_bluebar">　　コントロールパネル</span>
+            <span class="controlpanel_white border"></span>
+            <p class="controlpanel_text">テスト</p>
+            <span class="controlpanel_icon"></span>
+            <span class="controlpanel_icon2"></span>
+            <button class="blacktext closebutton border" onclick="task_content2_close(),controlpanel_close()">X</button>
+            <button class="blacktext taskbutton border" onclick="task_conent2_open(),controlpanel_close()">一</button>
+        </div>
     </div>
+
+    <div class="mycomputer">
+        <div class="mycomputer_window border">
+            <span class="menu_bluebar">　　マイコンピュータ</span>
+            <span class="mycomputer_white border"></span>
+            <span class="mycomputer_icon"></span>
+            <a class="mycomputer_text2" onclick="controlpanel_open(),mycomputer_close()">コントロールパネル</a>
+            <a class="mycomputer_icon2" onclick="controlpanel_open(),mycomputer_close()"></a>
+            <a class="mycomputer_text3" href="https://google.com">Google</a>
+            <a class="mycomputer_icon3" href="https://google.com"></a>
+            <a class="mycomputer_text4" href="https://yahoo.co.jp">Yahoo!</a>
+            <a class="mycomputer_icon4" href="https://yahoo.co.jp"></a>
+            <a class="mycomputer_text5" href="https://youtube.com">Youtube</a>
+            <a class="mycomputer_icon5" href="https://youtube.com"></a>
+            <button class="blacktext closebutton border" onclick="task_content1_close(),mycomputer_close()">X</button>
+            <button class="blacktext taskbutton border" onclick="task_conent1_open(),mycomputer_close()">一</button>
+        </div>
     </div>
 
     <div class="underbar">
         <a class="blacktext bottom bold start_button border" onclick="startmenu_open(),popupwindow_close()">スタート</a>
-        <span>　　　　</span>
-        <a class="blacktext bottom bold underbarcontent google" href="https://google.com">&nbsp;G&nbsp;</a>
-        <span></span>
-        <a class="blacktext bottom bold underbarcontent yahoo" href="https://yahoo.co.jp">&nbsp;Y!&nbsp;</a>
-        <span></span>
-        <a class="blacktext bottom bold underbarcontent youtube" href="https://youtube.com">&nbsp;Ytube&nbsp;</a>
-        <span></span>
+
+    <div class="task_content_border"></div>
+        <div class="task_content1">
+            <button class="task_button1" onclick="mycomputer_open(),task_content1_close()"></button>
+            <span class="task_icon1"></span>
+        </div>
+        <div class="task_content2">
+            <button class="task_button2" onclick="controlpanel_open(),task_content2_close()"></button>
+            <span class="task_icon2"></span>
+        </div>
+
         <span class="timer bottom" id="timer">time　</span>
         <span class="timer2 bottom" id="ampm">test</span>
     </div>
@@ -317,19 +343,19 @@
         .popup_window {
             background: darkgray;
             width: 550px;
-            height: 380px;
-            top: 120px;
+            height: 400px;
+            top: 110px;
             position: relative;
             left: 180px;
             z-index: 10;
         }
         .popup_window_white {
             background: white;
-            width: 500px;
-            height: 290px;
+            width: 530px;
+            height: 320px;
             position: absolute;
             top: 70px;
-            left: 20px;
+            left: 10px;
         }
         .popup_window_text {
             font-size: x-large;
@@ -361,18 +387,6 @@
             position: absolute;
             top: 30px;
             right: 0px;
-        }
-
-        a.google {
-            color: blue;
-        }
-        a.yahoo {
-            margin: 0;
-            color: orangered;
-        }
-        a.youtube {
-            margin: 0;
-            color: red;
         }
 
         .bold {
@@ -439,6 +453,85 @@
             height: 10px;
             position: absolute;
             top: 2px;
+        }
+
+        .task_content_border {
+            width: 180px;
+            height: 34px;
+            position: absolute;
+            left: 78px;
+            bottom: 1px;
+            border-top: solid 2px gray;
+            border-right: solid 2px gray;
+            border-left: solid 2px gray;
+            border-bottom: solid 2px white;
+        }
+        .taskbutton {
+            color: black;
+            width: 25px;
+            height: 25px;
+            position: absolute;
+            top: 0px;
+            right: 25px;
+        }
+        .task_content1 {
+            display: none;
+            position: relative;
+        }
+        .task_button1 {
+            margin-left: 0px;
+            background: darkgray;
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            left: 83px;
+            top: 5px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .task_icon1 {
+            pointer-events: none;
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            left: 77px;
+            top: 11px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .task_content2 {
+            display: none;
+            position: relative;
+        }
+        .task_button2 {
+            margin-left: 0px;
+            background: darkgray;
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            left: 114px;
+            top: 5px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .task_icon2 {
+            pointer-events: none;
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            left: 108px;
+            top: 11px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
         }
 
         .bar_button {
@@ -643,8 +736,9 @@
         }
 
         .content {
+            font-size: small;
             position: relative;
-            top: -400px;
+            top: -420px;
         }
         .content-icons {
             position: relative;
@@ -655,8 +749,8 @@
             margin-left: 10px;
             margin-top: 45px;
             background: khaki;
-            width: 65px;
-            height: 50px;
+            width: 60px;
+            height: 45px;
             position: absolute; 
             border-bottom: solid 2px black;
             border-right: solid 2px black;
@@ -665,8 +759,8 @@
             margin-left: 10px;
             margin-top: 145px;
             background: khaki;
-            width: 65px;
-            height: 50px;
+            width: 60px;
+            height: 45px;
             position: absolute;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
@@ -675,8 +769,18 @@
             margin-left: 10px;
             margin-top: 245px;
             background: khaki;
-            width: 65px;
-            height: 50px;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .icon4 {
+            margin-left: 10px;
+            margin-top: 345px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
             position: absolute;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
@@ -686,17 +790,22 @@
             margin-left: 10px;
             margin-bottom: 50px;
             position: absolute;
-            top: 100px;
+            top: 95px;
         }
         .test2 {
             margin-left: 10px;
             position: absolute;
-            top: 200px;
+            top: 195px;
         }
         .test3 {
             margin-left: 10px;
             position: absolute;
-            top: 300px;
+            top: 295px;
+        }
+        .test4 {
+            margin-left: 10px;
+            position: absolute;
+            top: 395px;
         }
 
         .accessory_icon {
@@ -764,6 +873,102 @@
             left: 5px;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
+        }
+
+        .mycomputer_icon {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 5px;
+            left: -3px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_icon2 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 40px;
+            left: 5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text2 {
+            color: black;
+            font-size: x-small;
+            margin-left: 10px;
+            width: 60px;
+            height: 15px;
+            position: absolute;
+            top: 90px;
+            left: 10px;
+        }
+        .mycomputer_icon3 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 40px;
+            left: 105px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text3 {
+            color: black;
+            font-size: x-small;
+            margin-left: 10px;
+            width: 60px;
+            height: 15px;
+            position: absolute;
+            top: 90px;
+            left: 110px;
+        }
+        .mycomputer_icon4 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 40px;
+            left: 205px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text4 {
+            color: black;
+            font-size: x-small;
+            margin-left: 10px;
+            width: 60px;
+            height: 15px;
+            position: absolute;
+            top: 90px;
+            left: 210px;
+        }
+        .mycomputer_icon5 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 40px;
+            left: 305px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text5 {
+            color: black;
+            font-size: x-small;
+            margin-left: 10px;
+            width: 60px;
+            height: 15px;
+            position: absolute;
+            top: 90px;
+            left: 310px;
         }
 
         .app_icon {
@@ -999,6 +1204,27 @@
             left: 7px;
         }
 
+        .mycomputer {
+            display: none;
+        }
+        .mycomputer_window {
+            background: darkgray;
+            width: 600px;
+            height: 400px;
+            top: 50px;
+            position: absolute;
+            left: 180px;
+            z-index: 3;
+        }
+        .mycomputer_white {
+            background: white;
+            width: 580px;
+            height: 350px;
+            top: 35px;
+            position: absolute;
+            left: 7px;
+        }
+
         .app_memo {
             display: none;
             background: darkgray;
@@ -1065,7 +1291,7 @@
     @media screen and (max-width: 768px){
         .content {
             position: relative;
-            top: 0px;
+            top: -30px;
         }
         .screenbutton {
             width: 80px;
@@ -1094,7 +1320,7 @@
         .popup_window {
             background: darkgray;
             width: 250px;
-            height: 360px;
+            height: 380px;
             top: 140px;
             position: absolute;
             left: 80px;
@@ -1103,7 +1329,7 @@
         .popup_window_white {
             background: white;
             width: 238px;
-            height: 290px;
+            height: 310px;
             position: absolute;
             top: 60px;
             left: 5px;
@@ -1206,6 +1432,116 @@
             left: 5px;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
+        }
+
+        .mycomputer_window {
+            background: darkgray;
+            width: 250px;
+            height: 300px;
+            top: 100px;
+            position: absolute;
+            left: 100px;
+        }
+        .mycomputer_white {
+            background: white;
+            width: 230px;
+            height: 250px;
+            top: 35px;
+            position: absolute;
+            left: 7px;
+        }
+        
+        .mycomputer_icon {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 5px;
+            left: -3px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .mycomputer_icon2 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 40px;
+            left: 5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text2 {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 45px;
+            height: 15px;
+            position: absolute;
+            top: 75px;
+            left: 5px;
+        }
+        .mycomputer_icon3 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 40px;
+            left: 55px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text3 {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 50px;
+            height: 15px;
+            position: absolute;
+            top: 75px;
+            left: 55px;
+        }
+        .mycomputer_icon4 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 40px;
+            left: 105px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text4 {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 50px;
+            height: 15px;
+            position: absolute;
+            top: 75px;
+            left: 105px;
+        }
+        .mycomputer_icon5 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 40px;
+            left: 155px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text5 {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 50px;
+            height: 15px;
+            position: absolute;
+            top: 75px;
+            left: 155px;
         }
 }
 
@@ -1435,11 +1771,19 @@
         const controlpanel = document.querySelector(".controlpanel");
         controlpanel.style.display = "none";
 
+        const mycomputer = document.querySelector(".mycomputer");
+        mycomputer.style.display = "none";
+
         const app_calc = document.querySelector(".app_calc");
         app_calc.style.display = "none";
 
         const app_memo = document.querySelector(".app_memo");
         app_memo.style.display = "none";
+
+        const task_content1 = document.querySelector(".task_content1");
+        task_content1.style.display = "none";
+        const task_content2 = document.querySelector(".task_content2");
+        task_content2.style.display = "none";
     }
     
     function startmenu_close(){
@@ -1482,6 +1826,16 @@
         const controlpanel = document.querySelector(".controlpanel");
         controlpanel.style.display = "none";
     }
+
+    function mycomputer_open(){
+        const mycomputer = document.querySelector(".mycomputer");
+        mycomputer.style.display = "block";
+    }
+    function mycomputer_close(){
+        const mycomputer = document.querySelector(".mycomputer");
+        mycomputer.style.display = "none";
+    }
+
 
 
     function backcolormenu_close(){
@@ -1529,6 +1883,23 @@
     function settingmenu_close(){
         const setting_menu = document.querySelector(".setting_menu");
         setting_menu.style.display = "none";
+    }
+
+    function task_conent1_open(){
+        const task_content1= document.querySelector(".task_content1");
+        task_content1.style.display = "block";
+    }
+    function task_content1_close(){
+        const task_content1 = document.querySelector(".task_content1");
+        task_content1.style.display = "none";
+    }
+    function task_conent2_open(){
+        const task_content2 = document.querySelector(".task_content2");
+        task_content2.style.display = "block";
+    }
+    function task_content2_close(){
+        const task_content2 = document.querySelector(".task_content2");
+        task_content2.style.display = "none";
     }
 
     function calc_open(){
