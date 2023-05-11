@@ -157,14 +157,16 @@
             <input type="button" class="blacktext memo_button_load" value="読込" onclick=load(); ></input>
             <input type="button" id="cleartextbtn" class="blacktext memo_button_clear" value="クリア"></input>
         </p>
-        <button class="closebutton blacktext border" onclick="memo_close()">X</button>
+        <button class="closebutton blacktext border" onclick="task_content4_close(),memo_close()">X</button>
+        <button class="blacktext taskbutton border" onclick="task_content4_open(),memo_close()">一</button>
     </div>
 
     <div class="app_calc border">
             <span class="menu_bluebar">電卓</span>
             <p class="white">　</p>
         <input class="calc textcalc" style="text-align: right;"></input><br>
-        <button class="closebutton blacktext border" onclick="calc_close()">X</button>
+        <button class="closebutton blacktext border" onclick="task_content3_close(),calc_close()">X</button>
+        <button class="blacktext taskbutton border" onclick="task_content3_open(),calc_close()">一</button>
         <button class="calc button_calc" onclick="append( '1' )" >1</button>
         <button class="calc button_calc" onclick="append( '2' )" >2</button>
         <button class="calc button_calc" onclick="append( '3' )" >3</button>
@@ -236,6 +238,14 @@
             <button class="task_button2" onclick="controlpanel_open(),task_content2_close()"></button>
             <span class="task_icon2"></span>
         </div>
+        <div class="task_content3">
+            <button class="task_button3" onclick="calc_open(),task_content3_close()"></button>
+            <span class="task_icon3"></span>
+        </div>
+        <div class="task_content4">
+            <button class="task_button4" onclick="memo_open(),task_content4_close()"></button>
+            <span class="task_icon4"></span>
+        </div>
 
         <span class="timer bottom" id="timer">time　</span>
         <span class="timer2 bottom" id="ampm">test</span>
@@ -263,6 +273,11 @@
 
         .Windows95_group {
             display: none;
+        }
+
+        #information {
+            color: white;
+            z-index: 101;
         }
 
         a {
@@ -528,6 +543,66 @@
             height: 15px;
             position: absolute;
             left: 108px;
+            top: 11px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .task_content3 {
+            display: none;
+            position: relative;
+        }
+        .task_button3 {
+            margin-left: 0px;
+            background: darkgray;
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            left: 144px;
+            top: 5px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .task_icon3 {
+            pointer-events: none;
+            margin-left: 10px;
+            background: dimgray;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            left: 138px;
+            top: 11px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .task_content4 {
+            display: none;
+            position: relative;
+        }
+        .task_button4 {
+            margin-left: 0px;
+            background: darkgray;
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            left: 174px;
+            top: 5px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .task_icon4 {
+            pointer-events: none;
+            margin-left: 10px;
+            background: white;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            left: 168px;
             top: 11px;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
@@ -1783,6 +1858,10 @@
         task_content1.style.display = "none";
         const task_content2 = document.querySelector(".task_content2");
         task_content2.style.display = "none";
+        const task_content3 = document.querySelector(".task_content3");
+        task_content3.style.display = "none";
+        const task_content4 = document.querySelector(".task_content4");
+        task_content4.style.display = "none";
     }
     
     function startmenu_close(){
@@ -1899,6 +1978,22 @@
     function task_content2_close(){
         const task_content2 = document.querySelector(".task_content2");
         task_content2.style.display = "none";
+    }
+    function task_content3_open(){
+        const task_content3 = document.querySelector(".task_content3");
+        task_content3.style.display = "block";
+    }
+    function task_content3_close(){
+        const task_content3 = document.querySelector(".task_content3");
+        task_content3.style.display = "none";
+    }
+    function task_content4_open(){
+        const task_content4 = document.querySelector(".task_content4");
+        task_content4.style.display = "block";
+    }
+    function task_content4_close(){
+        const task_content4 = document.querySelector(".task_content4");
+        task_content4.style.display = "none";
     }
 
     function calc_open(){
