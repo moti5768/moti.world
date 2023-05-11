@@ -38,6 +38,7 @@
                 ・ようこそ画面表示&nbsp;マイコンピュータファイル追加<br>
                 ・Windows終了時、起動したままのアプリが強制終了するようになりました。<br>
                 ・タスクバーにある各ブラウザボタンを削除し、マイコンピュータに移動しました。<br>
+                ・ボタンにカーソルを合わせると、色が変わるようになりました。<br>
                 ・CSS削除機能の追加(試験的)<br>
                 ・コマンド入力欄の追加(試験的)<br>
                 ・起動画面&nbsp;終了画面の追加<br>
@@ -45,7 +46,7 @@
                 </p>
         </div>
         <span class="menu_bluebar">ようこそ&emsp;テスターさん！</span>
-        <button class="blacktext closebutton border" onclick="popupwindow_close()">X</button>
+        <button class="blacktext closebutton border hover" onclick="popupwindow_close()">X</button>
     </div>
 
     <div class="title">
@@ -56,10 +57,10 @@
 
     <div class="start_menu border">
         <span class="menu_graybar white">Windows95</span>
-        <button class="blacktext closebutton border" onclick="startmenu_close()">X</button>
-        <button class="blacktext programbutton border bold" onclick="programmenu_open()">プログラム</button>
-        <button class="blacktext settingbutton border bold" onclick="settingmenu_open()">設定</button>
-        <a class="blacktext border bold finish" onclick="screen_close(),allwindow_close()">Windowsの終了</a>
+        <button class="blacktext closebutton border hover" onclick="startmenu_close()">X</button>
+        <button class="blacktext programbutton border bold hover" onclick="programmenu_open()">プログラム</button>
+        <button class="blacktext settingbutton border bold hover" onclick="settingmenu_open()">設定</button>
+        <a class="blacktext border bold finish hover" onclick="screen_close(),allwindow_close()">Windowsの終了</a>
     </div>
 
     <div class="content">
@@ -77,14 +78,14 @@
 
     <div class="css_menu border">
         <span class="menu_bluebar">CSSの削除</span>
-        <button class="css_box border" onclick="stylebox()">CSSを削除する</button>
-        <button class="closebutton border" onclick="cssmenu_close()">X</button>
+        <button class="css_box border hover" onclick="stylebox()">CSSを削除する</button>
+        <button class="closebutton border hover" onclick="cssmenu_close()">X</button>
     </div>
 
     <div class="backcolor_menu border">
         <span class="menu_bluebar">画面のプロパティ</span>
-        <button class="closebutton border" onclick="backcolormenu_close()">X</button>
-        <button class="blacktext backcolor_reset" onclick="backcolor_reset()">reset</button>
+        <button class="closebutton border hover" onclick="backcolormenu_close()">X</button>
+        <button class="blacktext backcolor_reset hover" onclick="backcolor_reset()">reset</button>
 
         <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()"></input>
         <p class="backcolor_text">表示を2色にする。</p>
@@ -111,38 +112,38 @@
 
     <div class="taskbar">
         <span class="taskbar_blue"></span>
-        <button class="blacktext bar_button" onclick="backcolormenu_open(),popupwindow_close()">C</button>
-        <button class="blacktext bar_button" onclick="cssmenu_open(),popupwindow_close()">CS</button>
-        <button class="blacktext bar_button">T</button>
-        <button class="blacktext bar_button">T</button>
-        <button class="blacktext bar_button">T</button>
+        <button class="blacktext bar_button hover" onclick="backcolormenu_open(),popupwindow_close()">C</button>
+        <button class="blacktext bar_button hover" onclick="cssmenu_open(),popupwindow_close()">CS</button>
+        <button class="blacktext bar_button hover">T</button>
+        <button class="blacktext bar_button hover">T</button>
+        <button class="blacktext bar_button hover">T</button>
     </div>
 
     <div class="program_menu border">
         <span class="menu_bluebar">プログラム</span>
-        <button class="blacktext closebutton border" onclick="programmenu_close()">X</button>
-        <button class="blacktext accessorybutton" onclick="appmenu_open()">アクセサリ</button>
-        <button class="blacktext accessorybutton2" onclick="commandmenu_open(),startmenu_close()">コマンド</button>
+        <button class="blacktext closebutton border hover" onclick="programmenu_close()">X</button>
+        <button class="blacktext accessorybutton hover" onclick="appmenu_open()">アクセサリ</button>
+        <button class="blacktext accessorybutton2 hover" onclick="commandmenu_open(),startmenu_close()">コマンド</button>
         <span class="accessory_icon"></span>
         <span class="accessory_icon2"></span>
     </div>
 
     <div class="app_menu border">
         <span class="menu_bluebar">アプリ</span>
-        <button class="blacktext closebutton border" onclick="appmenu_close()">X</button>
-        <button class="blacktext appbutton" onclick="memo_open(),startmenu_close()">メモ帳</button>
-        <button class="blacktext appbutton2" onclick="calc_open(),startmenu_close()">電卓</button>
+        <button class="blacktext closebutton border hover" onclick="appmenu_close()">X</button>
+        <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close()">メモ帳</button>
+        <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close()">電卓</button>
         <span class="app_icon"></span>
         <span class="app_icon2"></span>
     </div>
 
     <div class="command_menu border">
         <div class="menu_bluebar">コマンド入力</div>
-        <button class="blacktext closebutton border" onclick="commandmenu_close()">X</button>
+        <button class="blacktext closebutton border hover" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
     <form method="get" name="mail_form" onsubmit="return false;">
         <input type="text" class="textcommand_area border" name="mail" placeholder="command">
-        <input type="submit" class="textcommand_area border" value="送信" onclick="check()">
+        <input type="submit" class="textcommand_area border hover" value="実行" onclick="check()">
     </form>
     </div>
     </div>
@@ -157,16 +158,16 @@
             <input type="button" class="blacktext memo_button_load" value="読込" onclick=load(); ></input>
             <input type="button" id="cleartextbtn" class="blacktext memo_button_clear" value="クリア"></input>
         </p>
-        <button class="closebutton blacktext border" onclick="task_content4_close(),memo_close()">X</button>
-        <button class="blacktext taskbutton border" onclick="task_content4_open(),memo_close()">一</button>
+        <button class="closebutton blacktext border hover" onclick="task_content4_close(),memo_close()">X</button>
+        <button class="blacktext taskbutton border hover" onclick="task_content4_open(),memo_close()">一</button>
     </div>
 
     <div class="app_calc border">
             <span class="menu_bluebar">電卓</span>
             <p class="white">　</p>
         <input class="calc textcalc" style="text-align: right;"></input><br>
-        <button class="closebutton blacktext border" onclick="task_content3_close(),calc_close()">X</button>
-        <button class="blacktext taskbutton border" onclick="task_content3_open(),calc_close()">一</button>
+        <button class="closebutton blacktext border hover" onclick="task_content3_close(),calc_close()">X</button>
+        <button class="blacktext taskbutton border hover" onclick="task_content3_open(),calc_close()">一</button>
         <button class="calc button_calc" onclick="append( '1' )" >1</button>
         <button class="calc button_calc" onclick="append( '2' )" >2</button>
         <button class="calc button_calc" onclick="append( '3' )" >3</button>
@@ -191,8 +192,8 @@
 
     <div class="setting_menu border">
         <span class="menu_bluebar">設定</span>
-        <button class="blacktext closebutton border" onclick="settingmenu_close()">X</button>
-        <button class="blacktext devicebutton x-small" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
+        <button class="blacktext closebutton border hover" onclick="settingmenu_close()">X</button>
+        <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
         <span class="device_icon"></span>
     </div>
 
@@ -203,8 +204,8 @@
             <p class="controlpanel_text">テスト</p>
             <span class="controlpanel_icon"></span>
             <span class="controlpanel_icon2"></span>
-            <button class="blacktext closebutton border" onclick="task_content2_close(),controlpanel_close()">X</button>
-            <button class="blacktext taskbutton border" onclick="task_conent2_open(),controlpanel_close()">一</button>
+            <button class="blacktext closebutton border hover" onclick="task_content2_close(),controlpanel_close()">X</button>
+            <button class="blacktext taskbutton border hover" onclick="task_conent2_open(),controlpanel_close()">一</button>
         </div>
     </div>
 
@@ -221,13 +222,13 @@
             <a class="mycomputer_icon4" href="https://yahoo.co.jp"></a>
             <a class="mycomputer_text5" href="https://youtube.com">Youtube</a>
             <a class="mycomputer_icon5" href="https://youtube.com"></a>
-            <button class="blacktext closebutton border" onclick="task_content1_close(),mycomputer_close()">X</button>
-            <button class="blacktext taskbutton border" onclick="task_conent1_open(),mycomputer_close()">一</button>
+            <button class="blacktext closebutton border hover" onclick="task_content1_close(),mycomputer_close()">X</button>
+            <button class="blacktext taskbutton border hover" onclick="task_conent1_open(),mycomputer_close()">一</button>
         </div>
     </div>
 
     <div class="underbar">
-        <a class="blacktext bottom bold start_button border" onclick="startmenu_open(),popupwindow_close()">スタート</a>
+        <a class="blacktext bottom bold start_button border hover" onclick="startmenu_open(),popupwindow_close()">スタート</a>
 
     <div class="task_content_border"></div>
         <div class="task_content1">
@@ -269,6 +270,11 @@
         body {
             font-family: sans-serif;
             background: #008080;
+        }
+
+        .hover:hover {
+            background-color: blue;
+            color: white;
         }
 
         .Windows95_group {
