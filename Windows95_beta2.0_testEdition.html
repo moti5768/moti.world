@@ -46,7 +46,7 @@
                 </p>
         </div>
         <span class="menu_bluebar">ようこそ&emsp;テスターさん！</span>
-        <button class="blacktext closebutton border hover" onclick="popupwindow_close()">X</button>
+        <button class="blacktext closebutton border hover2" onclick="popupwindow_close()">X</button>
     </div>
 
     <div class="title">
@@ -57,9 +57,9 @@
 
     <div class="start_menu border">
         <span class="menu_graybar white">Windows95</span>
-        <button class="blacktext closebutton border hover" onclick="startmenu_close()">X</button>
-        <button class="blacktext programbutton border bold hover" onclick="programmenu_open()">プログラム</button>
-        <button class="blacktext settingbutton border bold hover" onclick="settingmenu_open()">設定</button>
+        <button class="blacktext closebutton border hover2" onclick="startmenu_close()">X</button>
+        <button class="blacktext programbutton border bold hover" onclick="programmenu_open(),settingmenu_close()">プログラム</button>
+        <button class="blacktext settingbutton border bold hover" onclick="settingmenu_open(),programmenu_close()">設定</button>
         <a class="blacktext border bold finish hover" onclick="screen_close(),allwindow_close()">Windowsの終了</a>
     </div>
 
@@ -84,7 +84,7 @@
 
     <div class="backcolor_menu border">
         <span class="menu_bluebar">画面のプロパティ</span>
-        <button class="closebutton border hover" onclick="backcolormenu_close()">X</button>
+        <button class="closebutton border hover2" onclick="backcolormenu_close()">X</button>
         <button class="blacktext backcolor_reset hover" onclick="backcolor_reset()">reset</button>
 
         <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()"></input>
@@ -121,7 +121,7 @@
 
     <div class="program_menu border">
         <span class="menu_bluebar">プログラム</span>
-        <button class="blacktext closebutton border hover" onclick="programmenu_close()">X</button>
+        <button class="blacktext closebutton border hover2" onclick="programmenu_close()">X</button>
         <button class="blacktext accessorybutton hover" onclick="appmenu_open()">アクセサリ</button>
         <button class="blacktext accessorybutton2 hover" onclick="commandmenu_open(),startmenu_close()">コマンド</button>
         <span class="accessory_icon"></span>
@@ -130,7 +130,7 @@
 
     <div class="app_menu border">
         <span class="menu_bluebar">アプリ</span>
-        <button class="blacktext closebutton border hover" onclick="appmenu_close()">X</button>
+        <button class="blacktext closebutton border hover2" onclick="appmenu_close()">X</button>
         <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close()">メモ帳</button>
         <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close()">電卓</button>
         <span class="app_icon"></span>
@@ -139,7 +139,7 @@
 
     <div class="command_menu border">
         <div class="menu_bluebar">コマンド入力</div>
-        <button class="blacktext closebutton border hover" onclick="commandmenu_close()">X</button>
+        <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
     <form method="get" name="mail_form" onsubmit="return false;">
         <input type="text" class="textcommand_area border" name="mail" placeholder="command">
@@ -158,7 +158,7 @@
             <input type="button" class="blacktext memo_button_load" value="読込" onclick=load(); ></input>
             <input type="button" id="cleartextbtn" class="blacktext memo_button_clear" value="クリア"></input>
         </p>
-        <button class="closebutton blacktext border hover" onclick="task_content4_close(),memo_close()">X</button>
+        <button class="closebutton blacktext border hover2" onclick="task_content4_close(),memo_close()">X</button>
         <button class="blacktext taskbutton border hover" onclick="task_content4_open(),memo_close()">一</button>
     </div>
 
@@ -166,7 +166,7 @@
             <span class="menu_bluebar">電卓</span>
             <p class="white">　</p>
         <input class="calc textcalc" style="text-align: right;"></input><br>
-        <button class="closebutton blacktext border hover" onclick="task_content3_close(),calc_close()">X</button>
+        <button class="closebutton blacktext border hover2" onclick="task_content3_close(),calc_close()">X</button>
         <button class="blacktext taskbutton border hover" onclick="task_content3_open(),calc_close()">一</button>
         <button class="calc button_calc" onclick="append( '1' )" >1</button>
         <button class="calc button_calc" onclick="append( '2' )" >2</button>
@@ -192,7 +192,7 @@
 
     <div class="setting_menu border">
         <span class="menu_bluebar">設定</span>
-        <button class="blacktext closebutton border hover" onclick="settingmenu_close()">X</button>
+        <button class="blacktext closebutton border hover2" onclick="settingmenu_close()">X</button>
         <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
         <span class="device_icon"></span>
     </div>
@@ -204,7 +204,7 @@
             <p class="controlpanel_text">テスト</p>
             <span class="controlpanel_icon"></span>
             <span class="controlpanel_icon2"></span>
-            <button class="blacktext closebutton border hover" onclick="task_content2_close(),controlpanel_close()">X</button>
+            <button class="blacktext closebutton border hover2" onclick="task_content2_close(),controlpanel_close()">X</button>
             <button class="blacktext taskbutton border hover" onclick="task_conent2_open(),controlpanel_close()">一</button>
         </div>
     </div>
@@ -222,7 +222,7 @@
             <a class="mycomputer_icon4" href="https://yahoo.co.jp"></a>
             <a class="mycomputer_text5" href="https://youtube.com">Youtube</a>
             <a class="mycomputer_icon5" href="https://youtube.com"></a>
-            <button class="blacktext closebutton border hover" onclick="task_content1_close(),mycomputer_close()">X</button>
+            <button class="blacktext closebutton border hover2" onclick="task_content1_close(),mycomputer_close()">X</button>
             <button class="blacktext taskbutton border hover" onclick="task_conent1_open(),mycomputer_close()">一</button>
         </div>
     </div>
@@ -274,6 +274,10 @@
 
         .hover:hover {
             background-color: blue;
+            color: white;
+        }
+        .hover2:hover {
+            background-color: red;
             color: white;
         }
 
