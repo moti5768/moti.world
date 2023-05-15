@@ -124,8 +124,8 @@
         <button class="blacktext closebutton border hover2" onclick="programmenu_close()">X</button>
         <button class="blacktext accessorybutton hover" onclick="appmenu_open()">アクセサリ</button>
         <button class="blacktext accessorybutton2 hover" onclick="commandmenu_open(),startmenu_close()">コマンド</button>
-        <span class="accessory_icon"></span>
-        <span class="accessory_icon2"></span>
+        <a class="accessory_icon" onclick="appmenu_open()"></a>
+        <a class="accessory_icon2" onclick="commandmenu_open(),startmenu_close()"></a>
     </div>
 
     <div class="app_menu border">
@@ -133,8 +133,8 @@
         <button class="blacktext closebutton border hover2" onclick="appmenu_close()">X</button>
         <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close()">メモ帳</button>
         <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close()">電卓</button>
-        <span class="app_icon"></span>
-        <span class="app_icon2"></span>
+        <a class="app_icon" onclick="memo_open(),startmenu_close()"></a>
+        <a class="app_icon2" onclick="calc_open(),startmenu_close()"></a>
     </div>
 
     <div class="command_menu border">
@@ -181,8 +181,8 @@
         <button class="calc button_calc" onclick="append( '.' )" >.</button>
         <button class="calc button_calc" onclick="append( '+' )" >+</button>
         <button class="calc button_calc" onclick="append( '-' )" >-</button>
-        <button class="calc button_calc" onclick="append( '*' )" >*</button>
-        <button class="calc button_calc" onclick="append( '/' )" >/</button><br />
+        <button class="calc button_calc" onclick="append( '*' )" >x</button>
+        <button class="calc button_calc" onclick="append( '/' )" >÷</button><br />
         <button class="calc button_calc" onclick="append( '**' )" >^</button>
         <button class="calc button_calc" onclick="append( '**0.5' )" >√</button>
         <button class="calc button_calc" onclick="calc()">=</button>
@@ -194,16 +194,16 @@
         <span class="menu_bluebar">設定</span>
         <button class="blacktext closebutton border hover2" onclick="settingmenu_close()">X</button>
         <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
-        <span class="device_icon"></span>
+        <a class="device_icon" onclick="controlpanel_open(),startmenu_close()"></a>
     </div>
 
     <div class="controlpanel">
         <div class="controlpanel_window border">
             <span class="menu_bluebar">　　コントロールパネル</span>
             <span class="controlpanel_white border"></span>
-            <p class="controlpanel_text">テスト</p>
+            <a class="controlpanel_text" onclick="testalert()">テスト</a>
             <span class="controlpanel_icon"></span>
-            <span class="controlpanel_icon2"></span>
+            <a class="controlpanel_icon2" onclick="testalert()"></a>
             <button class="blacktext closebutton border hover2" onclick="task_content2_close(),controlpanel_close()">X</button>
             <button class="blacktext taskbutton border hover" onclick="task_conent2_open(),controlpanel_close()">一</button>
         </div>
@@ -1472,15 +1472,15 @@
 
         .controlpanel_window {
             background: darkgray;
-            width: 250px;
+            width: 260px;
             height: 300px;
-            top: 100px;
+            top: 80px;
             position: absolute;
             left: 100px;
         }
         .controlpanel_white {
             background: white;
-            width: 230px;
+            width: 240px;
             height: 250px;
             top: 35px;
             position: absolute;
@@ -1688,7 +1688,10 @@
             }
         });
 
-        const test = 'hello';
+        function testalert(){
+            alert('hello!');
+        }
+
     // 読込
     function load() {
         let MemoData = "";
@@ -2035,11 +2038,12 @@
     }
 
     function check(){
-        if (mail_form.mail.value === "test"){
-            //条件に一致する場合(メールアドレスが空の場合)
+        if (mail_form.mail.value === "Windows95beta1.1"){
+            //条件に一致する場合(空の場合)
             alert('コマンドが実行されました！');
+            window.location = 'windows95.html';
         }else{
-            //条件に一致しない場合(メールアドレスが入力されている場合)
+            //条件に一致しない場合(入力されている場合)
             alert('コマンドが正しくありません！');
         }
     }
