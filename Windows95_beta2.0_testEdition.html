@@ -1682,13 +1682,7 @@
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.remove('active');
             document.getElementById("backcolor").style.backgroundColor = "";
-
-        setTimeout(function() {
-            const screen_open = document.querySelector(".Windows95_group");
-            screen_open.style.display = "block";
-        }, 2000);
-
-    }, 5000);
+    }, 7000);
 };
      window.addEventListener('load', function() {
             if ( !sessionStorage.getItem('disp_popup') ) {
@@ -1860,8 +1854,6 @@
     }
 
     function allwindow_close(){
-        const screen_open = document.querySelector(".Windows95_group");
-        screen_open.style.display = "none";
         const start_menu = document.querySelector(".start_menu");
         start_menu.style.display = "none";
         const taskbar = document.querySelector(".taskbar");
