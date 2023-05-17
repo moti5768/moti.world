@@ -108,6 +108,10 @@
         <button class="backcolor_button backbutton_brown" onclick="backcolor_brown()"></button>
         <button class="backcolor_button backbutton_pink" onclick="backcolor_pink()"></button>
         <button class="backcolor_button backbutton_skincolor" onclick="backcolor_skincolor()"></button>
+        <button class="backcolor_button backbutton_test" onclick="backcolor_test()"></button>
+        <button class="backcolor_button backbutton_test2" onclick="backcolor_test2()"></button>
+        <button class="backcolor_button backbutton_test3" onclick="backcolor_test3()"></button>
+        <button class="backcolor_button backbutton_test4" onclick="backcolor_test4()"></button>
     </div>
     </div>
 
@@ -709,12 +713,24 @@
         .backbutton_skincolor {
             background: #fedcbd;
         }
+        .backbutton_test {
+            background: linear-gradient(90deg, darkblue, blue);
+        }
+        .backbutton_test2 {
+            background: linear-gradient(90deg, darkred, red);
+        }
+        .backbutton_test3 {
+            background: linear-gradient(90deg, yellow, green);
+        }
+        .backbutton_test4 {
+            background: linear-gradient(90deg, black, white);
+        }
 
         .backcolor_reset {
             width: 40px;
             height: 30px;
             position: absolute;
-            top: 212px;
+            top: 262px;
             right: 0px;
             border-top: solid 2px white;
             border-left: solid 2px white;
@@ -726,7 +742,7 @@
             width: 40px;
             height: 30px;
             position: absolute;
-            top: 212px;
+            top: 262px;
             left: 0px;
         }
 
@@ -780,9 +796,9 @@
             display: none;
             background: darkgray;
             width: 150px;
-            height: 250px;
+            height: 300px;
             position: absolute;
-            top: 320px;
+            top: 270px;
             right: 31px;
         }
         .menu_bluebar {
@@ -1682,7 +1698,13 @@
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.remove('active');
             document.getElementById("backcolor").style.backgroundColor = "";
-    }, 7000);
+
+        setTimeout(function() {
+            const screen_open = document.querySelector(".Windows95_group");
+            screen_open.style.display = "block";
+        }, 2000);
+
+    }, 5000);
 };
      window.addEventListener('load', function() {
             if ( !sessionStorage.getItem('disp_popup') ) {
@@ -1802,58 +1824,73 @@
 }
 
     function backcolor_black(){
-        document.getElementById("backcolor").style.backgroundColor = "black";
+        document.getElementById("backcolor").style.background = "black";
     }
     function backcolor_gray(){
-        document.getElementById("backcolor").style.backgroundColor = "gray";
+        document.getElementById("backcolor").style.background = "gray";
     }
     function backcolor_silver(){
-        document.getElementById("backcolor").style.backgroundColor = "silver";
+        document.getElementById("backcolor").style.background = "silver";
     }
     function backcolor_darkblue(){
-        document.getElementById("backcolor").style.backgroundColor = "darkblue";
+        document.getElementById("backcolor").style.background = "darkblue";
     }
     function backcolor_lightskyblue(){
-        document.getElementById("backcolor").style.backgroundColor = "#87cefa";
+        document.getElementById("backcolor").style.background = "#87cefa";
     }
     function backcolor_red(){
-        document.getElementById("backcolor").style.backgroundColor = "red";
+        document.getElementById("backcolor").style.background = "red";
     }
     function backcolor_orange(){
-        document.getElementById("backcolor").style.backgroundColor = "orange";
+        document.getElementById("backcolor").style.background = "orange";
     }
     function backcolor_yellow(){
-        document.getElementById("backcolor").style.backgroundColor = "yellow";
+        document.getElementById("backcolor").style.background = "yellow";
     }
     function backcolor_green(){
-        document.getElementById("backcolor").style.backgroundColor = "green";
+        document.getElementById("backcolor").style.background = "green";
     }
     function backcolor_lime(){
-        document.getElementById("backcolor").style.backgroundColor = "lime";
+        document.getElementById("backcolor").style.background = "lime";
     }
     function backcolor_purple(){
-        document.getElementById("backcolor").style.backgroundColor = "purple";
+        document.getElementById("backcolor").style.background = "purple";
     }
     function backcolor_redpurple(){
-        document.getElementById("backcolor").style.backgroundColor = "#c450a0";
+        document.getElementById("backcolor").style.background = "#c450a0";
     }
     function backcolor_bluepurple(){
-        document.getElementById("backcolor").style.backgroundColor = "#704cbc";
+        document.getElementById("backcolor").style.background = "#704cbc";
     }
     function backcolor_brown(){
-        document.getElementById("backcolor").style.backgroundColor = "brown";
+        document.getElementById("backcolor").style.background = "brown";
     }
     function backcolor_pink(){
-        document.getElementById("backcolor").style.backgroundColor = "pink";
+        document.getElementById("backcolor").style.background = "pink";
     }
     function backcolor_skincolor(){
-        document.getElementById("backcolor").style.backgroundColor = "#fedcbd";
+        document.getElementById("backcolor").style.background = "#fedcbd";
     }
     function backcolor_reset(){
-        document.getElementById("backcolor").style.backgroundColor = "";
+        document.getElementById("backcolor").style.background = "";
+    }
+
+    function backcolor_test(){
+        document.getElementById('backcolor').style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkblue), color-stop(1, blue))'
+    }
+    function backcolor_test2(){
+        document.getElementById('backcolor').style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkred), color-stop(1, red))'
+    }
+    function backcolor_test3(){
+        document.getElementById('backcolor').style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, yellow), color-stop(1, green))'
+    }
+    function backcolor_test4(){
+        document.getElementById('backcolor').style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, black), color-stop(1, white))'
     }
 
     function allwindow_close(){
+        const screen_open = document.querySelector(".Windows95_group");
+        screen_open.style.display = "none";
         const start_menu = document.querySelector(".start_menu");
         start_menu.style.display = "none";
         const taskbar = document.querySelector(".taskbar");
