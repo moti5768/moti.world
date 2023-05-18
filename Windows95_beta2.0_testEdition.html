@@ -72,9 +72,15 @@
             <a class="test2 white" onclick="Credit()">クレジット</a>
             <a class="icon3" onclick="popupwindow_open()"></a>
             <a class="test3 white" onclick="popupwindow_open()">ようこそ</a>
-            <a class="icon4" href="index.html"></a>
-            <a class="test4 white" href="index.html">オモチのサイト</a>
+            <a class="icon4" onclick="iframe1_open()"></a>
+            <a class="test4 white" onclick="iframe1_open()">オモチのサイト</a>
         </div>
+    </div>
+
+    <div class="iframe1 border">
+        <span class="menu_bluebar">オモチのサイト</span>
+        <iframe src="index.html"></iframe>
+        <button class="closebutton border hover2" onclick="iframe1_close()">X</button>
     </div>
 
     <div class="css_menu border">
@@ -285,6 +291,21 @@
         .hover2:hover {
             background-color: red;
             color: white;
+        }
+
+        iframe {
+            background: white;
+            margin-top: 18px;
+            width: 750px;
+            height: 550px;
+            position: relative;
+            top: 7px;
+        }
+        .iframe1 {
+            display: none;
+            position: absolute;
+            top: 20px;
+            left: 90px;
         }
 
         .Windows95_group {
@@ -1657,6 +1678,22 @@
             border-left: solid 2px gray;
             border-bottom: solid 2px white;
         }
+
+        iframe {
+            background: white;
+            margin-top: 18px;
+            width: 250px;
+            height: 350px;
+            position: relative;
+            top: 7px;
+        }
+        .iframe1 {
+            display: none;
+            position: absolute;
+            top: 100px;
+            left: 90px;
+        }
+
 }
 
     </style>
@@ -1876,16 +1913,20 @@
     }
 
     function backcolor_test(){
-        document.getElementById('backcolor').style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkblue), color-stop(1, blue))'
+        const box = document.getElementById('backcolor')
+        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkblue), color-stop(1, blue))'
     }
     function backcolor_test2(){
-        document.getElementById('backcolor').style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkred), color-stop(1, red))'
+        const box = document.getElementById('backcolor')
+        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkred), color-stop(1, red))'
     }
     function backcolor_test3(){
-        document.getElementById('backcolor').style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, yellow), color-stop(1, green))'
+        const box = document.getElementById('backcolor')
+        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, yellow), color-stop(1, green))'
     }
     function backcolor_test4(){
-        document.getElementById('backcolor').style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, black), color-stop(1, white))'
+        const box = document.getElementById('backcolor')
+        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, black), color-stop(1, white))'
     }
 
     function allwindow_close(){
@@ -2084,6 +2125,16 @@
     function commandmenu_open(){
         const command_menu = document.querySelector(".command_menu");
         command_menu.style.display = "block";
+    }
+
+
+    function iframe1_close(){
+        const iframe1 = document.querySelector(".iframe1");
+        iframe1.style.display = "none";
+    }
+    function iframe1_open(){
+        const iframe1 = document.querySelector(".iframe1");
+        iframe1.style.display = "inline";
     }
 
     function check(){
