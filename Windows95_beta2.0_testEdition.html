@@ -11,7 +11,7 @@
         <span class="screencolor"></span>
         <p class="screentext bold">Windows95</p>
         <p class="screensubtext bold">beta2.0&nbsp;TestEdition&copy;</p>
-        <button class="screenbutton bold border" onclick="screen_start()">スタート</button>
+        <button class="screenbutton bold border" onclick="screen_start(),sound()">スタート</button>
     </div>
 
     <div class="screen_start">
@@ -1764,6 +1764,17 @@
         }, 5000);
         }
 
+        function sound() { 
+            let audio = null;
+            audio = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6302%20(online-audio-converter.com).mp3");
+        setTimeout(
+            function ()
+            {
+            audio.play();
+        }, 
+        6000);
+    }
+
 
         function screen_start() {
             document.getElementById("backcolor").style.backgroundColor = "black";
@@ -1779,8 +1790,6 @@
         setTimeout(function() {
             const screen_open = document.querySelector(".Windows95_group");
             screen_open.style.display = "block";
-            let sound = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6302%20(online-audio-converter.com).mp3");
-            sound.play();
         }, 2000);
 
     }, 5000);
