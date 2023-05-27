@@ -9,22 +9,22 @@
 <body id="backcolor">
     <div class="screen">
         <span class="screencolor"></span>
-        <p class="screentext xx-large white">Windows95&nbsp;beta2.0&nbsp;test</p>
-        <button class="screenbutton" onclick="screen_start()">スタート</button>
+        <p class="screentext bold">Windows95</p>
+        <p class="screensubtext bold">beta2.0&nbsp;TestEdition&copy;</p>
+        <button class="screenbutton bold border" onclick="screen_start()">スタート</button>
     </div>
 
     <div class="screen_start">
-        <span class="screencolor"></span>
+        <span class="screencolor2"></span>
         <p class="screentext_start white">windows95を起動しています...<p>
     </div>
 
     <div class="screen_close">
-        <span class="screencolor"></span>
+        <span class="screencolor2"></span>
         <p class="screentext_close white">windows95を終了しています...<p>
     </div>
 
 <div class="Windows95_group">
-
     <div class="popupwrap popup_window border">
         <p class="popup_window_text">Windows<span class="white">95</span>&nbsp;へようこそ testEdition</p>
         <div class="popup_window_white border">
@@ -52,8 +52,8 @@
 
     <div class="title">
         <div class="titleline"></div>
-        <p class="bold white">Windows95&emsp;&emsp;</p>
-        <p class="bold white medium subtitle">beta&nbsp;2.0 testEdition</p>
+        <p class="bold white">Windows95&emsp;&emsp;&emsp;</p>
+        <p class="bold white medium subtitle">beta&nbsp;2.0 testEdition&copy;</p>
     </div>
 
     <div class="start_menu border">
@@ -284,6 +284,10 @@
             background: #008080;
         }
 
+        audio {
+            display: none;
+        }
+
         .hover:hover {
             background-color: blue;
             color: white;
@@ -363,26 +367,41 @@
         }
 
         .screenbutton {
-            background-color: black;
-            color: white;
+            background: linear-gradient(-35deg, white, skyblue, royalblue);
+            color: black;
             width: 150px;
             height: 50px;
             position: absolute;
             top: 300px;
             left: 700px;
-            border: solid 2px white;
             border-radius: 0;
             z-index: 101;
         }
 
         .screentext {
             color: black;
+            font-size: 50px;
             position: absolute;
-            top: 300px;
-            left: 300px;
+            top: 290px;
+            left: 320px;
+            z-index: 101;
+        }
+        .screensubtext {
+            color: black;
+            font-size: 20px;
+            position: absolute;
+            top: 350px;
+            left: 420px;
             z-index: 101;
         }
         .screencolor {
+            background: linear-gradient(-35deg, royalblue, skyblue, white);
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            z-index: 100;
+        }
+        .screencolor2 {
             background-color: black;
             width: 100%;
             height: 100%;
@@ -1431,14 +1450,29 @@
             z-index: 101;
         }
         .screentext {
-            font-size: large;
-            color: white;
+            color: black;
+            font-size: 30px;
             position: absolute;
-            top: 330px;
-            left: 20px;
+            top: 310px;
+            left: 40px;
+            z-index: 101;
+        }
+        .screensubtext {
+            color: black;
+            font-size: 10px;
+            position: absolute;
+            top: 345px;
+            left: 120px;
             z-index: 101;
         }
         .screencolor {
+            background: linear-gradient(-35deg, royalblue, skyblue, white);
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            z-index: 100;
+        }
+        .screencolor2 {
             background-color: black;
             width: 100%;
             height: 100%;
@@ -1745,10 +1779,13 @@
         setTimeout(function() {
             const screen_open = document.querySelector(".Windows95_group");
             screen_open.style.display = "block";
+            let sound = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6302%20(online-audio-converter.com).mp3");
+            sound.play();
         }, 2000);
 
     }, 5000);
 };
+
      window.addEventListener('load', function() {
             if ( !sessionStorage.getItem('disp_popup') ) {
                 sessionStorage.setItem('disp_popup', 'on');
@@ -2003,6 +2040,7 @@
     function popupwindow_close(){
         const popupwrap = document.getElementsByClassName('popupwrap');
         popupwrap[0].classList.remove('active');
+
     }
 
     function controlpanel_open(){
