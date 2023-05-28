@@ -14,7 +14,7 @@
         <button class="screenbutton bold border" onclick="screen_start(),sound()">スタート</button>
     </div>
 
-    <div class="screen_start">
+    <div class="screen_start" id="information">
         <span class="screencolor2"></span>
         <p class="screentext_start white">windows95を起動しています...<p>
     </div>
@@ -25,6 +25,7 @@
     </div>
 
 <div class="Windows95_group">
+    <audio id="sound" src="https://github.com/moti5768/moti.world/raw/main/IMG_6305.mp3"></audio>
     <div class="popupwrap popup_window border">
         <p class="popup_window_text">Windows<span class="white">95</span>&nbsp;へようこそ testEdition</p>
         <div class="popup_window_white border">
@@ -61,7 +62,7 @@
         <button class="blacktext closebutton border hover2" onclick="startmenu_close()">X</button>
         <button class="blacktext programbutton border bold hover" onclick="programmenu_open(),settingmenu_close()">プログラム</button>
         <button class="blacktext settingbutton border bold hover" onclick="settingmenu_open(),programmenu_close(),appmenu_close()">設定</button>
-        <a class="blacktext border bold finish hover" onclick="screen_close(),allwindow_close()">Windowsの終了</a>
+        <a class="blacktext border bold finish hover" onclick="screen_close(),allwindow_close(),sound2(),sound_stop()">Windowsの終了</a>
     </div>
 
     <div class="content">
@@ -72,8 +73,8 @@
             <a class="test2 white" onclick="Credit()">クレジット</a>
             <a class="icon3" onclick="popupwindow_open()"></a>
             <a class="test3 white" onclick="popupwindow_open()">ようこそ</a>
-            <a class="icon4" onclick="iframe1_open()"></a>
-            <a class="test4 white" onclick="iframe1_open()">オモチのサイト</a>
+            <a class="icon4" onclick="iframe1_open(),popupwindow_close()"></a>
+            <a class="test4 white" onclick="iframe1_open(),popupwindow_close()">オモチのサイト</a>
         </div>
     </div>
 
@@ -322,13 +323,15 @@
             display: none;
         }
 
-        #information {
-            color: white;
-            z-index: 101;
-        }
-
         a {
             text-decoration: none;
+        }
+
+        .user {
+            display: none;
+            position: absolute;
+            top: 80px;
+            z-index: 101;
         }
 
         .screen {
@@ -1739,6 +1742,12 @@
     </style>
     <script text="javascript">
 
+        const element = document.getElementById('information');
+        element.insertAdjacentHTML('afterend','<p class="white user">BROWSER: '+ navigator.appName + '<br>' 
+            + 'VERSION: ' + navigator.appVersion +  '<br>' + 'USER: ' + navigator.userAgent +  '<br>' + 'WIDTH: ' + screen.width +  '<br>' 
+            + 'HEIGHT: ' + screen.height +  '<br>' + 'BIT: '  + screen.colorDepth + '</p>');
+
+
         window.addEventListener('load', (event) => {
             const screen_open = document.querySelector(".Windows95_group");
             screen_open.style.display = "block";
@@ -1765,24 +1774,38 @@
     }
 
         function sound() { 
-            let audio = null;
-            audio = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6302%20(online-audio-converter.com).mp3");
+            const sound = document.querySelector('#sound');
         setTimeout(
             function ()
             {
-            audio.play();
+            sound.play();
         }, 
-        6000);
+        5500);
     }
+
+        function sound_stop() {
+            const sound = document.querySelector('#sound');
+            sound.pause();
+            sound.currentTime = 0;
+        }
+
+        function sound2() {
+            audio2 = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6307.mp3");
+            audio2.play();
+        }
 
 
         function screen_start() {
+            let user = document.querySelector(".user");
+            user.style.display = "block";
             document.getElementById("backcolor").style.backgroundColor = "black";
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.add('active');
             let screen = document.getElementsByClassName('screen');
             screen[0].classList.remove('active');
         setTimeout(function() {
+            let user = document.querySelector(".user");
+            user.style.display = "none";
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.remove('active');
             document.getElementById("backcolor").style.backgroundColor = "";
