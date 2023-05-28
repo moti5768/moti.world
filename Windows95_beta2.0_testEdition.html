@@ -25,7 +25,6 @@
     </div>
 
 <div class="Windows95_group">
-    <audio id="sound" src="https://github.com/moti5768/moti.world/raw/main/IMG_6305.mp3"></audio>
     <div class="popupwrap popup_window border">
         <p class="popup_window_text">Windows<span class="white">95</span>&nbsp;へようこそ testEdition</p>
         <div class="popup_window_white border">
@@ -1773,8 +1772,8 @@
         }, 5000);
     }
 
-        function sound() { 
-            const sound = document.querySelector('#sound');
+        function sound() {
+            const sound = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6305.mp3");
         setTimeout(
             function ()
             {
@@ -1783,15 +1782,9 @@
         5500);
     }
 
-        function sound_stop() {
-            const sound = document.querySelector('#sound');
-            sound.pause();
-            sound.currentTime = 0;
-        }
-
         function sound2() {
-            audio2 = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6307.mp3");
-            audio2.play();
+            sound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6307.mp3");
+            sound2.play();
         }
 
 
