@@ -151,6 +151,7 @@ table tr:nth-child(odd) td {
 
 footer {
     background-color: black;
+    height: 50px;
     opacity: 0.9;
     color: white;
 }
@@ -172,6 +173,7 @@ footer {
 @media screen and (max-width: 768px){
     footer {
         background-color: black;
+        height: 50px;
         opacity: 0.9;
         color: white;
     }
