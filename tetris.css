@@ -3,13 +3,14 @@ html {
 }
 
 .wrapper-container {
+    margin-top: 30px;
     display: inline-block;
 }
 
 .tetris-container {
     display: flex;
     flex-direction: row;
-    margin: 10px;
+    margin: 0px;
     background-color: #333333;
 }
 
@@ -33,7 +34,7 @@ html {
 
 .tetris-button-panel {
     border-style: none;
-    width: 100%;
+    width: 90%;
 }
 
 .tetris-button {
