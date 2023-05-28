@@ -79,7 +79,7 @@
 
     <div class="iframe1 border">
         <span class="menu_bluebar">オモチのサイト</span>
-        <iframe src="index.html"></iframe>
+        <iframe class="iframe" src="index.html"></iframe>
         <button class="closebutton border hover2" onclick="iframe1_close()">X</button>
     </div>
 
@@ -1438,7 +1438,8 @@
             left: 90px;
         }
         
-    @media screen and (max-width: 768px){
+    @media screen and (min-width: 768px) and (max-width: 1000px){
+
         .content {
             position: relative;
             top: -30px;
