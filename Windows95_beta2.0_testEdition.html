@@ -114,10 +114,10 @@
         <button class="backcolor_button backbutton_brown" onclick="backcolor_brown()"></button>
         <button class="backcolor_button backbutton_pink" onclick="backcolor_pink()"></button>
         <button class="backcolor_button backbutton_skincolor" onclick="backcolor_skincolor()"></button>
-        <button class="backcolor_button backbutton_test" onclick="backcolor_test()"></button>
-        <button class="backcolor_button backbutton_test2" onclick="backcolor_test2()"></button>
-        <button class="backcolor_button backbutton_test3" onclick="backcolor_test3()"></button>
-        <button class="backcolor_button backbutton_test4" onclick="backcolor_test4()"></button>
+        <button class="backcolor_button gradation backbutton_test" onclick="backcolor_test()"></button>
+        <button class="backcolor_button gradation backbutton_test2" onclick="backcolor_test2()"></button>
+        <button class="backcolor_button gradation backbutton_test3" onclick="backcolor_test3()"></button>
+        <button class="backcolor_button gradation backbutton_test4" onclick="backcolor_test4()"></button>
     </div>
     </div>
 
@@ -1438,7 +1438,11 @@
             left: 90px;
         }
         
-    @media screen and (min-width: 768px) and (max-width: 1000px){
+    @media screen and (max-width: 768px){
+
+        .gradation {
+            display: none;
+        }
 
         .content {
             position: relative;
