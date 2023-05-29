@@ -283,8 +283,8 @@
             </canvas>
             <span class="tetris-panel-container">
               <p>Next:</p>
-                <canvas id="next" width="130px" height="150px" style="background-color:black;">
-                </canvas>
+              <canvas id="next" width="130px" height="150px" style="background-color:black;">
+            </canvas>
               <p>LINES:<span id="lines">0</span></p>
               <p><span id="message"></span></p>
               <div class="tetris-panel-container-padding"></div>
@@ -304,13 +304,8 @@
         </span>
     </div>
     <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
+    <button class="blacktext taskbutton border hover" onclick="reset()">一</button>
     </div>
-
-    <script>
-        var tetris = new Tetris();
-        tetris.startGame();
-      </script>
-
 
 </div>
 
@@ -327,14 +322,6 @@
         body {
             font-family: sans-serif;
             background: #008080;
-        }
-
-        .tetris {
-            background: white;
-            display: none;
-            position: absolute;
-            top: 40px;
-            left: 0px;
         }
 
         audio {
@@ -1838,7 +1825,9 @@
 }
 
     </style>
-    <script>
+    <script text="javascript">
+        tetris = new tetris();
+        tetris.startGame();
 
         const element = document.getElementById('information');
         element.insertAdjacentHTML('afterend','<p class="white user">BROWSER: '+ navigator.appName + '<br>' 
@@ -2325,10 +2314,6 @@
         }else{
             //条件に一致しない場合(入力されている場合)
             alert('コマンドが正しくありません！');
-            function iframe1_open(){
-        const iframe1 = document.querySelector(".iframe1");
-        iframe1.style.display = "inline";
-    };
         }
     }
 
