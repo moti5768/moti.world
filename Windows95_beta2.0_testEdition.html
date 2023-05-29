@@ -2325,7 +2325,10 @@
         }else{
             //条件に一致しない場合(入力されている場合)
             alert('コマンドが正しくありません！');
-            function iframe1_open();
+            function iframe1_open(){
+        const iframe1 = document.querySelector(".iframe1");
+        iframe1.style.display = "inline";
+    };
         }
     }
 
