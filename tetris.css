@@ -2,8 +2,30 @@ html {
     touch-action: manipulation;
 }
 
+#next {
+    position: relative;
+    left: 5px;
+}
+
+#stage {
+    width: 50%;
+    height: 50%;
+}
+
+.tetris {
+    background: white;
+    display: none;
+    position: absolute;
+    top: 90px;
+    left: 0px;
+    height: 390px;
+    width: 360px;
+}
+
 .wrapper-container {
-    margin-top: 30px;
+    margin-top: 28px;
+    position: relative;
+    right: 1px;
     display: inline-block;
 }
 
@@ -34,12 +56,14 @@ html {
 
 .tetris-button-panel {
     border-style: none;
-    width: 90%;
+    width: 120%;
+    position: relative;
+    right: 0px;
 }
 
 .tetris-button {
-    padding-top: 10px;
-    padding-bottom: 10px;
+    padding-top: 15px;
+    padding-bottom: 15px;
     text-align: center;
     background: #444444;
 }
