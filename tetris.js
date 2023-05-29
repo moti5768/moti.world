@@ -1,4 +1,4 @@
-class Tetris {
+class tetris {
     constructor() {
         this.stageWidth = 10;
         this.stageHeight = 20;
@@ -317,4 +317,17 @@ class Tetris {
         context.fillStyle = "rgb(0, 0, 0)";
         context.fillRect(0, 0, canvas.width, canvas.height);
     }
+
+}
+function reset() {
+    this.stageWidth = 10;
+    this.stageHeight = 20;
+    this.stageCanvas = document.getElementById("stage");
+    this.nextCanvas = document.getElementById("next");
+    let cellWidth = this.stageCanvas.width / this.stageWidth;
+    let cellHeight = this.stageCanvas.height / this.stageHeight;
+    this.cellSize = cellWidth < cellHeight ? cellWidth : cellHeight;
+    this.stageLeftPadding = (this.stageCanvas.width - this.cellSize * this.stageWidth) / 2;
+    this.stageTopPadding = (this.stageCanvas.height - this.cellSize * this.stageHeight) / 2;
+    this.deletedLines = 100;
 }
