@@ -248,6 +248,12 @@
 
     <div class="underbar">
         <a class="blacktext bottom bold start_button border hover" onclick="startmenu_open(),popupwindow_close()">スタート</a>
+    
+    <div class="online_bar border">
+        <span class="online_icon"></span>
+        <p class="online_bartext">通信</p>
+        <p class="online_bartext2">Wifi</p>
+    </div>
 
     <div class="task_content_border"></div>
         <div class="task_content1">
@@ -584,6 +590,49 @@
             border-left: solid 2px gray;
             border-bottom: solid 2px white;
         }
+
+        .online_bar {
+            width: 45px;
+            height: 35px;
+            position: absolute;
+            right: 78px;
+            bottom: 2px;
+        }
+        .online_bartext {
+            writing-mode: vertical-rl;
+            font-size: small;
+            height: 28px;
+            position: absolute;
+            left: 0px;
+            bottom: 4px;
+        }
+        .online_bartext2 {
+            font-size: x-small;
+            width: 40px;
+            height: 10px;
+            position: absolute;
+            left: 20px;
+            bottom: 3px;
+        }
+        .online_icon {
+            background: dimgray;
+            width: 20px;
+            height: 20px;
+            position: absolute;
+            right: 4px;
+            bottom: 11px;
+            border: solid 1px black;
+        }
+        .online_icon.online {
+            background: deepskyblue;
+            width: 20px;
+            height: 20px;
+            position: absolute;
+            right: 4px;
+            bottom: 11px;
+            border: solid 1px black;
+        }
+
         .taskbutton {
             color: black;
             width: 25px;
@@ -1796,7 +1845,7 @@
         }
 
         .task_content_border {
-            width: 180px;
+            width: 160px;
             height: 34px;
             position: absolute;
             left: 78px;
@@ -1833,6 +1882,18 @@
         element.insertAdjacentHTML('afterend','<p class="white user">BROWSER: '+ navigator.appName + '<br>' 
             + 'VERSION: ' + navigator.appVersion +  '<br>' + 'USER: ' + navigator.userAgent +  '<br>' + 'WIDTH: ' + screen.width +  '<br>' 
             + 'HEIGHT: ' + screen.height +  '<br>' + 'BIT: '  + screen.colorDepth + '</p>');
+
+        setInterval(() => {
+        if (window.navigator.onLine) {
+            const online = document.getElementsByClassName('online_icon');
+            online[0].classList.add('online');
+            console.log("online");
+        } else {
+            const online = document.getElementsByClassName('online_icon');
+            online[0].classList.remove('online');
+            console.log("offline");
+        }
+    }, 500);
 
 
         window.addEventListener('load', (event) => {
