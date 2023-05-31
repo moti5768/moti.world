@@ -18,12 +18,12 @@
 
     <div class="screen_start" id="information">
         <span class="screencolor2"></span>
-        <p class="screentext_start white">windows95を起動しています...<p>
+        <p class="screentext_start white">Windows95を起動しています...<p>
     </div>
 
     <div class="screen_close">
         <span class="screencolor2"></span>
-        <p class="screentext_close white">windows95を終了しています...<p>
+        <p class="screentext_close white">Windows95を終了しています...<p>
     </div>
 
 <div class="Windows95_group">
@@ -77,6 +77,10 @@
             <a class="test3 white" onclick="popupwindow_open()">ようこそ</a>
             <a class="icon4" onclick="iframe1_open(),popupwindow_close()"></a>
             <a class="test4 white" onclick="iframe1_open(),popupwindow_close()">オモチのサイト</a>
+            <a class="icon5"></a>
+            <a class="test5 white">ファイルを選択</a>
+            <input type="file" class="icon5 file">
+            <input type="file" class="test5 white file2">
         </div>
     </div>
 
@@ -901,6 +905,7 @@
             position: absolute;
             bottom: 40px;
             left: 1px;
+            z-index: 10;
         }
         .finish {
             background: darkgray;
@@ -1024,6 +1029,16 @@
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
+        .icon5 {
+            margin-left: 10px;
+            margin-top: 445px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
 
         .test1 {
             margin-left: 10px;
@@ -1045,6 +1060,20 @@
             margin-left: 10px;
             position: absolute;
             top: 395px;
+        }
+        .test5 {
+            margin-left: 10px;
+            position: absolute;
+            top: 495px;
+        }
+
+        .file {
+            opacity: 0;
+            width: 60px;
+        }
+        .file2 {
+            opacity: 0;
+            width: 90px;
         }
 
         .accessory_icon {
