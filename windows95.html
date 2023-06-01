@@ -4,89 +4,167 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>windows95 beta</title>
+    <link rel="stylesheet" type="text/css" href="tetris.css">
+    <script type="text/javascript" src="tetris.js"></script>
+    <title>windows95 homeEdition 1.0</title>
 </head>
 <body id="backcolor">
     <div class="screen">
         <span class="screencolor"></span>
-        <p class="screentext xx-large white">Windows95&nbsp;beta1.1</p>
-        <button class="screenbutton" onclick="screen_open()">スタート</button>
+        <p class="screentext bold">Windows95</p>
+        <p class="screensubtext bold">homeEdition&nbsp;1.0&copy;</p>
+        <button class="screenbutton bold border" onclick="screen_start(),sound()">スタート</button>
     </div>
 
+    <div class="screen_start" id="user">
+        <span class="screencolor2"></span>
+        <p class="screentext_start white">Windows95を起動しています...<p>
+    </div>
+
+    <div class="screen_close">
+        <span class="screencolor2"></span>
+        <p class="screentext_close white">Windows95を終了しています...<p>
+    </div>
+
+<div class="Windows95_group">
+    <span class="logo"></span>
     <div class="popupwrap popup_window border">
-        <p class="popup_window_text">Windows<span class="white">95</span>&nbsp;へようこそ</p>
-        <div class="popup_window_white border"></div>
+        <p class="popup_window_text">Windows<span class="white">95</span>&nbsp;へようこそ homeEdition</p>
+        <div class="popup_window_white border">
+            <p class="popup_window_text2">Windows95&nbsp;homeEdition1.0へようこそ<br>
+                このアップデートには新機能の追加・変更・修正が含まれています。<br>
+                <br>
+                ・背景色変更画面の刷新<br>
+                ・背景色の変更から画面のプロパティへ名前変更<br>
+                ・背景色の種類を増やし、16色&nbsp;2色の切り替えができるようになりました。<br>
+                ・ウィンドウをタスクバーへ格納できるようになりました。(Xボタン横の一ボタンから可)<br>
+                ・ようこそ画面表示&nbsp;マイコンピュータファイル追加<br>
+                ・Windows終了時、起動したままのアプリが強制終了するようになりました。<br>
+                ・タスクバーにある各ブラウザボタンを削除し、マイコンピュータに移動しました。<br>
+                ・ボタンにカーソルを合わせると、色が変わるようになりました。<br>
+                ・CSS削除機能の追加(試験的)<br>
+                ・コマンド入力欄の追加(試験的)<br>
+                ・起動画面&nbsp;終了画面の追加<br>
+                ・各ウィンドウのタイトルバーがグラデーションするようになりました。<br>
+                ・テトリスを追加(ゲーム)<br>
+                ・その他バグ修正
+                </p>
+        </div>
         <span class="menu_bluebar">ようこそ</span>
-        <p class="popup_window_text2">Windows95&nbsp;beta1.1へようこそ<br>
-        このアップデートにはパフォーマンスの向上と修正が含まれています。<br>
-        <br>
-        ・様々なバグ修正<br>
-        </p>
-        <button class="blacktext closebutton border" onclick="popupwindow_close()">X</button>
+        <button class="blacktext closebutton border hover2" onclick="popupwindow_close()">X</button>
     </div>
 
-    </div>
     <div class="title">
-        <span class="titleline"></span>
-
-        <p class="bold white">Windows95　　</p>
-        <p class="bold white medium subtitle">beta&nbsp;1.1</p>
+        <div class="titleline"></div>
+        <p class="bold white">Windows95&emsp;&emsp;&emsp;</p>
+        <p class="bold white medium subtitle">homeEdition&nbsp;1.0&copy;</p>
     </div>
 
     <div class="start_menu border">
-        <span class="menu_bluebar white">起動オプション</span>
-        <button class="blacktext closebutton border" onclick="startmenu_close()">X</button>
-        <button class="blacktext programbutton border bold" onclick="programmenu_open()">プログラム</button>
-        <button class="blacktext settingbutton border bold" onclick="settingmenu_open()">設定</button>
-        <a class="blacktext border bold finish" onclick="screen_close(),startmenu_close()">Windowsの終了</a>
+        <span class="menu_graybar white">Windows95</span>
+        <button class="blacktext closebutton border hover2" onclick="startmenu_close()">X</button>
+        <button class="blacktext programbutton border bold hover" onclick="programmenu_open(),settingmenu_close()">プログラム</button>
+        <button class="blacktext settingbutton border bold hover" onclick="settingmenu_open(),programmenu_close(),appmenu_close()">設定</button>
+        <a class="blacktext border bold finish hover" onclick="screen_close(),allwindow_close(),sound2()">Windowsの終了</a>
     </div>
 
     <div class="content">
         <div class="content-icons">
-    <a class="icon1" href="index.html"></a>
-    <a class="test1 white" href="index.html">オモチのサイト</a>
-    <a class="icon2" onclick="Credit()"></a>
-    <a class="test2 white" onclick="Credit()">クレジット</a>
-    <a class="icon3" onclick="popupwindow_open()"></a>
-    <a class="test3 white" onclick="popupwindow_open()">ようこそ</a>
+            <a class="icon1" onclick="mycomputer_open(),popupwindow_close()"></a>
+            <a class="test1 white" onclick="mycomputer_open(),popupwindow_close()">マイコンピュータ</a>
+            <a class="icon2" onclick="Credit()"></a>
+            <a class="test2 white" onclick="Credit()">クレジット</a>
+            <a class="icon3" onclick="popupwindow_open()"></a>
+            <a class="test3 white" onclick="popupwindow_open()">ようこそ</a>
+            <a class="icon4" onclick="iframe1_open(),popupwindow_close()"></a>
+            <a class="test4 white" onclick="iframe1_open(),popupwindow_close()">オモチのサイト</a>
+            <a class="icon5"></a>
+            <a class="test5 white">ファイルを選択</a>
+            <input type="file" class="icon5 file">
+            <input type="file" class="test5 white file2">
+        </div>
     </div>
+
+    <div class="iframe1 border">
+        <span class="menu_bluebar">オモチのサイト</span>
+        <iframe src="index.html"></iframe>
+        <button class="closebutton border hover2" onclick="iframe1_close()">X</button>
+    </div>
+
+    <div class="css_menu border">
+        <span class="menu_bluebar">CSSの削除</span>
+        <button class="css_box border hover" onclick="stylebox()">CSSを削除する</button>
+        <button class="closebutton border hover2" onclick="cssmenu_close()">X</button>
     </div>
 
     <div class="backcolor_menu border">
-        <span class="menu_bluebar">背景色の変更</span>
-        <button class="blacktext closebutton border" onclick="backcolormenu_close()">X</button>
-        <button class="blacktext backcolor_button border" onclick="backcolor_darkblue()">青</button>
-        <button class="blacktext backcolor_button border" onclick="backcolor_red()">赤</button>
-        <button class="blacktext backcolor_button border" onclick="backcolor_yellow()">黄</button>
-        <button class="blacktext backcolor_button border" onclick="backcolor_green()">緑</button>
-        <button class="blacktext backcolor_button border" onclick="backcolor_purple()">紫</button>
-        <button class="blacktext backcolor_button border" onclick="backcolor_black()">黒</button>
-        <button class="blacktext backcolor_reset border" onclick="backcolor_reset()">reset</button>
+        <span class="menu_bluebar">画面のプロパティ</span>
+        <button class="closebutton border hover2" onclick="backcolormenu_close()">X</button>
+        <button class="blacktext backcolor_reset hover" onclick="backcolor_reset()">reset</button>
+
+        <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()"></input>
+        <p class="backcolor_text">表示を2色にする。</p>
+        <button class="backcolor_button backbutton_black" onclick="backcolor_black()"></button>
+        <button class="backcolor_button backbutton_gray" onclick="backcolor_gray()"></button>
+
+        <div class="colorbtn">
+        <button class="backcolor_button backbutton_silver" onclick="backcolor_silver()"></button>
+        <button class="backcolor_button backbutton_blue" onclick="backcolor_darkblue()"></button>
+        <button class="backcolor_button backbutton_lightskyblue" onclick="backcolor_lightskyblue()"></button>
+        <button class="backcolor_button backbutton_red" onclick="backcolor_red()"></button>
+        <button class="backcolor_button backbutton_orange" onclick="backcolor_orange()"></button>
+        <button class="backcolor_button backbutton_yellow" onclick="backcolor_yellow()"></button>
+        <button class="backcolor_button backbutton_green" onclick="backcolor_green()"></button>
+        <button class="backcolor_button backbutton_lime" onclick="backcolor_lime()"></button>
+        <button class="backcolor_button backbutton_purple" onclick="backcolor_purple()"></button>
+        <button class="backcolor_button backbutton_redpurple" onclick="backcolor_redpurple()"></button>
+        <button class="backcolor_button backbutton_bluepurple" onclick="backcolor_bluepurple()"></button>
+        <button class="backcolor_button backbutton_brown" onclick="backcolor_brown()"></button>
+        <button class="backcolor_button backbutton_pink" onclick="backcolor_pink()"></button>
+        <button class="backcolor_button backbutton_skincolor" onclick="backcolor_skincolor()"></button>
+        <button class="backcolor_button gradation backbutton_test" onclick="backcolor_test()"></button>
+        <button class="backcolor_button gradation backbutton_test2" onclick="backcolor_test2()"></button>
+        <button class="backcolor_button gradation backbutton_test3" onclick="backcolor_test3()"></button>
+        <button class="backcolor_button gradation backbutton_test4" onclick="backcolor_test4()"></button>
+    </div>
     </div>
 
     <div class="taskbar">
         <span class="taskbar_blue"></span>
-        <button class="blacktext bar_button" onclick="backcolormenu_open(),popupwindow_close()">C</button>
-        <button class="blacktext bar_button">T</button>
-        <button class="blacktext bar_button">T</button>
-        <button class="blacktext bar_button">T</button>
-        <button class="blacktext bar_button">T</button>
+        <button class="blacktext bar_button hover" onclick="backcolormenu_open(),popupwindow_close()">C</button>
+        <button class="blacktext bar_button hover" onclick="cssmenu_open(),popupwindow_close()">CS</button>
+        <button class="blacktext bar_button hover">T</button>
+        <button class="blacktext bar_button hover">T</button>
+        <button class="blacktext bar_button hover">T</button>
     </div>
 
     <div class="program_menu border">
         <span class="menu_bluebar">プログラム</span>
-        <button class="blacktext closebutton border" onclick="programmenu_close()">X</button>
-        <button class="blacktext accessorybutton" onclick="appmenu_open()">アクセサリ</button>
-        <span class="accessory_icon"></span>
+        <button class="blacktext closebutton border hover2" onclick="programmenu_close()">X</button>
+        <button class="blacktext accessorybutton hover" onclick="appmenu_open()">アクセサリ</button>
+        <button class="blacktext accessorybutton2 hover" onclick="commandmenu_open(),startmenu_close()">コマンド</button>
+        <a class="accessory_icon" onclick="appmenu_open()"></a>
+        <a class="accessory_icon2" onclick="commandmenu_open(),startmenu_close()"></a>
     </div>
 
     <div class="app_menu border">
         <span class="menu_bluebar">アプリ</span>
-        <button class="blacktext closebutton border" onclick="appmenu_close()">X</button>
-        <button class="blacktext appbutton" onclick="memo_open(),startmenu_close()">メモ帳</button>
-        <button class="blacktext appbutton2" onclick="calc_open(),startmenu_close()">電卓</button>
-        <span class="app_icon"></span>
-        <span class="app_icon2"></span>
+        <button class="blacktext closebutton border hover2" onclick="appmenu_close()">X</button>
+        <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close()">メモ帳</button>
+        <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close()">電卓</button>
+        <a class="app_icon" onclick="memo_open(),startmenu_close()"></a>
+        <a class="app_icon2" onclick="calc_open(),startmenu_close()"></a>
+    </div>
+
+    <div class="command_menu border">
+        <div class="menu_bluebar">コマンド入力</div>
+        <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
+        <div class="textcommand_area">
+    <form method="get" name="mail_form" onsubmit="return false;">
+        <input type="text" class="textcommand_area border" name="mail" placeholder="Windows95beta1.1">
+        <input type="submit" class="textcommand_area border hover" value="実行" onclick="check()">
+    </form>
+    </div>
     </div>
 
     <div class="app_memo border">
@@ -99,14 +177,16 @@
             <input type="button" class="blacktext memo_button_load" value="読込" onclick=load(); ></input>
             <input type="button" id="cleartextbtn" class="blacktext memo_button_clear" value="クリア"></input>
         </p>
-        <button class="closebutton blacktext border" onclick="memo_close()">X</button>
+        <button class="closebutton blacktext border hover2" onclick="task_content4_close(),memo_close()">X</button>
+        <button class="blacktext taskbutton border hover" onclick="task_content4_open(),memo_close()">一</button>
     </div>
 
     <div class="app_calc border">
             <span class="menu_bluebar">電卓</span>
             <p class="white">　</p>
         <input class="calc textcalc" style="text-align: right;"></input><br>
-        <button class="closebutton blacktext border" onclick="calc_close()">X</button>
+        <button class="closebutton blacktext border hover2" onclick="task_content3_close(),calc_close()">X</button>
+        <button class="blacktext taskbutton border hover" onclick="task_content3_open(),calc_close()">一</button>
         <button class="calc button_calc" onclick="append( '1' )" >1</button>
         <button class="calc button_calc" onclick="append( '2' )" >2</button>
         <button class="calc button_calc" onclick="append( '3' )" >3</button>
@@ -117,11 +197,12 @@
         <button class="calc button_calc" onclick="append( '8' )" >8</button>
         <button class="calc button_calc" onclick="append( '9' )" >9</button>
         <button class="calc button_calc" onclick="append( '0' )" >0</button><br />
+        <button class="calc button_calc" onclick="append( '00' )" >00</button>
         <button class="calc button_calc" onclick="append( '.' )" >.</button>
         <button class="calc button_calc" onclick="append( '+' )" >+</button>
         <button class="calc button_calc" onclick="append( '-' )" >-</button>
-        <button class="calc button_calc" onclick="append( '*' )" >*</button>
-        <button class="calc button_calc" onclick="append( '/' )" >/</button><br />
+        <button class="calc button_calc" onclick="append( '*' )" >x</button><br />
+        <button class="calc button_calc" onclick="append( '/' )" >÷</button>
         <button class="calc button_calc" onclick="append( '**' )" >^</button>
         <button class="calc button_calc" onclick="append( '**0.5' )" >√</button>
         <button class="calc button_calc" onclick="calc()">=</button>
@@ -131,38 +212,114 @@
 
     <div class="setting_menu border">
         <span class="menu_bluebar">設定</span>
-        <button class="blacktext closebutton border" onclick="settingmenu_close()">X</button>
-        <button class="blacktext devicebutton x-small" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
-        <span class="device_icon"></span>
+        <button class="blacktext closebutton border hover2" onclick="settingmenu_close()">X</button>
+        <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
+        <a class="device_icon" onclick="controlpanel_open(),startmenu_close()"></a>
     </div>
 
     <div class="controlpanel">
         <div class="controlpanel_window border">
-        <span class="menu_bluebar">　　コントロールパネル</span>
-        <span class="controlpanel_white border"></span>
-        <p class="controlpanel_text">テスト</p>
-        <span class="controlpanel_icon"></span>
-        <span class="controlpanel_icon2"></span>
-        <button class="blacktext closebutton border" onclick="controlpanel_close()">X</button>
+            <span class="menu_bluebar">　　コントロールパネル</span>
+            <span class="controlpanel_white border"></span>
+            <a class="controlpanel_text" onclick="testalert()">テスト</a>
+            <span class="controlpanel_icon"></span>
+            <a class="controlpanel_icon2" onclick="testalert()"></a>
+            <button class="blacktext closebutton border hover2" onclick="task_content2_close(),controlpanel_close()">X</button>
+            <button class="blacktext taskbutton border hover" onclick="task_conent2_open(),controlpanel_close()">一</button>
+        </div>
     </div>
+
+    <div class="mycomputer">
+        <div class="mycomputer_window border">
+            <span class="menu_bluebar">　　マイコンピュータ</span>
+            <span class="mycomputer_white border"></span>
+            <span class="mycomputer_icon"></span>
+            <a class="mycomputer_text2" onclick="controlpanel_open(),mycomputer_close()">コントロールパネル</a>
+            <a class="mycomputer_icon2" onclick="controlpanel_open(),mycomputer_close()"></a>
+            <a class="mycomputer_text3" href="https://google.com">Google</a>
+            <a class="mycomputer_icon3" href="https://google.com"></a>
+            <a class="mycomputer_text4" href="https://yahoo.co.jp">Yahoo!</a>
+            <a class="mycomputer_icon4" href="https://yahoo.co.jp"></a>
+            <a class="mycomputer_text5" href="https://youtube.com">Youtube</a>
+            <a class="mycomputer_icon5" href="https://youtube.com"></a>
+
+            <a class="mycomputer_text6" onclick="tetris_open(),mycomputer_close()">テトリス</a>
+            <a class="mycomputer_icon6" onclick="tetris_open(),mycomputer_close()"></a>
+
+            <button class="blacktext closebutton border hover2" onclick="task_content1_close(),mycomputer_close()">X</button>
+            <button class="blacktext taskbutton border hover" onclick="task_conent1_open(),mycomputer_close()">一</button>
+        </div>
     </div>
 
     <div class="underbar">
-        <a class="blacktext bottom bold start_button border" onclick="startmenu_open(),popupwindow_close()">スタート</a>
-        <span>　　　　</span>
-        <a class="blacktext bottom bold underbarcontent" href="https://google.com">Google</a>
-        <span></span>
-        <a class="blacktext bottom bold underbarcontent" href="https://yahoo.co.jp">Yahoo</a>
-        <span></span>
-        <a class="blacktext bottom bold underbarcontent" href="https://youtube.com">Youtube</a>
-        <span></span>
+        <a class="blacktext bottom bold start_button border hover" onclick="startmenu_open(),popupwindow_close()">start</a>
+        <span class="start_logo"></span>
+    
+    <div class="online_bar border">
+        <span class="online_icon"></span>
+        <p class="online_bartext">通信</p>
+        <p class="online_bartext2">状態</p>
+    </div>
+
+    <div class="task_content_border"></div>
+        <div class="task_content1">
+            <button class="task_button1" onclick="mycomputer_open(),task_content1_close()"></button>
+            <span class="task_icon1"></span>
+        </div>
+        <div class="task_content2">
+            <button class="task_button2" onclick="controlpanel_open(),task_content2_close()"></button>
+            <span class="task_icon2"></span>
+        </div>
+        <div class="task_content3">
+            <button class="task_button3" onclick="calc_open(),task_content3_close()"></button>
+            <span class="task_icon3"></span>
+        </div>
+        <div class="task_content4">
+            <button class="task_button4" onclick="memo_open(),task_content4_close()"></button>
+            <span class="task_icon4"></span>
+        </div>
+
         <span class="timer bottom" id="timer">time　</span>
         <span class="timer2 bottom" id="ampm">test</span>
     </div>
 
     <div class="Credit">
-        <p class="bigtext bold Credit_text">Windows95 beta1.1</p>
+        <p class="bold Credit_text">Windows95 homeEdition 1.0</p>
     </div>
+
+    <div class="tetris border">
+        <span class="menu_bluebar">テトリス</span>
+    <div class="wrapper-container">
+        <span class="tetris-container">
+            <canvas id="stage" width="250px" height="500px" style="background-color:black;">
+            </canvas>
+            <span class="tetris-panel-container">
+              <p>Next:</p>
+              <canvas id="next" width="130px" height="150px" style="background-color:black;">
+            </canvas>
+              <p>LINES:<span id="lines">0</span></p>
+              <p><span id="message"></span></p>
+              <div class="tetris-panel-container-padding"></div>
+              <table class="tetris-button-panel">
+                <tr>
+                  <td></td>
+                  <td id="tetris-rotate-button" class="tetris-button">↻</td>
+                  <td></td>
+                </tr>
+                <tr>
+                  <td id="tetris-move-left-button"class="tetris-button">←</td>
+                  <td id="tetris-fall-button"class="tetris-button">↓</td>
+                  <td id="tetris-move-right-button"class="tetris-button">→</td>
+                </tr>
+              </table>
+            </span>
+        </span>
+    </div>
+    <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
+    <button class="blacktext taskbutton border hover" onclick="reset()">一</button>
+    </div>
+
+</div>
 
     <style>
         * {
@@ -170,43 +327,135 @@
             padding: 0px;
         }
 
+        html {
+            touch-action: manipulation;
+        }
+
         body {
             font-family: sans-serif;
-            background-color: #008080;
+            background: #008080;
+        }
+
+        audio {
+            display: none;
+        }
+
+        .hover:hover {
+            background-color: blue;
+            color: white;
+        }
+        .hover2:hover {
+            background-color: red;
+            color: white;
+        }
+
+        iframe {
+            background: white;
+            margin-top: 18px;
+            width: 750px;
+            height: 550px;
+            position: relative;
+            top: 7px;
+        }
+        .iframe1 {
+            display: none;
+            position: absolute;
+            top: 20px;
+            left: 90px;
+        }
+        .iframe2 {
+            display: inline;
+            position: absolute;
+            top: 20px;
+            left: 90px;
+        }
+
+        .Windows95_group {
+            display: none;
         }
 
         a {
             text-decoration: none;
         }
 
+        .user {
+            display: none;
+            position: absolute;
+            top: 80px;
+            z-index: 101;
+        }
+
         .screen {
-            visibility: hidden;
+            display: none;
         }
         .screen.active {
-            visibility: visible;
+            display: block;
+        }
+
+        .screen_start {
+            display: none;
+        }
+        .screen_start.active {
+            display: block;
+        }
+        .screentext_start {
+            color: white;
+            position: absolute;
+            top: 0px;
+            left: 0px;
+            z-index: 102;
+        }
+
+        .screen_close {
+            display: none;
+        }
+        .screen_close.active {
+            display: block;
+        }
+        .screentext_close {
+            color: white;
+            position: absolute;
+            top: 0px;
+            left: 0px;
+            z-index: 102;
         }
 
         .screenbutton {
-            background-color: black;
-            color: white;
+            background: linear-gradient(-35deg, white, skyblue, royalblue);
+            color: black;
             width: 150px;
             height: 50px;
             position: absolute;
             top: 300px;
             left: 700px;
-            border: solid 2px white;
             border-radius: 0;
             z-index: 101;
         }
 
         .screentext {
             color: black;
+            font-size: 50px;
             position: absolute;
-            top: 300px;
-            left: 300px;
+            top: 290px;
+            left: 320px;
+            z-index: 101;
+        }
+        .screensubtext {
+            color: black;
+            font-size: 20px;
+            position: absolute;
+            top: 350px;
+            left: 420px;
             z-index: 101;
         }
         .screencolor {
+            background: linear-gradient(-35deg, royalblue, skyblue, white);
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            z-index: 100;
+        }
+        .screencolor2 {
             background-color: black;
             width: 100%;
             height: 100%;
@@ -224,19 +473,19 @@
         .popup_window {
             background: darkgray;
             width: 550px;
-            height: 350px;
-            top: 150px;
+            height: 440px;
+            top: 80px;
             position: relative;
             left: 180px;
             z-index: 10;
         }
         .popup_window_white {
             background: white;
-            width: 500px;
-            height: 260px;
+            width: 530px;
+            height: 360px;
             position: absolute;
             top: 70px;
-            left: 20px;
+            left: 10px;
         }
         .popup_window_text {
             font-size: x-large;
@@ -247,8 +496,8 @@
         .popup_window_text2 {
             font-size: small;
             position: absolute;
-            top: 80px;
-            left: 30px;
+            top: 0px;
+            left: 0px;
         }
 
         .title {
@@ -257,19 +506,17 @@
             right: 30px;
             top: 10px;
         }
-
-        .subtitle {
-            position: absolute;
-            top: 30px;
-            right: 0px;
-        }
-
         .titleline {
             background: white;
             width: 100%;
             height: 1.5px;
             position: absolute;
             top: 30px;
+        }
+        .subtitle {
+            position: absolute;
+            top: 30px;
+            right: 0px;
         }
 
         .bold {
@@ -338,6 +585,188 @@
             top: 2px;
         }
 
+        .task_content_border {
+            width: 300px;
+            height: 34px;
+            position: absolute;
+            left: 78px;
+            bottom: 1px;
+            border-top: solid 2px gray;
+            border-right: solid 2px gray;
+            border-left: solid 2px gray;
+            border-bottom: solid 2px white;
+        }
+
+        .online_bar {
+            width: 45px;
+            height: 35px;
+            position: absolute;
+            right: 78px;
+            bottom: 2px;
+        }
+        .online_bartext {
+            writing-mode: vertical-rl;
+            font-size: small;
+            height: 28px;
+            position: absolute;
+            left: -1px;
+            bottom: 4px;
+        }
+        .online_bartext2 {
+            font-size: x-small;
+            width: 40px;
+            height: 15px;
+            position: absolute;
+            left: 19px;
+            bottom: -2px;
+        }
+        .online_icon {
+            background: dimgray;
+            width: 20px;
+            height: 20px;
+            position: absolute;
+            right: 4px;
+            bottom: 11px;
+            border: solid 1px black;
+        }
+        .online_icon.online {
+            background: deepskyblue;
+            width: 20px;
+            height: 20px;
+            position: absolute;
+            right: 4px;
+            bottom: 11px;
+            border: solid 1px black;
+        }
+
+        .taskbutton {
+            color: black;
+            width: 25px;
+            height: 25px;
+            position: absolute;
+            top: 0px;
+            right: 25px;
+        }
+        .task_content1 {
+            display: none;
+            position: relative;
+        }
+        .task_button1 {
+            margin-left: 0px;
+            background: darkgray;
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            left: 83px;
+            top: 5px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .task_icon1 {
+            pointer-events: none;
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            left: 77px;
+            top: 11px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .task_content2 {
+            display: none;
+            position: relative;
+        }
+        .task_button2 {
+            margin-left: 0px;
+            background: darkgray;
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            left: 114px;
+            top: 5px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .task_icon2 {
+            pointer-events: none;
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            left: 108px;
+            top: 11px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .task_content3 {
+            display: none;
+            position: relative;
+        }
+        .task_button3 {
+            margin-left: 0px;
+            background: darkgray;
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            left: 144px;
+            top: 5px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .task_icon3 {
+            pointer-events: none;
+            margin-left: 10px;
+            background: dimgray;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            left: 138px;
+            top: 11px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .task_content4 {
+            display: none;
+            position: relative;
+        }
+        .task_button4 {
+            margin-left: 0px;
+            background: darkgray;
+            width: 30px;
+            height: 30px;
+            position: absolute;
+            left: 174px;
+            top: 5px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .task_icon4 {
+            pointer-events: none;
+            margin-left: 10px;
+            background: white;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            left: 168px;
+            top: 11px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
         .bar_button {
             margin-left: 0px;
             background: darkgray;
@@ -356,21 +785,107 @@
             width: 30px;
             height: 30px;
             position: relative;
-            top: 35px;
+            top: 40px;
             left: 7px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+            border-radius: 0;
         }
+        .colorbtn {
+            display: inline;
+        }
+        .backcolor_text {
+            font-size: small;
+            position: absolute;
+            right: 0px;
+            bottom: 40px;
+        }
+        .backcolor_box {
+            transform: scale(2);
+            position: absolute;
+            left: 10px;
+            bottom: 43px;
+        }
+        .backbutton_black {
+            background: black;
+        }
+        .backbutton_gray {
+            background: gray;
+        }
+        .backbutton_silver {
+            background: silver;
+        }
+        .backbutton_blue {
+            background: darkblue;
+        }
+        .backbutton_lightskyblue {
+            background: lightskyblue;
+        }
+        .backbutton_red {
+            background: red;
+        }
+        .backbutton_orange {
+            background: orange;
+        }
+        .backbutton_yellow {
+            background: yellow;
+        }
+        .backbutton_green {
+            background: green;
+        }
+        .backbutton_lime {
+            background: lime;
+        }
+        .backbutton_purple {
+            background: purple;
+        }
+        .backbutton_redpurple {
+            background: #c450a0;
+        }
+        .backbutton_bluepurple {
+            background: #704cbc;
+        }
+        .backbutton_brown {
+            background: brown;
+        }
+        .backbutton_pink {
+            background: pink;
+        }
+        .backbutton_skincolor {
+            background: #fedcbd;
+        }
+        .backbutton_test {
+            background: linear-gradient(90deg, darkblue, blue);
+        }
+        .backbutton_test2 {
+            background: linear-gradient(90deg, darkred, red);
+        }
+        .backbutton_test3 {
+            background: linear-gradient(90deg, yellow, green);
+        }
+        .backbutton_test4 {
+            background: linear-gradient(90deg, black, white);
+        }
+
         .backcolor_reset {
             width: 40px;
             height: 30px;
             position: absolute;
-            top: 212px;
+            top: 262px;
             right: 0px;
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+            border-radius: 0;
         }
         .backcolor_save {
             width: 40px;
             height: 30px;
             position: absolute;
-            top: 212px;
+            top: 262px;
             left: 0px;
         }
 
@@ -385,13 +900,14 @@
         }
 
         .start_menu {
+            display: none;
             background: darkgray;
             width: 140px;
             height: 130px;
             position: absolute;
             bottom: 40px;
             left: 1px;
-            visibility: hidden;
+            z-index: 10;
         }
         .finish {
             background: darkgray;
@@ -402,17 +918,42 @@
             bottom: 0px;
         }
 
+        .css_menu {
+            display: none;
+            background: darkgray;
+            width: 150px;
+            height: 70px;
+            position: absolute;
+            top: 500px;
+            right: 31px;
+        }
+        .css_box {
+            background: darkgray;
+            color: black;
+            width: 100px;
+            height: 30px;
+            position: absolute;
+            top: 30px;
+            right: 31px;
+        }
         .backcolor_menu {
             display: none;
-            background: gray;
+            background: darkgray;
             width: 150px;
-            height: 250px;
+            height: 300px;
             position: absolute;
-            top: 320px;
+            top: 270px;
             right: 31px;
         }
         .menu_bluebar {
-            background: darkblue;
+            background: linear-gradient(90deg, darkblue, blue);
+            color: white;
+            width: 100%;
+            height: 25px;
+            position: absolute;
+        }
+        .menu_graybar {
+            background: dimgray;
             color: white;
             width: 100%;
             height: 25px;
@@ -441,8 +982,9 @@
         }
 
         .content {
+            font-size: small;
             position: relative;
-            top: -400px;
+            top: -460px;
         }
         .content-icons {
             position: relative;
@@ -453,8 +995,8 @@
             margin-left: 10px;
             margin-top: 45px;
             background: khaki;
-            width: 65px;
-            height: 50px;
+            width: 60px;
+            height: 45px;
             position: absolute; 
             border-bottom: solid 2px black;
             border-right: solid 2px black;
@@ -463,8 +1005,8 @@
             margin-left: 10px;
             margin-top: 145px;
             background: khaki;
-            width: 65px;
-            height: 50px;
+            width: 60px;
+            height: 45px;
             position: absolute;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
@@ -473,8 +1015,28 @@
             margin-left: 10px;
             margin-top: 245px;
             background: khaki;
-            width: 65px;
-            height: 50px;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .icon4 {
+            margin-left: 10px;
+            margin-top: 345px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .icon5 {
+            margin-left: 10px;
+            margin-top: 445px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
             position: absolute;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
@@ -484,17 +1046,36 @@
             margin-left: 10px;
             margin-bottom: 50px;
             position: absolute;
-            top: 100px;
+            top: 95px;
         }
         .test2 {
             margin-left: 10px;
             position: absolute;
-            top: 200px;
+            top: 195px;
         }
         .test3 {
             margin-left: 10px;
             position: absolute;
-            top: 300px;
+            top: 295px;
+        }
+        .test4 {
+            margin-left: 10px;
+            position: absolute;
+            top: 395px;
+        }
+        .test5 {
+            margin-left: 10px;
+            position: absolute;
+            top: 495px;
+        }
+
+        .file {
+            opacity: 0;
+            width: 60px;
+        }
+        .file2 {
+            opacity: 0;
+            width: 90px;
         }
 
         .accessory_icon {
@@ -504,6 +1085,17 @@
             height: 15px;
             position: absolute;
             top: 30px;
+            left: -5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .accessory_icon2 {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 55px;
             left: -5px;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
@@ -551,6 +1143,123 @@
             left: 5px;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
+        }
+
+        .mycomputer_icon {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 5px;
+            left: -3px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_icon2 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 40px;
+            left: 5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text2 {
+            color: black;
+            font-size: x-small;
+            margin-left: 10px;
+            width: 60px;
+            height: 15px;
+            position: absolute;
+            top: 90px;
+            left: 10px;
+        }
+        .mycomputer_icon3 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 40px;
+            left: 105px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text3 {
+            color: black;
+            font-size: x-small;
+            margin-left: 10px;
+            width: 60px;
+            height: 15px;
+            position: absolute;
+            top: 90px;
+            left: 110px;
+        }
+        .mycomputer_icon4 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 40px;
+            left: 205px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text4 {
+            color: black;
+            font-size: x-small;
+            margin-left: 10px;
+            width: 60px;
+            height: 15px;
+            position: absolute;
+            top: 90px;
+            left: 210px;
+        }
+        .mycomputer_icon5 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 40px;
+            left: 305px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text5 {
+            color: black;
+            font-size: x-small;
+            margin-left: 10px;
+            width: 60px;
+            height: 15px;
+            position: absolute;
+            top: 90px;
+            left: 310px;
+        }
+        .mycomputer_icon6 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 130px;
+            left: 5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text6 {
+            color: black;
+            font-size: x-small;
+            margin-left: 10px;
+            width: 60px;
+            height: 15px;
+            position: absolute;
+            top: 180px;
+            left: 10px;
         }
 
         .app_icon {
@@ -641,9 +1350,11 @@
             border-left: solid 2px white;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
+            border-radius: 0;
         }
 
         .closebutton {
+            color: black;
             width: 25px;
             height: 25px;
             position: absolute;
@@ -669,28 +1380,29 @@
         }
 
         .Credit {
+            display: none;
             background-color: black;
             color: white;
             width: 100%;
             height: 100%;
             position: absolute;
             top: 0px;
-            visibility: hidden;
             z-index: 10;
         }
         .Credit_text {
+            font-size: 50px;
             text-align: center;
             margin-top: 300px;
         }
 
         .program_menu {
+            display: none;
             background: darkgray;
             width: 130px;
-            height: 50px;
+            height: 80px;
             position: absolute;
-            top: 483px;
+            top: 453px;
             left: 145px;
-            visibility: hidden;
         }
         .accessorybutton {
             background: darkgray;
@@ -699,15 +1411,37 @@
             left: 30px;
             border: none;
         }
+        .accessorybutton2 {
+            background: darkgray;
+            position: absolute;
+            top: 55px;
+            left: 30px;
+            border: none;
+        }
+
+        .command_menu {
+            display: none;
+            background: darkgray;
+            width: 220px;
+            height: 50px;
+            position: absolute;
+            top: 280px;
+            left: 100px;
+        }
+        .textcommand_area {
+            position: relative;
+            top: 12px;
+            left: 0px;
+        }
 
         .app_menu {
+            display: none;
             background: darkgray;
             width: 130px;
             height: 80px;
             position: absolute;
             top: 453px;
             left: 145px;
-            visibility: hidden;
         }
         .appbutton {
             background: darkgray;
@@ -725,13 +1459,13 @@
         }
 
         .setting_menu {
+            display: none;
             background: darkgray;
             width: 130px;
             height: 50px;
             position: absolute;
             top: 537px;
             left: 145px;
-            visibility: hidden;
         }
         .devicebutton {
             background: darkgray;
@@ -742,7 +1476,7 @@
         }
 
         .controlpanel {
-            visibility: hidden;
+            display: none;
         }
         .controlpanel_window {
             background: darkgray;
@@ -762,23 +1496,44 @@
             left: 7px;
         }
 
+        .mycomputer {
+            display: none;
+        }
+        .mycomputer_window {
+            background: darkgray;
+            width: 600px;
+            height: 400px;
+            top: 50px;
+            position: absolute;
+            left: 180px;
+            z-index: 3;
+        }
+        .mycomputer_white {
+            background: white;
+            width: 580px;
+            height: 350px;
+            top: 35px;
+            position: absolute;
+            left: 7px;
+        }
+
         .app_memo {
+            display: none;
             background: darkgray;
             width: 600px;
             height: 300px;
             top: 150px;
             position: absolute;
             left: 180px;
-            visibility: hidden;
         }
         .app_calc {
+            display: none;
             background: darkgray;
             width: 300px;
             height: 220px;
             top: 150px;
             position: absolute;
             left: 180px;
-            visibility: hidden;
         }
         .textcalc {
             margin-left: 10px;
@@ -824,11 +1579,33 @@
             top: 30px;
             left: 90px;
         }
+
+        .logo {
+            width: 10px;
+            height: 10px;
+            position: absolute;
+            top: 6px;
+            right: 80px;
+            box-shadow: 0px 10px tomato, 0px 22px steelblue, 12px 10px forestgreen, 12px 22px khaki;
+        }
+        .start_logo {
+            width: 10px;
+            height: 10px;
+            position: absolute;
+            top: -1px;
+            left: 48px;
+            box-shadow: 0px 10px tomato, 0px 22px steelblue, 12px 10px forestgreen, 12px 22px khaki;
+        }
         
     @media screen and (max-width: 768px){
+
+        .gradation {
+            display: none;
+        }
+
         .content {
             position: relative;
-            top: 0px;
+            top: -30px;
         }
         .screenbutton {
             width: 80px;
@@ -839,14 +1616,29 @@
             z-index: 101;
         }
         .screentext {
-            font-size: large;
-            color: white;
+            color: black;
+            font-size: 30px;
             position: absolute;
-            top: 330px;
-            left: 70px;
+            top: 310px;
+            left: 40px;
+            z-index: 101;
+        }
+        .screensubtext {
+            color: black;
+            font-size: 10px;
+            position: absolute;
+            top: 345px;
+            left: 120px;
             z-index: 101;
         }
         .screencolor {
+            background: linear-gradient(-35deg, royalblue, skyblue, white);
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            z-index: 100;
+        }
+        .screencolor2 {
             background-color: black;
             width: 100%;
             height: 100%;
@@ -857,8 +1649,8 @@
         .popup_window {
             background: darkgray;
             width: 250px;
-            height: 300px;
-            top: 150px;
+            height: 460px;
+            top: 100px;
             position: absolute;
             left: 80px;
             z-index: 10;
@@ -866,7 +1658,7 @@
         .popup_window_white {
             background: white;
             width: 238px;
-            height: 230px;
+            height: 390px;
             position: absolute;
             top: 60px;
             left: 5px;
@@ -874,14 +1666,14 @@
         .popup_window_text {
             font-size: large;
             position: absolute;
-            top: 35px;
-            left: 20px;
+            top: 33px;
+            left: 10px;
         }
         .popup_window_text2 {
             font-size: x-small;
             position: absolute;
-            top: 65px;
-            left: 10px;
+            top: 0px;
+            left: 0px;
         }
 
         .app_memo {
@@ -891,7 +1683,6 @@
             top: 170px;
             position: absolute;
             left: 80px;
-            visibility: hidden;
         }
         .app_calc {
             background: gray;
@@ -900,7 +1691,6 @@
             top: 170px;
             position: absolute;
             left: 80px;
-            visibility: hidden;
         }
         .button_calc {
             margin: none;
@@ -925,21 +1715,17 @@
             right: 5px;
         }
 
-        .controlpanel {
-            visibility: hidden;
-        }
-
         .controlpanel_window {
             background: darkgray;
-            width: 250px;
+            width: 260px;
             height: 300px;
-            top: 100px;
+            top: 80px;
             position: absolute;
             left: 100px;
         }
         .controlpanel_white {
             background: white;
-            width: 230px;
+            width: 240px;
             height: 250px;
             top: 35px;
             position: absolute;
@@ -976,10 +1762,259 @@
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
+
+        .mycomputer_window {
+            background: darkgray;
+            width: 250px;
+            height: 300px;
+            top: 100px;
+            position: absolute;
+            left: 100px;
+        }
+        .mycomputer_white {
+            background: white;
+            width: 230px;
+            height: 250px;
+            top: 35px;
+            position: absolute;
+            left: 7px;
+        }
+        
+        .mycomputer_icon {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 5px;
+            left: -3px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+
+        .mycomputer_icon2 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 40px;
+            left: 5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text2 {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 45px;
+            height: 15px;
+            position: absolute;
+            top: 75px;
+            left: 5px;
+        }
+        .mycomputer_icon3 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 40px;
+            left: 55px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text3 {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 50px;
+            height: 15px;
+            position: absolute;
+            top: 75px;
+            left: 55px;
+        }
+        .mycomputer_icon4 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 40px;
+            left: 105px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text4 {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 50px;
+            height: 15px;
+            position: absolute;
+            top: 75px;
+            left: 105px;
+        }
+        .mycomputer_icon5 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 40px;
+            left: 155px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text5 {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 50px;
+            height: 15px;
+            position: absolute;
+            top: 75px;
+            left: 155px;
+        }
+        .mycomputer_icon6 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 130px;
+            left: 5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text6 {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 50px;
+            height: 15px;
+            position: absolute;
+            top: 165px;
+            left: 5px;
+        }
+
+        .Credit_text {
+            font-size: 20px;
+            text-align: center;
+            margin-top: 300px;
+        }
+
+        .task_content_border {
+            width: 160px;
+            height: 34px;
+            position: absolute;
+            left: 78px;
+            bottom: 1px;
+            border-top: solid 2px gray;
+            border-right: solid 2px gray;
+            border-left: solid 2px gray;
+            border-bottom: solid 2px white;
+        }
+
+        iframe {
+            background: white;
+            margin-top: 18px;
+            width: 300px;
+            height: 350px;
+            position: relative;
+            top: 7px;
+        }
+        .iframe1 {
+            display: none;
+            position: absolute;
+            top: 100px;
+            left: 40px;
+        }
+
 }
 
     </style>
     <script text="javascript">
+        tetris = new tetris();
+        tetris.startGame();
+
+        const element = document.getElementById('user');
+        element.insertAdjacentHTML('afterend','<p class="white user">BROWSER: '+ navigator.appName + '<br>' 
+            + 'VERSION: ' + navigator.appVersion +  '<br>' + 'USER: ' + navigator.userAgent +  '<br>' + 'WIDTH: ' + screen.width +  '<br>' 
+            + 'HEIGHT: ' + screen.height +  '<br>' + 'BIT: '  + screen.colorDepth + '</p>');
+
+        setInterval(() => {
+        if (window.navigator.onLine) {
+            const online = document.getElementsByClassName('online_icon');
+            online[0].classList.add('online');
+            console.log("online");
+        } else {
+            const online = document.getElementsByClassName('online_icon');
+            online[0].classList.remove('online');
+            console.log("offline");
+        }
+    }, 500);
+
+
+        window.addEventListener('load', (event) => {
+            const screen_open = document.querySelector(".Windows95_group");
+            screen_open.style.display = "block";
+            console.log('ページが完全に読み込まれました');
+        });
+
+        if (window.performance) {
+            if (window.performance.navigation.type === 1) {
+            const screen_open = document.querySelector(".Windows95_group");
+            screen_open.style.display = "block";
+            }
+        }
+
+        function screen_close() {
+            let screen_close = document.getElementsByClassName('screen_close');
+            screen_close[0].classList.add('active');
+            document.getElementById("backcolor").style.backgroundColor = "black";
+            setTimeout(function() {
+            let screen = document.getElementsByClassName('screen');
+            screen[0].classList.add('active');
+            let screen_close = document.getElementsByClassName('screen_close');
+            screen_close[0].classList.remove('active');
+        }, 5000);
+    }
+
+        function sound() {
+            const sound = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6305.mp3");
+        setTimeout(
+            function ()
+            {
+            sound.play();
+        }, 
+        5500);
+    }
+
+        function sound2() {
+            const sound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6307.mp3");
+            sound2.play();
+        }
+
+
+        function screen_start() {
+            let user = document.querySelector(".user");
+            user.style.display = "block";
+            document.getElementById("backcolor").style.backgroundColor = "black";
+            let screen_start = document.getElementsByClassName('screen_start');
+            screen_start[0].classList.add('active');
+            let screen = document.getElementsByClassName('screen');
+            screen[0].classList.remove('active');
+        setTimeout(function() {
+            let user = document.querySelector(".user");
+            user.style.display = "none";
+            let screen_start = document.getElementsByClassName('screen_start');
+            screen_start[0].classList.remove('active');
+            document.getElementById("backcolor").style.backgroundColor = "";
+
+        setTimeout(function() {
+            const screen_open = document.querySelector(".Windows95_group");
+            screen_open.style.display = "block";
+        }, 2000);
+
+    }, 5000);
+};
+
      window.addEventListener('load', function() {
             if ( !sessionStorage.getItem('disp_popup') ) {
                 sessionStorage.setItem('disp_popup', 'on');
@@ -998,16 +2033,10 @@
             }
         });
 
-        function screen_open() {
-            let screen = document.getElementsByClassName('screen');
-            screen[0].classList.remove('active');
-        }
-        function screen_close() {
-            let screen = document.getElementsByClassName('screen');
-            screen[0].classList.add('active');
+        function testalert(){
+            alert('hello!');
         }
 
-        const test = 'hello';
     // 読込
     function load() {
         let MemoData = "";
@@ -1053,10 +2082,10 @@
 
      function Credit() {
         const Credit = document.querySelector(".Credit");
-            Credit.style.visibility = "visible";
+            Credit.style.display = "block";
         setTimeout(() => {
             const Credit = document.querySelector(".Credit");
-            Credit.style.visibility = "hidden";
+            Credit.style.display = "none";
     }, 2000);
 };
 
@@ -1085,67 +2114,185 @@
     }
     setInterval('showClock()',1000);
 
+    function stylebox(){
+        document.getElementById("backcolor").style.backgroundColor = "white";
+        const style = document.querySelectorAll("style");
+        style.forEach((s) => {
+            s.remove();
+        })
+}
+
+    function colorbox(){
+    if (document.getElementById("color_box").checked) {
+        const colorbtn = document.querySelector(".colorbtn");
+        colorbtn.style.display = "none";
+    } else {
+        const colorbtn = document.querySelector(".colorbtn");
+        colorbtn.style.display = "inline";
+    }
+}
+
+    function backcolor_black(){
+        document.getElementById("backcolor").style.background = "black";
+    }
+    function backcolor_gray(){
+        document.getElementById("backcolor").style.background = "gray";
+    }
+    function backcolor_silver(){
+        document.getElementById("backcolor").style.background = "silver";
+    }
     function backcolor_darkblue(){
-        document.getElementById("backcolor").style.backgroundColor = "darkblue";
+        document.getElementById("backcolor").style.background = "darkblue";
+    }
+    function backcolor_lightskyblue(){
+        document.getElementById("backcolor").style.background = "#87cefa";
     }
     function backcolor_red(){
-        document.getElementById("backcolor").style.backgroundColor = "red";
+        document.getElementById("backcolor").style.background = "red";
+    }
+    function backcolor_orange(){
+        document.getElementById("backcolor").style.background = "orange";
     }
     function backcolor_yellow(){
-        document.getElementById("backcolor").style.backgroundColor = "yellow";
+        document.getElementById("backcolor").style.background = "yellow";
     }
     function backcolor_green(){
-        document.getElementById("backcolor").style.backgroundColor = "green";
+        document.getElementById("backcolor").style.background = "green";
+    }
+    function backcolor_lime(){
+        document.getElementById("backcolor").style.background = "lime";
     }
     function backcolor_purple(){
-        document.getElementById("backcolor").style.backgroundColor = "purple";
+        document.getElementById("backcolor").style.background = "purple";
     }
-    function backcolor_black(){
-        document.getElementById("backcolor").style.backgroundColor = "black";
+    function backcolor_redpurple(){
+        document.getElementById("backcolor").style.background = "#c450a0";
+    }
+    function backcolor_bluepurple(){
+        document.getElementById("backcolor").style.background = "#704cbc";
+    }
+    function backcolor_brown(){
+        document.getElementById("backcolor").style.background = "brown";
+    }
+    function backcolor_pink(){
+        document.getElementById("backcolor").style.background = "pink";
+    }
+    function backcolor_skincolor(){
+        document.getElementById("backcolor").style.background = "#fedcbd";
     }
     function backcolor_reset(){
-        document.getElementById("backcolor").style.backgroundColor = "#008080";
+        document.getElementById("backcolor").style.background = "";
+    }
+
+    function backcolor_test(){
+        const box = document.getElementById('backcolor')
+        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkblue), color-stop(1, blue))'
+    }
+    function backcolor_test2(){
+        const box = document.getElementById('backcolor')
+        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkred), color-stop(1, red))'
+    }
+    function backcolor_test3(){
+        const box = document.getElementById('backcolor')
+        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, yellow), color-stop(1, green))'
+    }
+    function backcolor_test4(){
+        const box = document.getElementById('backcolor')
+        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, black), color-stop(1, white))'
+    }
+
+    function allwindow_close(){
+        const screen_open = document.querySelector(".Windows95_group");
+        screen_open.style.display = "none";
+        const start_menu = document.querySelector(".start_menu");
+        start_menu.style.display = "none";
+        const taskbar = document.querySelector(".taskbar");
+        taskbar.style.display = "block";
+        const program_menu = document.querySelector(".program_menu");
+        program_menu.style.display = "none";
+        const app_menu = document.querySelector(".app_menu");
+        app_menu.style.display = "none";
+        const setting_menu = document.querySelector(".setting_menu");
+        setting_menu.style.display = "none";
+        const command_menu = document.querySelector(".command_menu");
+        command_menu.style.display = "none";
+
+        const controlpanel = document.querySelector(".controlpanel");
+        controlpanel.style.display = "none";
+
+        const mycomputer = document.querySelector(".mycomputer");
+        mycomputer.style.display = "none";
+
+        const app_calc = document.querySelector(".app_calc");
+        app_calc.style.display = "none";
+
+        const app_memo = document.querySelector(".app_memo");
+        app_memo.style.display = "none";
+
+        const task_content1 = document.querySelector(".task_content1");
+        task_content1.style.display = "none";
+        const task_content2 = document.querySelector(".task_content2");
+        task_content2.style.display = "none";
+        const task_content3 = document.querySelector(".task_content3");
+        task_content3.style.display = "none";
+        const task_content4 = document.querySelector(".task_content4");
+        task_content4.style.display = "none";
+
+        const tetris = document.querySelector(".tetris");
+        tetris.style.display = "none";
     }
     
     function startmenu_close(){
         const start_menu = document.querySelector(".start_menu");
-        start_menu.style.visibility = "hidden";
+        start_menu.style.display = "none";
         const taskbar = document.querySelector(".taskbar");
         taskbar.style.display = "block";
         const program_menu = document.querySelector(".program_menu");
-        program_menu.style.visibility = "hidden";
+        program_menu.style.display = "none";
         const app_menu = document.querySelector(".app_menu");
-        app_menu.style.visibility = "hidden";
+        app_menu.style.display = "none";
         const setting_menu = document.querySelector(".setting_menu");
-        setting_menu.style.visibility = "hidden";
+        setting_menu.style.display = "none";
     }
     function startmenu_open(){
         const start_menu = document.querySelector(".start_menu");
-        start_menu.style.visibility = "visible";
+        start_menu.style.display = "block";
         const taskbar = document.querySelector(".taskbar");
         taskbar.style.display = "none";
         const backcolor_menu = document.querySelector(".backcolor_menu");
         backcolor_menu.style.display = "none";
+        const css_menu = document.querySelector(".css_menu");
+        css_menu.style.display = "none";
     }
 
     function popupwindow_open(){
         const popupwrap = document.getElementsByClassName('popupwrap');
         popupwrap[0].classList.add('active');
     }
-
     function popupwindow_close(){
         const popupwrap = document.getElementsByClassName('popupwrap');
         popupwrap[0].classList.remove('active');
+
     }
 
     function controlpanel_open(){
         const controlpanel = document.querySelector(".controlpanel");
-        controlpanel.style.visibility = "visible";
+        controlpanel.style.display = "block";
     }
     function controlpanel_close(){
         const controlpanel = document.querySelector(".controlpanel");
-        controlpanel.style.visibility = "hidden";
+        controlpanel.style.display = "none";
     }
+
+    function mycomputer_open(){
+        const mycomputer = document.querySelector(".mycomputer");
+        mycomputer.style.display = "block";
+    }
+    function mycomputer_close(){
+        const mycomputer = document.querySelector(".mycomputer");
+        mycomputer.style.display = "none";
+    }
+
 
 
     function backcolormenu_close(){
@@ -1157,54 +2304,135 @@
         backcolor_menu.style.display = "block";
     }
 
+    function cssmenu_close(){
+        const css_menu = document.querySelector(".css_menu");
+        css_menu.style.display = "none";
+    }
+    function cssmenu_open(){
+        const css_menu = document.querySelector(".css_menu");
+        css_menu.style.display = "block";
+    }
+
     function programmenu_close(){
         const program_menu = document.querySelector(".program_menu");
-        program_menu.style.visibility = "hidden";
+        program_menu.style.display = "none";
     }
     function programmenu_open(){
         const program_menu = document.querySelector(".program_menu");
-        program_menu.style.visibility = "visible";
+        program_menu.style.display = "block";
     }
 
     function appmenu_open(){
         const app_menu = document.querySelector(".app_menu");
-        app_menu.style.visibility = "visible";
+        app_menu.style.display = "block";
         const program_menu = document.querySelector(".program_menu");
-        program_menu.style.visibility = "hidden";
+        program_menu.style.display = "none";
     }
     function appmenu_close(){
         const app_menu = document.querySelector(".app_menu");
-        app_menu.style.visibility = "hidden";
-    }
-
-    function calc_open(){
-        const app_calc = document.querySelector(".app_calc");
-        app_calc.style.visibility = "visible";
-    }
-
-    function calc_close(){
-        const app_calc = document.querySelector(".app_calc");
-        app_calc.style.visibility = "hidden";
+        app_menu.style.display = "none";
     }
 
     function settingmenu_open(){
         const setting_menu = document.querySelector(".setting_menu");
-        setting_menu.style.visibility = "visible";
+        setting_menu.style.display = "block";
     }
     function settingmenu_close(){
         const setting_menu = document.querySelector(".setting_menu");
-        setting_menu.style.visibility = "hidden";
+        setting_menu.style.display = "none";
+    }
+
+    function task_conent1_open(){
+        const task_content1= document.querySelector(".task_content1");
+        task_content1.style.display = "block";
+    }
+    function task_content1_close(){
+        const task_content1 = document.querySelector(".task_content1");
+        task_content1.style.display = "none";
+    }
+    function task_conent2_open(){
+        const task_content2 = document.querySelector(".task_content2");
+        task_content2.style.display = "block";
+    }
+    function task_content2_close(){
+        const task_content2 = document.querySelector(".task_content2");
+        task_content2.style.display = "none";
+    }
+    function task_content3_open(){
+        const task_content3 = document.querySelector(".task_content3");
+        task_content3.style.display = "block";
+    }
+    function task_content3_close(){
+        const task_content3 = document.querySelector(".task_content3");
+        task_content3.style.display = "none";
+    }
+    function task_content4_open(){
+        const task_content4 = document.querySelector(".task_content4");
+        task_content4.style.display = "block";
+    }
+    function task_content4_close(){
+        const task_content4 = document.querySelector(".task_content4");
+        task_content4.style.display = "none";
+    }
+
+    function calc_open(){
+        const app_calc = document.querySelector(".app_calc");
+        app_calc.style.display = "block";
+    }
+
+    function calc_close(){
+        const app_calc = document.querySelector(".app_calc");
+        app_calc.style.display = "none";
     }
 
     function memo_open(){
         const app_memo = document.querySelector(".app_memo");
-        app_memo.style.visibility = "visible";
+        app_memo.style.display = "block";
     }
     function memo_close(){
         const app_memo = document.querySelector(".app_memo");
-        app_memo.style.visibility = "hidden";
+        app_memo.style.display = "none";
+    }
+
+    function commandmenu_close(){
+        const command_menu = document.querySelector(".command_menu");
+        command_menu.style.display = "none";
+    }
+    function commandmenu_open(){
+        const command_menu = document.querySelector(".command_menu");
+        command_menu.style.display = "block";
+    }
+
+
+    function iframe1_close(){
+        const iframe1 = document.querySelector(".iframe1");
+        iframe1.style.display = "none";
+    }
+    function iframe1_open(){
+        const iframe1 = document.querySelector(".iframe1");
+        iframe1.style.display = "inline";
+    }
+
+    function tetris_open(){
+        const tetris = document.querySelector(".tetris");
+        tetris.style.display = "block";
+    }
+    function tetris_close(){
+        const tetris = document.querySelector(".tetris");
+        tetris.style.display = "none";
+    }
+
+    function check(){
+        if (mail_form.mail.value === "Windows95beta1.1"){
+            //条件に一致する場合(空の場合)
+            alert('コマンドが実行されました！');
+            window.location = 'windows95.html';
+        }else{
+            //条件に一致しない場合(入力されている場合)
+            alert('コマンドが正しくありません！');
+        }
     }
 
     </script>
-</body>
-</html>
+    </body>
+    </html>
