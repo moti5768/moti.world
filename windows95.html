@@ -161,7 +161,7 @@
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
     <form method="get" name="mail_form" onsubmit="return false;">
-        <input type="text" class="textcommand_area border" name="mail" placeholder="Windows95beta1.1">
+        <input type="text" class="textcommand_area border" name="mail" placeholder="Reload">
         <input type="submit" class="textcommand_area border hover" value="実行" onclick="check()">
     </form>
     </div>
@@ -445,7 +445,7 @@
             font-size: 20px;
             position: absolute;
             top: 350px;
-            left: 420px;
+            left: 435px;
             z-index: 101;
         }
         .screencolor {
@@ -2423,7 +2423,7 @@
     }
 
     function check(){
-        if (mail_form.mail.value === "Windows95beta1.1"){
+        if (mail_form.mail.value === "Reload"){
             //条件に一致する場合(空の場合)
             alert('コマンドが実行されました！');
             window.location = 'windows95.html';
