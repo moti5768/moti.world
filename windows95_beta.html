@@ -2071,38 +2071,25 @@
         if (window.navigator.onLine) {
             const online = document.getElementsByClassName('online_icon');
             online[0].classList.add('online');
-            console.log("online");
+            const onlinewifi = document.getElementsByClassName('icon_wifi');
+            onlinewifi[0].classList.add('online');
         } else {
             const online = document.getElementsByClassName('online_icon');
             online[0].classList.remove('online');
-            console.log("offline");
+            const onlinewifi = document.getElementsByClassName('icon_wifi');
+            onlinewifi[0].classList.remove('online');
         }
     }, 500);
 
     setInterval(() => {
-        if (navigator.connection.effectiveType === '3g') {
+        if (navigator.connection.effectiveType === '3g' || navigator.connection.effectiveType === '4g') {
             const online4 = document.getElementsByClassName('icon_4g');
             online4[0].classList.add('online');
-            console.log("4g_online");
         } else {
             const online4 = document.getElementsByClassName('icon_4g');
             online4[0].classList.remove('online');
-            console.log("4g_offline");
         }
     }, 500);
-
-    setInterval(() => {
-        if (window.navigator.onLine) {
-            const onlinewifi = document.getElementsByClassName('icon_wifi');
-            onlinewifi[0].classList.add('online');
-            console.log("wifi_online");
-        } else {
-            const onlinewifi = document.getElementsByClassName('icon_wifi');
-            onlinewifi[0].classList.remove('online');
-            console.log("wifi_offline");
-        }
-    }, 500);
-
 
         window.addEventListener('load', (event) => {
             const screen_open = document.querySelector(".Windows95_group");
