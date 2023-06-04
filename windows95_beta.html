@@ -36,6 +36,7 @@
                 <br>
                 [新機能]<br>
                 ・ウィンドウの移動が可能になりました(マウス操作限定)<br>
+                ・各ウィンドウをクリックすると先頭に表示されるようになりました。(マウス操作限定)<br>
                 ・コントロールパネルからネットワーク接続状態が見れるようになりました。<br>
                 [バグ修正]<br>
                 ・コマンド入力欄の閉じるボタンの判定が小さいバグの修正<br>
@@ -149,7 +150,7 @@
         <a class="app_icon2" onclick="calc_open(),startmenu_close()"></a>
     </div>
 
-    <div class="drag3 command_menu border">
+    <div class="drag3 shape command_menu border">
         <div class="menu_bluebar">コマンド入力</div>
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
     <form method="get" name="mail_form" onsubmit="return false;">
@@ -158,7 +159,7 @@
     </form>
     </div>
 
-    <div class="drag4 app_memo border">
+    <div class="drag4 shape app_memo border">
         <p class="menu_bluebar">無題-メモ帳</p>
         <form name="form1">
             <textarea name="Memo" class="Memo border"></textarea>
@@ -172,7 +173,7 @@
         <button class="blacktext taskbutton border hover" onclick="memo_close()">一</button>
     </div>
 
-    <div class="drag5 app_calc border">
+    <div class="drag5 shape app_calc border">
             <span class="menu_bluebar">電卓</span>
             <p class="white">　</p>
         <input class="calc textcalc" style="text-align: right;"></input><br>
@@ -222,7 +223,7 @@
         </div>
     </div>
 
-    <div class="mycomputer">
+    <div class="shape mycomputer">
         <div class="drag7 shape mycomputer_window border">
             <span class="menu_bluebar">　　マイコンピュータ</span>
             <span class="mycomputer_white border"></span>
@@ -295,7 +296,7 @@
         <p class="bold Credit_text">Windows95 homeEdition 1.0</p>
     </div>
 
-    <div class="tetris border">
+    <div class="drag9 shape tetris border">
         <span class="menu_bluebar">テトリス</span>
     <div class="wrapper-container">
         <span class="tetris-container">
@@ -956,6 +957,7 @@
             width: 100%;
             height: 25px;
             position: absolute;
+            pointer-events: none;
         }
         .menu_graybar {
             background: dimgray;
@@ -1510,7 +1512,6 @@
             top: 50px;
             position: absolute;
             left: 180px;
-            z-index: 3;
         }
         .controlpanel_white {
             background: white;
@@ -1519,6 +1520,7 @@
             top: 35px;
             position: absolute;
             left: 7px;
+            pointer-events: none;
         }
 
         .mycomputer {
@@ -1539,6 +1541,7 @@
             top: 35px;
             position: absolute;
             left: 7px;
+            pointer-events: none;
         }
 
         .app_memo {
@@ -1568,6 +1571,7 @@
             position: absolute;
             top: 32px;
             border-radius: 0;
+            pointer-events: none;
         }
 
         textarea {
@@ -2586,6 +2590,7 @@
     draggable(document.querySelector('.drag6'));
     draggable(document.querySelector('.drag7'));
     draggable(document.querySelector('.drag8'));
+    draggable(document.querySelector('.drag9'));
     
     function draggable(target) {
         target.onmousedown = function(event) {
@@ -2610,6 +2615,26 @@
             };
         };
     }
+
+
+    let count = 0;
+
+            // 図形にクリックイベント登録＆z-indexを表示
+            let eleShape = document.getElementsByClassName("shape");
+            for(var i=0; i<eleShape.length; i++){
+                // クリックイベント登録
+                eleShape[i].addEventListener("click", moveFront, event);
+                // 図形にz-indexを表示
+            }
+            
+            // クリックされた要素のz-indexに、クリックされた回数を設定する
+            function moveFront(e){
+                // 図形のクリック数をカウントアップ
+                count++;
+                // z-indexに図形のクリック数を設定（最前面に表示される）
+                e.target.style.zIndex = count;
+                // 図形にz-indexを表示
+            }
   </script>
   </body>
   </html>
