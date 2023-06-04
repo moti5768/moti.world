@@ -1,70 +1,194 @@
-html {
-    touch-action: manipulation;
+@charset "utf-8";
+
+body {
+    overflow: hidden;
+    font-family: sans-serif;
+    font-size: large;
+    pointer-events: auto;
 }
 
-#next {
-    position: relative;
-    left: 5px;
-}
-
-#stage {
-    width: 50%;
-    height: 50%;
-    pointer-events: none;
-}
-
-.tetris {
-    background: white;
-    display: none;
+.loader {
     position: absolute;
-    top: 90px;
-    left: 0px;
-    height: 390px;
-    width: 360px;
-}
-
-.wrapper-container {
-    margin-top: 28px;
-    position: relative;
-    right: 1px;
-    display: inline-block;
-}
-
-.tetris-container {
-    display: flex;
-    flex-direction: row;
-    margin: 0px;
-    background-color: #333333;
-}
-
-.tetris-panel-container {
-    display: flex;
-    padding-left: 10px;
-    padding-right: 10px;
-    flex-direction: column;
-    color: white;
-    background-color: #333333;
-}
-
-.tetris-panel-container-padding {
-    flex-grow: 1;
-}
-
-.tetris-panel-container p {
-   margin: 0;
-   padding: 0;
-}
-
-.tetris-button-panel {
-    border-style: none;
-    width: 120%;
-    position: relative;
-    right: 0px;
-}
-
-.tetris-button {
-    padding-top: 15px;
-    padding-bottom: 15px;
+    width: 100%;
+    height: 100%;
+    background-color: black;
+    visibility: visible;
+    z-index: 1;
     text-align: center;
-    background: #444444;
+}
+
+.loader h2 {
+    color: white;
+    text-align: center;
+    margin-top: 300px;
+}
+
+.loaded {
+    opacity: 0;
+    transition: all 0.3s;
+}
+
+.container {
+    margin-left: 5px;
+}
+
+div.backcolor {
+    background-color: black;
+    opacity: 0.9;
+}
+
+a {
+    font-weight: bold;
+}
+
+.head {
+    margin-top: 10px;
+    margin-bottom: 15px;
+    font-size:xx-large;
+    color: white;
+    font-weight:bold;
+}
+
+.title {
+    background-color: orangered;
+    color: white;
+    font-weight:bold;
+    font-size: x-large;
+    padding-left: 20px;
+}
+
+table {
+    width: 100%;
+}
+
+.tabletext {
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+td {
+    margin-top: 20px;
+    margin-bottom: 20px;
+    border-top: solid 2px gray;
+    border-bottom: solid 2px gray;
+    color: black;
+}
+table tr:nth-child(odd) td {
+    background-color:silver;
+}
+
+.small {
+    font-size: small;
+}
+
+.medium {
+    font-size: medium;
+}
+
+.link {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: start;
+    text-decoration: none;
+    font-size: x-large;
+    color: blue;
+}
+
+.page {
+    display: inline-block;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    background-color: royalblue;
+    border-top: solid 3px blue;
+    border-right: solid 3px blue;
+    border-left: solid 3px blue;
+    border-bottom: solid 3px blue;
+    text-decoration: none;
+    color: white;
+}
+
+.browser {
+    display:inline-block;
+    margin-top: 10px;
+    margin-bottom: 15px;
+}
+
+.center {
+    text-align: center;
+}
+
+.google {
+    background-color: blue;
+    color: white;
+}
+
+.yahoo {
+    background-color: red;
+    color: white;
+}
+
+.youtube {
+    background-color:rgb(207, 34, 34);
+    color: white;
+}
+
+.button {
+    background: lightgray;
+    margin-top: 3px;
+    border-top: solid 2px black;
+    border-right: solid 2px black;
+    border-left: solid 2px black;
+    border-bottom: solid 2px black;
+    width: 10em;
+    height: 3em;
+}
+
+.windows95 {
+    background: #008080;
+    color: white;
+    text-decoration: none;
+}
+
+footer {
+    background-color: black;
+    height: 50px;
+    opacity: 0.9;
+    color: white;
+}
+
+.foot1 {
+    margin-left: 440px;
+    font-size: large;
+    text-decoration: none;
+    color: white;
+}
+
+.foot2 {
+    margin-left: 200px;
+    font-size: large;
+    text-decoration: none;
+    color: white;
+}
+
+@media screen and (max-width: 768px){
+    footer {
+        background-color: black;
+        height: 50px;
+        opacity: 0.9;
+        color: white;
+    }
+
+    .foot1 {
+        margin-left: 55px;
+        font-size: large;
+        text-decoration: none;
+        color: white;
+    }
+
+    .foot2 {
+        margin-left: 50px;
+        font-size: large;
+        text-decoration: none;
+        color: white;
+    }
 }
