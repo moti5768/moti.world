@@ -36,7 +36,7 @@
                 <br>
                 [新機能]<br>
                 ・ウィンドウの移動が可能になりました(マウス操作限定)<br>
-                ・各ウィンドウをクリックすると先頭に表示されるようになりました。(マウス操作限定)<br>
+                ・各ウィンドウをクリックすると先頭に表示されるようになりました。(マウス・タッチ操作)<br>
                 ・コントロールパネルからネットワーク接続状態が見れるようになりました。<br>
                 [バグ修正]<br>
                 ・コマンド入力欄の閉じるボタンの判定が小さいバグの修正<br>
@@ -223,7 +223,7 @@
         </div>
     </div>
 
-    <div class="shape mycomputer">
+    <div class="mycomputer">
         <div class="drag7 shape mycomputer_window border">
             <span class="menu_bluebar">　　マイコンピュータ</span>
             <span class="mycomputer_white border"></span>
@@ -237,8 +237,8 @@
             <a class="mycomputer_text5" href="https://youtube.com">Youtube</a>
             <a class="mycomputer_icon5" href="https://youtube.com"></a>
 
-            <a class="mycomputer_text6" onclick="tetris_open(),mycomputer_close()">テトリス</a>
-            <a class="mycomputer_icon6" onclick="tetris_open(),mycomputer_close()"></a>
+            <a class="mycomputer_text6" onclick="tetris_open()">テトリス</a>
+            <a class="mycomputer_icon6" onclick="tetris_open()"></a>
 
             <button class="blacktext closebutton border hover2" onclick="task_content1_close(),mycomputer_close()">X</button>
             <button class="blacktext taskbutton border hover" onclick="mycomputer_close()">一</button>
@@ -246,7 +246,7 @@
     </div>
 
     <div class="network">
-        <div class="drag8 network_window border">
+        <div class="drag8 shape network_window border">
             <span class="menu_bluebar">　　ネットワーク</span>
             <span class="network_icon_mini"></span>
             <div class="network_white border">
@@ -1645,6 +1645,7 @@
             position: absolute;
             top: 35px;
             left: 7px;
+            pointer-events: none;
         }
         .network_icon_mini {
             margin-left: 10px;
