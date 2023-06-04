@@ -79,7 +79,7 @@
         </div>
     </div>
 
-    <div class="drag2 iframe1 border">
+    <div class="drag2 shape iframe1 border">
         <span class="menu_bluebar">オモチのサイト</span>
         <iframe src="index.html"></iframe>
         <button class="closebutton border hover2" onclick="iframe1_close()">X</button>
@@ -116,10 +116,6 @@
         <button class="backcolor_button backbutton_brown" onclick="backcolor_brown()"></button>
         <button class="backcolor_button backbutton_pink" onclick="backcolor_pink()"></button>
         <button class="backcolor_button backbutton_skincolor" onclick="backcolor_skincolor()"></button>
-        <button class="backcolor_button gradation backbutton_test" onclick="backcolor_test()"></button>
-        <button class="backcolor_button gradation backbutton_test2" onclick="backcolor_test2()"></button>
-        <button class="backcolor_button gradation backbutton_test3" onclick="backcolor_test3()"></button>
-        <button class="backcolor_button gradation backbutton_test4" onclick="backcolor_test4()"></button>
     </div>
     </div>
 
@@ -471,10 +467,10 @@
         }
 
         .popupwrap {
-            visibility: hidden;
+            display: none;
         }
         .popupwrap.active {
-            visibility: visible;
+            display: block;
         }
 
         .popup_window {
@@ -863,18 +859,6 @@
         .backbutton_skincolor {
             background: #fedcbd;
         }
-        .backbutton_test {
-            background: linear-gradient(90deg, darkblue, blue);
-        }
-        .backbutton_test2 {
-            background: linear-gradient(90deg, darkred, red);
-        }
-        .backbutton_test3 {
-            background: linear-gradient(90deg, yellow, green);
-        }
-        .backbutton_test4 {
-            background: linear-gradient(90deg, black, white);
-        }
 
         .backcolor_reset {
             width: 40px;
@@ -991,8 +975,8 @@
 
         .content {
             font-size: small;
-            position: relative;
-            top: -460px;
+            position: absolute;
+            top: -40px;
         }
         .content-icons {
             position: relative;
@@ -2071,6 +2055,54 @@
             + 'VERSION: ' + navigator.appVersion +  '<br>' + 'USER: ' + navigator.userAgent +  '<br>' + 'WIDTH: ' + screen.width +  '<br>' 
             + 'HEIGHT: ' + screen.height +  '<br>' + 'BIT: '  + screen.colorDepth + '</p>');
 
+    const popupwrap = document.getElementsByClassName('popupwrap');
+    const screen_open = document.querySelector(".Windows95_group");
+    const start_menu = document.querySelector(".start_menu");
+    const taskbar = document.querySelector(".taskbar");
+    const program_menu = document.querySelector(".program_menu");
+    const app_menu = document.querySelector(".app_menu");
+    const setting_menu = document.querySelector(".setting_menu");
+    const command_menu = document.querySelector(".command_menu");
+    const backcolor_menu = document.querySelector(".backcolor_menu");
+    const colorbtn = document.querySelector(".colorbtn");
+    const css_menu = document.querySelector(".css_menu");
+    const controlpanel = document.querySelector(".controlpanel");
+    const mycomputer = document.querySelector(".mycomputer");
+    const app_calc = document.querySelector(".app_calc");
+    const app_memo = document.querySelector(".app_memo");
+    const iframe1 = document.querySelector(".iframe1");
+    const net = document.querySelector(".network");
+
+    const task_content1 = document.querySelector(".task_content1");
+    const task_content2 = document.querySelector(".task_content2");
+    const task_content3 = document.querySelector(".task_content3");
+    const task_content4 = document.querySelector(".task_content4");
+
+    function twoDigit(num) {
+            let ret;
+            if( num < 10)
+            ret = "0" + num;
+            else
+            ret = num;
+            return ret;
+        }
+    function showClock() {
+        const nowDate = new Date();
+        let nowTime = new Date();
+        let nowHour = twoDigit( nowTime.getHours() );
+        let nowMin = twoDigit( nowTime.getMinutes() );
+        if(nowHour>=12){
+            document.getElementById('ampm').textContent = 'PM';
+        }else {
+            document.getElementById('ampm').textContent = 'AM';
+        }
+
+        let msg = "" + nowHour + ":" + nowMin + "　";
+
+        document.getElementById("timer").innerHTML = msg;
+    }
+    setInterval('showClock()',1000);
+
         setInterval(() => {
         if (window.navigator.onLine) {
             const online = document.getElementsByClassName('online_icon');
@@ -2084,7 +2116,6 @@
             onlinewifi[0].classList.remove('online');
         }
     }, 500);
-
     setInterval(() => {
         if (navigator.connection.effectiveType === '3g' || navigator.connection.effectiveType === '4g') {
             const online4 = document.getElementsByClassName('icon_4g');
@@ -2122,19 +2153,14 @@
 
         function sound() {
             const sound = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6305.mp3");
-        setTimeout(
-            function ()
-            {
+        setTimeout(function (){
             sound.play();
-        }, 
-        5500);
+        }, 5500);
     }
-
         function sound2() {
             const sound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6307.mp3");
             sound2.play();
         }
-
 
         function screen_start() {
             let user = document.querySelector(".user");
@@ -2150,36 +2176,27 @@
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.remove('active');
             document.getElementById("backcolor").style.backgroundColor = "";
-
         setTimeout(function() {
             const screen_open = document.querySelector(".Windows95_group");
             screen_open.style.display = "block";
         }, 2000);
-
     }, 5000);
 };
 
      window.addEventListener('load', function() {
             if ( !sessionStorage.getItem('disp_popup') ) {
                 sessionStorage.setItem('disp_popup', 'on');
-
                 let popup = document.getElementsByClassName('popupwrap');
-                popup[0].classList.add('active');
+                popup[0].style.display = "block";
             }
         });
-
         window.addEventListener('load', function() {
             if ( !sessionStorage.getItem('disp_screen') ) {
                 sessionStorage.setItem('disp_screen', 'on');
-
                 let screen = document.getElementsByClassName('screen');
                 screen[0].classList.add('active');
             }
         });
-
-        function testalert(){
-            alert('hello!');
-        }
 
     // 読込
     function load() {
@@ -2196,11 +2213,9 @@
         let MemoData = document.form1.Memo.value;
         localStorage.setItem('MemoData', MemoData);
     }
-
     document.getElementById('cleartextbtn').addEventListener('click',function (){
         document.getElementsByClassName("Memo")[0].value = '';
     });
-
 
     function update( _v ) // input tag を更新する関数
     {
@@ -2223,40 +2238,14 @@
         }
     }
 
-
      function Credit() {
         const Credit = document.querySelector(".Credit");
-            Credit.style.display = "block";
+        Credit.style.display = "block";
         setTimeout(() => {
             const Credit = document.querySelector(".Credit");
-            Credit.style.display = "none";
+        Credit.style.display = "none";
     }, 2000);
 };
-
-        function twoDigit(num) {
-            let ret;
-            if( num < 10)
-            ret = "0" + num;
-            else
-            ret = num;
-            return ret;
-        }
-    function showClock() {
-        const nowDate = new Date();
-        let nowTime = new Date();
-        let nowHour = twoDigit( nowTime.getHours() );
-        let nowMin = twoDigit( nowTime.getMinutes() );
-        if(nowHour>=12){
-            document.getElementById('ampm').textContent = 'PM';
-        }else {
-            document.getElementById('ampm').textContent = 'AM';
-        }
-
-        let msg = "" + nowHour + ":" + nowMin + "　";
-
-        document.getElementById("timer").innerHTML = msg;
-    }
-    setInterval('showClock()',1000);
 
     function stylebox(){
         document.getElementById("backcolor").style.backgroundColor = "white";
@@ -2268,10 +2257,8 @@
 
     function colorbox(){
     if (document.getElementById("color_box").checked) {
-        const colorbtn = document.querySelector(".colorbtn");
         colorbtn.style.display = "none";
     } else {
-        const colorbtn = document.querySelector(".colorbtn");
         colorbtn.style.display = "inline";
     }
 }
@@ -2328,58 +2315,23 @@
         document.getElementById("backcolor").style.background = "";
     }
 
-    function backcolor_test(){
-        const box = document.getElementById('backcolor')
-        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkblue), color-stop(1, blue))'
-    }
-    function backcolor_test2(){
-        const box = document.getElementById('backcolor')
-        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkred), color-stop(1, red))'
-    }
-    function backcolor_test3(){
-        const box = document.getElementById('backcolor')
-        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, yellow), color-stop(1, green))'
-    }
-    function backcolor_test4(){
-        const box = document.getElementById('backcolor')
-        box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, black), color-stop(1, white))'
-    }
-
     function allwindow_close(){
-        const screen_open = document.querySelector(".Windows95_group");
         screen_open.style.display = "none";
-        const start_menu = document.querySelector(".start_menu");
         start_menu.style.display = "none";
-        const taskbar = document.querySelector(".taskbar");
         taskbar.style.display = "block";
-        const program_menu = document.querySelector(".program_menu");
         program_menu.style.display = "none";
-        const app_menu = document.querySelector(".app_menu");
         app_menu.style.display = "none";
-        const setting_menu = document.querySelector(".setting_menu");
         setting_menu.style.display = "none";
-        const command_menu = document.querySelector(".command_menu");
         command_menu.style.display = "none";
-
-        const controlpanel = document.querySelector(".controlpanel");
         controlpanel.style.display = "none";
-
-        const mycomputer = document.querySelector(".mycomputer");
         mycomputer.style.display = "none";
-
-        const app_calc = document.querySelector(".app_calc");
         app_calc.style.display = "none";
-
-        const app_memo = document.querySelector(".app_memo");
         app_memo.style.display = "none";
-
-        const task_content1 = document.querySelector(".task_content1");
+        iframe1.style.display = "none";
+        net.style.display = "none";
         task_content1.style.display = "none";
-        const task_content2 = document.querySelector(".task_content2");
         task_content2.style.display = "none";
-        const task_content3 = document.querySelector(".task_content3");
         task_content3.style.display = "none";
-        const task_content4 = document.querySelector(".task_content4");
         task_content4.style.display = "none";
 
         const tetris = document.querySelector(".tetris");
@@ -2387,180 +2339,136 @@
     }
     
     function startmenu_close(){
-        const start_menu = document.querySelector(".start_menu");
         start_menu.style.display = "none";
-        const taskbar = document.querySelector(".taskbar");
         taskbar.style.display = "block";
-        const program_menu = document.querySelector(".program_menu");
         program_menu.style.display = "none";
-        const app_menu = document.querySelector(".app_menu");
         app_menu.style.display = "none";
-        const setting_menu = document.querySelector(".setting_menu");
         setting_menu.style.display = "none";
     }
     function startmenu_open(){
-        const start_menu = document.querySelector(".start_menu");
         start_menu.style.display = "block";
-        const taskbar = document.querySelector(".taskbar");
         taskbar.style.display = "none";
-        const backcolor_menu = document.querySelector(".backcolor_menu");
         backcolor_menu.style.display = "none";
-        const css_menu = document.querySelector(".css_menu");
         css_menu.style.display = "none";
     }
 
     function popupwindow_open(){
-        const popupwrap = document.getElementsByClassName('popupwrap');
-        popupwrap[0].classList.add('active');
+        popupwrap[0].style.display = "block";
     }
     function popupwindow_close(){
-        const popupwrap = document.getElementsByClassName('popupwrap');
-        popupwrap[0].classList.remove('active');
+        popupwrap[0].style.display = "none";
 
     }
 
     function controlpanel_open(){
-        const controlpanel = document.querySelector(".controlpanel");
         controlpanel.style.display = "block";
     }
     function controlpanel_close(){
-        const controlpanel = document.querySelector(".controlpanel");
         controlpanel.style.display = "none";
     }
 
     function mycomputer_open(){
-        const mycomputer = document.querySelector(".mycomputer");
         mycomputer.style.display = "block";
     }
     function mycomputer_close(){
-        const mycomputer = document.querySelector(".mycomputer");
         mycomputer.style.display = "none";
     }
 
     function netmenu_open(){
-        const net = document.querySelector(".network");
         net.style.display = "block";
     }
     function netmenu_close(){
-        const net = document.querySelector(".network");
         net.style.display = "none";
     }
 
     function backcolormenu_close(){
-        const backcolor_menu = document.querySelector(".backcolor_menu");
         backcolor_menu.style.display = "none";
     }
     function backcolormenu_open(){
-        const backcolor_menu = document.querySelector(".backcolor_menu");
         backcolor_menu.style.display = "block";
     }
 
     function cssmenu_close(){
-        const css_menu = document.querySelector(".css_menu");
         css_menu.style.display = "none";
     }
     function cssmenu_open(){
-        const css_menu = document.querySelector(".css_menu");
         css_menu.style.display = "block";
     }
 
     function programmenu_close(){
-        const program_menu = document.querySelector(".program_menu");
         program_menu.style.display = "none";
     }
     function programmenu_open(){
-        const program_menu = document.querySelector(".program_menu");
         program_menu.style.display = "block";
     }
 
     function appmenu_open(){
-        const app_menu = document.querySelector(".app_menu");
         app_menu.style.display = "block";
-        const program_menu = document.querySelector(".program_menu");
         program_menu.style.display = "none";
     }
     function appmenu_close(){
-        const app_menu = document.querySelector(".app_menu");
         app_menu.style.display = "none";
     }
 
     function settingmenu_open(){
-        const setting_menu = document.querySelector(".setting_menu");
         setting_menu.style.display = "block";
     }
     function settingmenu_close(){
-        const setting_menu = document.querySelector(".setting_menu");
         setting_menu.style.display = "none";
     }
 
     function task_conent1_open(){
-        const task_content1= document.querySelector(".task_content1");
         task_content1.style.display = "block";
     }
     function task_content1_close(){
-        const task_content1 = document.querySelector(".task_content1");
         task_content1.style.display = "none";
     }
     function task_conent2_open(){
-        const task_content2 = document.querySelector(".task_content2");
         task_content2.style.display = "block";
     }
     function task_content2_close(){
-        const task_content2 = document.querySelector(".task_content2");
         task_content2.style.display = "none";
     }
     function task_content3_open(){
-        const task_content3 = document.querySelector(".task_content3");
         task_content3.style.display = "block";
     }
     function task_content3_close(){
-        const task_content3 = document.querySelector(".task_content3");
         task_content3.style.display = "none";
     }
     function task_content4_open(){
-        const task_content4 = document.querySelector(".task_content4");
         task_content4.style.display = "block";
     }
     function task_content4_close(){
-        const task_content4 = document.querySelector(".task_content4");
         task_content4.style.display = "none";
     }
 
     function calc_open(){
-        const app_calc = document.querySelector(".app_calc");
         app_calc.style.display = "block";
     }
 
     function calc_close(){
-        const app_calc = document.querySelector(".app_calc");
         app_calc.style.display = "none";
     }
 
     function memo_open(){
-        const app_memo = document.querySelector(".app_memo");
         app_memo.style.display = "block";
     }
     function memo_close(){
-        const app_memo = document.querySelector(".app_memo");
         app_memo.style.display = "none";
     }
 
     function commandmenu_close(){
-        const command_menu = document.querySelector(".command_menu");
         command_menu.style.display = "none";
     }
     function commandmenu_open(){
-        const command_menu = document.querySelector(".command_menu");
         command_menu.style.display = "block";
     }
 
 
     function iframe1_close(){
-        const iframe1 = document.querySelector(".iframe1");
         iframe1.style.display = "none";
     }
     function iframe1_open(){
-        const iframe1 = document.querySelector(".iframe1");
         iframe1.style.display = "inline";
     }
 
@@ -2593,7 +2501,6 @@
     draggable(document.querySelector('.drag7'));
     draggable(document.querySelector('.drag8'));
     draggable(document.querySelector('.drag9'));
-    
     function draggable(target) {
         target.onmousedown = function(event) {
             let shiftX = event.clientX - target.getBoundingClientRect().left;
@@ -2618,9 +2525,7 @@
         };
     }
 
-
     let count = 0;
-
             // 図形にクリックイベント登録＆z-indexを表示
             let eleShape = document.getElementsByClassName("shape");
             for(var i=0; i<eleShape.length; i++){
@@ -2628,7 +2533,6 @@
                 eleShape[i].addEventListener("click", moveFront, event);
                 // 図形にz-indexを表示
             }
-            
             // クリックされた要素のz-indexに、クリックされた回数を設定する
             function moveFront(e){
                 // 図形のクリック数をカウントアップ
