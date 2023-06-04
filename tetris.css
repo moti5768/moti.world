@@ -10,6 +10,7 @@ html {
 #stage {
     width: 50%;
     height: 50%;
+    pointer-events: none;
 }
 
 .tetris {
