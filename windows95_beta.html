@@ -28,7 +28,7 @@
 
 <div class="Windows95_group">
     <span class="logo"></span>
-    <div class="drag1 popupwrap popup_window border">
+    <div class="drag1 shape popupwrap popup_window border">
         <p class="popup_window_text">Windows<span class="white">95</span>&nbsp;へようこそ homeEdition</p>
         <div class="popup_window_white border">
             <p class="popup_window_text2">Windows95&nbsp;homeEdition1.0 beta1.0へようこそ<br>
@@ -141,7 +141,7 @@
     </div>
 
     <div class="app_menu border">
-        <span class="menu_bluebar">アプリ</span>
+        <span class="menu_bluebar">ソフト</span>
         <button class="blacktext closebutton border hover2" onclick="appmenu_close()">X</button>
         <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close(),task_content4_open()">メモ帳</button>
         <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close(),task_content3_open()">電卓</button>
@@ -204,12 +204,12 @@
     <div class="setting_menu border">
         <span class="menu_bluebar">設定</span>
         <button class="blacktext closebutton border hover2" onclick="settingmenu_close()">X</button>
-        <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
+        <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close(),task_conent2_open()">コントロールパネル</button>
         <a class="device_icon" onclick="controlpanel_open(),startmenu_close()"></a>
     </div>
 
     <div class="controlpanel">
-        <div class="drag6 controlpanel_window border">
+        <div class="drag6 shape controlpanel_window border">
             <span class="menu_bluebar">　　コントロールパネル</span>
             <span class="controlpanel_white border"></span>
             <span class="controlpanel_icon_mini"></span>
@@ -223,7 +223,7 @@
     </div>
 
     <div class="mycomputer">
-        <div class="drag7 mycomputer_window border">
+        <div class="drag7 shape mycomputer_window border">
             <span class="menu_bluebar">　　マイコンピュータ</span>
             <span class="mycomputer_white border"></span>
             <span class="mycomputer_icon"></span>
@@ -483,7 +483,6 @@
             top: 80px;
             position: relative;
             left: 180px;
-            z-index: 10;
         }
         .popup_window_white {
             background: white;
@@ -1532,7 +1531,6 @@
             top: 50px;
             position: absolute;
             left: 180px;
-            z-index: 3;
         }
         .mycomputer_white {
             background: white;
@@ -2442,8 +2440,6 @@
         net.style.display = "none";
     }
 
-
-
     function backcolormenu_close(){
         const backcolor_menu = document.querySelector(".backcolor_menu");
         backcolor_menu.style.display = "none";
@@ -2571,49 +2567,49 @@
         tetris.style.display = "none";
     }
 
-    function tetris_reset() {
-        const tetris_reset = document.querySelector('.tetris');
-        tetris_reset.reset();
-    }
-
-    document.addEventListener('DOMContentLoaded', function() {
-    document.getElementById("reset").addEventListener("click", function(){
-    window.location.reset();
-    })
-  });
-
     function check(){
         if (mail_form.mail.value === "Reload"){
             //条件に一致する場合(空の場合)
             alert('コマンドが実行されました！');
-            window.location = 'windows95.html';
+            window.location = '';
         }else{
             //条件に一致しない場合(入力されている場合)
             alert('コマンドが正しくありません！');
         }
     }
-
+    
+    draggable(document.querySelector('.drag1'));
+    draggable(document.querySelector('.drag2'));
+    draggable(document.querySelector('.drag3'));
+    draggable(document.querySelector('.drag4'));
+    draggable(document.querySelector('.drag5'));
+    draggable(document.querySelector('.drag6'));
+    draggable(document.querySelector('.drag7'));
+    draggable(document.querySelector('.drag8'));
+    
     function draggable(target) {
-    target.onmousedown = function() {
-      document.onmousemove = mouseMove;
-    };
-    document.onmouseup = function() {
-      document.onmousemove = null;
-    };
-    function mouseMove(e) {
-      var event = e ? e : window.event;
-      target.style.top = event.clientY + 'px';
-      target.style.left = event.clientX + 'px';
+        target.onmousedown = function(event) {
+            let shiftX = event.clientX - target.getBoundingClientRect().left;
+            let shiftY = event.clientY - target.getBoundingClientRect().top;
+            let top = document.querySelector('.top');
+            moveAt(event.pageX, event.pageY);
+            // ボールを（pageX、pageY）座標の中心に置く
+            function moveAt(pageX, pageY) {
+                target.style.left = pageX - shiftX + 'px';
+                target.style.top = pageY - shiftY + 'px';
+            }
+            function onMouseMove(event) {
+                moveAt(event.pageX, event.pageY);
+            }
+            // (3) mousemove でボールを移動する
+            document.addEventListener('mousemove', onMouseMove);
+            // (4) ボールをドロップする。不要なハンドラを削除する
+            target.onmouseup = function() {
+                document.removeEventListener('mousemove', onMouseMove);
+                target.onmouseup = null;
+            };
+        };
     }
-  }
-  draggable(document.querySelector('.drag1'));
-  draggable(document.querySelector('.drag2'));
-  draggable(document.querySelector('.drag3'));
-  draggable(document.querySelector('.drag4'));
-  draggable(document.querySelector('.drag5'));
-  draggable(document.querySelector('.drag6'));
-  draggable(document.querySelector('.drag7'));
-  draggable(document.querySelector('.drag8'));
   </script>
   </body>
   </html>
