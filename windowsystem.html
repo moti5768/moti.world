@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WindowSystem</title>
 </head>
-<body>
+<body class="test">
     <p class="alerttext"></p>
     <div class="start-screen">
         <p>WindowSystem 1.0</p>
@@ -67,8 +67,8 @@
         const alrertext = document.querySelector('.alerttext')
         if(navigator.userAgent.match(/(iPhone|iPod|Android.*Mobile)/i)){
             alert("お使いの端末がPCではないため、ご利用できません");
-            const body = querySelector('body');
-            body.style.display = none;
+            const test = querySelector('.test');
+            test.style.display = none;
         }else{
             // PC・タブレットの場合の処理を記述
             alrertext.textContent = "お使いの端末がPCのため　ご利用可能です";
