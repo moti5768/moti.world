@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WindowSystem</title>
+</head>
+<body>
+    <p class="alerttext"></p>
+    <div class="start-screen">
+        <p>WindowSystem 1.0</p>
+        <form method="get" name="mail_form" onsubmit="return false;">
+            <input type="password" class="text" name="mail" placeholder="4文字のパスワードを入力" maxlength="4">
+            <input type="submit" class="submit" value="サインイン" onclick="check()">
+        </form>
+        <span class="logo"></span>
+    </div>
+    <style>
+        * {
+            padding: 0px;
+            margin: 0px;
+        }
+        body {
+            background-color: black;
+        }
+        .logo {
+            display: inline-block;
+            background-color: white;
+            width: 60px;
+            height: 50px;
+            position: absolute;
+            top: 10px;
+            left: -160px;
+            box-shadow: 60px 10px 0 -10px white,
+            10px 50px 0 -10px white,
+            70px 60px 0 0px white;
+        }
+        .alerttext {
+            color: white;
+            position: absolute;
+            top: 0px;
+            left: 0px;
+            font-size: medium;
+        }
+        .start-screen {
+            color: white;
+            font-size: 50px;
+            font-weight: bold;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .text {
+            position: relative;
+            bottom: 20px;
+            font-size: medium;
+            width: 200px;
+            height: 30px;
+        }
+        .submit {
+            position: relative;
+            bottom: 20px;
+        }
+    </style>
+    <script text="javascript">
+        const alrertext = document.querySelector('.alerttext')
+        if(navigator.userAgent.match(/(iPhone|iPod|Android.*Mobile)/i)){
+            alert("お使いの端末がPCではないため、ご利用できません");
+            const body = querySelector('body');
+            body.style.display = none;
+        }else{
+            // PC・タブレットの場合の処理を記述
+            alrertext.textContent = "お使いの端末がPCのため　ご利用可能です";
+        }
+        function check(){
+        if (mail_form.mail.value === "0000"){
+            //条件に一致する場合(空の場合)
+            alert('パスワード一致！');
+        }else{
+            //条件に一致しない場合(入力されている場合)
+            alert('パスワードが正しくありません！');
+        }
+    }
+    </script>
+</body>
+</html>
