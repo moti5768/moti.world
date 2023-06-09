@@ -66,12 +66,14 @@
     <script text="javascript">
         const alrertext = document.querySelector('.alerttext')
         if(navigator.userAgent.match(/(iPhone|iPod|Android.*Mobile)/i)){
-            alert("お使いの端末がPCではないため、ご利用できません");
-            const test = querySelector('.test');
-            test.style.display = none;
+            no();
         }else{
             // PC・タブレットの場合の処理を記述
             alrertext.textContent = "お使いの端末がPCのため　ご利用可能です";
+        }
+        function no(){
+            alert("お使いの端末がPCではないため、ご利用できません");
+            no();
         }
         function check(){
         if (mail_form.mail.value === "0000"){
