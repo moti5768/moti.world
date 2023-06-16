@@ -1,0 +1,1289 @@
+* {
+    margin: 0px;
+    padding: 0px;
+}
+
+html {
+    touch-action: manipulation;
+    width: 100%;
+    height: 100%;
+}
+
+body {
+    font-family: sans-serif;
+    background: linear-gradient(-45deg, teal, #8EB8FF);
+}
+
+audio {
+    display: none;
+}
+
+.hover:hover {
+    background-color: blue;
+    color: white;
+}
+.hover2:hover {
+    background-color: red;
+    color: white;
+}
+
+.alerttext {
+    position: absolute;
+    top: 0px;
+    color: black;
+    z-index: 900;
+}
+
+.Windows95_group {
+    display: none;
+}
+
+a {
+    text-decoration: none;
+}
+
+.user {
+    display: none;
+    position: absolute;
+    top: 80px;
+    z-index: 101;
+}
+
+.screen {
+    display: none;
+}
+.screen.active {
+    display: block;
+}
+
+.screen_start {
+    display: none;
+}
+.screen_start.active {
+    display: block;
+}
+.screentext_start {
+    color: white;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    z-index: 102;
+}
+
+.screen_close {
+    display: none;
+}
+.screen_close.active {
+    display: block;
+}
+.screentext_close {
+    color: white;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    z-index: 102;
+}
+
+.screenbutton {
+    background: linear-gradient(-35deg, white, skyblue, royalblue);
+    color: black;
+    width: 150px;
+    height: 50px;
+    position: absolute;
+    top: 300px;
+    left: 750px;
+    border-radius: 0;
+    z-index: 101;
+}
+
+.screentext {
+    color: black;
+    font-size: 50px;
+    position: absolute;
+    top: 290px;
+    left: 320px;
+    z-index: 101;
+}
+.screencolor {
+    background: linear-gradient(-35deg, royalblue, skyblue, white);
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    z-index: 100;
+}
+.screencolor2 {
+    background-color: black;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    z-index: 100;
+}
+
+.popupwrap {
+    display: none;
+}
+.popupwrap.active {
+    display: block;
+}
+
+.popup_window {
+    background: darkgray;
+    width: 550px;
+    height: 440px;
+    top: 80px;
+    position: relative;
+    left: 180px;
+}
+.popup_window_white {
+    background: white;
+    width: 530px;
+    height: 360px;
+    position: absolute;
+    top: 70px;
+    left: 10px;
+    pointer-events: none;
+}
+.popup_window_text {
+    font-size: x-large;
+    position: absolute;
+    top: 35px;
+    left: 20px;
+}
+.popup_window_text2 {
+    font-size: small;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+}
+
+.title {
+    font-size: x-large;
+    position: absolute;
+    right: 30px;
+    top: 10px;
+}
+.titleline {
+    background: white;
+    width: 100%;
+    height: 1.5px;
+    position: absolute;
+    top: 30px;
+}
+.subtitle {
+    position: absolute;
+    top: 30px;
+    right: 0px;
+}
+
+.bold {
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.xx-small {
+    font-size: xx-small;
+}
+
+.x-small {
+    font-size: x-small;
+}
+
+.small {
+    font-size: small;
+}
+
+.medium {
+    font-size: medium;
+}
+
+.large {
+    font-size: large;
+}
+
+.x-large {
+    font-size: x-large;
+}
+
+.xx-large {
+    font-size: xx-large;
+}
+
+.bigtext {
+    font-size: 300%;
+}
+
+.white {
+    color: white;
+}
+
+.blacktext {
+    color: black;
+}
+
+.taskbar {
+    display: block;
+    background: linear-gradient(0deg, #111111, #444444);
+    width: 170px;
+    height: 35px;
+    position: absolute;
+    right: 1px;
+    bottom: 43px;
+    border-radius: 3px;
+}
+.bar_button {
+    display: inline-block;
+    color: white;
+    margin-left: 4px;
+    background: rgba();
+    width: 25px;
+    height: 25px;
+    position: relative;
+    top: 6px;
+    left: 1px;
+}
+
+.task_content_border {
+    width: 300px;
+    height: 34px;
+    position: absolute;
+    left: 78px;
+    bottom: 1px;
+    border-top: solid 2px #666666;
+    border-right: solid 2px #666666;
+    border-left: solid 2px #666666;
+    border-bottom: solid 2px #666666;
+    border-radius: 2px;
+}
+
+.online_bar {
+    width: 45px;
+    height: 35px;
+    position: absolute;
+    right: 78px;
+    bottom: 2px;
+}
+.online_bartext {
+    writing-mode: vertical-rl;
+    font-size: small;
+    height: 28px;
+    position: absolute;
+    left: -1px;
+    bottom: 4px;
+}
+.online_bartext2 {
+    font-size: x-small;
+    width: 40px;
+    height: 15px;
+    position: absolute;
+    left: 19px;
+    bottom: -2px;
+}
+.online_icon {
+    background: dimgray;
+    width: 20px;
+    height: 20px;
+    position: absolute;
+    right: 4px;
+    bottom: 11px;
+    border: solid 1px black;
+}
+.online_icon.online {
+    background: deepskyblue;
+    width: 20px;
+    height: 20px;
+    position: absolute;
+    right: 4px;
+    bottom: 11px;
+    border: solid 1px black;
+}
+
+.taskbutton {
+    color: black;
+    width: 25px;
+    height: 25px;
+    position: absolute;
+    top: 0px;
+    right: 25px;
+}
+.task_content1 {
+    display: none;
+    position: relative;
+}
+.task_button1 {
+    margin-left: 0px;
+    background: darkgray;
+    width: 30px;
+    height: 30px;
+    position: absolute;
+    left: 83px;
+    top: 5px;
+    border-top: solid 2px white;
+    border-left: solid 2px white;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.task_icon1 {
+    pointer-events: none;
+    margin-left: 10px;
+    background: khaki;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    left: 77px;
+    top: 11px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+.task_content2 {
+    display: none;
+    position: relative;
+}
+.task_button2 {
+    margin-left: 0px;
+    background: darkgray;
+    width: 30px;
+    height: 30px;
+    position: absolute;
+    left: 114px;
+    top: 5px;
+    border-top: solid 2px white;
+    border-left: solid 2px white;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.task_icon2 {
+    pointer-events: none;
+    margin-left: 10px;
+    background: khaki;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    left: 108px;
+    top: 11px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+.task_content3 {
+    display: none;
+    position: relative;
+}
+.task_button3 {
+    margin-left: 0px;
+    background: darkgray;
+    width: 30px;
+    height: 30px;
+    position: absolute;
+    left: 144px;
+    top: 5px;
+    border-top: solid 2px white;
+    border-left: solid 2px white;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.task_icon3 {
+    pointer-events: none;
+    margin-left: 10px;
+    background: dimgray;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    left: 138px;
+    top: 11px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+.task_content4 {
+    display: none;
+    position: relative;
+}
+.task_button4 {
+    margin-left: 0px;
+    background: darkgray;
+    width: 30px;
+    height: 30px;
+    position: absolute;
+    left: 174px;
+    top: 5px;
+    border-top: solid 2px white;
+    border-left: solid 2px white;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.task_icon4 {
+    pointer-events: none;
+    margin-left: 10px;
+    background: white;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    left: 168px;
+    top: 11px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+.backcolor_button {
+    width: 30px;
+    height: 30px;
+    position: relative;
+    top: 40px;
+    left: 7px;
+    border-top: solid 2px white;
+    border-left: solid 2px white;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+    border-radius: 0;
+}
+.colorbtn {
+    display: inline;
+}
+.backcolor_text {
+    font-size: small;
+    position: absolute;
+    right: 0px;
+    bottom: 40px;
+}
+.backcolor_box {
+    transform: scale(2);
+    position: absolute;
+    left: 10px;
+    bottom: 43px;
+}
+.backbutton_black {
+    background: black;
+}
+.backbutton_gray {
+    background: gray;
+}
+.backbutton_silver {
+    background: silver;
+}
+.backbutton_blue {
+    background: darkblue;
+}
+.backbutton_lightskyblue {
+    background: lightskyblue;
+}
+.backbutton_red {
+    background: red;
+}
+.backbutton_orange {
+    background: orange;
+}
+.backbutton_yellow {
+    background: yellow;
+}
+.backbutton_green {
+    background: green;
+}
+.backbutton_lime {
+    background: lime;
+}
+.backbutton_purple {
+    background: purple;
+}
+.backbutton_redpurple {
+    background: #c450a0;
+}
+.backbutton_bluepurple {
+    background: #704cbc;
+}
+.backbutton_brown {
+    background: brown;
+}
+.backbutton_pink {
+    background: pink;
+}
+.backbutton_skincolor {
+    background: #fedcbd;
+}
+.backcolor_save {
+    width: 40px;
+    height: 30px;
+    position: absolute;
+    top: 262px;
+    left: 0px;
+}
+
+a.start_button {
+    margin-top: 0px;
+    background: darkgray;
+    width: 70px;
+    height: 30px;
+    position: absolute;
+    top: 3px;
+    left: -8px;
+}
+
+.start_menu {
+    display: none;
+    background: darkgray;
+    width: 150px;
+    height: 130px;
+    position: absolute;
+    bottom: 40px;
+    left: 1px;
+    z-index: 10;
+}
+.finish {
+    background: darkgray;
+    width: 135px;
+    height: 25px;
+    position: absolute;
+    top: 95px;
+    bottom: 0px;
+}
+
+.css_menu {
+    display: none;
+    background: darkgray;
+    width: 150px;
+    height: 70px;
+    position: absolute;
+    top: -75px;
+    right: 31px;
+}
+.css_box {
+    background: darkgray;
+    color: black;
+    width: 100px;
+    height: 30px;
+    position: absolute;
+    top: 30px;
+    right: 31px;
+}
+.backcolor_menu {
+    display: none;
+    background: darkgray;
+    width: 150px;
+    height: 250px;
+    position: relative;
+    top: -280px;
+    right: 31px;
+}
+.backcolor_reset {
+    width: 40px;
+    height: 30px;
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    border-top: solid 2px white;
+    border-left: solid 2px white;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+    border-radius: 0;
+}
+.menu_bluebar {
+    background: linear-gradient(90deg, darkblue, blue);
+    color: white;
+    width: 100%;
+    height: 25px;
+    position: absolute;
+    pointer-events: none;
+}
+.menu_graybar {
+    background: dimgray;
+    color: white;
+    width: 100%;
+    height: 25px;
+    position: absolute;
+}
+
+.underbar {
+    background: linear-gradient(0deg, #111111, #555555);
+    width: 100%;
+    height: 40px;
+    position: absolute;
+    bottom: 0px;
+    border-top: solid 2px #444444;
+}
+
+a.underbarcontent {
+    font-size: small;
+    display: inline;
+    text-decoration: none;
+    position: relative;
+    bottom: 3px;
+    border-top: solid 2px white;
+    border-left: solid 2px white;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+.content {
+    font-size: small;
+    position: absolute;
+    top: -40px;
+}
+.content-icons {
+    position: relative;
+    width: 200px;
+    top: 15px;
+}
+.icon1 {
+    margin-left: 10px;
+    margin-top: 45px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute; 
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.icon2 {
+    margin-left: 10px;
+    margin-top: 145px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.icon3 {
+    margin-left: 10px;
+    margin-top: 245px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.icon4 {
+    margin-left: 10px;
+    margin-top: 345px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+.test1 {
+    margin-left: 10px;
+    margin-bottom: 50px;
+    position: absolute;
+    top: 95px;
+}
+.test2 {
+    margin-left: 10px;
+    position: absolute;
+    top: 195px;
+}
+.test3 {
+    margin-left: 10px;
+    position: absolute;
+    top: 295px;
+}
+.test4 {
+    margin-left: 10px;
+    position: absolute;
+    top: 395px;
+}
+
+.file {
+    opacity: 0;
+    width: 60px;
+}
+.file2 {
+    opacity: 0;
+    width: 90px;
+}
+
+.accessory_icon {
+    margin-left: 10px;
+    background: khaki;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    top: 30px;
+    left: -5px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.accessory_icon2 {
+    margin-left: 10px;
+    background: khaki;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    top: 55px;
+    left: -5px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+.device_icon {
+    margin-left: 10px;
+    background: khaki;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    top: 30px;
+    left: -5px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+.controlpanel_text {
+    font-size: x-small;
+    margin-left: 0px;
+    width: 60px;
+    height: 15px;
+    position: absolute;
+    top: 90px;
+    left: 15px;
+}
+.controlpanel_text2 {
+    font-size: x-small;
+    margin-left: 110px;
+    width: 60px;
+    height: 15px;
+    position: absolute;
+    top: 90px;
+    left: 15px;
+}
+.controlpanel_icon_mini {
+    margin-left: 10px;
+    background: khaki;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    top: 5px;
+    left: -3px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.controlpanel_icon {
+    margin-left: 10px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute;
+    top: 40px;
+    left: 5px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.controlpanel_icon2 {
+    margin-left: 110px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute;
+    top: 40px;
+    left: 5px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+.mycomputer_icon {
+    margin-left: 10px;
+    background: khaki;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    top: 5px;
+    left: -3px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.mycomputer_icon2 {
+    margin-left: 10px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute;
+    top: 40px;
+    left: 5px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.mycomputer_text2 {
+    color: black;
+    font-size: x-small;
+    margin-left: 10px;
+    width: 60px;
+    height: 15px;
+    position: absolute;
+    top: 90px;
+    left: 10px;
+}
+.mycomputer_icon3 {
+    margin-left: 10px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute;
+    top: 40px;
+    left: 105px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.mycomputer_text3 {
+    color: black;
+    font-size: x-small;
+    margin-left: 10px;
+    width: 60px;
+    height: 15px;
+    position: absolute;
+    top: 90px;
+    left: 110px;
+}
+.mycomputer_icon4 {
+    margin-left: 10px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute;
+    top: 40px;
+    left: 205px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.mycomputer_text4 {
+    color: black;
+    font-size: x-small;
+    margin-left: 10px;
+    width: 60px;
+    height: 15px;
+    position: absolute;
+    top: 90px;
+    left: 210px;
+}
+.mycomputer_icon5 {
+    margin-left: 10px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute;
+    top: 40px;
+    left: 305px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.mycomputer_text5 {
+    color: black;
+    font-size: x-small;
+    margin-left: 10px;
+    width: 60px;
+    height: 15px;
+    position: absolute;
+    top: 90px;
+    left: 310px;
+}
+
+.app_icon {
+    margin-left: 10px;
+    background: khaki;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    top: 30px;
+    left: -5px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.app_icon2 {
+    margin-left: 10px;
+    background: khaki;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    top: 55px;
+    left: -5px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+span.timer {
+    background: darkgray;
+    font-size: small;
+    display: inline;
+    text-decoration: none;
+    position: absolute;
+    right: 22px;
+    bottom: 8px;
+    border-top: solid 2px gray;
+    border-left: solid 2px gray;
+    border-bottom: solid 2px white;
+}
+span.timer2 {
+    background: darkgray;
+    font-size: small;
+    display: inline;
+    text-decoration: none;
+    position: absolute;
+    right: 10px;
+    bottom: 8px;
+    border-top: solid 2px gray;
+    border-bottom: solid 2px white;
+    border-right: solid 2px gray;
+}
+
+.bottom {
+    display: flex;
+    margin-left: 10px;
+    position: absolute;
+    top: 8px;
+}
+
+.button {
+    margin-left: 3px;
+    background: darkgray;
+    width: 70px;
+    height: 30px;
+    position: absolute;
+    bottom: 3px;
+    border-top: solid 2px white;
+    border-left: solid 2px white;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.button_calc {
+    color: black;
+    margin-top: 5px;
+    margin-left: 10px;
+    background: darkgray;
+    width: 35px;
+    height: 30px;
+    position: relative;
+    top: 20px;
+    left: 0px;
+    border-top: solid 2px white;
+    border-left: solid 2px white;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+
+.border {
+    border-top: solid 2px white;
+    border-left: solid 2px white;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+    border-radius: 0;
+}
+
+.closebutton {
+    color: black;
+    width: 25px;
+    height: 25px;
+    position: absolute;
+    top: 0px;
+    right: 0px;
+}
+
+.programbutton {
+    background: darkgray;
+    width: 135px;
+    height: 25px;
+    position: absolute;
+    top: 35px;
+}
+
+.settingbutton {
+    background: darkgray;
+    width: 135px;
+    height: 25px;
+    position: absolute;
+    top: 65px;
+    bottom: 0px;
+}
+
+.Credit {
+    display: none;
+    background-color: black;
+    color: white;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0px;
+    z-index: 10;
+}
+.Credit_text {
+    font-size: 50px;
+    text-align: center;
+    margin-top: 300px;
+}
+
+.program_menu {
+    display: none;
+    background: darkgray;
+    width: 120px;
+    height: 80px;
+    position: absolute;
+    top: 453px;
+    left: 155px;
+}
+.accessorybutton {
+    background: darkgray;
+    position: absolute;
+    top: 30px;
+    left: 30px;
+    border: none;
+}
+.accessorybutton2 {
+    background: darkgray;
+    position: absolute;
+    top: 55px;
+    left: 30px;
+    border: none;
+}
+
+.command_menu {
+    display: none;
+    background: darkgray;
+    width: 220px;
+    height: 50px;
+    position: absolute;
+    top: 280px;
+    left: 100px;
+}
+.textcommand_area {
+    position: relative;
+    top: 25px;
+    left: 0px;
+}
+
+.app_menu {
+    display: none;
+    background: darkgray;
+    width: 120px;
+    height: 80px;
+    position: absolute;
+    top: 453px;
+    left: 155px;
+}
+.appbutton {
+    background: darkgray;
+    position: absolute;
+    top: 30px;
+    left: 30px;
+    border: none;
+}
+.appbutton2 {
+    background: darkgray;
+    position: absolute;
+    top: 55px;
+    left: 30px;
+    border: none;
+}
+
+.setting_menu {
+    display: none;
+    background: darkgray;
+    width: 130px;
+    height: 50px;
+    position: absolute;
+    top: 537px;
+    left: 155px;
+}
+.devicebutton {
+    background: darkgray;
+    position: absolute;
+    top: 30px;
+    left: 30px;
+    border: none;
+}
+
+.controlpanel {
+    display: none;
+}
+.controlpanel_window {
+    background: darkgray;
+    width: 600px;
+    height: 400px;
+    top: 50px;
+    position: absolute;
+    left: 180px;
+}
+.controlpanel_white {
+    background: white;
+    width: 580px;
+    height: 350px;
+    top: 35px;
+    position: absolute;
+    left: 7px;
+    pointer-events: none;
+}
+
+.mycomputer {
+    display: none;
+}
+.mycomputer_window {
+    background: darkgray;
+    width: 600px;
+    height: 400px;
+    top: 50px;
+    position: absolute;
+    left: 180px;
+}
+.mycomputer_white {
+    background: white;
+    width: 580px;
+    height: 350px;
+    top: 35px;
+    position: absolute;
+    left: 7px;
+    pointer-events: none;
+}
+
+.app_memo {
+    display: none;
+    background: darkgray;
+    width: 600px;
+    height: 300px;
+    top: 150px;
+    position: absolute;
+    left: 180px;
+}
+.app_calc {
+    display: none;
+    background: darkgray;
+    width: 300px;
+    height: 220px;
+    top: 150px;
+    position: absolute;
+    left: 180px;
+}
+.textcalc {
+    margin-left: 10px;
+    font-size: large;
+    border-radius: 0;
+    width: 80%;
+    height: 30px;
+    position: absolute;
+    top: 32px;
+    border-radius: 0;
+    pointer-events: none;
+}
+
+textarea {
+    font-size: x-large;
+    width: 585px;
+    height: 238px;
+    position: absolute;
+    top: 55px;
+    right: 5px;
+    border-radius: 0;
+}
+.memo_button_save {
+    background: darkgray;
+    border-radius: 0;
+    border: none;
+    position: absolute;
+    top: 30px;
+    left: 50px;
+}
+.memo_button_load {
+    background: darkgray;
+    border-radius: 0;
+    border: none;
+    position: absolute;
+    top: 30px;
+    left: 10px;
+}
+.memo_button_clear {
+    background: darkgray;
+    border-radius: 0;
+    border: none;
+    position: absolute;
+    top: 30px;
+    left: 90px;
+}
+
+.logo {
+    width: 10px;
+    height: 10px;
+    position: absolute;
+    top: 6px;
+    right: 80px;
+    box-shadow: 0px 10px tomato, 0px 22px steelblue, 12px 10px forestgreen, 12px 22px khaki;
+}
+.start_logo {
+    width: 10px;
+    height: 10px;
+    position: absolute;
+    top: -1px;
+    left: 48px;
+    box-shadow: 0px 10px tomato, 0px 22px steelblue, 12px 10px forestgreen, 12px 22px khaki;
+}
+
+.network {
+    display: none;
+}
+.network_window {
+    background: darkgray;
+    width: 200px;
+    height: 100px;
+    position: absolute;
+    bottom: 350px;
+    right: 800px;
+    z-index: 3;
+}
+.network_white {
+    background: white;
+    width: 180px;
+    height: 55px;
+    position: absolute;
+    top: 35px;
+    left: 7px;
+    pointer-events: none;
+}
+.network_icon_mini {
+    margin-left: 10px;
+    background: khaki;
+    width: 20px;
+    height: 15px;
+    position: absolute;
+    top: 5px;
+    left: -3px;
+    border-bottom: solid 2px black;
+    border-right: solid 2px black;
+}
+.icon_4g {
+    background: dimgray;
+    width: 10px;
+    height: 10px;
+    position: absolute;
+    right: 100px;
+    bottom: 2px;
+    border: solid 1px black;
+}
+.icon_4g.online {
+    background: deepskyblue;
+    width: 10px;
+    height: 10px;
+    position: absolute;
+    right: 100px;
+    bottom: 2px;
+    border: solid 1px black;
+}
+.icon_wifi {
+    background: dimgray;
+    width: 10px;
+    height: 10px;
+    position: absolute;
+    right: 100px;
+    bottom: 20px;
+    border: solid 1px black;
+}
+.icon_wifi.online {
+    background: deepskyblue;
+    width: 10px;
+    height: 10px;
+    position: absolute;
+    right: 100px;
+    bottom: 20px;
+    border: solid 1px black;
+}
+.nettext1 {
+    position: absolute;
+    top: 37px;
+    z-index: 1;
+}
