@@ -3,7 +3,7 @@ if(navigator.userAgent.match(/(iPhone|iPod|Android.*Mobile)/i)){
 }else{
     // PC・タブレットの場合の処理を記述
     const alerttext = document.querySelector('.alerttext');
-    alerttext.textContent = "お使いの端末がPCのため　ご利用可能です。";
+    alerttext.textContent = "お使いの端末がPCのため、ご利用可能です。";
 }
 function no(){
     alert("お使いの端末がPCではないため、ご利用できません");
@@ -71,7 +71,7 @@ if (mail_form.mail.value === "0000"){
 
         document.getElementById("timer").innerHTML = msg;
     }
-    setInterval('showClock()',1000);
+    setInterval('showClock()',100);
 
         setInterval(() => {
         if (window.navigator.onLine) {
@@ -85,7 +85,7 @@ if (mail_form.mail.value === "0000"){
             const onlinewifi = document.getElementsByClassName('icon_wifi');
             onlinewifi[0].classList.remove('online');
         }
-    }, 500);
+    }, 100);
     setInterval(() => {
         if (navigator.connection.effectiveType === '3g' || navigator.connection.effectiveType === '4g') {
             const online4 = document.getElementsByClassName('icon_4g');
@@ -94,7 +94,7 @@ if (mail_form.mail.value === "0000"){
             const online4 = document.getElementsByClassName('icon_4g');
             online4[0].classList.remove('online');
         }
-    }, 500);
+    }, 100);
 
         window.addEventListener('load', (event) => {
             const screen_open = document.querySelector(".Windows95_group");
@@ -490,3 +490,32 @@ if (mail_form.mail.value === "0000"){
                 e.target.style.zIndex = count;
                 // 図形にz-indexを表示
             }
+               
+    let ele = document.documentElement;
+
+    function hoge() {
+
+       // 全画面表示      
+      if (ele.webkitRequestFullscreen) {
+        ele.webkitRequestFullscreen() // Chrome, Safari
+      } else if (ele.mozRequestFullScreen) {
+        ele.mozRequestFullScreen() // firefox
+      } else if (ele.requestFullscreen) {
+        ele.requestFullscreen() // HTML5 Fullscreen API
+      } else {
+        alert('未対応')
+        return
+      }
+
+    };
+
+    function foo() {
+      // 全画面表示　終了
+      if (ele.webkitRequestFullscreen) {
+        document.webkitCancelFullScreen() // Chrome, Safari
+      } else if (ele.mozRequestFullScreen) {
+        document.mozCancelFullScreen() // firefox
+      } else if (ele.requestFullscreen) {
+        document.exitFullscreen() // HTML5 Fullscreen API
+      }
+    };
