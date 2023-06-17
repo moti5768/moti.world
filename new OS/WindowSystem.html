@@ -12,7 +12,7 @@
         <span class="screencolor"></span>
         <p class="alerttext"></p>
         <p class="screentext bold">WindowSystem</p>
-        <button class="screenbutton bold border" onclick="screen_start(),sound()">スタート</button>
+        <button class="screenbutton bold" onclick="screen_start(),sound()">スタート</button>
     </div>
 
     <div class="screen_start" id="user">
@@ -27,7 +27,7 @@
 
 <div class="Windows95_group">
     <span class="logo"></span>
-    <div class="drag1 shape popupwrap popup_window border">
+    <div class="drag1 shape popupwrap popup_window border" style="opacity: 0.9;">
         <p class="popup_window_text">WindowSystem&nbsp;へようこそ</p>
         <div class="popup_window_white">
             <p class="popup_window_text2">WindowSystemへようこそ<br>
@@ -43,8 +43,8 @@
 
     <div class="title">
         <div class="titleline"></div>
-        <p class="bold white">WindowSystem&emsp;&emsp;&emsp;</p>
-        <p class="bold white medium subtitle">V&nbsp;0.1&copy;</p>
+        <p class="bold">WindowSystem&emsp;&emsp;&emsp;</p>
+        <p class="bold medium subtitle">V&nbsp;0.1&copy;</p>
     </div>
 
     <div class="start_menu border">
@@ -57,12 +57,12 @@
 
     <div class="content">
         <div class="content-icons">
-            <a class="icon1" onclick="mycomputer_open(),task_conent1_open(),popupwindow_close()"></a>
-            <a class="test1 white" onclick="mycomputer_open(),task_conent1_open(),popupwindow_close()">マイコンピュータ</a>
-            <a class="icon2" onclick="Credit()"></a>
-            <a class="test2 white" onclick="Credit()">クレジット</a>
-            <a class="icon3" onclick="popupwindow_open()"></a>
-            <a class="test3 white" onclick="popupwindow_open()">ようこそ</a>
+            <a class="icon1 hover3" onclick="mycomputer_open(),task_conent1_open(),popupwindow_close()"></a>
+            <a class="test1 white hover3" onclick="mycomputer_open(),task_conent1_open(),popupwindow_close()">マイコンピュータ</a>
+            <a class="icon2 hover3" onclick="Credit()"></a>
+            <a class="test2 white hover3" onclick="Credit()">クレジット</a>
+            <a class="icon3 hover3" onclick="popupwindow_open()"></a>
+            <a class="test3 white hover3" onclick="popupwindow_open()">ようこそ</a>
             <a class="icon4"></a>
             <a class="test4 white">ファイルを選択</a>
             <input type="file" class="icon4 file">
@@ -78,13 +78,13 @@
         <a class="blacktext bar_button">T</a>
         <a class="blacktext bar_button">T</a>
 
-        <div class="css_menu border shape">
+        <div class="css_menu border shape" style="opacity: 0.9;">
             <span class="menu_bluebar">CSSの削除</span>
             <button class="css_box border hover" onclick="stylebox()">CSSを削除する</button>
             <button class="closebutton border hover2" onclick="cssmenu_close()">X</button>
         </div>
 
-        <div class="backcolor_menu border shape">
+        <div class="backcolor_menu border shape" style="opacity: 0.9;">
             <span class="menu_bluebar">画面のプロパティ</span>
             <button class="closebutton border hover2" onclick="backcolormenu_close()">X</button>
             <button class="blacktext backcolor_reset hover" onclick="backcolor_reset()">reset</button>
@@ -132,7 +132,7 @@
         <a class="app_icon2" onclick="calc_open(),startmenu_close()"></a>
     </div>
 
-    <div class="drag3 shape command_menu border">
+    <div class="drag3 shape command_menu border" style="opacity: 0.9;">
         <div class="menu_bluebar">コマンド入力</div>
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
     <form method="get" name="mail_form" onsubmit="return false;">
@@ -141,7 +141,7 @@
     </form>
     </div>
 
-    <div class="drag4 shape app_memo border">
+    <div class="drag4 shape app_memo border" style="opacity: 0.9;">
         <p class="menu_bluebar">無題-メモ帳</p>
         <form name="form1">
             <textarea name="Memo" class="Memo"></textarea>
@@ -155,7 +155,7 @@
         <button class="blacktext taskbutton border hover" onclick="memo_close()">一</button>
     </div>
 
-    <div class="drag5 shape app_calc border">
+    <div class="drag5 shape app_calc border" style="opacity: 0.9;">
             <span class="menu_bluebar">電卓</span>
             <p class="white">　</p>
         <input class="calc textcalc" style="text-align: right;"></input><br>
@@ -191,7 +191,7 @@
     </div>
 
     <div class="controlpanel">
-        <div class="drag6 shape controlpanel_window border">
+        <div class="drag6 shape controlpanel_window border" style="opacity: 0.9;">
             <span class="menu_bluebar">　　コントロールパネル</span>
             <span class="controlpanel_white"></span>
             <span class="controlpanel_icon_mini"></span>
@@ -205,7 +205,7 @@
     </div>
 
     <div class="mycomputer">
-        <div class="drag7 shape mycomputer_window border">
+        <div class="drag7 shape mycomputer_window border" style="opacity: 0.9;">
             <span class="menu_bluebar">　　マイコンピュータ</span>
             <span class="mycomputer_white"></span>
             <span class="mycomputer_icon"></span>
@@ -223,7 +223,7 @@
     </div>
 
     <div class="network">
-        <div class="drag8 shape network_window border">
+        <div class="drag8 shape network_window border" style="opacity: 0.9;">
             <span class="menu_bluebar">　　ネットワーク</span>
             <span class="network_icon_mini"></span>
             <div class="network_white border">
@@ -237,11 +237,11 @@
         </div>
     </div>
 
-    <div class="underbar">
-        <a class="blacktext bottom bold start_button border hover" onclick="startmenu_open(),popupwindow_close()">start</a>
+    <div class="underbar" style="opacity: 0.9;">
+        <a class="blacktext bottom bold start_button hover" onclick="startmenu_open(),popupwindow_close()"></a>
         <span class="start_logo"></span>
     
-    <div class="online_bar border white">
+    <div class="online_bar white">
         <span class="online_icon"></span>
         <p class="online_bartext">通信</p>
         <p class="online_bartext2">状態</p>
@@ -265,8 +265,8 @@
             <span class="task_icon4"></span>
         </div>
 
-        <span class="timer bottom" id="timer">time　</span>
-        <span class="timer2 bottom" id="ampm">test</span>
+        <span class="timer bottom white" id="timer">time　</span>
+        <span class="timer2 bottom white" id="ampm">test</span>
     </div>
 
     <div class="Credit">
