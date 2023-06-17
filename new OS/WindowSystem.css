@@ -24,11 +24,15 @@ audio {
 }
 
 .hover:hover {
-    background-color: blue;
+    background-color: lightblue;
+    border: solid 1px skyblue;
+    opacity: 0.8;
     color: white;
 }
 .hover2:hover {
     background-color: red;
+    border: solid 1px skyblue;
+    opacity: 0.8;
     color: white;
 }
 
@@ -43,8 +47,8 @@ audio {
 .alerttext {
     position: absolute;
     top: 0px;
-    color: black;
-    z-index: 99998;
+    color: white;
+    z-index: 99999;
 }
 
 .Windows95_group {
@@ -59,7 +63,7 @@ a {
     display: none;
     position: absolute;
     top: 80px;
-    z-index: 101;
+    z-index: 99998;
 }
 
 .screen {
@@ -145,12 +149,13 @@ a {
 }
 
 .popup_window {
-    background: darkgray;
+    background: linear-gradient(0deg, #339999, #6699FF);
     width: 550px;
     height: 440px;
     top: 80px;
     position: relative;
     left: 180px;
+    box-shadow: 3px 3px 6px black;
 }
 .popup_window_white {
     background: white;
@@ -319,14 +324,6 @@ a {
     border: solid 1px black;
 }
 
-.taskbutton {
-    color: black;
-    width: 25px;
-    height: 25px;
-    position: absolute;
-    top: 0px;
-    right: 25px;
-}
 .task_content1 {
     display: none;
     position: relative;
@@ -540,17 +537,20 @@ a.start_button {
 
 .start_menu {
     display: none;
-    background: darkgray;
+    background: linear-gradient(0deg, #222222, #666666);
     width: 150px;
     height: 130px;
     position: absolute;
     bottom: 40px;
     left: 1px;
-    z-index: 10;
+    box-shadow: 3px 3px 6px black;
+    z-index: 99997;
 }
 .finish {
-    background: darkgray;
-    width: 135px;
+    background: rgba();
+    color: white;
+    font-size: small;
+    width: 140px;
     height: 25px;
     position: absolute;
     top: 95px;
@@ -559,16 +559,18 @@ a.start_button {
 
 .css_menu {
     display: none;
-    background: darkgray;
+    background: linear-gradient(0deg, #111111, #444444);
     width: 150px;
     height: 70px;
     position: absolute;
     top: -75px;
     right: 31px;
+    box-shadow: 3px 3px 6px black;
 }
 .css_box {
-    background: darkgray;
-    color: black;
+    background: rgba();
+    color: white;
+    font-size: small;
     width: 100px;
     height: 30px;
     position: absolute;
@@ -577,38 +579,39 @@ a.start_button {
 }
 .backcolor_menu {
     display: none;
-    background: darkgray;
-    width: 150px;
+    background: linear-gradient(0deg, #111111, #444444);
+    color: white;
+    font-size: medium;
+    width: 160px;
     height: 250px;
     position: relative;
     top: -280px;
     right: 31px;
+    box-shadow: 3px 3px 6px black;
 }
 .backcolor_reset {
     width: 40px;
-    height: 30px;
+    height: 20px;
+    font-size: small;
     position: absolute;
-    bottom: 2px;
+    bottom: 5px;
     right: 2px;
-    border-top: solid 2px white;
-    border-left: solid 2px white;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
     border-radius: 0;
 }
 .menu_bluebar {
-    background: linear-gradient(90deg, darkblue, blue);
-    color: white;
+    background: linear-gradient(90deg, silver, whitesmoke);
+    color: black;
     width: 100%;
-    height: 25px;
+    height: 20px;
     position: absolute;
     pointer-events: none;
+    border-radius: 5px;
 }
 .menu_graybar {
     background: dimgray;
     color: white;
     width: 100%;
-    height: 25px;
+    height: 20px;
     position: absolute;
 }
 
@@ -619,6 +622,7 @@ a.start_button {
     position: absolute;
     bottom: 0px;
     border-top: solid 2px #444444;
+    box-shadow: 0px -1px 3px black;
     z-index: 99997;
 }
 
@@ -712,41 +716,6 @@ a.underbarcontent {
     width: 90px;
 }
 
-.accessory_icon {
-    margin-left: 10px;
-    background: khaki;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    top: 30px;
-    left: -5px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-}
-.accessory_icon2 {
-    margin-left: 10px;
-    background: khaki;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    top: 55px;
-    left: -5px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-}
-
-.device_icon {
-    margin-left: 10px;
-    background: khaki;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    top: 30px;
-    left: -5px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-}
-
 .controlpanel_text {
     font-size: x-small;
     margin-left: 0px;
@@ -764,17 +733,6 @@ a.underbarcontent {
     position: absolute;
     top: 90px;
     left: 15px;
-}
-.controlpanel_icon_mini {
-    margin-left: 10px;
-    background: khaki;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    top: 5px;
-    left: -3px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
 }
 .controlpanel_icon {
     margin-left: 10px;
@@ -799,17 +757,6 @@ a.underbarcontent {
     border-right: solid 2px black;
 }
 
-.mycomputer_icon {
-    margin-left: 10px;
-    background: khaki;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    top: 5px;
-    left: -3px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-}
 .mycomputer_icon2 {
     margin-left: 10px;
     background: khaki;
@@ -895,29 +842,6 @@ a.underbarcontent {
     left: 310px;
 }
 
-.app_icon {
-    margin-left: 10px;
-    background: khaki;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    top: 30px;
-    left: -5px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-}
-.app_icon2 {
-    margin-left: 10px;
-    background: khaki;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    top: 55px;
-    left: -5px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-}
-
 span.timer {
     background: rgba();
     font-size: 15px;
@@ -973,37 +897,47 @@ span.timer2 {
 }
 
 .border {
-    border-top: solid 2px white;
-    border-left: solid 2px white;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-    border-radius: 0;
+    border: solid 1.5px #0066FF;
+    border-radius: 5px;
 }
 
 .closebutton {
     color: black;
-    width: 25px;
-    height: 25px;
+    width: 30px;
+    height: 20px;
     position: absolute;
     top: 0px;
     right: 0px;
 }
+.taskbutton {
+    color: black;
+    width: 30px;
+    height: 20px;
+    position: absolute;
+    top: 0px;
+    right: 30px;
+}
 
 .programbutton {
-    background: darkgray;
+    background: rgba();
+    color: white;
+    font-size: small;
     width: 135px;
     height: 25px;
     position: absolute;
+    left: 5px;
     top: 35px;
 }
 
 .settingbutton {
-    background: darkgray;
+    background: rgba();
+    color: white;
+    font-size: small;
     width: 135px;
     height: 25px;
     position: absolute;
+    left: 5px;
     top: 65px;
-    bottom: 0px;
 }
 
 .Credit {
@@ -1024,36 +958,43 @@ span.timer2 {
 
 .program_menu {
     display: none;
-    background: darkgray;
+    background: linear-gradient(0deg, #222222, #666666);
     width: 120px;
     height: 80px;
     position: absolute;
     top: 453px;
     left: 155px;
+    box-shadow: 3px 3px 6px black;
+    z-index: 99997;
 }
 .accessorybutton {
-    background: darkgray;
+    background: rgba();
+    color: white;
+    font-size: small;
     position: absolute;
     top: 30px;
-    left: 30px;
+    left: 10px;
     border: none;
 }
 .accessorybutton2 {
-    background: darkgray;
+    background: rgba();
+    color: white;
+    font-size: small;
     position: absolute;
     top: 55px;
-    left: 30px;
+    left: 10px;
     border: none;
 }
 
 .command_menu {
     display: none;
-    background: darkgray;
+    background: #339999;
     width: 220px;
     height: 50px;
     position: absolute;
     top: 280px;
     left: 100px;
+    box-shadow: 3px 3px 6px black;
 }
 .textcommand_area {
     position: relative;
@@ -1063,42 +1004,52 @@ span.timer2 {
 
 .app_menu {
     display: none;
-    background: darkgray;
+    background: linear-gradient(0deg, #222222, #666666);
     width: 120px;
     height: 80px;
     position: absolute;
     top: 453px;
     left: 155px;
+    box-shadow: 3px 3px 6px black;
+    z-index: 99997;
 }
 .appbutton {
-    background: darkgray;
+    background: rgba();
+    color: white;
+    font-size: small;
     position: absolute;
     top: 30px;
-    left: 30px;
+    left: 10px;
     border: none;
 }
 .appbutton2 {
-    background: darkgray;
+    background: rgba();
+    color: white;
+    font-size: small;
     position: absolute;
     top: 55px;
-    left: 30px;
+    left: 10px;
     border: none;
 }
 
 .setting_menu {
     display: none;
-    background: darkgray;
+    background: linear-gradient(0deg, #222222, #666666);
     width: 130px;
     height: 50px;
     position: absolute;
     top: 537px;
     left: 155px;
+    box-shadow: 3px 3px 6px black;
+    z-index: 99997;
 }
 .devicebutton {
-    background: darkgray;
+    background: rgba();
+    color: white;
+    font-size: x-small;
     position: absolute;
     top: 30px;
-    left: 30px;
+    left: 10px;
     border: none;
 }
 
@@ -1106,12 +1057,13 @@ span.timer2 {
     display: none;
 }
 .controlpanel_window {
-    background: darkgray;
+    background: linear-gradient(0deg, #339999, #6699FF);
     width: 600px;
     height: 400px;
     top: 50px;
     position: absolute;
     left: 180px;
+    box-shadow: 3px 3px 6px black;
 }
 .controlpanel_white {
     background: white;
@@ -1127,12 +1079,13 @@ span.timer2 {
     display: none;
 }
 .mycomputer_window {
-    background: darkgray;
+    background: linear-gradient(0deg, #339999, #6699FF);
     width: 600px;
     height: 400px;
     top: 50px;
     position: absolute;
     left: 180px;
+    box-shadow: 3px 3px 6px black;
 }
 .mycomputer_white {
     background: white;
@@ -1146,12 +1099,13 @@ span.timer2 {
 
 .app_memo {
     display: none;
-    background: darkgray;
+    background: linear-gradient(0deg, #339999, #6699FF);
     width: 600px;
     height: 300px;
     top: 150px;
     position: absolute;
     left: 180px;
+    box-shadow: 3px 3px 6px black;
 }
 .app_calc {
     display: none;
@@ -1161,6 +1115,7 @@ span.timer2 {
     top: 150px;
     position: absolute;
     left: 180px;
+    box-shadow: 3px 3px 6px black;
 }
 .textcalc {
     margin-left: 10px;
@@ -1184,7 +1139,7 @@ textarea {
     border-radius: 0;
 }
 .memo_button_save {
-    background: darkgray;
+    background: #6699FF;
     border-radius: 0;
     border: none;
     position: absolute;
@@ -1192,7 +1147,7 @@ textarea {
     left: 50px;
 }
 .memo_button_load {
-    background: darkgray;
+    background: #6699FF;
     border-radius: 0;
     border: none;
     position: absolute;
@@ -1200,7 +1155,7 @@ textarea {
     left: 10px;
 }
 .memo_button_clear {
-    background: darkgray;
+    background: #6699FF;
     border-radius: 0;
     border: none;
     position: absolute;
@@ -1229,12 +1184,13 @@ textarea {
     display: none;
 }
 .network_window {
-    background: darkgray;
+    background: linear-gradient(0deg, #339999, #6699FF);
     width: 200px;
     height: 100px;
     position: absolute;
     bottom: 350px;
     right: 800px;
+    box-shadow: 3px 3px 6px black;
     z-index: 3;
 }
 .network_white {
@@ -1245,17 +1201,6 @@ textarea {
     top: 35px;
     left: 7px;
     pointer-events: none;
-}
-.network_icon_mini {
-    margin-left: 10px;
-    background: khaki;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    top: 5px;
-    left: -3px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
 }
 .icon_4g {
     background: dimgray;
