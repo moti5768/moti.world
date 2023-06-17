@@ -74,17 +74,17 @@
         <span class="taskbar_blue"></span>
         <a class="blacktext bar_button" onclick="backcolormenu_open(),popupwindow_close()">C</a>
         <a class="blacktext bar_button" onclick="cssmenu_open(),popupwindow_close()">CS</a>
-        <a class="blacktext bar_button">T</a>
-        <a class="blacktext bar_button">T</a>
+        <a class="blacktext bar_button" onclick="hoge()">FL1</a>
+        <a class="blacktext bar_button" onclick="foo()">FL2</a>
         <a class="blacktext bar_button">T</a>
 
-        <div class="css_menu border shape" style="opacity: 0.9;">
+        <div class="css_menu border shape" style="opacity: 0.95;">
             <span class="menu_bluebar">CSSの削除</span>
             <button class="css_box border hover" onclick="stylebox()">CSSを削除する</button>
             <button class="closebutton border hover2" onclick="cssmenu_close()">X</button>
         </div>
 
-        <div class="backcolor_menu border shape" style="opacity: 0.9;">
+        <div class="backcolor_menu border shape" style="opacity: 0.95;">
             <span class="menu_bluebar">画面のプロパティ</span>
             <button class="closebutton border hover2" onclick="backcolormenu_close()">X</button>
             <button class="blacktext backcolor_reset hover" onclick="backcolor_reset()">reset</button>
@@ -132,7 +132,7 @@
         <a class="app_icon2" onclick="calc_open(),startmenu_close()"></a>
     </div>
 
-    <div class="drag3 shape command_menu border" style="opacity: 0.9;">
+    <div class="drag3 shape command_menu border" style="opacity: 0.95;">
         <div class="menu_bluebar">コマンド入力</div>
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
     <form method="get" name="mail_form" onsubmit="return false;">
@@ -141,7 +141,7 @@
     </form>
     </div>
 
-    <div class="drag4 shape app_memo border" style="opacity: 0.9;">
+    <div class="drag4 shape app_memo border" style="opacity: 0.95;">
         <p class="menu_bluebar">無題-メモ帳</p>
         <form name="form1">
             <textarea name="Memo" class="Memo"></textarea>
@@ -155,7 +155,7 @@
         <button class="blacktext taskbutton border hover" onclick="memo_close()">一</button>
     </div>
 
-    <div class="drag5 shape app_calc border" style="opacity: 0.9;">
+    <div class="drag5 shape app_calc border" style="opacity: 0.95;">
             <span class="menu_bluebar">電卓</span>
             <p class="white">　</p>
         <input class="calc textcalc" style="text-align: right;"></input><br>
@@ -191,7 +191,7 @@
     </div>
 
     <div class="controlpanel">
-        <div class="drag6 shape controlpanel_window border" style="opacity: 0.9;">
+        <div class="drag6 shape controlpanel_window border" style="opacity: 0.95;">
             <span class="menu_bluebar">　　コントロールパネル</span>
             <span class="controlpanel_white"></span>
             <span class="controlpanel_icon_mini"></span>
@@ -205,7 +205,7 @@
     </div>
 
     <div class="mycomputer">
-        <div class="drag7 shape mycomputer_window border" style="opacity: 0.9;">
+        <div class="drag7 shape mycomputer_window border" style="opacity: 0.95;">
             <span class="menu_bluebar">　　マイコンピュータ</span>
             <span class="mycomputer_white"></span>
             <span class="mycomputer_icon"></span>
@@ -223,7 +223,7 @@
     </div>
 
     <div class="network">
-        <div class="drag8 shape network_window border" style="opacity: 0.9;">
+        <div class="drag8 shape network_window border" style="opacity: 0.95;">
             <span class="menu_bluebar">　　ネットワーク</span>
             <span class="network_icon_mini"></span>
             <div class="network_white border">
@@ -237,7 +237,11 @@
         </div>
     </div>
 
-    <div class="underbar" style="opacity: 0.9;">
+    <div class="Credit">
+        <p class="bold Credit_text">WindowSystem 0.1</p>
+    </div>
+
+    <div class="underbar" style="opacity: 0.95;">
         <a class="blacktext bottom bold start_button hover" onclick="startmenu_open(),popupwindow_close()"></a>
         <span class="start_logo"></span>
     
@@ -267,10 +271,6 @@
 
         <span class="timer bottom white" id="timer">time　</span>
         <span class="timer2 bottom white" id="ampm">test</span>
-    </div>
-
-    <div class="Credit">
-        <p class="bold Credit_text">WindowSystem 0.1</p>
     </div>
     </div>
 
