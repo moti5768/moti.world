@@ -217,14 +217,6 @@ if (mail_form.mail.value === "0000"){
     }, 2000);
 };
 
-    function stylebox(){
-        document.getElementById("backcolor").style.backgroundColor = "white";
-        const style = document.querySelectorAll("style");
-        style.forEach((s) => {
-            s.remove();
-        })
-}
-
     function colorbox(){
     if (document.getElementById("color_box").checked) {
         colorbtn.style.display = "none";
