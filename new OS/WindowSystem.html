@@ -27,7 +27,7 @@
 
 <div class="Windows95_group">
     <span class="logo"></span>
-    <div class="drag1 shape popupwrap popup_window border" style="opacity: 0.9;">
+    <div class="drag1 shape popupwrap popup_window border" style="opacity: 0.95;">
         <p class="popup_window_text">WindowSystem&nbsp;へようこそ</p>
         <div class="popup_window_white">
             <p class="popup_window_text2">WindowSystemへようこそ<br>
@@ -49,10 +49,10 @@
 
     <div class="start_menu border">
         <span class="menu_graybar white">WindowSystem</span>
-        <button class="blacktext closebutton border hover2" onclick="startmenu_close()">X</button>
-        <button class="blacktext programbutton border bold hover" onclick="programmenu_open(),settingmenu_close()">プログラム</button>
-        <button class="blacktext settingbutton border bold hover" onclick="settingmenu_open(),programmenu_close(),appmenu_close()">設定</button>
-        <a class="blacktext border bold finish hover" onclick="screen_close(),allwindow_close(),sound2()">Windowの終了</a>
+        <button class="blacktext closebutton hover2" onclick="startmenu_close()">X</button>
+        <a class="blacktext programbutton hover" onclick="programmenu_open(),settingmenu_close()">プログラム</a>
+        <a class="blacktext settingbutton hover" onclick="settingmenu_open(),programmenu_close(),appmenu_close()">設定</a>
+        <a class="blacktext finish hover" onclick="screen_close(),allwindow_close(),sound2()">WindowSystemの終了</a>
     </div>
 
     <div class="content">
@@ -79,18 +79,18 @@
         <a class="blacktext bar_button">T</a>
 
         <div class="css_menu border shape" style="opacity: 0.95;">
-            <span class="menu_bluebar">CSSの削除</span>
-            <button class="css_box border hover" onclick="stylebox()">CSSを削除する</button>
-            <button class="closebutton border hover2" onclick="cssmenu_close()">X</button>
+            <span class="menu_graybar">CSSの削除</span>
+            <a class="css_box hover" onclick="stylebox()">CSSを削除する</a>
+            <button class="closebutton hover2" onclick="cssmenu_close()">X</button>
         </div>
 
         <div class="backcolor_menu border shape" style="opacity: 0.95;">
-            <span class="menu_bluebar">画面のプロパティ</span>
-            <button class="closebutton border hover2" onclick="backcolormenu_close()">X</button>
-            <button class="blacktext backcolor_reset hover" onclick="backcolor_reset()">reset</button>
+            <span class="menu_graybar">画面のプロパティ</span>
+            <button class="closebutton hover2" onclick="backcolormenu_close()">X</button>
+            <a class="backcolor_reset hover" onclick="backcolor_reset()">reset</a>
     
             <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()"></input>
-            <p class="backcolor_text">表示を2色にする。</p>
+            <p class="backcolor_text white">表示を2色にする。</p>
             <button class="backcolor_button backbutton_black" onclick="backcolor_black()"></button>
             <button class="backcolor_button backbutton_gray" onclick="backcolor_gray()"></button>
     
@@ -115,29 +115,27 @@
     </div>
 
     <div class="program_menu border">
-        <span class="menu_bluebar">プログラム</span>
-        <button class="blacktext closebutton border hover2" onclick="programmenu_close()">X</button>
-        <button class="blacktext accessorybutton hover" onclick="appmenu_open()">アクセサリ</button>
-        <button class="blacktext accessorybutton2 hover" onclick="commandmenu_open(),startmenu_close()">コマンド</button>
+        <span class="menu_graybar">プログラム</span>
+        <button class="blacktext closebutton hover2" onclick="programmenu_close()">X</button>
+        <a class="blacktext accessorybutton hover" onclick="appmenu_open()">アクセサリ</a>
+        <a class="blacktext accessorybutton2 hover" onclick="commandmenu_open(),startmenu_close()">コマンド</a>
         <a class="accessory_icon" onclick="appmenu_open()"></a>
         <a class="accessory_icon2" onclick="commandmenu_open(),startmenu_close()"></a>
     </div>
 
     <div class="app_menu border">
-        <span class="menu_bluebar">ソフト</span>
-        <button class="blacktext closebutton border hover2" onclick="appmenu_close()">X</button>
-        <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close(),task_content4_open()">メモ帳</button>
-        <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close(),task_content3_open()">電卓</button>
-        <a class="app_icon" onclick="memo_open(),startmenu_close()"></a>
-        <a class="app_icon2" onclick="calc_open(),startmenu_close()"></a>
+        <span class="menu_graybar">ソフト</span>
+        <button class="blacktext closebutton hover2" onclick="appmenu_close()">X</button>
+        <a class="blacktext appbutton hover" onclick="memo_open(),startmenu_close(),task_content4_open()">メモ帳</a>
+        <a class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close(),task_content3_open()">電卓</a>
     </div>
 
     <div class="drag3 shape command_menu border" style="opacity: 0.95;">
         <div class="menu_bluebar">コマンド入力</div>
-        <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
+        <button class="blacktext closebutton hover2" onclick="commandmenu_close()">X</button>
     <form method="get" name="mail_form" onsubmit="return false;">
-        <input type="text" class="textcommand_area border" name="mail" placeholder="Reload">
-        <input type="submit" class="textcommand_area border hover" value="実行" onclick="check()">
+        <input type="text" class="textcommand_area" name="mail" placeholder="Reload">
+        <input type="submit" class="textcommand_area hover" value="実行" onclick="check()">
     </form>
     </div>
 
@@ -151,16 +149,16 @@
             <input type="button" class="blacktext memo_button_load" value="読込" onclick=load(); ></input>
             <input type="button" id="cleartextbtn" class="blacktext memo_button_clear" value="クリア"></input>
         </p>
-        <button class="closebutton blacktext border hover2" onclick="task_content4_close(),memo_close()">X</button>
-        <button class="blacktext taskbutton border hover" onclick="memo_close()">一</button>
+        <button class="closebutton blacktext hover2" onclick="task_content4_close(),memo_close()">X</button>
+        <button class="blacktext taskbutton hover" onclick="memo_close()">一</button>
     </div>
 
     <div class="drag5 shape app_calc border" style="opacity: 0.95;">
             <span class="menu_bluebar">電卓</span>
             <p class="white">　</p>
         <input class="calc textcalc" style="text-align: right;"></input><br>
-        <button class="closebutton blacktext border hover2" onclick="task_content3_close(),calc_close()">X</button>
-        <button class="blacktext taskbutton border hover" onclick="calc_close()">一</button>
+        <button class="closebutton blacktext hover2" onclick="task_content3_close(),calc_close()">X</button>
+        <button class="blacktext taskbutton hover" onclick="calc_close()">一</button>
         <button class="calc button_calc" onclick="append( '1' )" >1</button>
         <button class="calc button_calc" onclick="append( '2' )" >2</button>
         <button class="calc button_calc" onclick="append( '3' )" >3</button>
@@ -184,29 +182,29 @@
     </div>
 
     <div class="setting_menu border">
-        <span class="menu_bluebar">設定</span>
-        <button class="blacktext closebutton border hover2" onclick="settingmenu_close()">X</button>
-        <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close(),task_conent2_open()">コントロールパネル</button>
+        <span class="menu_graybar">設定</span>
+        <button class="blacktext closebutton hover2" onclick="settingmenu_close()">X</button>
+        <a class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close(),task_conent2_open()">コントロールパネル</a>
         <a class="device_icon" onclick="controlpanel_open(),startmenu_close()"></a>
     </div>
 
     <div class="controlpanel">
         <div class="drag6 shape controlpanel_window border" style="opacity: 0.95;">
-            <span class="menu_bluebar">　　コントロールパネル</span>
+            <span class="menu_bluebar">&emsp;コントロールパネル</span>
             <span class="controlpanel_white"></span>
             <span class="controlpanel_icon_mini"></span>
             <a class="controlpanel_text" onclick="netmenu_open()">ネットワーク</a>
             <a class="controlpanel_icon" onclick="netmenu_open()"></a>
             <a class="controlpanel_text2" onclick="testalert()">テスト</a>
             <a class="controlpanel_icon2" onclick="testalert()"></a>
-            <button class="blacktext closebutton border hover2" onclick="task_content2_close(),controlpanel_close()">X</button>
-            <button class="blacktext taskbutton border hover" onclick="controlpanel_close()">一</button>
+            <button class="blacktext closebutton hover2" onclick="task_content2_close(),controlpanel_close()">X</button>
+            <button class="blacktext taskbutton hover" onclick="controlpanel_close()">一</button>
         </div>
     </div>
 
     <div class="mycomputer">
         <div class="drag7 shape mycomputer_window border" style="opacity: 0.95;">
-            <span class="menu_bluebar">　　マイコンピュータ</span>
+            <span class="menu_bluebar">&emsp;マイコンピュータ</span>
             <span class="mycomputer_white"></span>
             <span class="mycomputer_icon"></span>
             <a class="mycomputer_text2" onclick="controlpanel_open(),task_conent2_open()">コントロールパネル</a>
@@ -217,23 +215,23 @@
             <a class="mycomputer_icon4" href="https://yahoo.co.jp"></a>
             <a class="mycomputer_text5" href="https://youtube.com">Youtube</a>
             <a class="mycomputer_icon5" href="https://youtube.com"></a>
-            <button class="blacktext closebutton border hover2" onclick="task_content1_close(),mycomputer_close()">X</button>
-            <button class="blacktext taskbutton border hover" onclick="mycomputer_close()">一</button>
+            <button class="blacktext closebutton hover2" onclick="task_content1_close(),mycomputer_close()">X</button>
+            <button class="blacktext taskbutton hover" onclick="mycomputer_close()">一</button>
         </div>
     </div>
 
     <div class="network">
         <div class="drag8 shape network_window border" style="opacity: 0.95;">
-            <span class="menu_bluebar">　　ネットワーク</span>
+            <span class="menu_bluebar">&emsp;ネットワーク</span>
             <span class="network_icon_mini"></span>
-            <div class="network_white border">
+            <div class="network_white">
             <span class="icon_4g"></span>
             <span class="icon_wifi"></span>
             <p class="small">接続状態(水：良好　灰：切)</p>
             <p class="small nettext1">TEST</p>
             <p class="small nettext2">ONLINE</p>
             </div>
-            <button class="blacktext closebutton border hover2" onclick="netmenu_close()">X</button>
+            <button class="blacktext closebutton hover2" onclick="netmenu_close()">X</button>
         </div>
     </div>
 
