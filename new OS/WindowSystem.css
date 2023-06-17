@@ -557,26 +557,6 @@ a.start_button {
     bottom: 0px;
 }
 
-.css_menu {
-    display: none;
-    background: linear-gradient(0deg, #111111, #444444);
-    width: 150px;
-    height: 70px;
-    position: absolute;
-    top: -75px;
-    right: 31px;
-    box-shadow: 3px 3px 6px black;
-}
-.css_box {
-    background: rgba();
-    color: white;
-    font-size: small;
-    width: 100px;
-    height: 30px;
-    position: absolute;
-    top: 30px;
-    right: 31px;
-}
 .backcolor_menu {
     display: none;
     background: linear-gradient(0deg, #111111, #444444);
