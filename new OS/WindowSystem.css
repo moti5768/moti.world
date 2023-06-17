@@ -47,7 +47,7 @@ audio {
 .alerttext {
     position: absolute;
     top: 0px;
-    color: white;
+    color: black;
     z-index: 99999;
 }
 
