@@ -306,16 +306,12 @@ if (mail_form.mail.value === "0000"){
     
     function startmenu_close(){
         start_menu.style.display = "none";
-        taskbar.style.display = "block";
         program_menu.style.display = "none";
         app_menu.style.display = "none";
         setting_menu.style.display = "none";
     }
     function startmenu_open(){
         start_menu.style.display = "block";
-        taskbar.style.display = "none";
-        backcolor_menu.style.display = "none";
-        css_menu.style.display = "none";
     }
 
     function popupwindow_open(){
