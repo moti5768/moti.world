@@ -121,13 +121,13 @@ if (mail_form.mail.value === "0000"){
     }
 
         function sound() {
-            const sound = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6305.mp3");
+            const sound = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6946.mp3");
         setTimeout(function (){
             sound.play();
         }, 5500);
     }
         function sound2() {
-            const sound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6307.mp3");
+            const sound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6947.mp3");
             sound2.play();
         }
 
