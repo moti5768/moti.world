@@ -36,7 +36,6 @@ if (mail_form.mail.value === "0000"){
     const command_menu = document.querySelector(".command_menu");
     const backcolor_menu = document.querySelector(".backcolor_menu");
     const colorbtn = document.querySelector(".colorbtn");
-    const css_menu = document.querySelector(".css_menu");
     const controlpanel = document.querySelector(".controlpanel");
     const mycomputer = document.querySelector(".mycomputer");
     const app_calc = document.querySelector(".app_calc");
@@ -340,13 +339,6 @@ if (mail_form.mail.value === "0000"){
     }
     function backcolormenu_open(){
         backcolor_menu.style.display = "block";
-    }
-
-    function cssmenu_close(){
-        css_menu.style.display = "none";
-    }
-    function cssmenu_open(){
-        css_menu.style.display = "block";
     }
 
     function programmenu_close(){
