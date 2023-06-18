@@ -108,28 +108,37 @@ if (mail_form.mail.value === "0000"){
             }
         }
 
-        function screen_close() {
-            let screen_close = document.getElementsByClassName('screen_close');
-            screen_close[0].classList.add('active');
-            document.getElementById("backcolor").style.backgroundColor = "black";
-            setTimeout(function() {
-            let screen = document.getElementsByClassName('screen');
-            screen[0].classList.add('active');
-            let screen_close = document.getElementsByClassName('screen_close');
-            screen_close[0].classList.remove('active');
-        }, 5000);
-    }
-
         function sound() {
             const sound = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6946.mp3");
         setTimeout(function (){
             sound.play();
-        }, 5500);
+        }, 3000);
     }
         function sound2() {
             const sound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6947.mp3");
             sound2.play();
         }
+
+        function screen_close() {
+            setTimeout(function() {
+            let screen_close = document.getElementsByClassName('screen_close');
+            screen_close[0].classList.add('active');
+        }, 0);
+            setTimeout(function() {
+            let screen_close2 = document.getElementsByClassName('screen_close');
+            screen_close2[0].classList.add('fadein');
+            }, 4000);
+            let screen_start2 = document.getElementsByClassName('screen_start');
+            screen_start2[0].classList.remove('fadeout');
+            setTimeout(function() {
+            let screen = document.getElementsByClassName('screen');
+            screen[0].classList.add('active');
+            let screen_close = document.getElementsByClassName('screen_close');
+            screen_close[0].classList.remove('active');
+            let screen_close2 = document.getElementsByClassName('screen_close');
+            screen_close2[0].classList.remove('fadein');
+        }, 10000);
+    };
 
         function screen_start() {
             let user = document.querySelector(".user");
@@ -144,12 +153,14 @@ if (mail_form.mail.value === "0000"){
             user.style.display = "none";
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.remove('active');
+            let screen_start2 = document.getElementsByClassName('screen_start');
+            screen_start2[0].classList.add('fadeout');
             document.getElementById("backcolor").style.backgroundColor = "";
         setTimeout(function() {
             const screen_open = document.querySelector(".Windows95_group");
             screen_open.style.display = "block";
-        }, 2000);
-    }, 5000);
+        }, 0);
+    }, 3000);
 };
 
      window.addEventListener('load', function() {
@@ -280,6 +291,7 @@ if (mail_form.mail.value === "0000"){
         screen_open.style.display = "none";
         start_menu.style.display = "none";
         taskbar.style.display = "block";
+        backcolor_menu.style.display = "none";
         program_menu.style.display = "none";
         app_menu.style.display = "none";
         setting_menu.style.display = "none";
