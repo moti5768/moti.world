@@ -17,7 +17,7 @@ html {
 
 body {
     font-family: sans-serif;
-    background: linear-gradient(-45deg, teal, #8EB8FF);
+    background: radial-gradient(ellipse at 1000px 500px, whitesmoke, #00CCCC, #008080);
 }
 
 audio {
@@ -73,6 +73,7 @@ a {
 .screen.active {
     display: block;
     z-index: 99999;
+    background-color: black;
 }
 
 .screen_start {
@@ -81,6 +82,13 @@ a {
 .screen_start.active {
     display: block;
     z-index: 99998;
+}
+.screen_start.fadeout {
+    display: block;
+    background-color: black;
+    opacity: 0;
+    transition:1s all;
+    z-index: 99999;
 }
 .screentext_start {
     color: white;
@@ -95,7 +103,15 @@ a {
 }
 .screen_close.active {
     display: block;
+    opacity: 0;
     z-index: 99998;
+}
+.screen_close.fadein {
+    display: block;
+    background-color: black;
+    opacity: 1;
+    transition:1s all;
+    z-index: 999999;
 }
 .screentext_close {
     color: white;
@@ -128,7 +144,7 @@ a {
     z-index: 99998;
 }
 .screencolor {
-    background: linear-gradient(-35deg, royalblue, skyblue, white);
+    background: radial-gradient( at 50px 800px, whitesmoke, #00CCCC, #8EB8FF, #008080);
     width: 100%;
     height: 100%;
     position: absolute;
