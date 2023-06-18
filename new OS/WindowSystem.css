@@ -2,6 +2,7 @@
 /* 99998 = screen_start*/
 /* 99998 = screen_close */
 /* 99997 = taskbar underbar */
+/* 99996 = Credit */
 
 * {
     margin: 0px;
@@ -928,7 +929,7 @@ span.timer2 {
     height: 100%;
     position: absolute;
     top: 0px;
-    z-index: 10;
+    z-index: 99996;
 }
 .Credit_text {
     font-size: 50px;
