@@ -68,6 +68,19 @@ if (pass_form.pass.value === "0000"){
     }
     setInterval('showClock()',100);
 
+    function LoadProc() {
+        const nowDate = new Date();
+        let now = new Date();
+        let Year = twoDigit ( now.getFullYear() );
+        let Month = twoDigit( now.getMonth()+1 );
+        let Dates = twoDigit( now.getDate() );
+
+        let msg = Year + "年" + Month + "月" + Dates + "日";
+        
+        document.getElementById("date").innerHTML = msg;
+    }
+    setInterval('LoadProc()',100);
+
         setInterval(() => {
         if (window.navigator.onLine) {
             const online = document.getElementsByClassName('online_icon');
