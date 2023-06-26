@@ -722,6 +722,12 @@ span.timer2 {
     right: 5px;
     bottom: 8px;
 }
+.date {
+    width: 120px;
+    font-size: small;
+    position: absolute;
+    left: 70px;
+}
 
 .bottom {
     display: flex;
@@ -1136,7 +1142,7 @@ canvas {
     color: white;
     font-size: small;
     font-weight: bold;
-    width: 80%;
+    width: 85%;
     height: 35px;
     position: absolute;
     right: 0px;
