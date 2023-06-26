@@ -9,23 +9,23 @@ function no(){
     alert("お使いの端末がPCではないため、ご利用できません");
     no();
 }
-function check(){
-if (mail_form.mail.value === "0000"){
+function passcheck(){
+if (pass_form.pass.value === "0000"){
     const alerttext = document.querySelector('.alerttext');
-    alerttext.textContent = "";
-    start_screen.style.display = "none";
-    const display = document.querySelector('.display');
-    display.style.display = "block";
+    alerttext.style.display = "";
+    screen_start();
+    sound();
 }else{
     alert('パスワードが正しくありません！');
 }
 }
 
         const element = document.getElementById('user');
-        element.insertAdjacentHTML('afterend','<p class="white user">BROWSER: '+ navigator.appName + '<br>' 
+        element.insertAdjacentHTML('afterend','<p class="user blacktext">BROWSER: '+ navigator.appName + '<br>' 
             + 'VERSION: ' + navigator.appVersion +  '<br>' + 'USER: ' + navigator.userAgent +  '<br>' + 'WIDTH: ' + screen.width +  '<br>' 
             + 'HEIGHT: ' + screen.height +  '<br>' + 'BIT: '  + screen.colorDepth + '</p>');
-
+            
+    const pass = document.querySelector('.pass_area');
     const popupwrap = document.getElementsByClassName('popupwrap');
     const screen_open = document.querySelector(".Windows95_group");
     const start_menu = document.querySelector(".start_menu");
@@ -41,11 +41,7 @@ if (mail_form.mail.value === "0000"){
     const app_calc = document.querySelector(".app_calc");
     const app_memo = document.querySelector(".app_memo");
     const net = document.querySelector(".network");
-
-    const task_content1 = document.querySelector(".task_content1");
-    const task_content2 = document.querySelector(".task_content2");
-    const task_content3 = document.querySelector(".task_content3");
-    const task_content4 = document.querySelector(".task_content4");
+    const paint = document.querySelector(".paint");
 
     function twoDigit(num) {
             let ret;
@@ -107,16 +103,15 @@ if (mail_form.mail.value === "0000"){
             screen_open.style.display = "block";
             }
         }
-
-        function sound() {
+        
+        function sound(){
             const sound = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6946.mp3");
-        setTimeout(function (){
             sound.play();
-        }, 3000);
-    }
+        }
+
         function sound2() {
-            const sound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6947.mp3");
-            sound2.play();
+            const sound3 = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6947.mp3");
+            sound3.play();
         }
 
         function screen_close() {
@@ -137,10 +132,13 @@ if (mail_form.mail.value === "0000"){
             screen_close[0].classList.remove('active');
             let screen_close2 = document.getElementsByClassName('screen_close');
             screen_close2[0].classList.remove('fadein');
+            pass.style.display = "block";
         }, 10000);
     };
 
         function screen_start() {
+            document.getElementsByClassName("pass")[0].value = '';
+            pass.style.display = "none";
             let user = document.querySelector(".user");
             user.style.display = "block";
             document.getElementById("backcolor").style.backgroundColor = "black";
@@ -301,10 +299,7 @@ if (mail_form.mail.value === "0000"){
         app_calc.style.display = "none";
         app_memo.style.display = "none";
         net.style.display = "none";
-        task_content1.style.display = "none";
-        task_content2.style.display = "none";
-        task_content3.style.display = "none";
-        task_content4.style.display = "none";
+        paint.style.display = "none";
     }
     
     function startmenu_close(){
@@ -375,31 +370,6 @@ if (mail_form.mail.value === "0000"){
         setting_menu.style.display = "none";
     }
 
-    function task_conent1_open(){
-        task_content1.style.display = "block";
-    }
-    function task_content1_close(){
-        task_content1.style.display = "none";
-    }
-    function task_conent2_open(){
-        task_content2.style.display = "block";
-    }
-    function task_content2_close(){
-        task_content2.style.display = "none";
-    }
-    function task_content3_open(){
-        task_content3.style.display = "block";
-    }
-    function task_content3_close(){
-        task_content3.style.display = "none";
-    }
-    function task_content4_open(){
-        task_content4.style.display = "block";
-    }
-    function task_content4_close(){
-        task_content4.style.display = "none";
-    }
-
     function calc_open(){
         app_calc.style.display = "block";
     }
@@ -422,6 +392,13 @@ if (mail_form.mail.value === "0000"){
         command_menu.style.display = "block";
     }
 
+    function paint_close(){
+        paint.style.display = "none";
+    }
+    function paint_open(){
+        paint.style.display = "block";
+    }
+
     function check(){
         if (mail_form.mail.value === "Reload"){
             //条件に一致する場合(空の場合)
@@ -441,6 +418,11 @@ if (mail_form.mail.value === "0000"){
     draggable(document.querySelector('.drag6'));
     draggable(document.querySelector('.drag7'));
     draggable(document.querySelector('.drag8'));
+    draggable(document.querySelector('.drag9'));
+    draggable(document.querySelector('.drag10'));
+    draggable(document.querySelector('.drag11'));
+    draggable(document.querySelector('.drag12'));
+    draggable(document.querySelector('.drag13'));
 
     function draggable(target) {
         target.onmousedown = function(event) {
@@ -511,3 +493,84 @@ if (mail_form.mail.value === "0000"){
         document.exitFullscreen() // HTML5 Fullscreen API
       }
     };
+
+
+
+    // 描画用フラグ  true: 描画中   false: 描画中でない
+var flgDraw = false;
+
+// 座標
+var gX = 0;
+var gY = 0;
+
+// 描画色
+var gColor = 'white';
+
+window.onload = function() {
+    
+    // イベント登録
+    // マウス
+    var canvas = document.getElementById('canvas');
+   
+    canvas.addEventListener('mousedown', startDraw, false);
+    canvas.addEventListener('mousemove', Draw, false);
+    canvas.addEventListener('mouseup', endDraw, false);
+    
+    // セレクトボックス
+    var s = document.getElementById('color');
+    s.addEventListener('change', changeColor, false);
+    
+} 
+// セレクトボックス変更時に色を変更する
+function changeColor(){
+
+    gColor = document.getElementById('color').value;
+    console.log(gColor);
+    
+}
+// 描画開始
+function startDraw(e){
+    
+    flgDraw = true;
+    gX = e.offsetX;
+    gY = e.offsetY;
+    
+}
+
+// 描画
+function Draw(e){
+    
+    if (flgDraw == true){
+        
+        // '2dコンテキスト'を取得
+        var canvas = document.getElementById('canvas');
+        var con = canvas.getContext('2d');
+
+        var x = e.offsetX;
+        var y = e.offsetY;
+
+        // 線のスタイルを設定
+        con.lineWidth = 3;
+        // 色設定
+        con.strokeStyle = gColor;
+
+        // 描画開始
+        con.beginPath();
+        con.moveTo(gX, gY);
+        con.lineTo(x, y);
+        con.closePath();
+        con.stroke();
+
+        // 次の描画開始点
+        gX = x;
+        gY = y;
+        
+    }
+}
+
+// 描画終了
+function endDraw(){
+    
+    flgDraw = false;
+    
+}
