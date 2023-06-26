@@ -61,10 +61,10 @@ a {
 }
 
 .user {
-    display: none;
+    display: block;
     position: absolute;
-    top: 80px;
-    z-index: 99998;
+    top: 120px;
+    font-size: small;
 }
 
 .screen {
@@ -74,6 +74,24 @@ a {
     display: block;
     z-index: 99999;
     background-color: black;
+}
+.pass {
+    position: relative;
+    width: 100px;
+    height: 25px;
+}
+.pass2 {
+    position: relative;
+    width: 40px;
+    height: 25px;
+}
+.pass_area {
+    position: absolute;
+    width: auto;
+    top: 58%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 99999;
 }
 
 .screen_start {
@@ -93,8 +111,9 @@ a {
 .screentext_start {
     color: white;
     position: absolute;
-    top: 0px;
-    left: 0px;
+    top: 58%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     z-index: 99998;
 }
 
@@ -116,22 +135,9 @@ a {
 .screentext_close {
     color: white;
     position: absolute;
-    top: 0px;
-    left: 0px;
-    z-index: 99998;
-}
-
-.screenbutton {
-    background: linear-gradient(-35deg, white, skyblue, royalblue);
-    color: black;
-    width: 150px;
-    height: 50px;
-    position: absolute;
-    top: 300px;
-    left: 750px;
-    border-radius: 0;
-    border: solid 2px lightblue;
-    box-shadow: 2px 2px 4px black;
+    top: 58%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     z-index: 99998;
 }
 
@@ -139,8 +145,9 @@ a {
     color: black;
     font-size: 50px;
     position: absolute;
-    top: 290px;
-    left: 320px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     z-index: 99998;
 }
 .screencolor {
@@ -158,6 +165,10 @@ a {
     z-index: 99998;
 }
 
+.testactive {
+    display: none;
+}
+
 .popupwrap {
     display: none;
 }
@@ -169,13 +180,14 @@ a {
     background: linear-gradient(0deg, #339999, #6699FF);
     width: 550px;
     height: 440px;
-    top: 80px;
-    position: relative;
-    left: 180px;
+    position: absolute;
+    top: 15%;
+    left: 25%;
     box-shadow: 3px 3px 6px black;
 }
 .popup_window_white {
     background: white;
+    backdrop-filter: blur(10px);
     width: 530px;
     height: 360px;
     position: absolute;
@@ -286,19 +298,6 @@ a {
     left: 1px;
 }
 
-.task_content_border {
-    width: 300px;
-    height: 34px;
-    position: absolute;
-    left: 78px;
-    bottom: 1px;
-    border-top: solid 2px #666666;
-    border-right: solid 2px #666666;
-    border-left: solid 2px #666666;
-    border-bottom: solid 2px #666666;
-    border-radius: 2px;
-}
-
 .online_bar {
     width: 45px;
     height: 35px;
@@ -311,7 +310,7 @@ a {
     font-size: small;
     height: 28px;
     position: absolute;
-    left: -1px;
+    left: 0px;
     bottom: 4px;
 }
 .online_bartext2 {
@@ -319,7 +318,7 @@ a {
     width: 40px;
     height: 15px;
     position: absolute;
-    left: 19px;
+    left: 20px;
     bottom: -2px;
 }
 .online_icon {
@@ -327,8 +326,8 @@ a {
     width: 20px;
     height: 20px;
     position: absolute;
-    right: 4px;
-    bottom: 11px;
+    left: 20px;
+    bottom: 12px;
     border: solid 1px black;
 }
 .online_icon.online {
@@ -336,125 +335,9 @@ a {
     width: 20px;
     height: 20px;
     position: absolute;
-    right: 4px;
-    bottom: 11px;
+    left: 20px;
+    bottom: 12px;
     border: solid 1px black;
-}
-
-.task_content1 {
-    display: none;
-    position: relative;
-}
-.task_button1 {
-    margin-left: 0px;
-    background: #111111;
-    opacity: 0.9;
-    width: 30px;
-    height: 30px;
-    position: absolute;
-    left: 83px;
-    top: 5px;
-    border: solid 2px silver;
-    border-radius: 10px;
-}
-.task_icon1 {
-    pointer-events: none;
-    margin-left: 10px;
-    background: khaki;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    left: 77px;
-    top: 11px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-}
-
-.task_content2 {
-    display: none;
-    position: relative;
-}
-.task_button2 {
-    margin-left: 0px;
-    background: #111111;
-    opacity: 0.9;
-    width: 30px;
-    height: 30px;
-    position: absolute;
-    left: 114px;
-    top: 5px;
-    border: solid 2px silver;
-    border-radius: 10px;
-}
-.task_icon2 {
-    pointer-events: none;
-    margin-left: 10px;
-    background: khaki;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    left: 108px;
-    top: 11px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-}
-
-.task_content3 {
-    display: none;
-    position: relative;
-}
-.task_button3 {
-    margin-left: 0px;
-    background: #111111;
-    opacity: 0.9;
-    width: 30px;
-    height: 30px;
-    position: absolute;
-    left: 144px;
-    top: 5px;
-    border: solid 2px silver;
-    border-radius: 10px;
-}
-.task_icon3 {
-    pointer-events: none;
-    margin-left: 10px;
-    background: dimgray;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    left: 138px;
-    top: 11px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-}
-
-.task_content4 {
-    display: none;
-    position: relative;
-}
-.task_button4 {
-    margin-left: 0px;
-    background: #111111;
-    opacity: 0.9;
-    width: 30px;
-    height: 30px;
-    position: absolute;
-    left: 174px;
-    top: 5px;
-    border: solid 2px silver;
-    border-radius: 10px;
-}
-.task_icon4 {
-    pointer-events: none;
-    margin-left: 10px;
-    background: white;
-    width: 20px;
-    height: 15px;
-    position: absolute;
-    left: 168px;
-    top: 11px;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
 }
 
 .backcolor_button {
@@ -571,6 +454,7 @@ a.start_button {
     height: 25px;
     position: absolute;
     top: 95px;
+    left: 5px;
     bottom: 0px;
 }
 
@@ -637,80 +521,61 @@ a.underbarcontent {
 
 .content {
     font-size: small;
-    position: absolute;
-    top: -40px;
+    position: relative;
+    top: 0px;
 }
 .content-icons {
-    position: relative;
+    position: absolute;
     width: 200px;
-    top: 15px;
+    top: 0px;
 }
-.icon1 {
-    margin-left: 10px;
-    margin-top: 45px;
-    background: khaki;
-    width: 60px;
-    height: 45px;
+.content1 {
     position: absolute;
-    box-shadow: 2px 2px 4px black;
+    top: 20px;
+    width: 150px;
 }
-.icon2 {
-    margin-left: 10px;
-    margin-top: 145px;
-    background: khaki;
-    width: 60px;
-    height: 45px;
+.content2 {
     position: absolute;
-    box-shadow: 2px 2px 4px black;
+    top: 120px;
+    width: 150px;
 }
-.icon3 {
-    margin-left: 10px;
-    margin-top: 245px;
-    background: khaki;
-    width: 60px;
-    height: 45px;
+.content3 {
     position: absolute;
-    box-shadow: 2px 2px 4px black;
+    top: 220px;
+    width: 150px;
 }
-.icon4 {
-    margin-left: 10px;
-    margin-top: 345px;
-    background: khaki;
-    width: 60px;
-    height: 45px;
+.content4 {
     position: absolute;
-    box-shadow: 2px 2px 4px black;
+    top: 320px;
+    width: 150px;
+}
+.content5 {
+    position: absolute;
+    top: 420px;
+    width: 150px;
 }
 
-.test1 {
+.icon {
+    margin-left: 10px;
+    margin-top: 0px;
+    background: khaki;
+    width: 60px;
+    height: 45px;
+    position: absolute;
+    box-shadow: 2px 2px 4px black;
+}
+.test {
     margin-left: 10px;
     margin-bottom: 50px;
     position: absolute;
-    top: 95px;
-}
-.test2 {
-    margin-left: 10px;
-    position: absolute;
-    top: 195px;
-}
-.test3 {
-    margin-left: 10px;
-    position: absolute;
-    top: 295px;
-}
-.test4 {
-    margin-left: 10px;
-    position: absolute;
-    top: 395px;
+    top: 50px;
 }
 
 .file {
     opacity: 0;
-    width: 60px;
 }
 .file2 {
     opacity: 0;
-    width: 90px;
 }
 
 .controlpanel_text {
@@ -959,13 +824,14 @@ span.timer2 {
     width: 120px;
     height: 80px;
     position: absolute;
-    top: 453px;
-    left: 155px;
+    bottom: 70px;
+    left: 150px;
     box-shadow: 3px 3px 6px black;
     z-index: 99997;
 }
 .accessorybutton {
     background: rgba();
+    width: 100px;
     color: white;
     font-size: small;
     position: absolute;
@@ -975,6 +841,7 @@ span.timer2 {
 }
 .accessorybutton2 {
     background: rgba();
+    width: 100px;
     color: white;
     font-size: small;
     position: absolute;
@@ -1005,8 +872,8 @@ span.timer2 {
     width: 120px;
     height: 80px;
     position: absolute;
-    top: 453px;
-    left: 155px;
+    bottom: 70px;
+    left: 150px;
     box-shadow: 3px 3px 6px black;
     z-index: 99997;
 }
@@ -1035,14 +902,15 @@ span.timer2 {
     width: 130px;
     height: 50px;
     position: absolute;
-    top: 537px;
-    left: 155px;
+    top: 35px;
+    left: 150px;
     box-shadow: 3px 3px 6px black;
     z-index: 99997;
 }
 .devicebutton {
     background: rgba();
     color: white;
+    width: 100px;
     font-size: x-small;
     position: absolute;
     top: 30px;
@@ -1167,6 +1035,7 @@ textarea {
     top: 6px;
     right: 80px;
     box-shadow: 0px 10px tomato, 0px 22px steelblue, 12px 10px forestgreen, 12px 22px khaki;
+    pointer-events: none;
 }
 .start_logo {
     width: 10px;
@@ -1175,6 +1044,7 @@ textarea {
     top: -6px;
     left: 24px;
     box-shadow: 0px 10px tomato, 0px 22px steelblue, 12px 10px forestgreen, 12px 22px khaki;
+    pointer-events: none;
 }
 
 .network {
@@ -1239,4 +1109,49 @@ textarea {
     position: absolute;
     top: 37px;
     z-index: 1;
+}
+
+.paint {
+    display: none;
+}
+.paint_window {
+    background: linear-gradient(0deg, #339999, #6699FF);
+    width: 500px;
+    height: 410px;
+    position: absolute;
+    top: 100px;
+    left: 100px;
+    box-shadow: 3px 3px 6px black;
+}
+canvas {
+    background-color: white;
+    border: solid 2px dimgray;
+    position: absolute;
+    top: 50px;
+    left: 10px;
+    z-index: 1;
+}
+
+.task_soft {
+    color: white;
+    font-size: small;
+    font-weight: bold;
+    width: 80%;
+    height: 35px;
+    position: absolute;
+    right: 0px;
+    top: 0px;
+    border: solid 1px #999999;
+    border-radius: 10px;
+    z-index: 99997;
+}
+.soft_paint {
+    display: inline-block;
+    height: 25px;
+    background: linear-gradient(0deg, #111111, #999999);
+    border: solid 1px dimgray;
+    border-radius: 3px;
+    position: relative;
+    top: 5px;
+    left: 5px;
 }
