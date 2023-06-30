@@ -20,8 +20,8 @@ if (pass_form.pass.value === "0000"){
 }
 }
 
-        const element = document.getElementById('user');
-        element.insertAdjacentHTML('afterend','<p class="user blacktext">BROWSER: '+ navigator.appName + '<br>' 
+const element = document.getElementById('user');
+        element.insertAdjacentHTML('afterend','<p class="white user">BROWSER: '+ navigator.appName + '<br>' 
             + 'VERSION: ' + navigator.appVersion +  '<br>' + 'USER: ' + navigator.userAgent +  '<br>' + 'WIDTH: ' + screen.width +  '<br>' 
             + 'HEIGHT: ' + screen.height +  '<br>' + 'BIT: '  + screen.colorDepth + '</p>');
             
@@ -189,6 +189,17 @@ if (pass_form.pass.value === "0000"){
             }
         });
 
+        const bar =document.querySelectorAll('.soft');
+        function softbar(){
+            bar.forEach((item) => {
+                item.classList.remove("soft_bar");
+            });
+            this.classList.add("soft_bar");
+        }
+        bar.forEach((item) => {
+            item.addEventListener("click", softbar)
+        });
+
     // 読込
     function load() {
         let MemoData = "";
@@ -237,6 +248,51 @@ if (pass_form.pass.value === "0000"){
         Credit.style.display = "none";
     }, 2000);
 };
+
+msg3 = "";
+rand = Math.floor(Math.random()*5); //0～4の乱数を発生
+
+if (rand == 0) who = "鈴木君が";
+if (rand == 1) who = "山田君が";
+if (rand == 2) who = "田中君が";
+if (rand == 3) who = "小林君が";
+if (rand == 4) who = "山本君が";
+
+//どこで
+rand = Math.floor(Math.random()*5);
+
+if (rand == 0) where = "学校で";
+if (rand == 1) where = "公園で";
+if (rand == 2) where = "自宅で";
+if (rand == 3) where = "隣の家で";
+if (rand == 4) where = "畑で";
+
+msg3 = who + where; //msgは前のセクションから引き継いだものにwhereを追加して、新しくmsgに上書きしている。
+
+//どうした
+rand = Math.floor(Math.random()*5);
+
+if (rand == 0) what = "イモを掘った。";
+if (rand == 1) what = "カレーを食べた。";
+if (rand == 2) what = "水浴びをした。";
+if (rand == 3) what = "熊と戦った。";
+if (rand == 4) what = "犬と遊んだ。";
+
+msg3 = msg3 + what;
+document.getElementById("text").innerHTML = msg3;
+
+//乱数の発生から、文字列の追加までのセクションを増やせば、長い文章も作成可能
+//各セクションの文章選択肢を増やすときは乱数の数字に注意
+
+function omikuji() {
+	rand = Math.floor(Math.random()*100);
+	msg = "大吉"; //0～9（10%）
+	if (rand > 9) msg = "中吉"; //10～29（20%）
+	if (rand > 29) msg = "吉"; //30～69（40%）
+	if (rand > 69) msg = "凶"; //70～89（20%）
+	if (rand > 89) msg = "大凶"; //90～99（10%）
+	alert(msg);
+}
 
     function colorbox(){
     if (document.getElementById("color_box").checked) {
@@ -345,6 +401,8 @@ if (pass_form.pass.value === "0000"){
     }
     function mycomputer_close(){
         mycomputer.style.display = "none";
+        let myc = document.getElementsByClassName('myc');
+            myc[0].classList.remove('task_bar');
     }
 
     function netmenu_open(){
@@ -363,6 +421,7 @@ if (pass_form.pass.value === "0000"){
 
     function programmenu_close(){
         program_menu.style.display = "none";
+        app_menu.style.display = "none";
     }
     function programmenu_open(){
         program_menu.style.display = "block";
@@ -370,7 +429,6 @@ if (pass_form.pass.value === "0000"){
 
     function appmenu_open(){
         app_menu.style.display = "block";
-        program_menu.style.display = "none";
     }
     function appmenu_close(){
         app_menu.style.display = "none";
