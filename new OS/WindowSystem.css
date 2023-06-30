@@ -60,13 +60,6 @@ a {
     text-decoration: none;
 }
 
-.user {
-    display: block;
-    position: absolute;
-    top: 120px;
-    font-size: small;
-}
-
 .screen {
     display: none;
 }
@@ -214,6 +207,10 @@ a {
     position: absolute;
     right: 30px;
     top: 10px;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
 }
 .titleline {
     background: whitesmoke;
@@ -279,11 +276,15 @@ a {
     display: block;
     background: linear-gradient(0deg, #111111, #444444);
     width: 170px;
-    height: 35px;
+    height: 30px;
     position: absolute;
     right: 0;
-    bottom: 6.5%;
-    border-radius: 3px;
+    bottom: 6%;
+    border-radius: 2px;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
     z-index: 99997;
 }
 .bar_button {
@@ -294,7 +295,7 @@ a {
     width: 25px;
     height: 25px;
     position: relative;
-    top: 6px;
+    top: 4px;
     left: 1px;
 }
 
@@ -323,21 +324,21 @@ a {
 }
 .online_icon {
     background: dimgray;
-    width: 20px;
-    height: 20px;
+    width: 2px;
+    height: 6px;
     position: absolute;
     left: 20px;
     bottom: 12px;
-    border: solid 1px black;
+    box-shadow: 5px -1px 0px 1px dimgray, 13px -3px 0px 3px dimgray;
 }
 .online_icon.online {
     background: deepskyblue;
-    width: 20px;
-    height: 20px;
+    width: 2px;
+    height: 6px;
     position: absolute;
     left: 20px;
     bottom: 12px;
-    border: solid 1px black;
+    box-shadow: 5px -1px 0px 1px deepskyblue, 13px -3px 0px 3px deepskyblue;
 }
 
 .backcolor_button {
@@ -346,11 +347,8 @@ a {
     position: relative;
     top: 40px;
     left: 7px;
-    border-top: solid 2px white;
-    border-left: solid 2px white;
-    border-bottom: solid 2px black;
-    border-right: solid 2px black;
-    border-radius: 0;
+    border: solid 1px silver;
+    border-radius: 3px;
 }
 .colorbtn {
     display: inline;
@@ -439,23 +437,16 @@ a.start_button {
     display: none;
     background: linear-gradient(0deg, #222222, #666666);
     width: 150px;
-    height: 130px;
+    height: 105px;
     position: absolute;
     bottom: 40px;
     left: 1px;
     box-shadow: 3px 3px 6px black;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
     z-index: 99997;
-}
-.finish {
-    background: rgba();
-    color: white;
-    font-size: small;
-    width: 140px;
-    height: 25px;
-    position: absolute;
-    top: 95px;
-    left: 5px;
-    bottom: 0px;
 }
 
 .backcolor_menu {
@@ -480,13 +471,14 @@ a.start_button {
     border-radius: 0;
 }
 .menu_bluebar {
-    background: linear-gradient(90deg, silver, whitesmoke);
+    background: linear-gradient(0deg, #6699FF, skyblue, whitesmoke);
     color: black;
     width: 100%;
     height: 20px;
     position: absolute;
     pointer-events: none;
-    border-radius: 5px;
+    border-bottom: solid 1px skyblue;
+    border-radius: 3px;
 }
 .menu_graybar {
     background: dimgray;
@@ -497,13 +489,17 @@ a.start_button {
 }
 
 .underbar {
-    background: linear-gradient(0deg, #111111, #555555);
+    background: linear-gradient(0deg, #111111, #777777);
     width: 100%;
     height: 40px;
     position: absolute;
     bottom: 0px;
-    border-top: solid 2px #444444;
+    border-top: solid 1px #666666;
     box-shadow: 0px -1px 3px black;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
     z-index: 99997;
 }
 
@@ -528,6 +524,10 @@ a.underbarcontent {
     position: absolute;
     width: 200px;
     top: 0px;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
 }
 .content1 {
     position: absolute;
@@ -576,6 +576,7 @@ a.underbarcontent {
 }
 .file2 {
     opacity: 0;
+    width: 92px;
 }
 
 .controlpanel_text {
@@ -765,47 +766,35 @@ span.timer2 {
 }
 
 .border {
-    border: solid 1.5px #0066FF;
-    border-radius: 5px;
+    border: solid 1px black;
+    border-radius: 3px;
 }
 
 .closebutton {
+    font-size: small;
+    text-align: center;
+    background: rgba();
     color: black;
+    opacity: 0.8;
     width: 30px;
     height: 20px;
     position: absolute;
     top: 0px;
     right: 0px;
+    border: solid 1px #0099FF;
+    border-radius: 3px;
 }
 .taskbutton {
+    font-size: small;
+    text-align: center;
     color: black;
     width: 30px;
     height: 20px;
     position: absolute;
     top: 0px;
     right: 30px;
-}
-
-.programbutton {
-    background: rgba();
-    color: white;
-    font-size: small;
-    width: 135px;
-    height: 25px;
-    position: absolute;
-    left: 5px;
-    top: 35px;
-}
-
-.settingbutton {
-    background: rgba();
-    color: white;
-    font-size: small;
-    width: 135px;
-    height: 25px;
-    position: absolute;
-    left: 5px;
-    top: 65px;
+    border: solid 1px #0099FF;
+    border-radius: 3px;
 }
 
 .Credit {
@@ -816,6 +805,10 @@ span.timer2 {
     height: 100%;
     position: absolute;
     top: 0px;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
     z-index: 99996;
 }
 .Credit_text {
@@ -830,30 +823,10 @@ span.timer2 {
     width: 120px;
     height: 80px;
     position: absolute;
-    bottom: 70px;
+    bottom: 50px;
     left: 150px;
     box-shadow: 3px 3px 6px black;
     z-index: 99997;
-}
-.accessorybutton {
-    background: rgba();
-    width: 100px;
-    color: white;
-    font-size: small;
-    position: absolute;
-    top: 30px;
-    left: 10px;
-    border: none;
-}
-.accessorybutton2 {
-    background: rgba();
-    width: 100px;
-    color: white;
-    font-size: small;
-    position: absolute;
-    top: 55px;
-    left: 10px;
-    border: none;
 }
 
 .command_menu {
@@ -876,30 +849,12 @@ span.timer2 {
     display: none;
     background: linear-gradient(0deg, #222222, #666666);
     width: 120px;
-    height: 80px;
+    height: 100px;
     position: absolute;
-    bottom: 70px;
-    left: 150px;
+    bottom: 30px;
+    left: 120px;
     box-shadow: 3px 3px 6px black;
     z-index: 99997;
-}
-.appbutton {
-    background: rgba();
-    color: white;
-    font-size: small;
-    position: absolute;
-    top: 30px;
-    left: 10px;
-    border: none;
-}
-.appbutton2 {
-    background: rgba();
-    color: white;
-    font-size: small;
-    position: absolute;
-    top: 55px;
-    left: 10px;
-    border: none;
 }
 
 .setting_menu {
@@ -908,20 +863,10 @@ span.timer2 {
     width: 130px;
     height: 50px;
     position: absolute;
-    top: 35px;
+    bottom: 30px;
     left: 150px;
     box-shadow: 3px 3px 6px black;
     z-index: 99997;
-}
-.devicebutton {
-    background: rgba();
-    color: white;
-    width: 100px;
-    font-size: x-small;
-    position: absolute;
-    top: 30px;
-    left: 10px;
-    border: none;
 }
 
 .controlpanel {
@@ -1001,21 +946,13 @@ span.timer2 {
 }
 
 textarea {
-    font-size: x-large;
+    font-size: large;
     width: 585px;
-    height: 238px;
+    height: 240px;
     position: absolute;
     top: 55px;
     right: 5px;
     border-radius: 0;
-}
-.memo_button_save {
-    background: #6699FF;
-    border-radius: 0;
-    border: none;
-    position: absolute;
-    top: 30px;
-    left: 50px;
 }
 .memo_button_load {
     background: #6699FF;
@@ -1024,6 +961,20 @@ textarea {
     position: absolute;
     top: 30px;
     left: 10px;
+    border: solid 1px skyblue;
+    border-radius: 2px;
+    box-shadow: 1px 1px 2px black;
+}
+.memo_button_save {
+    background: #6699FF;
+    border-radius: 0;
+    border: none;
+    position: absolute;
+    top: 30px;
+    left: 70px;
+    border: solid 1px skyblue;
+    border-radius: 2px;
+    box-shadow: 1px 1px 2px black;
 }
 .memo_button_clear {
     background: #6699FF;
@@ -1031,7 +982,10 @@ textarea {
     border: none;
     position: absolute;
     top: 30px;
-    left: 90px;
+    left: 130px;
+    border: solid 1px skyblue;
+    border-radius: 2px;
+    box-shadow: 1px 1px 2px black;
 }
 
 .logo {
@@ -1142,22 +1096,52 @@ canvas {
     color: white;
     font-size: small;
     font-weight: bold;
-    width: 85%;
+    width: 60%;
     height: 35px;
     position: absolute;
     right: 0px;
-    top: 0px;
+    top: 1px;
     border: solid 1px #999999;
     border-radius: 10px;
     z-index: 99997;
 }
-.soft_paint {
+.soft {
     display: inline-block;
     height: 25px;
     background: linear-gradient(0deg, #111111, #999999);
     border: solid 1px dimgray;
-    border-radius: 3px;
+    border-radius: 0px;
     position: relative;
-    top: 5px;
-    left: 5px;
+    top: 4px;
+    left: 4px;
+}
+.soft_bar {
+    display: inline-block;
+    width: auto;
+    border-bottom: solid 1.5px skyblue;
+    opacity: 0.8;
+}
+
+.news_area {
+    color: black;
+    background: white;
+    width: 20%;
+    height: 18px;
+    position: absolute;
+    left: 15%;
+    top: 19px;
+    border: solid 1px silver;
+}
+.news_text {
+    position: absolute;
+    left: 15%;
+}
+
+.menubtn {
+    margin-top: 5px;
+    width: 95%;
+    position: absolute;
+    color: white;
+    left: 2.5px;
+    font-size: 82%;
 }
