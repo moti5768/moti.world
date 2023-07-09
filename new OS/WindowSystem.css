@@ -68,6 +68,19 @@ audio {
     pointer-events: none;
 }
 
+.updown_menu {
+    display: none;
+}
+.updownbtn {
+    width: 60px;
+    height: 30px;
+    position: relative;
+    top: 50px;
+    left: 25px;
+    background: linear-gradient(0deg, #111111, #999999);
+    border: solid 1px dimgray;
+}
+
 .hover:hover {
     background-color: lightblue;
     border: solid 1px skyblue;
@@ -328,6 +341,14 @@ a {
     position: absolute;
     left: 275px;
 }
+.files5 {
+    position: absolute;
+    left: 365px;
+}
+.files6 {
+    position: absolute;
+    left: 455px;
+}
 
 .taskbar {
     display: block;
@@ -474,7 +495,7 @@ a {
     left: 0px;
 }
 
-a.start_button {
+.start_button {
     background: linear-gradient(0deg, #0066FF 1%, #003366 50%, #0033CC, whitesmoke);
     opacity: 0.9;
     width: 45px;
@@ -483,7 +504,7 @@ a.start_button {
     border-radius: 30px;
     position: absolute;
     top: -10px;
-    left: 0px;
+    left: 10px;
 }
 
 .start_menu {
@@ -567,11 +588,12 @@ a.start_button {
 }
 
 .underbar {
+    display: block;
     background: linear-gradient(0deg, #111111, #777777);
     width: 100%;
     height: 40px;
     position: absolute;
-    bottom: 0px;
+    bottom: 0;
     border-top: solid 1px #666666;
     box-shadow: 0px -1px 3px black;
     z-index: 99997;
@@ -744,10 +766,9 @@ span.timer2 {
 }
 
 .bottom {
-    display: flex;
-    margin-left: 10px;
     position: absolute;
-    top: 8px;
+    bottom: 0px;
+    left: 10px;
 }
 
 .button {
@@ -858,7 +879,7 @@ span.timer2 {
     display: none;
     background: linear-gradient(0deg, #222222, #666666);
     width: 120px;
-    height: 95px;
+    height: 120px;
     position: absolute;
     bottom: 45px;
     left: 120px;
@@ -878,23 +899,23 @@ span.timer2 {
 .box_text2 {
     position: relative;
     left: 20px;
-    top: 70px;
+    top: 60px;
 }
 .box_text3 {
     position: relative;
     left: 20px;
-    top: 90px;
+    top: 70px;
 }
 .box_text4 {
     position: relative;
     left: 20px;
-    top: 110px;
+    top: 80px;
 }
 
 .box {
     transform: scale(2);
     position: absolute;
-    left: 200px;
+    left: 220px;
     top: 0px;
 }
 
@@ -933,9 +954,10 @@ span.timer2 {
 }
 
 textarea {
+    resize: none;
     font-size: large;
     width: 585px;
-    height: 340px;
+    height: 320px;
     position: absolute;
     top: 55px;
     right: 5px;
