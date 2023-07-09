@@ -75,6 +75,7 @@
             <button class="blacktext closebutton hover2" onclick="programmenu_close()">X</button>
                     <!-- appmenu -->
         <div class="app_menu border">
+            <a class="white menubtn hover" onclick="paint_open(),startmenu_close()">ペイント</a>
             <a class="white menubtn hover" onclick="memo_open(),startmenu_close()">メモ帳</a>
             <a class="white menubtn hover" onclick="calc_open(),startmenu_close()">電卓</a>
             <a class="white menubtn hover" onclick="omikuji()">おみくじ</a><br>
@@ -168,8 +169,9 @@
         <a class="closebutton blacktext hover2" onclick="memo_close()">X</a>
         <a class="blacktext taskbutton hover" onclick="memo_close()">一</a>
         <form name="form1">
-            <textarea name="Memo" class="Memo"></textarea>
+            <textarea name="Memo" class="Memo" onkeyup="ShowLength(value);"></textarea>
         </form>
+        <p class="bottom white small" id="inputlength">0文字</p>
         <p>
             <input type="button" class="blacktext hover memo_button_save" value="&emsp;保存&emsp;" onclick=save(); ></input>
             <input type="button" class="blacktext hover memo_button_load" value="&emsp;読込&emsp;" onclick=load(); ></input>
@@ -251,19 +253,19 @@
                     <span class="medium_window_white"></span>
                     <div class="box_text">
                     <input type="checkbox" class="box" id="setting_box" placeholder="test" onclick="settingbox()"></input>
-                    <p class="small">タスクバーの表示を無効</p>
+                    <p class="small">タスクバーの表示を無効化</p>
                     </div>
                     <div class="box_text2">
                         <input type="checkbox" class="box" id="setting_box2" placeholder="test" onclick="settingbox2()"></input>
-                        <p class="small">タスクバー(小)の表示を無効</p>
+                        <p class="small">タスクバー(小)の表示を無効化</p>
                     </div>
                     <div class="box_text3">
                         <input type="checkbox" class="box" id="setting_box3" placeholder="test" onclick="settingbox3()"></input>
-                        <p class="small">ファイルアイコンの表示を無効</p>
+                        <p class="small">ファイルアイコンの表示を無効化</p>
                     </div>
                     <div class="box_text4">
                         <input type="checkbox" class="box" id="setting_box4" placeholder="test" onclick="settingbox4()"></input>
-                        <p class="small">全ての表示を無効(注意)</p>
+                        <p class="small" style="color:red">全ての表示を無効化(※注意)</p>
                     </div>
                 </div>
             </div>
@@ -278,14 +280,18 @@
             <a class="file_icon hover" onclick="controlpanel_open()"></a>
             </div>
             <div class="files2">
+                <a class="file_text hover" onclick="updownmenu_open()">拡大縮小</a>
+                <a class="file_icon hover" onclick="updownmenu_open()"></a>
+            </div>
+            <div class="files3">
             <a class="file_text hover" href="https://google.com">Google</a>
             <a class="file_icon hover" href="https://google.com"></a>
             </div>
-            <div class="files3">
+            <div class="files4">
             <a class="file_text hover" href="https://yahoo.co.jp">Yahoo!</a>
             <a class="file_icon hover" href="https://yahoo.co.jp"></a>
             </div>
-            <div class="files4">
+            <div class="files5">
             <a class="file_text hover" href="https://youtube.com">Youtube</a>
             <a class="file_icon hover" href="https://youtube.com"></a>
             </div>
@@ -320,7 +326,7 @@
 
     <div class="paint">
         <div class="shape paint_window border" draggable="false" style="opacity: 0.95;">
-            <span class="menu_bluebar">paint</span>
+            <span class="menu_bluebar">ペイント</span>
             <a class="blacktext closebutton hover2" onclick="paint_close()">X</a>
             <br>
     <p>
@@ -347,13 +353,23 @@
             <a class="closebutton white border hover" style="z-index: 99999;" onclick="server_close()">X</a>
         </div>
 
+        <div class="updown_menu">
+            <div class="drag18 shape small_window border" style="opacity: 0.95;">
+                <span class="menu_bluebar">&emsp;拡大縮小</span>
+                <a class="blacktext closebutton hover2" onclick="updownmenu_close()">X</a>
+                <span class="small_window_white"></span>
+            <a id="up" class="updownbtn border white x-large">拡大</a>
+            <a id="down" class="updownbtn border white x-large">縮小</a>
+        </div>
+    </div>
+
     <div class="Credit">
         <p class="bold Credit_text">WindowSystem</p>
     </div>
 
     <!-- underbar -->
     <div class="underbar" style="opacity: 0.95;">
-        <a class="blacktext bottom bold start_button hover3" onclick="startmenu_open(),popupwindow_close()"></a>
+        <a class="blacktext bold start_button hover3" onclick="startmenu_open(),popupwindow_close()"></a>
         <span class="start_logo"></span>
     
     <div class="online_bar white">
@@ -361,8 +377,8 @@
         <p class="online_bartext">通信</p>
         <p class="online_bartext2">状態</p>
     </div>
-        <span class="timer bottom white" id="timer">time　</span>
-        <span class="timer2 bottom white" id="ampm">test</span>
+        <span class="timer white" id="timer">time　</span>
+        <span class="timer2 white" id="ampm">test</span>
 
         <div class="date white" onload="LoadProc();">
             現在日付:
