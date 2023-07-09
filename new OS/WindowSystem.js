@@ -3,7 +3,7 @@ if(navigator.userAgent.match(/(iPhone|iPod|Android.*Mobile)/i)){
 }else{
     // PC・タブレットの場合の処理を記述
     const alerttext = document.querySelector('.alerttext');
-    alerttext.textContent = "お使いの端末がPCのため、ご利用可能です。";
+    alerttext.textContent = "";
 }
 function no(){
     alert("お使いの端末がPCではないため、ご利用できません");
@@ -14,7 +14,7 @@ if (pass_form.pass.value === "0000"){
     const alerttext = document.querySelector('.alerttext');
     alerttext.style.display = "";
     screen_start();
-    sound();
+    playsound();
 }else{
     alert('パスワードが正しくありません！');
 }
@@ -28,6 +28,7 @@ const element = document.getElementById('user');
     const pass = document.querySelector('.pass_area');
     const popupwrap = document.getElementsByClassName('popupwrap');
     const screen_open = document.querySelector(".Windows95_group");
+    const content = document.querySelector(".content");
     const start_menu = document.querySelector(".start_menu");
     const taskbar = document.querySelector(".taskbar");
     const program_menu = document.querySelector(".program_menu");
@@ -43,6 +44,9 @@ const element = document.getElementById('user');
     const net = document.querySelector(".network");
     const paint = document.querySelector(".paint");
     const server = document.querySelector(".screenserver");
+    const sound = document.querySelector(".sound");
+    const updatemenu = document.querySelector(".updatemenu");
+    const underbar = document.querySelector(".underbar");
 
     function twoDigit(num) {
             let ret;
@@ -118,14 +122,14 @@ const element = document.getElementById('user');
             }
         }
         
-        function sound(){
-            const sound = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6946.mp3");
-            sound.play();
+        function playsound(){
+            const playsound = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6946.mp3");
+            playsound.play();
         }
 
-        function sound2() {
-            const sound3 = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6947.mp3");
-            sound3.play();
+        function playsound2() {
+            const playsound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6947.mp3");
+            playsound2.play();
         }
 
         function screen_close() {
@@ -220,7 +224,7 @@ const element = document.getElementById('user');
         document.getElementsByClassName("Memo")[0].value = '';
     });
 
-    function update( _v ) // input tag を更新する関数
+    function updates( _v ) // input tag を更新する関数
     {
         document.querySelector( ".calc" ).value = _v
     }
@@ -235,9 +239,9 @@ const element = document.getElementById('user');
         const v = document.querySelector( ".calc" ).value
         try {
             const f = new Function( 'return ' + v )
-            update( f().toString() )
+            updates( f().toString() )
         } catch( _error ) {
-            update( _error ) // 計算に失敗した場合は、そのエラーの内容を表示する
+            updates( _error ) // 計算に失敗した場合は、そのエラーの内容を表示する
         }
     }
 
@@ -310,12 +314,47 @@ function omikuji() {
 	alert(msg);
 }
 
-    function colorbox(){
+function colorbox(){
     if (document.getElementById("color_box").checked) {
         colorbtn.style.display = "none";
     } else {
         colorbtn.style.display = "inline";
     }
+}
+
+function settingbox(){
+    if (document.getElementById("setting_box").checked) {
+        underbar.style.display = "none";
+        start_menu.style.display = "none";
+    } else {
+        underbar.style.display = "block";
+        start_menu.style.display = "block";
+    }
+}
+function settingbox2(){
+    if (document.getElementById("setting_box2").checked) {
+        taskbar.style.display = "none";
+    } else {
+        taskbar.style.display = "block";
+    }
+}
+function settingbox3(){
+    if (document.getElementById("setting_box3").checked) {
+        content.style.display = "none";
+    } else {
+        content.style.display = "block";
+    }
+}
+function settingbox4(){
+    if (document.getElementById("setting_box4").checked) {
+        screen_open.style.display = "none";
+    } else {
+        screen_open.style.display = "block";
+    }
+}
+
+function testalert(){
+    alert("test");
 }
 
     function backcolor_black(){
@@ -386,13 +425,14 @@ function omikuji() {
         net.style.display = "none";
         paint.style.display = "none";
         server.style.display = "none";
+        sound.style.display = "none";
+        updatemenu.style.display = "none";
     }
     
     function startmenu_close(){
         start_menu.style.display = "none";
         program_menu.style.display = "none";
         app_menu.style.display = "none";
-        setting_menu.style.display = "none";
     }
     function startmenu_open(){
         start_menu.style.display = "block";
@@ -403,7 +443,6 @@ function omikuji() {
     }
     function popupwindow_close(){
         popupwrap[0].style.display = "none";
-
     }
 
     function controlpanel_open(){
@@ -427,6 +466,20 @@ function omikuji() {
     }
     function netmenu_close(){
         net.style.display = "none";
+    }
+
+    function sound_open(){
+        sound.style.display = "block";
+    }
+    function sound_close(){
+        sound.style.display = "none";
+    }
+
+    function updatemenu_open(){
+        updatemenu.style.display = "block";
+    }
+    function updatemenu_close(){
+        updatemenu.style.display = "none";
     }
 
     function backcolormenu_close(){
@@ -518,6 +571,10 @@ function omikuji() {
     draggable(document.querySelector('.drag11'));
     draggable(document.querySelector('.drag12'));
     draggable(document.querySelector('.drag13'));
+    draggable(document.querySelector('.drag14'));
+    draggable(document.querySelector('.drag15'));
+    draggable(document.querySelector('.drag16'));
+    draggable(document.querySelector('.drag17'));
 
     function draggable(target) {
         target.onmousedown = function(event) {
@@ -546,7 +603,7 @@ function omikuji() {
     let count = 0;
             // 図形にクリックイベント登録＆z-indexを表示
             let eleShape = document.getElementsByClassName("shape");
-            for(var i=0; i<eleShape.length; i++){
+            for(var i=0; i< eleShape.length; i++){
                 // クリックイベント登録
                 eleShape[i].addEventListener("click", moveFront, event);
                 // 図形にz-indexを表示
@@ -588,7 +645,6 @@ function omikuji() {
         document.exitFullscreen() // HTML5 Fullscreen API
       }
     };
-
 
 
     // 描画用フラグ  true: 描画中   false: 描画中でない
