@@ -312,6 +312,23 @@ a {
     color: black;
 }
 
+.files1 {
+    position: absolute;
+    left: 5px;
+}
+.files2 {
+    position: absolute;
+    left: 95px;
+}
+.files3 {
+    position: absolute;
+    left: 185px;
+}
+.files4 {
+    position: absolute;
+    left: 275px;
+}
+
 .taskbar {
     display: block;
     background: linear-gradient(0deg, #111111, #444444);
@@ -470,15 +487,44 @@ a.start_button {
 }
 
 .start_menu {
+    opacity: 0.95;
     display: none;
     background: linear-gradient(0deg, #222222, #666666);
-    width: 150px;
-    height: 105px;
+    width: 250px;
+    height: 230px;
     position: absolute;
     bottom: 40px;
     left: 1px;
     box-shadow: 3px 3px 6px black;
     z-index: 99997;
+}
+.startmenu_white {
+    opacity: 0.95;
+    display: block;
+    background: linear-gradient(0deg, white, whitesmoke);
+    width: 150px;
+    height: 180px;
+    position: absolute;
+    bottom: 0px;
+    left: 2.5px;
+}
+.finishbtn {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    font-size: small;
+    background: linear-gradient(0deg, #111111, #999999);
+    border: solid 1px dimgray;
+}
+.pic {
+    background: linear-gradient(0deg, teal, #99FFFF);
+    width: 70px;
+    height: 70px;
+    border: solid 2px blue;
+    border-radius: 5px;
+    position: absolute;
+    right: 12.5px;
+    box-shadow: 0px 0px 0px 2px skyblue inset;
 }
 
 .backcolor_menu {
@@ -544,6 +590,7 @@ a.underbarcontent {
 }
 
 .content {
+    display: block;
     font-size: small;
     position: relative;
     top: 0px;
@@ -578,6 +625,12 @@ a.underbarcontent {
     top: 420px;
     width: 150px;
 }
+.content6 {
+    position: absolute;
+    top: 20px;
+    left: 130px;
+    width: 150px;
+}
 
 .icon {
     margin-left: 10px;
@@ -588,6 +641,26 @@ a.underbarcontent {
     position: absolute;
     box-shadow: 2px 2px 4px black;
 }
+.icon:before {
+    content: "";
+    background: khaki;
+    width: 45px;
+    height: 48px;
+    position: absolute;
+    bottom: 0px;
+    box-shadow: 1px 1px 2px black;
+}
+.icon:after {
+    content: "";
+    background: white;
+    width: 10px;
+    height: 40px;
+    position: absolute;
+    bottom: 2px;
+    right: 5px;
+    box-shadow: 2px 2px 4px black;
+}
+
 .test {
     margin-left: 10px;
     margin-bottom: 50px;
@@ -624,6 +697,26 @@ a.underbarcontent {
     border-bottom: solid 2px black;
     border-right: solid 2px black;
 }
+.file_icon:before {
+    content: "";
+    background: khaki;
+    width: 45px;
+    height: 48px;
+    position: absolute;
+    bottom: 0px;
+    box-shadow: 1px 1px 2px black;
+}
+.file_icon:after {
+    content: "";
+    background: white;
+    width: 10px;
+    height: 40px;
+    position: absolute;
+    bottom: 2px;
+    right: 5px;
+    box-shadow: 2px 2px 4px black;
+}
+
 
 span.timer {
     background: rgba();
@@ -696,7 +789,6 @@ span.timer2 {
     width: 30px;
     height: 20px;
     position: absolute;
-    top: 0px;
     right: 0px;
     border: solid 1px #0099FF;
     border-radius: 3px;
@@ -733,13 +825,14 @@ span.timer2 {
 }
 
 .program_menu {
+    opacity: 0.95;
     display: none;
     background: linear-gradient(0deg, #222222, #666666);
     width: 120px;
-    height: 80px;
+    height: 70px;
     position: absolute;
-    bottom: 50px;
-    left: 150px;
+    bottom: 40px;
+    left: 250px;
     box-shadow: 3px 3px 6px black;
     z-index: 99997;
 }
@@ -761,12 +854,13 @@ span.timer2 {
 }
 
 .app_menu {
+    opacity: 0.95;
     display: none;
     background: linear-gradient(0deg, #222222, #666666);
     width: 120px;
-    height: 100px;
+    height: 95px;
     position: absolute;
-    bottom: 30px;
+    bottom: 45px;
     left: 120px;
     box-shadow: 3px 3px 6px black;
     z-index: 99997;
@@ -774,46 +868,50 @@ span.timer2 {
 
 .setting_menu {
     display: none;
-    background: linear-gradient(0deg, #222222, #666666);
-    width: 130px;
-    height: 50px;
+}
+
+.box_text {
+    position: relative;
+    left: 20px;
+    top: 50px;
+}
+.box_text2 {
+    position: relative;
+    left: 20px;
+    top: 70px;
+}
+.box_text3 {
+    position: relative;
+    left: 20px;
+    top: 90px;
+}
+.box_text4 {
+    position: relative;
+    left: 20px;
+    top: 110px;
+}
+
+.box {
+    transform: scale(2);
     position: absolute;
-    bottom: 30px;
-    left: 150px;
-    box-shadow: 3px 3px 6px black;
-    z-index: 99997;
+    left: 200px;
+    top: 0px;
+}
+
+.updatemenu {
+    display: none;
 }
 
 .controlpanel {
     display: none;
 }
-.control_file1 {
-    position: absolute;
-    left: 5px;
-}
-.control_file2 {
-    position: absolute;
-    left: 95px;
-}
 
 .mycomputer {
     display: none;
 }
-.mycomputer_file1 {
-    position: absolute;
-    left: 5px;
-}
-.mycomputer_file2 {
-    position: absolute;
-    left: 95px;
-}
-.mycomputer_file3 {
-    position: absolute;
-    left: 185px;
-}
-.mycomputer_file4 {
-    position: absolute;
-    left: 275px;
+
+.sound {
+    display: none;
 }
 
 .app_memo {
@@ -1008,12 +1106,20 @@ textarea {
 }
 
 .menubtn {
-    margin-top: 5px;
+    display: inline-block;
+    margin-top: 1px;
     width: 95%;
-    position: absolute;
-    color: white;
+    position: relative;
     left: 2.5px;
     font-size: 82%;
+}
+.username {
+    background: #339999;
+    font-size: x-large;
+    position: absolute;
+    top: 5px;
+    left: 2.5px;
+    border-radius: 3px;
 }
 
 .screenserver {
