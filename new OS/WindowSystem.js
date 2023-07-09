@@ -46,6 +46,7 @@ const element = document.getElementById('user');
     const server = document.querySelector(".screenserver");
     const sound = document.querySelector(".sound");
     const updatemenu = document.querySelector(".updatemenu");
+    const updown_menu = document.querySelector(".updown_menu");
     const underbar = document.querySelector(".underbar");
 
     function twoDigit(num) {
@@ -223,6 +224,9 @@ const element = document.getElementById('user');
     document.getElementById('cleartextbtn').addEventListener('click',function (){
         document.getElementsByClassName("Memo")[0].value = '';
     });
+    function ShowLength( str ) {
+        document.getElementById("inputlength").innerHTML = str.length + "文字";
+    }
 
     function updates( _v ) // input tag を更新する関数
     {
@@ -252,7 +256,7 @@ const element = document.getElementById('user');
             const Credit = document.querySelector(".Credit");
         Credit.style.display = "none";
     }, 2000);
-};
+}
 
 msg3 = "";
 rand = Math.floor(Math.random()*10); //0～4の乱数を発生
@@ -427,6 +431,7 @@ function testalert(){
         server.style.display = "none";
         sound.style.display = "none";
         updatemenu.style.display = "none";
+        updown_menu.style.display = "none";
     }
     
     function startmenu_close(){
@@ -480,6 +485,13 @@ function testalert(){
     }
     function updatemenu_close(){
         updatemenu.style.display = "none";
+    }
+
+    function updownmenu_open(){
+        updown_menu.style.display = "block";
+    }
+    function updownmenu_close(){
+        updown_menu.style.display = "none";
     }
 
     function backcolormenu_close(){
@@ -575,6 +587,7 @@ function testalert(){
     draggable(document.querySelector('.drag15'));
     draggable(document.querySelector('.drag16'));
     draggable(document.querySelector('.drag17'));
+    draggable(document.querySelector('.drag18'));
 
     function draggable(target) {
         target.onmousedown = function(event) {
@@ -828,3 +841,18 @@ function drawSine(canvas, t, zoom, delay) {
 }
 
 init();
+
+let counts = 1;
+const hogee = () => {
+  counts = counts + 0.01;
+  backcolor.style.transform = "scale(" + counts + "," + counts + ")";
+}
+
+const fooo = () => {
+  counts = counts - 0.01;
+  backcolor.style.transform = "scale(" + counts + "," + counts + ")";
+}
+window.onload = () => {
+  up.onclick = () => { hogee() };
+  down.onclick = () => { fooo() };
+}
