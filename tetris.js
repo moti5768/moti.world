@@ -102,6 +102,15 @@ class tetris {
                 color: "rgb(255, 0, 255)",
                 highlight: "rgb(255, 255, 255)",
                 shadow: "rgb(128, 0, 128)"
+            },
+            {
+                shape: [[[0, 0], [0, 0], [0, 0], [0, 0]],
+                        [[0, -1], [0, 0], [1, 0], [0, 1]],
+                        [[-1, 0], [0, 0], [1, 0], [0, 1]],
+                        [[0, -1], [-1, 0], [0, 0], [0, 1]]],
+                color: "rgb(100, 100, 100)",
+                highlight: "rgb(255, 255, 255)",
+                shadow: "rgb(128, 128, 128)"
             }
         ];
         return blocks;
@@ -165,7 +174,7 @@ class tetris {
                 this.stageTopPadding + this.blockY * this.cellSize,
                 this.currentBlock, this.blockAngle, this.stageCanvas);
         }
-        setTimeout(this.mainLoop.bind(this), 500);
+        setTimeout(this.mainLoop.bind(this), 600);
     }
 
     createNewBlock() {
@@ -190,7 +199,7 @@ class tetris {
     }
 
     getRandomBlock() {
-        return  Math.floor(Math.random() * 7);
+        return  Math.floor(Math.random() * 8);
     }
 
     fallBlock() {
