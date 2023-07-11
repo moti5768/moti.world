@@ -10,7 +10,6 @@ html {
 #stage {
     width: 50%;
     height: 50%;
-    pointer-events: none;
 }
 
 .tetris {
@@ -57,14 +56,16 @@ html {
 
 .tetris-button-panel {
     border-style: none;
-    width: 120%;
+    width: 140%;
     position: relative;
-    right: 0px;
+    left: -10px;
 }
 
 .tetris-button {
-    padding-top: 15px;
-    padding-bottom: 15px;
+    width: 20px;
+    height: 20px;
+    padding-top: 20px;
+    padding-bottom: 20px;
     text-align: center;
     background: #444444;
 }
