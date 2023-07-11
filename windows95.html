@@ -51,7 +51,7 @@
                 </p>
         </div>
         <span class="menu_bluebar">ようこそ</span>
-        <button class="blacktext closebutton border hover2" onclick="popupwindow_close()">X</button>
+        <button class="blacktext closebutton border hover2" onclick="popupwindow_close(),update_open()">X</button>
     </div>
 
     <div class="title">
@@ -74,14 +74,17 @@
             <a class="test1 white" onclick="mycomputer_open(),popupwindow_close()">マイコンピュータ</a>
             <a class="icon2" onclick="Credit()"></a>
             <a class="test2 white" onclick="Credit()">クレジット</a>
-            <a class="icon3" onclick="popupwindow_open()"></a>
-            <a class="test3 white" onclick="popupwindow_open()">ようこそ</a>
+            <a class="icon3" onclick="update_open()"></a>
+            <a class="test3 white" onclick="update_open()">お知らせ</a>
             <a class="icon4" onclick="iframe1_open(),popupwindow_close()"></a>
             <a class="test4 white" onclick="iframe1_open(),popupwindow_close()">オモチのサイト</a>
             <a class="icon5"></a>
             <a class="test5 white">ファイルを選択</a>
             <input type="file" class="icon5 file">
             <input type="file" class="test5 white file2">
+
+            <a class="icon6" onclick="tetris_open()"></a>
+            <a class="test6 white" onclick="tetris_open()">テトリス(改)</a>
         </div>
     </div>
 
@@ -161,7 +164,7 @@
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
     <form method="get" name="mail_form" onsubmit="return false;">
-        <input type="text" class="textcommand_area border" name="mail" placeholder="Reload">
+        <input type="text" class="textcommand_area border" name="mail" placeholder="Windows95beta1.1">
         <input type="submit" class="textcommand_area border hover" value="実行" onclick="check()">
     </form>
     </div>
@@ -229,6 +232,16 @@
         </div>
     </div>
 
+    <div class="update popup_window border">
+        <p class="popup_window_text">WindowSystemへの移行</p>
+        <div class="popup_window_white border">
+            <p class="popup_window_text2">Windows95は今年中にサポートを終了します。<br>
+                終了予定日: 12月1日<br></p>
+        </div>
+        <span class="menu_bluebar">お知らせ</span>
+        <button class="blacktext closebutton border hover2" onclick="update_close()">X</button>
+    </div>
+
     <div class="mycomputer">
         <div class="mycomputer_window border">
             <span class="menu_bluebar">　　マイコンピュータ</span>
@@ -243,7 +256,7 @@
             <a class="mycomputer_text5" href="https://youtube.com">Youtube</a>
             <a class="mycomputer_icon5" href="https://youtube.com"></a>
 
-            <a class="mycomputer_text6" onclick="tetris_open(),mycomputer_close()">テトリス</a>
+            <a class="mycomputer_text6" onclick="tetris_open(),mycomputer_close()">テトリス(改)</a>
             <a class="mycomputer_icon6" onclick="tetris_open(),mycomputer_close()"></a>
 
             <button class="blacktext closebutton border hover2" onclick="task_content1_close(),mycomputer_close()">X</button>
@@ -288,13 +301,13 @@
     </div>
 
     <div class="tetris border">
-        <span class="menu_bluebar">テトリス</span>
+        <span class="menu_bluebar">テトリス(改)</span>
     <div class="wrapper-container">
         <span class="tetris-container">
             <canvas id="stage" width="250px" height="500px" style="background-color:black;">
             </canvas>
             <span class="tetris-panel-container">
-              <p>Next:</p>
+              <p>Next block:</p>
               <canvas id="next" width="130px" height="150px" style="background-color:black;">
             </canvas>
               <p>LINES:<span id="lines">0</span></p>
@@ -316,7 +329,7 @@
         </span>
     </div>
     <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
-    <button class="blacktext taskbutton border hover" onclick="reset()">一</button>
+    <button class="blacktext reload_button border hover3" onclick="reloads()">リロード</button>
     </div>
 
 </div>
@@ -329,6 +342,10 @@
 
         html {
             touch-action: manipulation;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
         }
 
         body {
@@ -346,6 +363,10 @@
         }
         .hover2:hover {
             background-color: red;
+            color: white;
+        }
+        .hover3:hover {
+            background-color: green;
             color: white;
         }
 
@@ -498,6 +519,12 @@
             position: absolute;
             top: 0px;
             left: 0px;
+        }
+
+        .update {
+            display: none;
+            position: absolute;
+            top: 100px;
         }
 
         .title {
@@ -1041,6 +1068,16 @@
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
+        .icon6 {
+            margin-left: 140px;
+            margin-top: 45px;
+            background: linear-gradient(30deg, whitesmoke, skyblue, deepskyblue);
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
 
         .test1 {
             margin-left: 10px;
@@ -1067,6 +1104,12 @@
             margin-left: 10px;
             position: absolute;
             top: 495px;
+        }
+        .test6 {
+            width: 100px;
+            margin-left: 140px;
+            position: absolute;
+            top: 95px;
         }
 
         .file {
@@ -1360,6 +1403,13 @@
             position: absolute;
             top: 0px;
             right: 0px;
+        }
+        .reload_button {
+            width: 80px;
+            height: 25px;
+            position: absolute;
+            top: 0px;
+            right: 25px;
         }
 
         .programbutton {
@@ -2240,6 +2290,9 @@
 
         const tetris = document.querySelector(".tetris");
         tetris.style.display = "none";
+
+        const updatemenu = document.querySelector(".update");
+        updatemenu.style.display = "none";
     }
     
     function startmenu_close(){
@@ -2272,7 +2325,15 @@
     function popupwindow_close(){
         const popupwrap = document.getElementsByClassName('popupwrap');
         popupwrap[0].classList.remove('active');
+    }
 
+    function update_open(){
+        const updatemenu = document.querySelector(".update");
+        updatemenu.style.display = "block";
+    }
+    function update_close(){
+        const updatemenu = document.querySelector(".update");
+        updatemenu.style.display = "none";
     }
 
     function controlpanel_open(){
@@ -2422,8 +2483,13 @@
         tetris.style.display = "none";
     }
 
+    function reloads() {
+        location.reload();
+    }
+
+
     function check(){
-        if (mail_form.mail.value === "Reload"){
+        if (mail_form.mail.value === "Windows95beta1.1"){
             //条件に一致する場合(空の場合)
             alert('コマンドが実行されました！');
             window.location = 'windows95.html';
