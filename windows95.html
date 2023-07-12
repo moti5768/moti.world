@@ -323,7 +323,6 @@
                   <td id="tetris-move-left-button"class="tetris-button">←</td>
                   <td id="tetris-fall-button"class="tetris-button">↓</td>
                   <td id="tetris-move-right-button"class="tetris-button">→</td>
-                  <button onclick="tetris.startGame(),mereset()">START(バグあり)</button>
                 </tr>
               </table>
             </span>
@@ -331,6 +330,7 @@
     </div>
     <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
     <button class="blacktext reload_button border hover3" onclick="reloads()">リロード</button>
+    <button class="blacktext start_button border hover" onclick="tetris.startGame(),mereset()">&nbsp;START(バグあり)&nbsp;</button>
     </div>
 
 </div>
@@ -1411,6 +1411,13 @@
             position: absolute;
             top: 0px;
             right: 25px;
+        }
+        .start_button {
+            width: 120px;
+            height: 25px;
+            position: absolute;
+            top: 0px;
+            right: 120px;
         }
 
         .programbutton {
