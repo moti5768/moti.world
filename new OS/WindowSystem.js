@@ -31,6 +31,7 @@ const element = document.getElementById('user');
     const content = document.querySelector(".content");
     const start_menu = document.querySelector(".start_menu");
     const taskbar = document.querySelector(".taskbar");
+    const taskbar2 = document.querySelector(".taskbar2");
     const program_menu = document.querySelector(".program_menu");
     const app_menu = document.querySelector(".app_menu");
     const setting_menu = document.querySelector(".setting_menu");
@@ -48,6 +49,8 @@ const element = document.getElementById('user');
     const updatemenu = document.querySelector(".updatemenu");
     const updown_menu = document.querySelector(".updown_menu");
     const underbar = document.querySelector(".underbar");
+    const task_soft = document.querySelector(".task_soft");
+    const error = document.querySelector(".error");
 
     function twoDigit(num) {
             let ret;
@@ -134,6 +137,13 @@ const element = document.getElementById('user');
         }
 
         function screen_close() {
+            let targets = document.querySelectorAll(`input[type='checkbox'][name='checkbox']`);
+            for (const i of targets) {		
+                i.checked = false;
+            }
+            task_soft.style.display = "block";
+            taskbar2.style.display = "none";
+            taskbar.style.display = "block";
             setTimeout(function() {
             let screen_close = document.getElementsByClassName('screen_close');
             screen_close[0].classList.add('active');
@@ -351,6 +361,17 @@ function settingbox3(){
 }
 function settingbox4(){
     if (document.getElementById("setting_box4").checked) {
+        task_soft.style.display = "none";
+        taskbar2.style.display = "block";
+        taskbar.style.display = "none";
+    } else {
+        task_soft.style.display = "block";
+        taskbar2.style.display = "none";
+        taskbar.style.display = "block";
+    }
+}
+function settingbox5(){
+    if (document.getElementById("setting_box5").checked) {
         screen_open.style.display = "none";
     } else {
         screen_open.style.display = "block";
@@ -559,6 +580,13 @@ function testalert(){
         server.style.display = "block";
     }
 
+    function error_close(){
+        error.style.display = "none";
+    }
+    function error_open(){
+        error.style.display = "block";
+    }
+
     function check(){
         if (mail_form.mail.value === "Reload"){
             //条件に一致する場合(空の場合)
@@ -588,6 +616,7 @@ function testalert(){
     draggable(document.querySelector('.drag16'));
     draggable(document.querySelector('.drag17'));
     draggable(document.querySelector('.drag18'));
+    draggable(document.querySelector('.drag19'));
 
     function draggable(target) {
         target.onmousedown = function(event) {
@@ -843,16 +872,12 @@ function drawSine(canvas, t, zoom, delay) {
 init();
 
 let counts = 1;
-const hogee = () => {
+function hogee(){
   counts = counts + 0.01;
   backcolor.style.transform = "scale(" + counts + "," + counts + ")";
 }
 
-const fooo = () => {
+function fooo(){
   counts = counts - 0.01;
   backcolor.style.transform = "scale(" + counts + "," + counts + ")";
-}
-window.onload = () => {
-  up.onclick = () => { hogee() };
-  down.onclick = () => { fooo() };
 }
