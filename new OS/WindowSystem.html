@@ -90,28 +90,32 @@
     <div class="content">
         <div class="content-icons">
             <div class="content1 drag11">
+            <a class="icon_garbage hover3"></a>
+            <a class="test white hover3">ゴミ箱</a>
+            </div>
+            <div class="content2 drag12">
             <a class="icon hover3" ondblclick="mycomputer_open(),popupwindow_close()"></a>
             <a class="test white hover3" ondblclick="mycomputer_open(),popupwindow_close()">マイコンピュータ</a>
             </div>
-            <div class="content2 drag12">
+            <div class="content3 drag13">
             <a class="icon hover3" ondblclick="Credit()"></a>
             <a class="test white hover3" ondblclick="Credit()">クレジット</a>
             </div>
-            <div class="content3 drag13">
+            <div class="content4 drag14">
             <a class="icon hover3" ondblclick="popupwindow_open()"></a>
             <a class="test white hover3" ondblclick="popupwindow_open()">ようこそ</a>
             </div>
-            <div class="content4 drag14">
+            <div class="content5 drag15">
             <a class="icon"></a>
             <a class="test white">ファイルを選択</a>
             <input type="file" class="icon file">
             <input type="file" class="test white file2">
             </div>
-            <div class="content5 drag15">
+            <div class="content6 drag16">
             <a class="icon hover3" ondblclick="window.print()"></a>
             <a class="test white hover3" ondblclick="window.print()">印刷</a>
             </div>
-            <div class="content6 drag16">
+            <div class="content7 drag17">
             <a class="icon hover3" ondblclick="window.updatemenu_open()"></a>
             <a class="test white hover3" ondblclick="window.updatemenu_open()">次期アップデートの<br>お知らせ</a>
             </div>
@@ -124,6 +128,7 @@
         <a class="blacktext bar_button" onclick="hoge()">FL1</a>
         <a class="blacktext bar_button" onclick="foo()">FL2</a>
         <a class="blacktext bar_button" onclick="server_open()">SC</a>
+        <a class="blacktext bar_button" onclick="testalert()">T</a>
 
         <div class="backcolor_menu border shape" style="opacity: 0.95;">
             <span class="menu_graybar">画面のプロパティ</span>
@@ -155,18 +160,18 @@
 
     </div>
 
-    <div class="drag3 shape command_menu border" style="opacity: 0.95;">
+    <div class="drag3 shape command_menu small_window border" style="opacity: 0.95;">
         <div class="menu_bluebar">&emsp;コマンド入力</div>
         <a class="blacktext closebutton hover2" onclick="commandmenu_close()">X</a>
     <form method="get" name="mail_form" onsubmit="return false;">
         <input type="text" class="textcommand_area" name="mail" placeholder="Reload">
-        <input type="submit" class="textcommand_area hover" value="実行" onclick="check()">
+        <input type="submit" class="submitbtn hover" value="実行" onclick="check()">
     </form>
     </div>
 
     <div class="drag4 shape app_memo medium_window border" style="opacity: 0.95;">
         <span class="menu_bluebar">&emsp;無題-メモ帳</span>
-        <a class="closebutton blacktext hover2" onclick="memo_close()">X</a>
+        <a class="closebutton blacktext hover2" onclick="error_open()">X</a>
         <a class="blacktext taskbutton hover" onclick="memo_close()">一</a>
         <form name="form1">
             <textarea name="Memo" class="Memo" onkeyup="ShowLength(value);"></textarea>
@@ -177,6 +182,17 @@
             <input type="button" class="blacktext hover memo_button_load" value="&emsp;読込&emsp;" onclick=load(); ></input>
             <input type="button" id="cleartextbtn" class="blacktext hover memo_button_clear" value="&emsp;クリア&emsp;"></input>
         </p>
+
+        <div class="error">
+            <div class="shape error_window border" style="opacity: 0.95;">
+                <span class="menu_redbar">&emsp;確認</span>
+                <a class="blacktext closebutton hover2" onclick="error_close(),memo_close()">X</a>
+                <div class="error_window_white">
+                このページを閉じてもよろしいですか？
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <div class="drag5 shape app_calc small_window border" style="opacity: 0.95;">
@@ -246,7 +262,7 @@
 
             <!-- settingmenu -->
             <div class="setting_menu">
-                <div class="drag17 shape medium_window border" style="opacity: 0.95;">
+                <div class="drag18 shape medium_window border" style="opacity: 0.95;">
                     <span class="menu_bluebar">&emsp;設定</span>
                     <a class="blacktext closebutton hover2" onclick="settingmenu_close()">X</a>
                     <a class="blacktext taskbutton hover" onclick="settingmenu_close()">一</a>
@@ -256,7 +272,7 @@
                     <p class="small">タスクバーの表示を無効化</p>
                     </div>
                     <div class="box_text2">
-                        <input type="checkbox" class="box" id="setting_box2" placeholder="test" onclick="settingbox2()"></input>
+                        <input type="checkbox" name="checkbox" class="box" id="setting_box2" placeholder="test" onclick="settingbox2()"></input>
                         <p class="small">タスクバー(小)の表示を無効化</p>
                     </div>
                     <div class="box_text3">
@@ -264,7 +280,11 @@
                         <p class="small">ファイルアイコンの表示を無効化</p>
                     </div>
                     <div class="box_text4">
-                        <input type="checkbox" class="box" id="setting_box4" placeholder="test" onclick="settingbox4()"></input>
+                        <input type="checkbox" name="checkbox" class="box" id="setting_box4" placeholder="test" onclick="settingbox4()"></input>
+                        <p class="small">タスクバー(小)を統合化</p>
+                    </div>
+                    <div class="box_text5">
+                        <input type="checkbox" class="box" id="setting_box5" placeholder="test" onclick="settingbox5()"></input>
                         <p class="small" style="color:red">全ての表示を無効化(※注意)</p>
                     </div>
                 </div>
@@ -354,12 +374,12 @@
         </div>
 
         <div class="updown_menu">
-            <div class="drag18 shape small_window border" style="opacity: 0.95;">
+            <div class="drag19 shape small_window border" style="opacity: 0.95;">
                 <span class="menu_bluebar">&emsp;拡大縮小</span>
                 <a class="blacktext closebutton hover2" onclick="updownmenu_close()">X</a>
                 <span class="small_window_white"></span>
-            <a id="up" class="updownbtn border white x-large">拡大</a>
-            <a id="down" class="updownbtn border white x-large">縮小</a>
+            <a onclick="hogee()" class="updownbtn border white x-large">拡大</a>
+            <a onclick="fooo()" class="updownbtn border white x-large">縮小</a>
         </div>
     </div>
 
@@ -391,6 +411,7 @@
             <div class="news_area" id="text"></div>
         </div>
 
+        <span class="task_border"></span>
     <div class="task_soft">
         <a class="soft hover3" onclick="mycomputer_open()">&nbsp;mycomputer&nbsp;</a>
         <a class="soft hover3" onclick="controlpanel_open()">&nbsp;controlpanel&nbsp;</a>
@@ -400,6 +421,16 @@
         <a class="soft hover3" onclick="netmenu_open()">&nbsp;network&nbsp;</a>
         <a class="soft hover3" onclick="sound_open()">&nbsp;sound&nbsp;</a>
     </div>
+
+    <!-- under taskbar -->
+    <div class="taskbar2">
+        <a class="blacktext bar_button" href="https://moti5768.github.io/moti.world/windows95.html">95</a>
+        <a class="blacktext bar_button" onclick="hoge()">FL1</a>
+        <a class="blacktext bar_button" onclick="foo()">FL2</a>
+        <a class="blacktext bar_button" onclick="server_open()">SC</a>
+        <a class="blacktext bar_button" onclick="testalert()">T</a>
+    </div>
+    <!-- /under taskbar -->
     </div>
     <!-- /underbar -->
     </div>
