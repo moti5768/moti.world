@@ -323,7 +323,7 @@
                   <td id="tetris-move-left-button"class="tetris-button">←</td>
                   <td id="tetris-fall-button"class="tetris-button">↓</td>
                   <td id="tetris-move-right-button"class="tetris-button">→</td>
-                  <button onclick="tetris.startGame()">test(バグあり)</button>
+                  <button onclick="tetris.startGame(),mereset()">START(バグあり)</button>
                 </tr>
               </table>
             </span>
@@ -1982,7 +1982,11 @@
     </style>
     <script text="javascript">
         tetris = new tetris();
-        tetris.startGame();
+
+        function mereset(){
+            const me = document.getElementById('message');
+            me.textContent = ""
+        }
 
         const element = document.getElementById('user');
         element.insertAdjacentHTML('afterend','<p class="white user">BROWSER: '+ navigator.appName + '<br>' 
