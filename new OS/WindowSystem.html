@@ -61,8 +61,8 @@
         <a class="blacktext menubtn hover" onclick="testalert()">TEST1</a>
         <a class="blacktext menubtn hover" onclick="testalert()">TEST2</a>
         <a class="blacktext menubtn hover" onclick="testalert()">TEST3</a>
-        <a class="blacktext menubtn hover" onclick="testalert()">TEST4</a>
-        <a class="blacktext menubtn hover" onclick="testalert()">TEST5</a>
+        <a class="blacktext menubtn hover" onclick="calendar_open(),startmenu_close()">カレンダー</a>
+        <a class="blacktext menubtn hover" onclick="help_open(),startmenu_close()">ヘルプ</a>
         <a class="blacktext menubtn hover" onclick="programmenu_open()">プログラム</a>
         <a class="blacktext menubtn hover" onclick="settingmenu_open(),programmenu_close(),appmenu_close(),startmenu_close()">設定</a>
         </div>
@@ -91,7 +91,7 @@
         <div class="content-icons">
             <div class="content1 drag11">
             <a class="icon_garbage hover3"></a>
-            <a class="test white hover3">ゴミ箱</a>
+            <a class="test white hover3">ゴミ箱<br>(実験)</a>
             </div>
             <div class="content2 drag12">
             <a class="icon hover3" ondblclick="mycomputer_open(),popupwindow_close()"></a>
@@ -128,7 +128,7 @@
         <a class="blacktext bar_button" onclick="hoge()">FL1</a>
         <a class="blacktext bar_button" onclick="foo()">FL2</a>
         <a class="blacktext bar_button" onclick="server_open()">SC</a>
-        <a class="blacktext bar_button" onclick="testalert()">T</a>
+        <a class="blacktext bar_button" onclick="calendar_open()">CA</a>
 
         <div class="backcolor_menu border shape" style="opacity: 0.95;">
             <span class="menu_graybar">画面のプロパティ</span>
@@ -185,14 +185,14 @@
 
         <div class="error">
             <div class="shape error_window border" style="opacity: 0.95;">
-                <span class="menu_redbar">&emsp;確認</span>
+                <span class="menu_redbar"><span class="white">&emsp;確認</span></span>
                 <a class="blacktext closebutton hover2" onclick="error_close(),memo_close()">X</a>
                 <div class="error_window_white">
                 このページを閉じてもよろしいですか？
                 </div>
+                <button class="btn bottom" onclick="error_close()">キャンセル</button>
             </div>
         </div>
-
     </div>
 
     <div class="drag5 shape app_calc small_window border" style="opacity: 0.95;">
@@ -281,7 +281,7 @@
                     </div>
                     <div class="box_text4">
                         <input type="checkbox" name="checkbox" class="box" id="setting_box4" placeholder="test" onclick="settingbox4()"></input>
-                        <p class="small">タスクバー(小)を統合化</p>
+                        <p class="small">タスクバー(小)を結合化</p>
                     </div>
                     <div class="box_text5">
                         <input type="checkbox" class="box" id="setting_box5" placeholder="test" onclick="settingbox5()"></input>
@@ -383,6 +383,46 @@
         </div>
     </div>
 
+    <div class="help">
+        <div class="drag6 shape help_window border" style="opacity: 0.95;">
+            <span class="menu_bluebar">&emsp;ヘルプ</span>
+            <a class="blacktext closebutton hover2" onclick="help_close()">X</a>
+            <span class="help_window_white"></span>
+            <div class="files1">
+            <a class="file_text hover" onclick="testalert()">テスト</a>
+            <a class="file_icon hover" onclick="testalert()"></a>
+            </div>
+            <div class="files2">
+            <a class="file_text hover" onclick="testalert()">テスト</a>
+            <a class="file_icon hover" onclick="testalert()"></a>
+            </div>
+            <div class="files3">
+            <a class="file_text hover" onclick="testalert()">テスト</a>
+            <a class="file_icon hover" onclick="testalert()"></a>
+            </div>
+        </div>
+    </div>
+
+    <!-- カレンダー -->
+    <div class="calendar">
+        <div class="drag20 shape calendar_window border" style="opacity: 0.95;">
+            <a class="blacktext closebutton hover2" onclick="calendar_close()">X</a>
+    <div class="wrapper">
+        <!-- xxxx年xx月を表示 -->
+        <h1 id="header"></h1>
+    
+        <!-- ボタンクリックで月移動 -->
+        <div id="next-prev-button">
+            <button id="prev" onclick="prev()">‹</button>
+            <button id="next" onclick="next()">›</button>
+        </div>
+    
+        <div id="calendar"></div>
+    </div>
+    </div>
+    </div>
+    <!-- !カレンダー -->
+
     <div class="Credit">
         <p class="bold Credit_text">WindowSystem</p>
     </div>
@@ -428,7 +468,7 @@
         <a class="blacktext bar_button" onclick="hoge()">FL1</a>
         <a class="blacktext bar_button" onclick="foo()">FL2</a>
         <a class="blacktext bar_button" onclick="server_open()">SC</a>
-        <a class="blacktext bar_button" onclick="testalert()">T</a>
+        <a class="blacktext bar_button" onclick="calendar_open()">CA</a>
     </div>
     <!-- /under taskbar -->
     </div>
