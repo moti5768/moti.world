@@ -71,20 +71,20 @@
     <div class="content">
         <div class="content-icons">
             <a class="icon1" onclick="mycomputer_open(),popupwindow_close()"></a>
-            <a class="test1 white" onclick="mycomputer_open(),popupwindow_close()">マイコンピュータ</a>
+            <a class="test1 white hover" onclick="mycomputer_open(),popupwindow_close()">マイコンピュータ</a>
             <a class="icon2" onclick="Credit()"></a>
-            <a class="test2 white" onclick="Credit()">クレジット</a>
+            <a class="test2 white hover" onclick="Credit()">クレジット</a>
             <a class="icon3" onclick="update_open()"></a>
-            <a class="test3 white" onclick="update_open()">お知らせ</a>
+            <a class="test3 white hover" onclick="update_open()">お知らせ</a>
             <a class="icon4" onclick="iframe1_open(),popupwindow_close()"></a>
-            <a class="test4 white" onclick="iframe1_open(),popupwindow_close()">オモチのサイト</a>
+            <a class="test4 white hover" onclick="iframe1_open(),popupwindow_close()">オモチのサイト</a>
             <a class="icon5"></a>
             <a class="test5 white">ファイルを選択</a>
             <input type="file" class="icon5 file">
             <input type="file" class="test5 white file2">
 
             <a class="icon6" onclick="tetris_open()"></a>
-            <a class="test6 white" onclick="tetris_open()">テトリス(改)</a>
+            <a class="test6 white hover" onclick="tetris_open()">テトリス(改)</a>
         </div>
     </div>
 
@@ -307,7 +307,7 @@
             <canvas id="stage" width="250px" height="500px" style="background-color:black;">
             </canvas>
             <span class="tetris-panel-container">
-              <p>Next block:</p>
+              <p>Next&emsp;&emsp;ver 0.1</p>
               <canvas id="next" width="130px" height="150px" style="background-color:black;">
             </canvas>
               <p>LINES:<span id="lines">0</span></p>
@@ -316,13 +316,13 @@
               <table class="tetris-button-panel">
                 <tr>
                   <td></td>
-                  <td id="tetris-rotate-button" class="tetris-button">↻</td>
+                  <td id="tetris-rotate-button" class="tetris-button large">↻</td>
                   <td></td>
                 </tr>
                 <tr>
-                  <td id="tetris-move-left-button"class="tetris-button">←</td>
-                  <td id="tetris-fall-button"class="tetris-button">↓</td>
-                  <td id="tetris-move-right-button"class="tetris-button">→</td>
+                  <td id="tetris-move-left-button"class="tetris-button large">←</td>
+                  <td id="tetris-fall-button"class="tetris-button large">↓</td>
+                  <td id="tetris-move-right-button"class="tetris-button large">→</td>
                 </tr>
               </table>
             </span>
@@ -524,8 +524,9 @@
 
         .update {
             display: none;
+            top: 80px;
             position: absolute;
-            top: 100px;
+            left: 180px;
         }
 
         .title {
@@ -2096,7 +2097,7 @@
         });
 
         function testalert(){
-            alert('hello!');
+            alert('こんちくわ!');
         }
 
     // 読込
