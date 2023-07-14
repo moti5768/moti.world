@@ -66,7 +66,38 @@
         <button class="blacktext programbutton border bold hover" onclick="programmenu_open(),settingmenu_close()">プログラム</button>
         <button class="blacktext settingbutton border bold hover" onclick="settingmenu_open(),programmenu_close(),appmenu_close()">設定</button>
         <a class="blacktext border bold finish hover" onclick="screen_close(),allwindow_close(),sound2()">Windowsの終了</a>
+
+
+        <div class="program_menu border">
+            <span class="menu_bluebar">プログラム</span>
+            <button class="blacktext closebutton border hover2" onclick="programmenu_close()">X</button>
+            <button class="blacktext accessorybutton hover" onclick="appmenu_open()">アクセサリ</button>
+            <button class="blacktext accessorybutton2 hover" onclick="commandmenu_open(),startmenu_close()">コマンド</button>
+            <a class="accessory_icon" onclick="appmenu_open()"></a>
+            <a class="accessory_icon2" onclick="commandmenu_open(),startmenu_close()"></a>
+        </div>
+    
+        <div class="app_menu border">
+            <span class="menu_bluebar">アプリ</span>
+            <button class="blacktext closebutton border hover2" onclick="appmenu_close()">X</button>
+            <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close()">メモ帳</button>
+            <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close()">電卓</button>
+            <a class="app_icon" onclick="memo_open(),startmenu_close()"></a>
+            <a class="app_icon2" onclick="calc_open(),startmenu_close()"></a>
+        </div>
+
+        <div class="setting_menu border">
+            <span class="menu_bluebar">設定</span>
+            <button class="blacktext closebutton border hover2" onclick="settingmenu_close()">X</button>
+            <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
+            <a class="device_icon" onclick="controlpanel_open(),startmenu_close()"></a>
+        </div>
+
+
     </div>
+
+
+
 
     <div class="content">
         <div class="content-icons">
@@ -94,44 +125,6 @@
         <button class="closebutton border hover2" onclick="iframe1_close()">X</button>
     </div>
 
-    <div class="css_menu border">
-        <span class="menu_bluebar">CSSの削除</span>
-        <button class="css_box border hover" onclick="stylebox()">CSSを削除する</button>
-        <button class="closebutton border hover2" onclick="cssmenu_close()">X</button>
-    </div>
-
-    <div class="backcolor_menu border">
-        <span class="menu_bluebar">画面のプロパティ</span>
-        <button class="closebutton border hover2" onclick="backcolormenu_close()">X</button>
-        <button class="blacktext backcolor_reset hover" onclick="backcolor_reset()">reset</button>
-
-        <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()"></input>
-        <p class="backcolor_text">表示を2色にする。</p>
-        <button class="backcolor_button backbutton_black" onclick="backcolor_black()"></button>
-        <button class="backcolor_button backbutton_gray" onclick="backcolor_gray()"></button>
-
-        <div class="colorbtn">
-        <button class="backcolor_button backbutton_silver" onclick="backcolor_silver()"></button>
-        <button class="backcolor_button backbutton_blue" onclick="backcolor_darkblue()"></button>
-        <button class="backcolor_button backbutton_lightskyblue" onclick="backcolor_lightskyblue()"></button>
-        <button class="backcolor_button backbutton_red" onclick="backcolor_red()"></button>
-        <button class="backcolor_button backbutton_orange" onclick="backcolor_orange()"></button>
-        <button class="backcolor_button backbutton_yellow" onclick="backcolor_yellow()"></button>
-        <button class="backcolor_button backbutton_green" onclick="backcolor_green()"></button>
-        <button class="backcolor_button backbutton_lime" onclick="backcolor_lime()"></button>
-        <button class="backcolor_button backbutton_purple" onclick="backcolor_purple()"></button>
-        <button class="backcolor_button backbutton_redpurple" onclick="backcolor_redpurple()"></button>
-        <button class="backcolor_button backbutton_bluepurple" onclick="backcolor_bluepurple()"></button>
-        <button class="backcolor_button backbutton_brown" onclick="backcolor_brown()"></button>
-        <button class="backcolor_button backbutton_pink" onclick="backcolor_pink()"></button>
-        <button class="backcolor_button backbutton_skincolor" onclick="backcolor_skincolor()"></button>
-        <button class="backcolor_button gradation backbutton_test" onclick="backcolor_test()"></button>
-        <button class="backcolor_button gradation backbutton_test2" onclick="backcolor_test2()"></button>
-        <button class="backcolor_button gradation backbutton_test3" onclick="backcolor_test3()"></button>
-        <button class="backcolor_button gradation backbutton_test4" onclick="backcolor_test4()"></button>
-    </div>
-    </div>
-
     <div class="taskbar">
         <span class="taskbar_blue"></span>
         <button class="blacktext bar_button hover" onclick="backcolormenu_open(),popupwindow_close()">C</button>
@@ -139,24 +132,46 @@
         <button class="blacktext bar_button hover">T</button>
         <button class="blacktext bar_button hover">T</button>
         <button class="blacktext bar_button hover">T</button>
-    </div>
 
-    <div class="program_menu border">
-        <span class="menu_bluebar">プログラム</span>
-        <button class="blacktext closebutton border hover2" onclick="programmenu_close()">X</button>
-        <button class="blacktext accessorybutton hover" onclick="appmenu_open()">アクセサリ</button>
-        <button class="blacktext accessorybutton2 hover" onclick="commandmenu_open(),startmenu_close()">コマンド</button>
-        <a class="accessory_icon" onclick="appmenu_open()"></a>
-        <a class="accessory_icon2" onclick="commandmenu_open(),startmenu_close()"></a>
-    </div>
 
-    <div class="app_menu border">
-        <span class="menu_bluebar">アプリ</span>
-        <button class="blacktext closebutton border hover2" onclick="appmenu_close()">X</button>
-        <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close()">メモ帳</button>
-        <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close()">電卓</button>
-        <a class="app_icon" onclick="memo_open(),startmenu_close()"></a>
-        <a class="app_icon2" onclick="calc_open(),startmenu_close()"></a>
+        <div class="css_menu border">
+            <span class="menu_bluebar">CSSの削除</span>
+            <button class="css_box border hover" onclick="stylebox()">CSSを削除する</button>
+            <button class="closebutton border hover2" onclick="cssmenu_close()">X</button>
+        </div>
+    
+        <div class="backcolor_menu border">
+            <span class="menu_bluebar">画面のプロパティ</span>
+            <button class="closebutton border hover2" onclick="backcolormenu_close()">X</button>
+            <button class="blacktext backcolor_reset hover" onclick="backcolor_reset()">reset</button>
+    
+            <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()"></input>
+            <p class="backcolor_text">表示を2色にする。</p>
+            <button class="backcolor_button backbutton_black" onclick="backcolor_black()"></button>
+            <button class="backcolor_button backbutton_gray" onclick="backcolor_gray()"></button>
+    
+            <div class="colorbtn">
+            <button class="backcolor_button backbutton_silver" onclick="backcolor_silver()"></button>
+            <button class="backcolor_button backbutton_blue" onclick="backcolor_darkblue()"></button>
+            <button class="backcolor_button backbutton_lightskyblue" onclick="backcolor_lightskyblue()"></button>
+            <button class="backcolor_button backbutton_red" onclick="backcolor_red()"></button>
+            <button class="backcolor_button backbutton_orange" onclick="backcolor_orange()"></button>
+            <button class="backcolor_button backbutton_yellow" onclick="backcolor_yellow()"></button>
+            <button class="backcolor_button backbutton_green" onclick="backcolor_green()"></button>
+            <button class="backcolor_button backbutton_lime" onclick="backcolor_lime()"></button>
+            <button class="backcolor_button backbutton_purple" onclick="backcolor_purple()"></button>
+            <button class="backcolor_button backbutton_redpurple" onclick="backcolor_redpurple()"></button>
+            <button class="backcolor_button backbutton_bluepurple" onclick="backcolor_bluepurple()"></button>
+            <button class="backcolor_button backbutton_brown" onclick="backcolor_brown()"></button>
+            <button class="backcolor_button backbutton_pink" onclick="backcolor_pink()"></button>
+            <button class="backcolor_button backbutton_skincolor" onclick="backcolor_skincolor()"></button>
+            <button class="backcolor_button gradation backbutton_test" onclick="backcolor_test()"></button>
+            <button class="backcolor_button gradation backbutton_test2" onclick="backcolor_test2()"></button>
+            <button class="backcolor_button gradation backbutton_test3" onclick="backcolor_test3()"></button>
+            <button class="backcolor_button gradation backbutton_test4" onclick="backcolor_test4()"></button>
+        </div>
+        </div>
+
     </div>
 
     <div class="command_menu border">
@@ -164,7 +179,7 @@
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
     <form method="get" name="mail_form" onsubmit="return false;">
-        <input type="text" class="textcommand_area border" name="mail" placeholder="Windows95beta1.1">
+        <input type="text" class="textcommand_area border" name="mail" placeholder="Windows95">
         <input type="submit" class="textcommand_area border hover" value="実行" onclick="check()">
     </form>
     </div>
@@ -212,19 +227,11 @@
         <button class="calc button_calc" onclick="update( '' ) " >CLR</button>
     </div>
 
-
-    <div class="setting_menu border">
-        <span class="menu_bluebar">設定</span>
-        <button class="blacktext closebutton border hover2" onclick="settingmenu_close()">X</button>
-        <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
-        <a class="device_icon" onclick="controlpanel_open(),startmenu_close()"></a>
-    </div>
-
     <div class="controlpanel">
         <div class="controlpanel_window border">
             <span class="menu_bluebar">　　コントロールパネル</span>
             <span class="controlpanel_white border"></span>
-            <a class="controlpanel_text" onclick="testalert()">テスト</a>
+            <a class="controlpanel_text hover" onclick="testalert()">テスト</a>
             <span class="controlpanel_icon"></span>
             <a class="controlpanel_icon2" onclick="testalert()"></a>
             <button class="blacktext closebutton border hover2" onclick="task_content2_close(),controlpanel_close()">X</button>
@@ -247,16 +254,16 @@
             <span class="menu_bluebar">　　マイコンピュータ</span>
             <span class="mycomputer_white border"></span>
             <span class="mycomputer_icon"></span>
-            <a class="mycomputer_text2" onclick="controlpanel_open(),mycomputer_close()">コントロールパネル</a>
+            <a class="mycomputer_text2 hover" onclick="controlpanel_open(),mycomputer_close()">コントロールパネル</a>
             <a class="mycomputer_icon2" onclick="controlpanel_open(),mycomputer_close()"></a>
-            <a class="mycomputer_text3" href="https://google.com">Google</a>
+            <a class="mycomputer_text3 hover" href="https://google.com">Google</a>
             <a class="mycomputer_icon3" href="https://google.com"></a>
-            <a class="mycomputer_text4" href="https://yahoo.co.jp">Yahoo!</a>
+            <a class="mycomputer_text4 hover" href="https://yahoo.co.jp">Yahoo!</a>
             <a class="mycomputer_icon4" href="https://yahoo.co.jp"></a>
-            <a class="mycomputer_text5" href="https://youtube.com">Youtube</a>
+            <a class="mycomputer_text5 hover" href="https://youtube.com">Youtube</a>
             <a class="mycomputer_icon5" href="https://youtube.com"></a>
 
-            <a class="mycomputer_text6" onclick="tetris_open(),mycomputer_close()">テトリス(改)</a>
+            <a class="mycomputer_text6 hover" onclick="tetris_open(),mycomputer_close()">テトリス(改)</a>
             <a class="mycomputer_icon6" onclick="tetris_open(),mycomputer_close()"></a>
 
             <button class="blacktext closebutton border hover2" onclick="task_content1_close(),mycomputer_close()">X</button>
@@ -936,7 +943,7 @@
             position: absolute;
             bottom: 40px;
             left: 1px;
-            z-index: 10;
+            z-index: 99999;
         }
         .finish {
             background: darkgray;
@@ -953,7 +960,7 @@
             width: 150px;
             height: 70px;
             position: absolute;
-            top: 500px;
+            bottom: 45px;
             right: 31px;
         }
         .css_box {
@@ -971,11 +978,11 @@
             width: 150px;
             height: 300px;
             position: absolute;
-            top: 270px;
+            bottom: 45px;
             right: 31px;
         }
         .menu_bluebar {
-            background: linear-gradient(90deg, darkblue, blue);
+            background: darkblue;
             color: white;
             width: 100%;
             height: 25px;
@@ -996,6 +1003,7 @@
             position: absolute;
             bottom: 0px;
             border-top: solid 2px white;
+            z-index: 99999;
         }
 
         a.underbarcontent {
@@ -1460,8 +1468,8 @@
             width: 130px;
             height: 80px;
             position: absolute;
-            top: 453px;
-            left: 145px;
+            bottom: 70px;
+            left: 142px;
         }
         .accessorybutton {
             background: darkgray;
@@ -1499,8 +1507,8 @@
             width: 130px;
             height: 80px;
             position: absolute;
-            top: 453px;
-            left: 145px;
+            bottom: 70px;
+            left: 142px;
         }
         .appbutton {
             background: darkgray;
@@ -1523,8 +1531,8 @@
             width: 130px;
             height: 50px;
             position: absolute;
-            top: 537px;
-            left: 145px;
+            bottom: 40px;
+            left: 142px;
         }
         .devicebutton {
             background: darkgray;
@@ -2502,10 +2510,10 @@
 
 
     function check(){
-        if (mail_form.mail.value === "Windows95beta1.1"){
+        if (mail_form.mail.value === "Windows95"){
             //条件に一致する場合(空の場合)
             alert('コマンドが実行されました！');
-            window.location = 'windows95.html';
+            location.reload();
         }else{
             //条件に一致しない場合(入力されている場合)
             alert('コマンドが正しくありません！');
