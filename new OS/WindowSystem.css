@@ -34,6 +34,10 @@ audio {
     display: none;
 }
 
+.windows {
+    display: none;
+}
+
 .medium_window {
     background: linear-gradient(0deg, #339999, #6699FF);
     width: 600px;
@@ -404,6 +408,26 @@ a {
     position: absolute;
     left: 455px;
 }
+.files7 {
+    position: absolute;
+    left: 5px;
+    top: 85px;
+}
+.files8 {
+    position: absolute;
+    left: 95px;
+    top: 85px;
+}
+.files9 {
+    position: absolute;
+    left: 185px;
+    top: 85px;
+}
+.files10 {
+    position: absolute;
+    left: 275px;
+    top: 85px;
+}
 
 .taskbar {
     display: block;
@@ -489,6 +513,7 @@ a {
     left: 7px;
     border: solid 1px silver;
     border-radius: 3px;
+    box-shadow: 0px 0px 4px gray;
 }
 .colorbtn {
     display: inline;
@@ -560,6 +585,26 @@ a {
     top: 262px;
     left: 0px;
 }
+.backcolor_menu {
+    display: none;
+    background: linear-gradient(0deg, #111111, #444444);
+    color: white;
+    font-size: medium;
+    width: 160px;
+    height: 250px;
+    position: relative;
+    bottom: 277px;
+    right: 31px;
+    box-shadow: 3px 3px 6px black;
+}
+.backcolor_reset {
+    height: 20px;
+    font-size: small;
+    position: absolute;
+    bottom: 5px;
+    right: 2px;
+    border-radius: 0;
+}
 
 .start_button {
     background: linear-gradient(0deg, #0066FF 1%, #003366 50%, #0033CC, whitesmoke);
@@ -614,27 +659,6 @@ a {
     box-shadow: 0px 0px 0px 2px skyblue inset;
 }
 
-.backcolor_menu {
-    display: none;
-    background: linear-gradient(0deg, #111111, #444444);
-    color: white;
-    font-size: medium;
-    width: 160px;
-    height: 250px;
-    position: relative;
-    top: -280px;
-    right: 31px;
-    box-shadow: 3px 3px 6px black;
-}
-.backcolor_reset {
-    width: 40px;
-    height: 20px;
-    font-size: small;
-    position: absolute;
-    bottom: 5px;
-    right: 2px;
-    border-radius: 0;
-}
 .menu_bluebar {
     background: linear-gradient(0deg, #6699FF, skyblue, whitesmoke);
     color: black;
@@ -791,7 +815,6 @@ a.underbarcontent {
 }
 
 .file_text {
-    color: black;
     font-size: x-small;
     margin-left: 0px;
     width: 60px;
