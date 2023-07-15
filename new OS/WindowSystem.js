@@ -52,7 +52,9 @@ const element = document.getElementById('user');
     const task_soft = document.querySelector(".task_soft");
     const error = document.querySelector(".error");
     const help = document.querySelector(".help");
-    const calendar = document.querySelector(".calendar")
+    const calendar = document.querySelector(".calendar");
+    const btcolor = document.getElementById("backcolor");
+    const windows = document.querySelector(".windows");
 
     function twoDigit(num) {
             let ret;
@@ -457,6 +459,7 @@ function testalert(){
         updown_menu.style.display = "none";
         help.style.display = "none";
         calendar.style.display = "none";
+        windows.style.display = "none";
     }
     
     function startmenu_close(){
@@ -606,6 +609,17 @@ function testalert(){
         caload();
     }
 
+    function windows_close(){
+        windows.style.display = "none";
+    }
+    function windows_open(){
+        windows.style.display = "block";
+    }
+
+    function testcolor(){
+        btcolor.style.background = "black";
+    }
+
     function check(){
         if (mail_form.mail.value === "Reload"){
             //条件に一致する場合(空の場合)
@@ -637,6 +651,7 @@ function testalert(){
     draggable(document.querySelector('.drag18'));
     draggable(document.querySelector('.drag19'));
     draggable(document.querySelector('.drag20'));
+    draggable(document.querySelector('.drag21'));
 
     function draggable(target) {
         target.onmousedown = function(event) {
