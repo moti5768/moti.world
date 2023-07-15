@@ -49,7 +49,7 @@
 
     <div class="title">
         <div class="titleline"></div>
-        <p class="bold">WindowSystem&emsp;&emsp;&emsp;</p>
+        <p class="bold" onclick="windows_open()">WindowSystem&emsp;&emsp;&emsp;</p>
     </div>
 
     <!-- statmenu -->
@@ -133,7 +133,7 @@
         <div class="backcolor_menu border shape" style="opacity: 0.95;">
             <span class="menu_graybar">画面のプロパティ</span>
             <button class="closebutton hover2" onclick="backcolormenu_close()">X</button>
-            <a class="backcolor_reset hover" onclick="backcolor_reset()">reset</a>
+            <a class="backcolor_reset hover" onclick="backcolor_reset()">リセット</a>
     
             <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()"></input>
             <p class="backcolor_text white">表示を2色にする。</p>
@@ -296,29 +296,80 @@
             <span class="menu_bluebar">&emsp;マイコンピュータ</span>
             <span class="medium_window_white"></span>
             <div class="files1">
-            <a class="file_text hover" onclick="controlpanel_open()">コントロールパネル</a>
+            <a class="file_text blacktext hover" onclick="controlpanel_open()">コントロールパネル</a>
             <a class="file_icon hover" onclick="controlpanel_open()"></a>
             </div>
             <div class="files2">
-                <a class="file_text hover" onclick="updownmenu_open()">拡大縮小</a>
+                <a class="file_text blacktext hover" onclick="updownmenu_open()">拡大縮小</a>
                 <a class="file_icon hover" onclick="updownmenu_open()"></a>
             </div>
             <div class="files3">
-            <a class="file_text hover" href="https://google.com">Google</a>
+            <a class="file_text blacktext hover" href="https://google.com">Google</a>
             <a class="file_icon hover" href="https://google.com"></a>
             </div>
             <div class="files4">
-            <a class="file_text hover" href="https://yahoo.co.jp">Yahoo!</a>
+            <a class="file_text blacktext hover" href="https://yahoo.co.jp">Yahoo!</a>
             <a class="file_icon hover" href="https://yahoo.co.jp"></a>
             </div>
             <div class="files5">
-            <a class="file_text hover" href="https://youtube.com">Youtube</a>
+            <a class="file_text blacktext hover" href="https://youtube.com">Youtube</a>
             <a class="file_icon hover" href="https://youtube.com"></a>
             </div>
             <a class="blacktext closebutton hover2" onclick="mycomputer_close()">X</a>
             <a class="blacktext taskbutton hover" onclick="mycomputer_close()">一</a>
         </div>
     </div>
+
+    <div class="windows">
+        <div class="drag21 shape medium_window border" style="opacity: 0.95;">
+            <span class="menu_bluebar" style="color: green;">&emsp;WindowSystem</span>
+            <span class="medium_window_white"></span>
+            <div class="files1" style="color: red;">
+            <a class="file_text hover" onclick="netmenu_open()">ネットワーク</a>
+            <a class="file_icon hover" onclick="netmenu_open()"></a>
+            </div>
+            <div class="files2" style="color: red;">
+            <a class="file_text hover" onclick="updownmenu_open()">拡大縮小</a>
+            <a class="file_icon hover" onclick="updownmenu_open()"></a>
+            </div>
+            <div class="files3" style="color: red;">
+            <a class="file_text hover" onclick="calc_open()">電卓</a>
+            <a class="file_icon hover" onclick="calc_open()"></a>
+            </div>
+            <div class="files4" style="color: red;">
+            <a class="file_text hover" onclick="memo_open()">メモ帳</a>
+            <a class="file_icon hover" onclick="memo_open()"></a>
+            </div>
+            <div class="files5" style="color: red;">
+            <a class="file_text hover" onclick="paint_open()">ペイント</a>
+            <a class="file_icon hover" onclick="paint_open()"></a>
+            </div>
+            <div class="files6" style="color: red;">
+            <a class="file_text hover" onclick="mycomputer_open()">マイコンピュータ</a>
+            <a class="file_icon hover" onclick="mycomputer_open()"></a>
+            </div>
+            <div class="files7" style="color: red;">
+            <a class="file_text hover" onclick="controlpanel_open()">コントロールパネル</a>
+            <a class="file_icon hover" onclick="controlpanel_open()"></a>
+            </div>
+            <div class="files8" style="color: red;">
+            <a class="file_text hover" onclick="sound_open()">サウンド</a>
+            <a class="file_icon hover" onclick="sound_open()"></a>
+            </div>
+            <div class="files9" style="color: red;">
+            <a class="file_text hover" onclick="calendar_open()">カレンダー</a>
+            <a class="file_icon hover" onclick="calendar_open()"></a>
+            </div>
+            <div class="files10" style="color: red;">
+            <a class="file_text hover" onclick="server_open()">スクリーンセーバー</a>
+            <a class="file_icon hover" onclick="server_open()"></a>
+            </div>
+
+            <a class="blacktext closebutton hover2" style="color: blue;" onclick="windows_close()">X</a>
+            <a class="blacktext taskbutton hover" style="color: blue;" onclick="windows_close()">一</a>
+        </div>
+    </div>
+
 
     <div class="network">
         <div class="drag9 shape small_window border" style="opacity: 0.95;">
@@ -369,7 +420,7 @@
 
         <div class="screenserver" id="wrapper">
             <canvas id="waveCanvas"></canvas>
-            <p class="white bold bigtext server">WindowSystem</p>
+            <p class="white bold bigtext server">WindowSystem<br><span class="medium" style="position: absolute; bottom: -10px; right: 0px;">screen server</span></p>
             <a class="closebutton white border hover" style="z-index: 99999;" onclick="server_close()">X</a>
         </div>
 
