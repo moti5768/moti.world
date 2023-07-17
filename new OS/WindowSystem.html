@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="WindowSystem.css">
     <title>WindowSystem</title>
 </head>
-<body id="backcolor">
+<body id="backcolor" onload="testalert()">
     <div class="screen" id="test">
         <span class="screencolor"></span>
         <p class="alerttext"></p>
@@ -41,7 +41,6 @@
                 <br>
                 TEST
                 </p>
-                <p class="small" id="user"></p>
         </div>
         <span class="menu_bluebar">ようこそ</span>
         <a class="blacktext closebutton hover2" onclick="popupwindow_close()">X</a>
@@ -190,7 +189,7 @@
                 <div class="error_window_white">
                 このページを閉じてもよろしいですか？
                 </div>
-                <button class="btn bottom" onclick="error_close()">キャンセル</button>
+                <button class="btn bottom hover" onclick="error_close()" style="position: absolute; bottom: 10px; left:15px;">キャンセル</button>
             </div>
         </div>
     </div>
@@ -364,6 +363,10 @@
             <a class="file_text hover" onclick="server_open()">スクリーンセーバー</a>
             <a class="file_icon hover" onclick="server_open()"></a>
             </div>
+            <div class="files11" style="color: red;">
+            <a class="file_text hover" onclick="debug_open()">debug</a>
+            <a class="file_icon hover" onclick="debug_open()"></a>
+            </div>
 
             <a class="blacktext closebutton hover2" style="color: blue;" onclick="windows_close()">X</a>
             <a class="blacktext taskbutton hover" style="color: blue;" onclick="windows_close()">一</a>
@@ -473,6 +476,21 @@
     </div>
     </div>
     <!-- !カレンダー -->
+    
+    <div class="debug">
+        <div class="drag22 shape medium_window border" style="opacity: 0.95;">
+        <div class="medium_window_white">
+            <div class="debug_screen small">
+                <p class="small" style="color: lime;">NAME: WindowSystem<br>
+                BASE: Windows95 homeEdition1.0<br>
+                Version: 1.0.0</p>
+                <p id="user"></p>
+            </div>
+        </div>
+        <span class="menu_bluebar">debug</span>
+        <a class="blacktext closebutton hover2" onclick="debug_close()">X</a>
+    </div>
+    </div>
 
     <div class="Credit">
         <p class="bold Credit_text">WindowSystem</p>
@@ -503,7 +521,7 @@
         </div>
 
         <span class="task_border"></span>
-    <div class="task_soft">
+        <div class="task_soft">
         <a class="soft hover3" onclick="mycomputer_open()">&nbsp;mycomputer&nbsp;</a>
         <a class="soft hover3" onclick="controlpanel_open()">&nbsp;controlpanel&nbsp;</a>
         <a class="soft hover3" onclick="calc_open()">&nbsp;calc&nbsp;</a>
@@ -527,6 +545,7 @@
     </div>
 
     <script src="WindowSystem.js"></script>
+                
     </body>
     </html>
     
