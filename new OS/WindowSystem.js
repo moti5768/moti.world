@@ -1,3 +1,8 @@
+const element = document.getElementById('user');
+        element.insertAdjacentHTML('afterend','<p class="white user">BROWSER: '+ navigator.appName + '<br>' 
+            + 'VERSION: ' + navigator.appVersion +  '<br>' + 'USER: ' + navigator.userAgent +  '<br>' + 'WIDTH: ' + screen.width +  '<br>' 
+            + 'HEIGHT: ' + screen.height +  '<br>' + 'BIT: '  + screen.colorDepth + '</p>');
+
 if(navigator.userAgent.match(/(iPhone|iPod|Android.*Mobile)/i)){
     no();
 }else{
@@ -6,7 +11,7 @@ if(navigator.userAgent.match(/(iPhone|iPod|Android.*Mobile)/i)){
     alerttext.textContent = "";
 }
 function no(){
-    alert("お使いの端末がPCではないため、ご利用できません");
+    alert("お使いの端末は対応していません!");
     no();
 }
 function passcheck(){
@@ -20,10 +25,39 @@ if (pass_form.pass.value === "0000"){
 }
 }
 
-const element = document.getElementById('user');
-        element.insertAdjacentHTML('afterend','<p class="white user">BROWSER: '+ navigator.appName + '<br>' 
-            + 'VERSION: ' + navigator.appVersion +  '<br>' + 'USER: ' + navigator.userAgent +  '<br>' + 'WIDTH: ' + screen.width +  '<br>' 
-            + 'HEIGHT: ' + screen.height +  '<br>' + 'BIT: '  + screen.colorDepth + '</p>');
+
+(function(){
+    // 5分
+    const sec = 300;
+    const events = ['keydown', 'mousemove', 'click'];
+    let timeoutId;
+
+    // タイマー設定
+    function setTimer() {
+        timeoutId = setTimeout(server, sec * 1000);
+    }
+    function resetTimer() {
+        clearTimeout(timeoutId);
+        setTimer();
+    }
+
+    // イベント設定
+    function setEvents(func) {
+        let len = events.length;
+        while (len--) {
+            addEventListener(events[len], func, false);
+        }
+    }
+
+    // ログアウト
+    function server() {
+        server_open();
+        alert("一定時間放置されてます！");
+    }
+
+    setTimer();
+    setEvents(resetTimer);
+})();
             
     const pass = document.querySelector('.pass_area');
     const popupwrap = document.getElementsByClassName('popupwrap');
@@ -55,6 +89,7 @@ const element = document.getElementById('user');
     const calendar = document.querySelector(".calendar");
     const btcolor = document.getElementById("backcolor");
     const windows = document.querySelector(".windows");
+    const debug = document.querySelector(".debug");
 
     function twoDigit(num) {
             let ret;
@@ -225,8 +260,10 @@ const element = document.getElementById('user');
         let MemoData = "";
         if(!localStorage.getItem('MemoData')) {
             MemoData = "メモは登録されていません。";
+            document.getElementById("inputlength").innerHTML = MemoData.length + "文字";
         } else {
             MemoData = localStorage.getItem('MemoData');
+            document.getElementById("inputlength").innerHTML = MemoData.length + "文字";
         }
         document.form1.Memo.value = MemoData;
     }
@@ -237,9 +274,13 @@ const element = document.getElementById('user');
     }
     document.getElementById('cleartextbtn').addEventListener('click',function (){
         document.getElementsByClassName("Memo")[0].value = '';
+        resetShowLength();
     });
     function ShowLength( str ) {
         document.getElementById("inputlength").innerHTML = str.length + "文字";
+    }
+    function resetShowLength() {
+        document.getElementById("inputlength").innerHTML = "0文字";
     }
 
     function updates( _v ) // input tag を更新する関数
@@ -460,6 +501,7 @@ function testalert(){
         help.style.display = "none";
         calendar.style.display = "none";
         windows.style.display = "none";
+        debug.style.display = "none";
     }
     
     function startmenu_close(){
@@ -615,6 +657,13 @@ function testalert(){
     function windows_open(){
         windows.style.display = "block";
     }
+    
+    function debug_close(){
+        debug.style.display = "none";
+    }
+    function debug_open(){
+        debug.style.display = "block";
+    }
 
     function testcolor(){
         btcolor.style.background = "black";
@@ -652,6 +701,7 @@ function testalert(){
     draggable(document.querySelector('.drag19'));
     draggable(document.querySelector('.drag20'));
     draggable(document.querySelector('.drag21'));
+    draggable(document.querySelector('.drag22'));
 
     function draggable(target) {
         target.onmousedown = function(event) {
@@ -722,7 +772,6 @@ function testalert(){
         document.exitFullscreen() // HTML5 Fullscreen API
       }
     };
-
 
     // 描画用フラグ  true: 描画中   false: 描画中でない
 var flgDraw = false;
