@@ -183,6 +183,19 @@ a {
     text-decoration: none;
 }
 
+.debug {
+    display: none;
+}
+.debug_screen {
+    width: 100%;
+    height: 100%;
+    background-color: black;
+    color: white;
+}
+#user {
+    position: absolute;
+}
+
 .screen {
     display: none;
 }
@@ -426,6 +439,11 @@ a {
 .files10 {
     position: absolute;
     left: 275px;
+    top: 85px;
+}
+.files11 {
+    position: absolute;
+    left: 365px;
     top: 85px;
 }
 
