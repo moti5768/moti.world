@@ -179,7 +179,7 @@
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
     <form method="get" name="mail_form" onsubmit="return false;">
-        <input type="text" class="textcommand_area border" name="mail" placeholder="Windows95">
+        <input type="text" class="textcommand_area border" name="mail" placeholder="コマンドを入力">
         <input type="submit" class="textcommand_area border hover" value="実行" onclick="check()">
     </form>
     </div>
@@ -2517,11 +2517,17 @@
             //条件に一致する場合(空の場合)
             alert('コマンドが実行されました！');
             location.reload();
+        }else if (mail_form.mail.value === "help"){
+            //条件に一致する場合(空の場合)
+            alert('コマンド一覧  shutdown: シャットダウン, Credit: クレジット,');
         }else if (mail_form.mail.value === "shutdown"){
             //条件に一致する場合(空の場合)
-            alert('コマンドが実行されました！');
+            alert('シャットダウンします');
             screen_close();
             allwindow_close();
+        }else if (mail_form.mail.value === "Credit"){
+            //条件に一致する場合(空の場合)
+            Credit();
         }else{
             //条件に一致しない場合(入力されている場合)
             alert('コマンドが正しくありません！');
