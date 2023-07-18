@@ -2517,6 +2517,11 @@
             //条件に一致する場合(空の場合)
             alert('コマンドが実行されました！');
             location.reload();
+        }else if (mail_form.mail.value === "shutdown"){
+            //条件に一致する場合(空の場合)
+            alert('コマンドが実行されました！');
+            screen_close();
+            allwindow_close();
         }else{
             //条件に一致しない場合(入力されている場合)
             alert('コマンドが正しくありません！');
