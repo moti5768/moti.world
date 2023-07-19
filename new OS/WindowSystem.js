@@ -3,6 +3,15 @@ const element = document.getElementById('user');
             + 'VERSION: ' + navigator.appVersion +  '<br>' + 'USER: ' + navigator.userAgent +  '<br>' + 'WIDTH: ' + screen.width +  '<br>' 
             + 'HEIGHT: ' + screen.height +  '<br>' + 'BIT: '  + screen.colorDepth + '</p>');
 
+setInterval(() => {
+    navigator.getBattery().then(function(battery) {
+      document.getElementById('level').innerHTML = battery.level;
+      document.getElementById('charging').innerHTML = battery.charging;
+      document.getElementById('chargingTime').innerHTML = battery.chargingTime;
+      document.getElementById('dischargingTime').innerHTML = battery.dischargingTime;
+    });
+}, 100);
+
 if(navigator.userAgent.match(/(iPhone|iPod|Android.*Mobile)/i)){
     no();
 }else{
@@ -85,11 +94,13 @@ if (pass_form.pass.value === "0000"){
     const underbar = document.querySelector(".underbar");
     const task_soft = document.querySelector(".task_soft");
     const error = document.querySelector(".error");
+    const error2 = document.querySelector(".error2");
     const help = document.querySelector(".help");
     const calendar = document.querySelector(".calendar");
     const btcolor = document.getElementById("backcolor");
     const windows = document.querySelector(".windows");
     const debug = document.querySelector(".debug");
+    const stopwatch = document.querySelector(".stopwatch");
 
     function twoDigit(num) {
             let ret;
@@ -207,22 +218,19 @@ if (pass_form.pass.value === "0000"){
         function screen_start() {
             document.getElementsByClassName("pass")[0].value = '';
             pass.style.display = "none";
-            let user = document.querySelector(".user");
-            user.style.display = "block";
             document.getElementById("backcolor").style.backgroundColor = "black";
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.add('active');
             let screen = document.getElementsByClassName('screen');
             screen[0].classList.remove('active');
         setTimeout(function() {
-            let user = document.querySelector(".user");
-            user.style.display = "none";
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.remove('active');
             let screen_start2 = document.getElementsByClassName('screen_start');
             screen_start2[0].classList.add('fadeout');
             document.getElementById("backcolor").style.backgroundColor = "";
         setTimeout(function() {
+            error2.style.display = "none";
             const screen_open = document.querySelector(".Windows95_group");
             screen_open.style.display = "block";
         }, 0);
@@ -502,6 +510,8 @@ function testalert(){
         calendar.style.display = "none";
         windows.style.display = "none";
         debug.style.display = "none";
+        stopwatch.style.display = "none";
+        error2.style.display = "none";
     }
     
     function startmenu_close(){
@@ -636,6 +646,10 @@ function testalert(){
         error.style.display = "block";
     }
 
+    function error2_open(){
+        error2.style.display = "block";
+    }
+
     function help_close(){
         help.style.display = "none";
     }
@@ -665,19 +679,86 @@ function testalert(){
         debug.style.display = "block";
     }
 
-    function testcolor(){
-        btcolor.style.background = "black";
+    function stopwatch_close(){
+        stopwatch.style.display = "none";
+    }
+    function stopwatch_open(){
+        stopwatch.style.display = "block";
     }
 
     function check(){
         if (mail_form.mail.value === "Reload"){
-            //条件に一致する場合(空の場合)
-            alert('コマンドが実行されました！');
+            document.getElementsByClassName("textcommand_area")[0].value = '';
             window.location = '';
+        }else if (mail_form.mail.value === "shutdown"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            screen_close();
+            allwindow_close();
+            playsound2();
+        }else if (mail_form.mail.value === "debug"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            debug_open();
+        }else if (mail_form.mail.value === "setting"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            settingmenu_open();
+        }else if (mail_form.mail.value === "Storage_clear"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            localStorage.clear();
+            sessionStorage.clear();
+        }else if (mail_form.mail.value === "windows95_color"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            document.getElementById("backcolor").style.background = "teal";
+        }else if (mail_form.mail.value === "gra_color1"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            const box = document.getElementById('backcolor');
+            box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkblue), color-stop(1, blue))';
+        }else if (mail_form.mail.value === "gra_color2"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            const box = document.getElementById('backcolor');
+            box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkred), color-stop(1, red))';
+        }else if (mail_form.mail.value === "gra_color3"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            const box = document.getElementById('backcolor');
+            box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, yellow), color-stop(1, green))';
+        }else if (mail_form.mail.value === "gra_color4"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            const box = document.getElementById('backcolor');
+            box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, black), color-stop(1, white))';
+        }else if (mail_form.mail.value === "gra_color-1"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            const box = document.getElementById('backcolor');
+            box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, black), color-stop(0.5, white))';
+        }else if (mail_form.mail.value === "backcolor_reset"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            const box = document.getElementById('backcolor');
+            box.style.background = '';
+        }else if (mail_form.mail.value === "screen_full"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            full();
+        }else if (mail_form.mail.value === "screen_reset"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            min();
+        }else if (mail_form.mail.value === "css_remove"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            document.getElementById("backcolor").style.backgroundColor = "white";
+        const style = document.querySelectorAll("link");
+        style.forEach((s) => {
+            s.remove();
+        })
+        }else if (mail_form.mail.value === "windowsystem"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            document.getElementById("backcolor").style.background = "darkblue";
+            allwindow_close();
+            error2_open();
+            setTimeout('screen_close(),playsound2()',1000);
+            setTimeout('screen_start(),playsound(),backcolor_reset()',11500);
         }else{
-            //条件に一致しない場合(入力されている場合)
             alert('コマンドが正しくありません！');
         }
+    }
+
+    function helpcommand(){
+        alert("1.Reload 2.shutdown 3.debug 4.setting 5.Storage_clear 6.windows95_color 7.gra_color1 (1-4) 8.backcolor_reset 9.css_remove 10.screen_full 11.screen_reset" );
     }
     
     draggable(document.querySelector('.drag1'));
@@ -702,6 +783,8 @@ function testalert(){
     draggable(document.querySelector('.drag20'));
     draggable(document.querySelector('.drag21'));
     draggable(document.querySelector('.drag22'));
+    draggable(document.querySelector('.drag23'));
+    
 
     function draggable(target) {
         target.onmousedown = function(event) {
@@ -746,7 +829,7 @@ function testalert(){
                
     let ele = document.documentElement;
 
-    function hoge() {
+    function full() {
 
        // 全画面表示      
       if (ele.webkitRequestFullscreen) {
@@ -762,7 +845,7 @@ function testalert(){
 
     };
 
-    function foo() {
+    function min() {
       // 全画面表示　終了
       if (ele.webkitRequestFullscreen) {
         document.webkitCancelFullScreen() // Chrome, Safari
@@ -1041,3 +1124,55 @@ function createProcess(year, month) {
     }
     return calendar;
 }
+
+
+const time = document.getElementById('time');
+const startButton = document.getElementById('start');
+const stopButton = document.getElementById('stop');
+const resetButton = document.getElementById('reset');
+
+// 開始時間
+let startTime;
+// 停止時間
+let stopTime = 0;
+// タイムアウトID
+let timeoutID;
+
+// 時間を表示する関数
+function displayTime() {
+  const currentTime = new Date(Date.now() - startTime + stopTime);
+  const h = String(currentTime.getHours()-9).padStart(2, '0');
+  const m = String(currentTime.getMinutes()).padStart(2, '0');
+  const s = String(currentTime.getSeconds()).padStart(2, '0');
+  const ms = String(currentTime.getMilliseconds()).padStart(3, '0');
+
+  time.textContent = `${h}:${m}:${s}.${ms}`;
+  timeoutID = setTimeout(displayTime, 10);
+}
+
+// スタートボタンがクリックされたら時間を進める
+startButton.addEventListener('click', () => {
+  startButton.disabled = true;
+  stopButton.disabled = false;
+  resetButton.disabled = true;
+  startTime = Date.now();
+  displayTime();
+});
+
+// ストップボタンがクリックされたら時間を止める
+stopButton.addEventListener('click', function() {
+  startButton.disabled = false;
+  stopButton.disabled = true;
+  resetButton.disabled = false;
+  clearTimeout(timeoutID);
+  stopTime += (Date.now() - startTime);
+});
+
+// リセットボタンがクリックされたら時間を0に戻す
+resetButton.addEventListener('click', function() {
+  startButton.disabled = false;
+  stopButton.disabled = true;
+  resetButton.disabled = true;
+  time.textContent = '00:00:00.000';
+  stopTime = 0;
+});
