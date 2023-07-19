@@ -106,6 +106,10 @@ audio {
     display: none;
 }
 
+.error2 {
+    display: none;
+}
+
 .medium_window_white {
     display: inline;
     background: white;
@@ -444,6 +448,11 @@ a {
 .files11 {
     position: absolute;
     left: 365px;
+    top: 85px;
+}
+.files12 {
+    position: absolute;
+    left: 455px;
     top: 85px;
 }
 
@@ -1004,8 +1013,19 @@ span.timer2 {
     left: 5px;
 }
 .submitbtn {
+    background: linear-gradient(0deg, black, dimgray);
+    color: white;
+    border: solid 1px gray;
     position: absolute;
     top: 25px;
+    right: 10px;
+}
+.submitbtn2 {
+    background: linear-gradient(0deg, black, dimgray);
+    color: white;
+    border: solid 1px gray;
+    position: absolute;
+    top: 55px;
     right: 10px;
 }
 
@@ -1014,7 +1034,7 @@ span.timer2 {
     display: none;
     background: linear-gradient(0deg, #222222, #666666);
     width: 120px;
-    height: 120px;
+    height: 140px;
     position: absolute;
     bottom: 45px;
     left: 120px;
@@ -1228,7 +1248,7 @@ textarea {
 }
 
 .task_border {
-    width: 60%;
+    width: 61%;
     height: 35px;
     position: absolute;
     right: 0px;
@@ -1244,7 +1264,7 @@ textarea {
     font-size: small;
     font-weight: bold;
     position: absolute;
-    right: 23%;
+    right: 300px;
     top: 1px;
     z-index: 99997;
 }
@@ -1426,4 +1446,38 @@ td.today {
 #next {
     float: right;
 }
+
+.stopwatch {
+    display: none;
+    position: absolute;
+}
+#time {
+    position: relative;
+    top: 50px;
+    background: whitesmoke;
+    color: dimgray;
+    font-size: 3rem;
+    text-align: center;
+    padding: 1rem;
+    border-radius: 1rem;
+    box-shadow: 0 0 20px black;
+    margin: .5rem;
+  }
   
+  #buttons {
+    position: relative;
+    top: 100px;
+    border: solid 2px skyblue;
+    font-size: 3rem;
+    text-align: center;
+    box-shadow: 0px 0px 10px black;
+  }
+  
+  #start, #stop, #reset {
+    background: linear-gradient(0deg, silver, whitesmoke, white);
+    border:  solid 2px gray;
+    width: 20%;
+    font-size: 30px;
+    border-radius: 5px;
+    box-shadow: 0 0 5px black;
+  }
