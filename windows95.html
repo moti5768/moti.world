@@ -179,7 +179,7 @@
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
     <form method="get" name="mail_form" onsubmit="return false;">
-        <input type="text" class="textcommand_area border" name="mail" placeholder="コマンドを入力">
+        <input type="text" class="textcommand_area border" name="mail" placeholder="Windows95">
         <input type="submit" class="textcommand_area border hover" value="実行" onclick="check()">
     </form>
     </div>
@@ -339,6 +339,44 @@
     <button class="blacktext reload_button border hover3" onclick="reloads()">リロード</button>
     <button class="blacktext start_button border hover" onclick="tetris.startGame(),mereset()">&nbsp;START(バグあり)&nbsp;</button>
     </div>
+
+
+
+    <div class="bom border">
+        <span class="menu_bluebar">マインスイーパー(試験的)</span>
+        <div id="setting">
+            W
+            <input type="number" id="w" value="9" min="2" max="50">
+            H
+            <input type="number" id="h" value="9" min="2" max="25">
+            B
+            <input type="number" id="b" value="10" min="1" max="1250">
+            <span class="bombCount">0</span>
+        </div>
+        <div id="setting2">
+            <div id="btn">
+                START
+            </div>
+            <span id="time" class="timer">000</span>
+        </div>
+        <table id="board">
+        </table>
+        <h3 id="result"></h3>
+        <div id="text">
+            <h3>
+                <設定>
+            </h3>
+            <p>W: 横のマスの数</p>
+            <p>H: 縦のマスの数</p>
+            <p>B: 爆弾の数</p>
+            <h3>
+                <操作>
+            </h3>
+            <p>左クリック: マスを開ける</p>
+            <p>右クリック: <span class="flag"></span>マークを付ける</p>
+        </div>
+    </div>
+
 
 </div>
 
@@ -1666,6 +1704,133 @@
             left: 48px;
             box-shadow: 0px 10px tomato, 0px 22px steelblue, 12px 10px forestgreen, 12px 22px khaki;
         }
+
+
+
+
+.bom {
+    background: white;
+  width: 300px;
+  height: 400px;
+  position: absolute;
+  top: 80px;
+}
+
+/* setting */
+#setting {
+    position: absolute;
+    top: 20px;
+  width: 290px;
+  margin: 0 auto;
+}
+#text {
+    position: absolute;
+    top: 100px;
+  width: 290px;
+  margin: 0 auto;
+  text-align: center;
+  border: solid 1px black;
+  border-radius: 5px;
+}
+#text h1 {
+  color: yellowgreen;
+  margin: 0;
+}
+#text h3 {
+  margin: 0;
+}
+#text p {
+  margin: 3px 0;
+}
+#setting2 {
+    position: absolute;
+    top: 60px;
+  display: flex;
+  width: 290px;
+  margin: 0 auto;
+}
+#btn {
+  width: 100%;
+  margin: 3px auto;
+  padding: 2px;
+  font-weight: bold;
+  text-align: center;
+  color: white;
+  border: solid 1px black;
+  background: black;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.timer::before {
+  line-height: 30px;
+  font-size: 24px;
+  font-family: "Material Icons Outlined";
+  content: "\e425";
+}
+
+/* game */
+#h,
+#w,
+#b {
+  width: 50px;
+}
+#board {
+    position: absolute;
+    top: 100px;
+  margin: 0 auto;
+  border-collapse: collapse;
+  background: yellowgreen;
+}
+td {
+  border: solid 3px white;
+  width: 30px;
+  height: 30px;
+  font-weight: bold;
+  text-align: center;
+}
+.open {
+  background: #e6e6e6;
+  animation: fadein 0.7s;
+}
+.flag::before {
+  font-family: "Material Icons";
+  content: "\e153";
+  animation: fadein 0.3s;
+}
+.bomb {
+  background: red;
+  animation: fadein 1s infinite;
+}
+.bomb::before {
+  font-family: "Material Icons";
+  content: "\ea0b";
+}
+.clear {
+  background: pink;
+  animation: fadein 5s infinite;
+}
+.clear::before {
+  font-family: "Material Icons";
+  content: "\e545";
+}
+.bombCount::before {
+  font-size: 24px;
+  font-family: "Material Icons";
+  content: "\ea0b";
+}
+
+@keyframes fadein {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+#result {
+  text-align: center;
+}
         
     @media screen and (max-width: 768px){
 
@@ -2512,27 +2677,235 @@
     }
 
 
+    function bom_close(){
+        const bom = document.querySelector(".bom");
+        bom.style.display = "none";
+    }
+    function bom_open(){
+        const bom = document.querySelector(".bom");
+        bom.style.display = "block";
+    }
+
+
     function check(){
         if (mail_form.mail.value === "Windows95"){
             //条件に一致する場合(空の場合)
             alert('コマンドが実行されました！');
             location.reload();
-        }else if (mail_form.mail.value === "help"){
-            //条件に一致する場合(空の場合)
-            alert('コマンド一覧  shutdown: シャットダウン, Credit: クレジット,');
-        }else if (mail_form.mail.value === "shutdown"){
-            //条件に一致する場合(空の場合)
-            alert('シャットダウンします');
-            screen_close();
-            allwindow_close();
-        }else if (mail_form.mail.value === "Credit"){
-            //条件に一致する場合(空の場合)
-            Credit();
         }else{
             //条件に一致しない場合(入力されている場合)
             alert('コマンドが正しくありません！');
         }
     }
+
+
+
+
+
+    "use strict";
+
+let data = []; // 爆弾が置いてある場所を管理 1=爆弾、0=何もない、-1=最初にクリックされたマスと周囲
+let h, w, bomb, count;
+let startTime; // 測定開始時間
+let timeoutId;
+
+const btn = document.getElementById("btn");
+btn.addEventListener("click", init);
+const text = document.getElementById("text");
+const board = document.getElementById("board");
+const bombCount = document.querySelector(".bombCount");
+const result = document.getElementById("result");
+const time = document.getElementById("time");
+
+// 初期化
+function init() {
+  h = Number(document.getElementById("h").value); // 縦のマスの数
+  w = Number(document.getElementById("w").value); // 横のマスの数
+  bomb = Number(document.getElementById("b").value); // 爆弾の数
+  if (h * w - 9 < bomb) {
+    result.textContent = "エラー：爆弾の数が正しく入力されていません。";
+    return;
+  }
+  data = [];
+  text.style.display = "none";
+  board.innerHTML = "";
+  board.style.pointerEvents = "auto";
+  clearTimeout(timeoutId);
+  result.textContent = "";
+  count = bomb;
+  bombCount.textContent = count;
+  time.textContent = "000";
+  for (let i = 0; i < h; i++) {
+    const tr = document.createElement("tr");
+    for (let j = 0; j < w; j++) {
+      const td = document.createElement("td");
+      td.addEventListener("click", leftClicked);
+      td.addEventListener("contextmenu", rightClicked);
+      tr.appendChild(td);
+    }
+    board.appendChild(tr);
+  }
+}
+
+// 爆弾を設置
+function putBomb() {
+  for (let i = 0; i < bomb; i++) {
+    while (true) {
+      const y = Math.floor(Math.random() * h);
+      const x = Math.floor(Math.random() * w);
+      if (data[y][x] === 0) {
+        data[y][x] = 1;
+        // board.rows[y].cells[x].classList.add("bomb");
+        break;
+      }
+    }
+  }
+}
+
+// 左クリック マスを空ける
+function leftClicked() {
+  const y = this.parentNode.rowIndex;
+  const x = this.cellIndex;
+  // すでに空いているマスや旗が置いてあったら何もしない
+  if (this.className === "open" || this.className === "flag") {
+    return;
+  }
+
+  // 一手目か確認
+  if (!data.length) {
+    startTime = Date.now();
+    timer();
+    for (let i = 0; i < h; i++) {
+      data[i] = Array(w).fill(0);
+    }
+    for (let i = y - 1; i <= y + 1; i++) {
+      for (let j = x - 1; j <= x + 1; j++) {
+        if (i >= 0 && i < h && j >= 0 && j < w) {
+          data[i][j] = -1;
+        }
+      }
+    }
+    putBomb();
+  }
+
+  // 爆弾を踏んだか判定
+  if (data[y][x] === 1) {
+    for (let i = 0; i < h; i++) {
+      for (let j = 0; j < w; j++) {
+        if (data[i][j] === 1) {
+          board.rows[i].cells[j].classList.add("bomb");
+        }
+      }
+    }
+    board.style.pointerEvents = "none";
+    result.textContent = "GAME OVER";
+    clearTimeout(timeoutId);
+    return;
+  }
+
+  let bombs = countBomb(y, x);
+  if (bombs === 0) {
+    open(y, x);
+  } else {
+    this.textContent = bombs;
+    this.classList.add("open");
+  }
+
+  // クリア判定
+  if (countOpenCell()) {
+    for (let i = 0; i < h; i++) {
+      for (let j = 0; j < w; j++) {
+        if (data[i][j] === 1) {
+          board.rows[i].cells[j].classList.add("clear");
+        }
+      }
+    }
+    board.style.pointerEvents = "none";
+    result.textContent = "CLEAR!!";
+    clearTimeout(timeoutId);
+    return;
+  }
+}
+
+// 右クリック 旗を置く
+function rightClicked(e) {
+  e.preventDefault();
+  if (this.className === "open") {
+    return;
+  }
+  this.classList.toggle("flag");
+  if (this.className === "flag") {
+    count--;
+    bombCount.textContent = count;
+  } else {
+    count++;
+    bombCount.textContent = count;
+  }
+}
+
+// マスの周りの爆弾の数を数える
+function countBomb(y, x) {
+  let bombs = 0;
+  for (let i = y - 1; i <= y + 1; i++) {
+    for (let j = x - 1; j <= x + 1; j++) {
+      if (i >= 0 && i < h && j >= 0 && j < w) {
+        if (data[i][j] === 1) {
+          bombs++;
+        }
+      }
+    }
+  }
+  return bombs;
+}
+
+// マスを開く
+function open(y, x) {
+  for (let i = y - 1; i <= y + 1; i++) {
+    for (let j = x - 1; j <= x + 1; j++) {
+      if (i >= 0 && i < h && j >= 0 && j < w) {
+        let bombs = countBomb(i, j);
+        if (
+          board.rows[i].cells[j].className === "open" ||
+          board.rows[i].cells[j].className === "flag"
+        ) {
+          continue;
+        }
+        if (bombs === 0) {
+          board.rows[i].cells[j].classList.add("open");
+          open(i, j);
+        } else {
+          board.rows[i].cells[j].textContent = bombs;
+          board.rows[i].cells[j].classList.add("open");
+        }
+      }
+    }
+  }
+}
+
+// 空いているマスを数える
+function countOpenCell() {
+  let openCell = 0;
+  for (let i = 0; i < h; i++) {
+    for (let j = 0; j < w; j++) {
+      if (board.rows[i].cells[j].className === "open") {
+        openCell++;
+      }
+    }
+  }
+  if (h * w - openCell === bomb) {
+    return true;
+  }
+}
+
+// ストップウォッチ
+function timer() {
+  const d = new Date(Date.now() - startTime);
+  const s = String(d.getSeconds()).padStart(3, "0");
+  time.textContent = `${s}`;
+  timeoutId = setTimeout(() => {
+    timer();
+  }, 1000);
+}
 
     </script>
     </body>
