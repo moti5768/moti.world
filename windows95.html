@@ -116,6 +116,9 @@
 
             <a class="icon6" onclick="tetris_open()"></a>
             <a class="test6 white hover" onclick="tetris_open()">テトリス(改)</a>
+
+            <a class="icon7" onclick="bom_open()"></a>
+            <a class="test7 white hover" onclick="bom_open()">マインスイーパー(試験的)</a>
         </div>
     </div>
 
@@ -320,16 +323,16 @@
               <p>LINES:<span id="lines">0</span></p>
               <p><span id="message"></span></p>
               <div class="tetris-panel-container-padding"></div>
-              <table class="tetris-button-panel">
-                <tr>
+              <table class="tetris-button-panel tetbtn">
+                <tr class="tetbutton">
                   <td></td>
-                  <td id="tetris-rotate-button" class="tetris-button large">↻</td>
+                  <td id="tetris-rotate-button" class="tetris-button tetbtn large">↻</td>
                   <td></td>
                 </tr>
-                <tr>
-                  <td id="tetris-move-left-button"class="tetris-button large">←</td>
-                  <td id="tetris-fall-button"class="tetris-button large">↓</td>
-                  <td id="tetris-move-right-button"class="tetris-button large">→</td>
+                <tr class="tetbutton">
+                  <td id="tetris-move-left-button"class="tetris-button tetbtn large">←</td>
+                  <td id="tetris-fall-button"class="tetris-button tetbtn large">↓</td>
+                  <td id="tetris-move-right-button"class="tetris-button tetbtn large">→</td>
                 </tr>
               </table>
             </span>
@@ -344,7 +347,7 @@
 
     <div class="bom border">
         <span class="menu_bluebar">マインスイーパー(試験的)</span>
-            <button class="blacktext closebutton border hover2" onclick="bom_close()">X</button>
+        <button class="blacktext closebutton border hover2" onclick="bom_close()">X</button>
         <div id="setting">
             W
             <input type="number" id="w" value="9" min="2" max="50">
@@ -361,6 +364,7 @@
             <span id="time" class="timers">000</span>
         </div>
         <table id="board">
+            <td class="bor" style="display: none;"></td>
         </table>
         <h3 id="result"></h3>
         <div id="text">
@@ -1130,6 +1134,16 @@
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
+        .icon7 {
+            margin-left: 140px;
+            margin-top: 245px;
+            background: linear-gradient(140deg, whitesmoke, khaki, lime);
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
 
         .test1 {
             margin-left: 10px;
@@ -1162,6 +1176,12 @@
             margin-left: 140px;
             position: absolute;
             top: 195px;
+        }
+        .test7 {
+            width: 100px;
+            margin-left: 140px;
+            position: absolute;
+            top: 295px;
         }
 
         .file {
@@ -1710,6 +1730,7 @@
 
 
 .bom {
+    display: none;
     background: white;
   width: 300px;
   height: 400px;
@@ -1782,7 +1803,7 @@
   background: yellowgreen;
 }
 td {
-  border: solid 3px white;
+  border: solid 3px #333333;
   width: 30px;
   height: 30px;
   font-weight: bold;
@@ -2482,6 +2503,9 @@ td {
 
         const updatemenu = document.querySelector(".update");
         updatemenu.style.display = "none";
+
+        const bom = document.querySelector(".bom");
+        bom.style.display = "none";
     }
     
     function startmenu_close(){
