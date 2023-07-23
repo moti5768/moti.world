@@ -24,6 +24,25 @@ body {
     background: radial-gradient(ellipse at 1000px 500px, whitesmoke, #00CCCC, #008080);
 }
 
+.winNT.block {
+    display: block;
+    background: linear-gradient(120deg, black, whitesmoke, skyblue, steelblue);
+}
+.star {
+    display: none;
+    background: white;
+    opacity: 70%;
+    width: 2.5px;
+    height: 2.5px;
+    border-radius: 10px;
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    box-shadow: 20px 160px white, 100px 35px white, 150px 120px white,
+     250px 200px white, 400px 0px white, 350px 80px white, 150px 500px white,
+      550px 250px white, 260px 0px white, 150px 250px white, 600px 50px white;
+}
+
 #win95 {
     display: block;
     z-index: 99999;
@@ -39,32 +58,32 @@ audio {
 }
 
 .medium_window {
-    background: linear-gradient(0deg, #339999, #6699FF);
+    background: linear-gradient(0deg, #339999, steelblue);
     width: 600px;
     height: 400px;
     position: absolute;
     top: 50px;
     left: 180px;
-    box-shadow: 3px 3px 6px black;
+    box-shadow: 1px 1px 6px black;
 }
 .small_window {
-    background: linear-gradient(0deg, #339999, #6699FF);
+    background: linear-gradient(0deg, #339999, steelblue);
     width: 300px;
     height: 220px;
     position: absolute;
     top: 50px;
     left: 180px;
-    box-shadow: 3px 3px 6px black;
+    box-shadow: 1px 1px 6px black;
 }
 
 .help_window {
-    background: linear-gradient(0deg, #339999, #6699FF);
+    background: linear-gradient(0deg, #339999, steelblue);
     width: 300px;
     height: 500px;
     position: absolute;
     top: 10%;
     right: 10px;
-    box-shadow: 3px 3px 6px black;
+    box-shadow: 1px 1px 6px black;
     z-index: 99997;
 }
 .help_window_white {
@@ -89,7 +108,7 @@ audio {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    box-shadow: 3px 3px 6px black;
+    box-shadow: 1px 1px 6px black;
     z-index: 99997;
 }
 .error_window_white {
@@ -687,8 +706,7 @@ a {
 }
 
 .menu_bluebar {
-    background: linear-gradient(0deg, #6699FF, skyblue, whitesmoke);
-    color: black;
+    background: linear-gradient(0deg, steelblue, skyblue);
     width: 100%;
     height: 20px;
     position: absolute;
@@ -1230,13 +1248,13 @@ textarea {
     display: none;
 }
 .paint_window {
-    background: linear-gradient(0deg, #339999, #6699FF);
+    background: linear-gradient(0deg, #339999, steelblue);
     width: 500px;
     height: 410px;
     position: absolute;
     top: 100px;
     left: 100px;
-    box-shadow: 3px 3px 6px black;
+    box-shadow: 1px 1px 6px black;
 }
 #canvaspaint {
     background-color: white;
@@ -1264,7 +1282,7 @@ textarea {
     font-size: small;
     font-weight: bold;
     position: absolute;
-    right: 300px;
+    right: 24%;
     top: 1px;
     z-index: 99997;
 }
