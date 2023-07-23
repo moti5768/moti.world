@@ -68,6 +68,7 @@ if (pass_form.pass.value === "0000"){
     setEvents(resetTimer);
 })();
             
+    const star = document.querySelector(".star");
     const pass = document.querySelector('.pass_area');
     const popupwrap = document.getElementsByClassName('popupwrap');
     const screen_open = document.querySelector(".Windows95_group");
@@ -431,9 +432,20 @@ function settingbox5(){
     }
 }
 
-function testalert(){
-    alert("test");
-}
+    function testalert(){
+        alert("test");
+    }
+
+    function windowsNT(){
+        const winNT = document.getElementsByClassName('winNT');
+        winNT[0].classList.add('block');
+        star.style.display = "block";
+    }
+    function windowsNT_r(){
+        const winNT = document.getElementsByClassName('winNT');
+        winNT[0].classList.remove('block');
+        star.style.display = "none";
+    }
 
     function backcolor_black(){
         document.getElementById("backcolor").style.background = "black";
@@ -738,6 +750,12 @@ function testalert(){
         }else if (mail_form.mail.value === "screen_reset"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             min();
+        }else if (mail_form.mail.value === "backcolor_NT"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            windowsNT();
+        }else if (mail_form.mail.value === "backcolor_NT.r"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            windowsNT_r();
         }else if (mail_form.mail.value === "css_remove"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             document.getElementById("backcolor").style.backgroundColor = "white";
