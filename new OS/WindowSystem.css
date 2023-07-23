@@ -323,7 +323,7 @@ a {
 }
 
 .popup_window {
-    background: linear-gradient(0deg, #339999, #6699FF);
+    background: linear-gradient(0deg, #339999, steelblue);
     width: 550px;
     height: 440px;
     position: absolute;
