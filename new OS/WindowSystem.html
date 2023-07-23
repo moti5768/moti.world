@@ -7,7 +7,8 @@
     <link rel="stylesheet" href="WindowSystem.css">
     <title>WindowSystem</title>
 </head>
-<body id="backcolor" onload="testalert()">
+<body id="backcolor" class="winNT">
+    <span class="star"></span>
     <div class="screen" id="test">
         <span class="screencolor"></span>
         <p class="alerttext"></p>
@@ -98,8 +99,8 @@
             <a class="test white hover3">ゴミ箱<br>(実験)</a>
             </div>
             <div class="content2 drag12">
-            <a class="icon hover3" ondblclick="mycomputer_open(),popupwindow_close()"></a>
-            <a class="test white hover3" ondblclick="mycomputer_open(),popupwindow_close()">マイコンピュータ</a>
+            <a class="icon hover3" ondblclick="mycomputer_open()"></a>
+            <a class="test white hover3" ondblclick="mycomputer_open()">マイコンピュータ</a>
             </div>
             <div class="content3 drag13">
             <a class="icon hover3" ondblclick="Credit()"></a>
@@ -127,7 +128,7 @@
     </div>
 
     <div class="taskbar drag2">
-        <a class="blacktext bar_button" onclick="backcolormenu_open(),popupwindow_close()">C</a>
+        <a class="blacktext bar_button" onclick="backcolormenu_open()">C</a>
         <a class="blacktext bar_button" href="https://moti5768.github.io/moti.world/windows95.html">95</a>
         <a class="blacktext bar_button" onclick="full()">FL1</a>
         <a class="blacktext bar_button" onclick="min()">FL2</a>
@@ -310,16 +311,16 @@
                 <a class="file_icon hover" onclick="updownmenu_open()"></a>
             </div>
             <div class="files3">
-            <a class="file_text blacktext hover" href="https://google.com">Google</a>
-            <a class="file_icon hover" href="https://google.com"></a>
+            <a class="file_text blacktext hover" href="https://google.com" target="_blank" rel="noopener noreferrer">Google</a>
+            <a class="file_icon hover" href="https://google.com" target="_blank" rel="noopener noreferrer"></a>
             </div>
             <div class="files4">
-            <a class="file_text blacktext hover" href="https://yahoo.co.jp">Yahoo!</a>
-            <a class="file_icon hover" href="https://yahoo.co.jp"></a>
+            <a class="file_text blacktext hover" href="https://yahoo.co.jp" target="_blank" rel="noopener noreferrer">Yahoo!</a>
+            <a class="file_icon hover" href="https://yahoo.co.jp" target="_blank" rel="noopener noreferrer"></a>
             </div>
             <div class="files5">
-            <a class="file_text blacktext hover" href="https://youtube.com">Youtube</a>
-            <a class="file_icon hover" href="https://youtube.com"></a>
+            <a class="file_text blacktext hover" href="https://youtube.com" target="_blank" rel="noopener noreferrer">Youtube</a>
+            <a class="file_icon hover" href="https://youtube.com" target="_blank" rel="noopener noreferrer"></a>
             </div>
             <a class="blacktext closebutton hover2" onclick="mycomputer_close()">X</a>
             <a class="blacktext taskbutton hover" onclick="mycomputer_close()">一</a>
@@ -494,7 +495,7 @@
                 BASE: Windows95 homeEdition1.0<br>
                 Version: 1.0.0</p>
                 <p id="user"></p><br>
-                <div class="white" style="color: lime;">
+                <div class="white small" style="color: lime;">
                     <p>battery capacity:&emsp;<span id="level"></span>[%]</p>
                     <p>battery capacity&emsp;<span id="dischargingTime"></span>[s]</p>
                     <p>charging(true/false):&emsp;<span id="charging"></span></p>
@@ -528,7 +529,7 @@
 
     <!-- underbar -->
     <div class="underbar" style="opacity: 0.95;">
-        <a class="blacktext bold start_button hover3" onclick="startmenu_open(),popupwindow_close()"></a>
+        <a class="blacktext bold start_button hover3" onclick="startmenu_open()"></a>
         <span class="start_logo"></span>
     
     <div class="online_bar white">
