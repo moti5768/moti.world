@@ -712,6 +712,7 @@ a {
     position: absolute;
     pointer-events: none;
     border-bottom: solid 1px skyblue;
+    text-shadow: 1px 1px 10px white;
     border-radius: 3px;
 }
 .menu_redbar {
@@ -1023,6 +1024,18 @@ span.timer2 {
 }
 .textcommand_area {
     height: 85%;
+    width: 80%;
+    background: black;
+    color: white;
+    position: absolute;
+    top: 25px;
+    left: 5px;
+}
+.alerttext_menu {
+    display: none;
+}
+.textcommand_area2 {
+    height: 30%;
     width: 80%;
     background: black;
     color: white;
