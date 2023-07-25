@@ -168,12 +168,25 @@
     <div class="drag3 shape command_menu small_window border" style="opacity: 0.95;">
         <div class="menu_bluebar">&emsp;コマンド入力</div>
         <a class="blacktext closebutton hover2" onclick="commandmenu_close()">X</a>
-    <form method="get" name="mail_form" onsubmit="return false;">
+    <form autocomplete="off" method="get" name="mail_form" onsubmit="return false;">
         <input type="text" class="textcommand_area" name="mail" placeholder="コマンドを入力">
         <input type="submit" class="submitbtn hover" value="実行" onclick="check()"><br>
         <input type="button" class="submitbtn2 hover" value="help" onclick="helpcommand()">
-        <p class="blacktext small" style="position: absolute; right: 5px; bottom: 2px;">ver 0.1</p>
+        <p class="small white" style="position: absolute; right: 5px; bottom: 2px;">ver 0.1</p>
     </form>
+    </div>
+
+
+    <div class="drag24 shape alerttext_menu small_window border" style="opacity: 0.95;">
+        <div class="menu_bluebar">&emsp;アラートテキスト入力&nbsp;出力</div>
+        <a class="blacktext closebutton hover2" onclick="alerttextmenu_close()">X</a>
+    <form autocomplete="off" method="get" name="mail_form2" onsubmit="return false;">
+        <input type="text" class="textcommand_area2" name="mail2" placeholder="文字を入力">
+        <input type="submit" class="submitbtn hover" value="実行" onclick="check2()"><br>
+        </form>
+        <br><br><br><p class="white">&nbsp;出力</p>
+        <p class="white border" style="background: black; height: 90px; width: 280px; position: absolute; left: 10px;">alert('<span id="alerttext2">ここに文字が入ります。</span>')</p>
+    <br><br><br>
     </div>
 
     <div class="drag4 shape app_memo medium_window border" style="opacity: 0.95;">
@@ -492,14 +505,14 @@
         <div class="medium_window_white">
             <div class="debug_screen small">
                 <p class="small" style="color: lime;">NAME: WindowSystem<br>
-                BASE: Windows95 homeEdition1.0<br>
-                Version: 1.0.0</p>
+                BASE: Windows95 homeEdition1.0</p>
                 <p id="user"></p><br>
                 <div class="white small" style="color: lime;">
                     <p>battery capacity:&emsp;<span id="level"></span>[%]</p>
                     <p>battery capacity&emsp;<span id="dischargingTime"></span>[s]</p>
                     <p>charging(true/false):&emsp;<span id="charging"></span></p>
-                    <p>Time to complete charging:&emsp;<span id="chargingTime"></span>[s]</p>
+                    <p>Time to complete charging:&emsp;<span id="chargingTime"></span>[s]</p><br>
+                    <p>system version 1.0.0</p>
                 </div>
             </div>
         </div>
