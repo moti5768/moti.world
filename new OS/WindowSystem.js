@@ -80,6 +80,7 @@ if (pass_form.pass.value === "0000"){
     const app_menu = document.querySelector(".app_menu");
     const setting_menu = document.querySelector(".setting_menu");
     const command_menu = document.querySelector(".command_menu");
+    const alerttextmenu = document.querySelector(".alerttext_menu");
     const backcolor_menu = document.querySelector(".backcolor_menu");
     const colorbtn = document.querySelector(".colorbtn");
     const controlpanel = document.querySelector(".controlpanel");
@@ -524,6 +525,7 @@ function settingbox5(){
         debug.style.display = "none";
         stopwatch.style.display = "none";
         error2.style.display = "none";
+        alerttextmenu.style.display = "none";
     }
     
     function startmenu_close(){
@@ -698,6 +700,13 @@ function settingbox5(){
         stopwatch.style.display = "block";
     }
 
+    function alerttextmenu_close(){
+        alerttextmenu.style.display = "none";
+    }
+    function alerttextmenu_open(){
+        alerttextmenu.style.display = "block";
+    }
+
     function check(){
         if (mail_form.mail.value === "Reload"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
@@ -756,6 +765,9 @@ function settingbox5(){
         }else if (mail_form.mail.value === "backcolor_NT.r"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             windowsNT_r();
+        }else if (mail_form.mail.value === "alert"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            alerttextmenu_open();
         }else if (mail_form.mail.value === "css_remove"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             document.getElementById("backcolor").style.backgroundColor = "white";
@@ -775,8 +787,14 @@ function settingbox5(){
         }
     }
 
+    function check2(){
+        let alerttext2 = document.querySelector('#alerttext2');
+        alerttext2.textContent = (mail_form2.mail2.value);
+    }
+
     function helpcommand(){
-        alert("1.Reload 2.shutdown 3.debug 4.setting 5.Storage_clear 6.windows95_color 7.gra_color1 (1-4) 8.backcolor_reset 9.css_remove 10.screen_full 11.screen_reset" );
+        alert('1.Reload 2.shutdown 3.debug 4.setting 5.Storage_clear 6.windows95_color 7.gra_color1 (1-4)'+
+        '8.backcolor_reset 9.css_remove 10.screen_full 11.screen_reset 12.backcolor_NT(.r) 13.alert 14.windowsystem');
     }
     
     draggable(document.querySelector('.drag1'));
@@ -802,6 +820,7 @@ function settingbox5(){
     draggable(document.querySelector('.drag21'));
     draggable(document.querySelector('.drag22'));
     draggable(document.querySelector('.drag23'));
+    draggable(document.querySelector('.drag24'));
     
 
     function draggable(target) {
