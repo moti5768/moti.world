@@ -18,7 +18,7 @@
 
     <div class="screen_start" id="user">
         <span class="screencolor2"></span>
-        <p class="screentext_start white">Windows95を起動しています...<br><span style="color: lime;">version 1.0</span><p>
+        <p class="screentext_start white">Windows95を起動しています...<br><span style="color: lime;">version 2.0</span><p>
     </div>
 
     <div class="screen_close">
@@ -122,7 +122,7 @@
         </div>
     </div>
 
-    <div class="iframe1 border">
+    <div class="iframe1 border shape">
         <span class="menu_bluebar">オモチのサイト</span>
         <iframe src="index.html"></iframe>
         <button class="closebutton border hover2" onclick="iframe1_close()">X</button>
@@ -132,7 +132,7 @@
         <span class="taskbar_blue"></span>
         <button class="blacktext bar_button hover" onclick="backcolormenu_open(),popupwindow_close()">C</button>
         <button class="blacktext bar_button hover" onclick="cssmenu_open(),popupwindow_close()">CS</button>
-        <button class="blacktext bar_button hover">T</button>
+        <button class="blacktext bar_button hover x-small" onclick="itiran_open()">一覧</button>
         <button class="blacktext bar_button hover">T</button>
         <button class="blacktext bar_button hover">T</button>
 
@@ -175,9 +175,21 @@
         </div>
         </div>
 
+
+
+        <div class="itiran border">
+            <span class="menu_bluebar">一覧</span>
+            <button class="closebutton border hover2" onclick="itiran_close()">X</button>
+            <a class="button hover" style="position: absolute; top: 30px;" onclick="mycomputer_open()">マイコン</a>
+            <a class="button hover" style="position: absolute; top: 70px;" onclick="controlpanel_open()">コント</a>
+            <a class="button hover" style="position: absolute; top: 110px;" onclick="bom_open()">マイン</a>
+            <a class="button hover" style="position: absolute; top: 150px;" onclick="tetris_open()">テトリス</a>
+            <a class="button hover" style="position: absolute; top: 190px;" onclick="testalert()">？？？</a>
+        </div>
+
     </div>
 
-    <div class="command_menu border">
+    <div class="command_menu border shape">
         <div class="menu_bluebar">コマンド入力</div>
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
@@ -188,7 +200,7 @@
     </div>
     </div>
 
-    <div class="app_memo border">
+    <div class="app_memo border shape">
         <p class="menu_bluebar">無題-メモ帳</p>
         <form name="form1">
             <textarea name="Memo" class="Memo border"></textarea>
@@ -231,7 +243,7 @@
     </div>
 
     <div class="controlpanel">
-        <div class="controlpanel_window border">
+        <div class="controlpanel_window border shape">
             <span class="menu_bluebar">　　コントロールパネル</span>
             <span class="controlpanel_white border"></span>
             <a class="controlpanel_text hover" onclick="testalert()">テスト</a>
@@ -252,7 +264,7 @@
         <button class="blacktext closebutton border hover2" onclick="update_close()">X</button>
     </div>
 
-    <div class="mycomputer">
+    <div class="mycomputer shape">
         <div class="mycomputer_window border">
             <span class="menu_bluebar">　　マイコンピュータ</span>
             <span class="mycomputer_white border"></span>
@@ -310,7 +322,7 @@
         <p class="bold Credit_text">Windows95 homeEdition 1.0</p>
     </div>
 
-    <div class="tetris border">
+    <div class="tetris border shape">
         <span class="menu_bluebar">テトリス(改)</span>
     <div class="wrapper-container">
         <span class="tetris-container">
@@ -345,7 +357,7 @@
 
 
 
-    <div class="bom border">
+    <div class="bom border shape">
         <span class="menu_bluebar">マインスイーパー(試験的)</span>
         <button class="blacktext closebutton border hover2" onclick="bom_close()">X</button>
         <div id="setting">
@@ -1027,12 +1039,22 @@
             bottom: 45px;
             right: 31px;
         }
+        .itiran {
+            display: none;
+            background: darkgray;
+            width: 150px;
+            height: 300px;
+            position: absolute;
+            bottom: 45px;
+            right: 31px;
+        }
         .menu_bluebar {
             background: darkblue;
             color: white;
             width: 100%;
             height: 25px;
             position: absolute;
+            pointer-events: none;
         }
         .menu_graybar {
             background: dimgray;
@@ -1623,6 +1645,7 @@
             top: 35px;
             position: absolute;
             left: 7px;
+            pointer-events: none;
         }
 
         .mycomputer {
@@ -1644,6 +1667,7 @@
             top: 35px;
             position: absolute;
             left: 7px;
+            pointer-events: none;
         }
 
         .app_memo {
@@ -1736,6 +1760,7 @@
   height: 400px;
   position: absolute;
   top: 80px;
+  right: 0px;
 }
 
 /* setting */
@@ -2382,6 +2407,26 @@ td {
         })
 }
 
+
+let counts = 0;
+            // 図形にクリックイベント登録＆z-indexを表示
+            let eleShape = document.getElementsByClassName("shape");
+            for(var i=0; i< eleShape.length; i++){
+                // クリックイベント登録
+                eleShape[i].addEventListener("click", moveFront, event);
+                // 図形にz-indexを表示
+            }
+            // クリックされた要素のz-indexに、クリックされた回数を設定する
+            function moveFront(e){
+                // 図形のクリック数をカウントアップ
+                counts++;
+                // z-indexに図形のクリック数を設定（最前面に表示される）
+                e.target.style.zIndex = counts;
+                // 図形にz-indexを表示
+            }
+               
+    let ele = document.documentElement;
+
     function colorbox(){
     if (document.getElementById("color_box").checked) {
         const colorbtn = document.querySelector(".colorbtn");
@@ -2506,6 +2551,9 @@ td {
 
         const bom = document.querySelector(".bom");
         bom.style.display = "none";
+
+        const itiran = document.querySelector(".itiran");
+        itiran.style.display = "none";
     }
     
     function startmenu_close(){
@@ -2547,6 +2595,15 @@ td {
     function update_close(){
         const updatemenu = document.querySelector(".update");
         updatemenu.style.display = "none";
+    }
+
+    function itiran_open(){
+        const itiran = document.querySelector(".itiran");
+        itiran.style.display = "block";
+    }
+    function itiran_close(){
+        const itiran = document.querySelector(".itiran");
+        itiran.style.display = "none";
     }
 
     function controlpanel_open(){
