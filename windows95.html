@@ -18,12 +18,12 @@
 
     <div class="screen_start" id="user">
         <span class="screencolor2"></span>
-        <p class="screentext_start white">Windows95を起動しています...<br><span style="color: lime;">version 2.0</span><p>
+        <p class="screentext_start white border2">Windows95を起動しています...<br><span style="color: lime;">version 2.0</span><p>
     </div>
 
     <div class="screen_close">
         <span class="screencolor2"></span>
-        <p class="screentext_close white">Windows95を終了しています...<p>
+        <p class="screentext_close white border2">Windows95を終了しています...<p>
     </div>
 
 <div class="Windows95_group">
@@ -78,7 +78,7 @@
         </div>
     
         <div class="app_menu border">
-            <span class="menu_bluebar">アプリ</span>
+            <span class="menu_bluebar">ソフト</span>
             <button class="blacktext closebutton border hover2" onclick="appmenu_close()">X</button>
             <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close()">メモ帳</button>
             <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close()">電卓</button>
@@ -118,7 +118,7 @@
             <a class="test6 white hover" onclick="tetris_open()">テトリス(改)</a>
 
             <a class="icon7" onclick="bom_open()"></a>
-            <a class="test7 white hover" onclick="bom_open()">マインスイーパー(試験的)</a>
+            <a class="test7 white hover" onclick="bom_open()">マインスイーパー</a>
         </div>
     </div>
 
@@ -280,6 +280,8 @@
 
             <a class="mycomputer_text6 hover" onclick="tetris_open(),mycomputer_close()">テトリス(改)</a>
             <a class="mycomputer_icon6" onclick="tetris_open(),mycomputer_close()"></a>
+            <a class="mycomputer_text7 hover" onclick="bom_open(),mycomputer_close()">マインスイーパー</a>
+            <a class="mycomputer_icon7" onclick="bom_open(),mycomputer_close()"></a>
 
             <button class="blacktext closebutton border hover2" onclick="task_content1_close(),mycomputer_close()">X</button>
             <button class="blacktext taskbutton border hover" onclick="task_conent1_open(),mycomputer_close()">一</button>
@@ -358,7 +360,7 @@
 
 
     <div class="bom border shape">
-        <span class="menu_bluebar">マインスイーパー(試験的)</span>
+        <span class="menu_bluebar">マインスイーパー</span>
         <button class="blacktext closebutton border hover2" onclick="bom_close()">X</button>
         <div id="setting">
             W
@@ -488,7 +490,12 @@
             color: white;
             position: absolute;
             top: 0px;
-            left: 0px;
+            z-index: 99999;
+        }
+        .user {
+            color: white;
+            position: absolute;
+            top: 10%;
             z-index: 99999;
         }
 
@@ -502,8 +509,9 @@
         .screentext_close {
             color: white;
             position: absolute;
-            top: 0px;
-            left: 0px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             z-index: 99999;
         }
 
@@ -1398,6 +1406,27 @@
             top: 180px;
             left: 10px;
         }
+        .mycomputer_icon7 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 130px;
+            left: 105px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text7 {
+            color: black;
+            font-size: x-small;
+            margin-left: 10px;
+            width: 60px;
+            height: 15px;
+            position: absolute;
+            top: 180px;
+            left: 110px;
+        }
 
         .app_icon {
             margin-left: 10px;
@@ -1487,6 +1516,14 @@
             border-left: solid 2px white;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
+            border-radius: 0;
+        }
+
+        .border2 {
+            border-top: solid 2px white;
+            border-left: solid 2px white;
+            border-bottom: solid 2px white;
+            border-right: solid 2px white;
             border-radius: 0;
         }
 
@@ -2172,6 +2209,26 @@ td {
             position: absolute;
             top: 165px;
             left: 5px;
+        }
+        .mycomputer_icon7 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 130px;
+            left: 55px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .mycomputer_text7 {
+            font-size: x-small;
+            margin-left: 10px;
+            width: 50px;
+            height: 15px;
+            position: absolute;
+            top: 165px;
+            left: 55px;
         }
 
         .Credit_text {
