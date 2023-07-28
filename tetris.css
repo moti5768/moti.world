@@ -17,7 +17,7 @@ html {
     background: white;
     display: none;
     position: absolute;
-    top: 90px;
+    top: 10px;
     left: 0px;
     height: 390px;
     width: 360px;
@@ -55,14 +55,14 @@ html {
    padding: 0;
 }
 
-.tetris-button-panel {
+.tetris-button-panel.tetbtn {
     border-style: none;
     width: 140%;
     position: relative;
     left: -10px;
 }
 
-.tetris-button {
+.tetris-button.tetbtn {
     width: 20px;
     height: 20px;
     padding-top: 20px;
