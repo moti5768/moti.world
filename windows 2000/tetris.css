@@ -1,0 +1,73 @@
+html {
+    touch-action: manipulation;
+}
+
+#next {
+    position: relative;
+    left: 5px;
+    border:  solid 0.5px dimgray;
+}
+
+#stage {
+    width: 50%;
+    height: 50%;
+}
+
+.tetris {
+    background: white;
+    display: none;
+    position: absolute;
+    top: 10px;
+    left: 0px;
+    height: 390px;
+    width: 360px;
+}
+
+.wrapper-container {
+    margin-top: 28px;
+    position: relative;
+    right: 1px;
+    display: inline-block;
+}
+
+.tetris-container {
+    display: flex;
+    flex-direction: row;
+    margin: 0px;
+    background-color: #333333;
+}
+
+.tetris-panel-container {
+    display: flex;
+    padding-left: 10px;
+    padding-right: 10px;
+    flex-direction: column;
+    color: white;
+    background-color: #333333;
+}
+
+.tetris-panel-container-padding {
+    flex-grow: 1;
+}
+
+.tetris-panel-container p {
+   margin: 0;
+   padding: 0;
+}
+
+.tetris-button-panel.tetbtn {
+    border-style: none;
+    width: 140%;
+    position: relative;
+    left: -10px;
+}
+
+.tetris-button.tetbtn {
+    width: 20px;
+    height: 20px;
+    padding-top: 20px;
+    padding-bottom: 20px;
+    text-align: center;
+    background: linear-gradient(0deg, #222222, #555555);
+    border:  solid 1px dimgray;
+}
