@@ -49,7 +49,7 @@
                 </p>
         </div>
         <span class="menu_bluebar">ようこそ</span>
-        <button class="blacktext closebutton border hover2" onclick="popupwindow_close(),update_open()">X</button>
+        <button class="blacktext closebutton border hover2" onclick="popupwindow_close()">X</button>
     </div>
 
     <div class="title">
@@ -103,8 +103,8 @@
             <a class="test white hover" onclick="Credit()">クレジット</a>
             </div>
             <div class="files3">
-            <a class="icon" onclick="update_open()"></a>
-            <a class="test white hover" onclick="update_open()">お知らせ</a>
+            <a class="icon" onclick="testalert()"></a>
+            <a class="test white hover" onclick="testalert()">テスト</a>
             </div>
             <div class="files4">
             <a class="icon" onclick="popupwindow_open()"></a>
@@ -326,17 +326,15 @@
             <canvas id="stage" width="250px" height="500px" style="background-color:black;">
             </canvas>
             <span class="tetris-panel-container">
-              <p>Next&emsp;&nbsp;ver 0.2</p>
-              <canvas id="next" width="130px" height="150px" style="background-color:black;">
+              <p>Next&emsp;&nbsp;ver 0.2.1</p>
+              <canvas id="next" class="line" width="130px" height="150px" style="background-color:black;">
             </canvas>
               <p>LINES:<span id="lines">0</span></p>
               <p><span id="message"></span></p>
               <div class="tetris-panel-container-padding"></div>
               <table class="tetris-button-panel tetbtn">
                 <tr class="tetbutton">
-                  <td></td>
-                  <td id="tetris-rotate-button" class="tetris-button tetbtn large">↻</td>
-                  <td></td>
+                  <td id="tetris-rotate-button" class="tetris-button tetbtn2 large">↻</td>
                 </tr>
                 <tr class="tetbutton">
                   <td id="tetris-move-left-button"class="tetris-button tetbtn large">←</td>
@@ -348,8 +346,8 @@
         </span>
     </div>
     <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
-    <button class="blacktext reload_button border hover3" onclick="reloads()">リロード</button>
-    <button class="blacktext start_button border hover" onclick="tetris.startGame(),mereset()">&nbsp;START(バグあり)&nbsp;</button>
+    <button class="blacktext reload_button border hover3" onclick="reloads()">再読み込み</button>
+    <button class="blacktext start_button border hover" onclick="tetris.startGame(),mereset()">&nbsp;START(バグ有)&nbsp;</button>
     </div>
 
 
@@ -1485,6 +1483,9 @@
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
+        .itiran a.button {
+            width: 90%;
+        }
         .button_calc {
             color: black;
             margin-top: 5px;
@@ -1916,7 +1917,7 @@ td {
             height: 40px;
             position: absolute;
             top: 315px;
-            left: 275px;
+            left: 285px;
             z-index: 99999;
         }
         .screentext {
