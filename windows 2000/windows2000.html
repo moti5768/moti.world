@@ -59,12 +59,12 @@
     </div>
 
     <div class="start_menu border">
-        <span class="menu_graybar white">Windows2000</span>
+        <span class="menu_bluebar2 white" style="writing-mode: vertical-rl; transform: rotate(180deg);">Windows2000</span>
         <button class="blacktext closebutton border hover2" onclick="startmenu_close()">X</button>
-        <button class="blacktext programbutton border bold hover" onclick="programmenu_open(),settingmenu_close()">プログラム</button>
-        <button class="blacktext settingbutton border bold hover" onclick="settingmenu_open(),programmenu_close(),appmenu_close()">設定</button>
-        <a class="blacktext border bold finish hover" onclick="screen_close(),allwindow_close(),sound2()">Windowsの終了</a>
-
+        <button class="blacktext button2 border bold hover" onclick="testalert()">テスト</button>
+        <button class="blacktext button2 border bold hover" onclick="programmenu_open(),settingmenu_close()">プログラム</button>
+        <button class="blacktext button2 border bold hover" onclick="settingmenu_open(),programmenu_close(),appmenu_close()">設定</button>
+        <button class="blacktext border bold button2 hover" onclick="screen_close(),allwindow_close(),sound2()">Windowsの終了</button>
 
         <div class="program_menu border">
             <span class="menu_bluebar">プログラム</span>
@@ -198,8 +198,8 @@
         <div class="menu_bluebar">コマンド入力</div>
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
-    <form method="get" name="mail_form" onsubmit="return false;">
-        <input type="text" class="textcommand_area border" name="mail" placeholder="Windows95">
+    <form method="get" name="mail_form" onsubmit="return false;" autocomplete="off">
+        <input type="text" class="textcommand_area border" name="mail" placeholder="Reload">
         <input type="submit" class="textcommand_area border hover" value="実行" onclick="check()">
     </form>
     </div>
@@ -266,12 +266,12 @@
             <span class="mycomputer_icon"></span>
             <a class="mycomputer_text2 hover" onclick="controlpanel_open(),mycomputer_close()">コントロールパネル</a>
             <a class="mycomputer_icon2" onclick="controlpanel_open(),mycomputer_close()"></a>
-            <a class="mycomputer_text3 hover" href="https://google.com">Google</a>
-            <a class="mycomputer_icon3" href="https://google.com"></a>
-            <a class="mycomputer_text4 hover" href="https://yahoo.co.jp">Yahoo!</a>
-            <a class="mycomputer_icon4" href="https://yahoo.co.jp"></a>
-            <a class="mycomputer_text5 hover" href="https://youtube.com">Youtube</a>
-            <a class="mycomputer_icon5" href="https://youtube.com"></a>
+            <a class="mycomputer_text3 hover" href="https://google.com" target="_blank" rel="noopener noreferrer">Google</a>
+            <a class="mycomputer_icon3" href="https://google.com" target="_blank" rel="noopener noreferrer"></a>
+            <a class="mycomputer_text4 hover" href="https://yahoo.co.jp" target="_blank" rel="noopener noreferrer">Yahoo!</a>
+            <a class="mycomputer_icon4" href="https://yahoo.co.jp" target="_blank" rel="noopener noreferrer"></a>
+            <a class="mycomputer_text5 hover" href="https://youtube.com" target="_blank" rel="noopener noreferrer">Youtube</a>
+            <a class="mycomputer_icon5" href="https://youtube.com" target="_blank" rel="noopener noreferrer"></a>
 
             <a class="mycomputer_text6 hover" onclick="tetris_open(),mycomputer_close()">テトリス(改)</a>
             <a class="mycomputer_icon6" onclick="tetris_open(),mycomputer_close()"></a>
@@ -1088,6 +1088,14 @@
             position: absolute;
             pointer-events: none;
         }
+        .menu_bluebar2 {
+            background: linear-gradient(0deg, black, darkblue, blue);
+            color: white;
+            width: 15%;
+            height: 100%;
+            position: absolute;
+            pointer-events: none;
+        }
         .menu_graybar {
             background: dimgray;
             color: white;
@@ -1541,12 +1549,13 @@
             right: 120px;
         }
 
-        .programbutton {
+        .button2 {
             background: darkgray;
-            width: 135px;
+            width: 85%;
             height: 25px;
-            position: absolute;
-            top: 35px;
+            position: relative;
+            top: 25px;
+            left: 22px;
         }
 
         .settingbutton {
@@ -1580,7 +1589,7 @@
             width: 130px;
             height: 80px;
             position: absolute;
-            bottom: 70px;
+            bottom: 55px;
             left: 142px;
         }
         .accessorybutton {
@@ -1619,7 +1628,7 @@
             width: 130px;
             height: 80px;
             position: absolute;
-            bottom: 70px;
+            bottom: 55px;
             left: 142px;
         }
         .appbutton {
@@ -1643,7 +1652,7 @@
             width: 130px;
             height: 50px;
             position: absolute;
-            bottom: 40px;
+            bottom: 30px;
             left: 142px;
         }
         .devicebutton {
@@ -2799,7 +2808,7 @@ let counts = 0;
 
 
     function check(){
-        if (mail_form.mail.value === "Windows95"){
+        if (mail_form.mail.value === "Reload"){
             //条件に一致する場合(空の場合)
             alert('コマンドが実行されました！');
             location.reload();
