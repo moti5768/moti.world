@@ -23,7 +23,7 @@
         <div class="start_window_white">
         <p class="blacktext" id="user"></p>
         </div>
-        <span class="xx-small" style="color: lime; position: absolute; bottom: 0px; z-index: 99999;">version 0.1<span class="blacktext">&emsp;&emsp;Windows2000を起動しています...</span></span>
+        <span class="xx-small" style="color: lime; position: absolute; bottom: 0px; z-index: 99999;">version 0.1.1<span class="blacktext">&emsp;&emsp;Windows2000を起動しています...</span></span>
         </div>
     </div>
 
@@ -199,8 +199,9 @@
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
         <div class="textcommand_area">
     <form method="get" name="mail_form" onsubmit="return false;" autocomplete="off">
-        <input type="text" class="textcommand_area border" name="mail" placeholder="Reload">
-        <input type="submit" class="textcommand_area border hover" value="実行" onclick="check()">
+        <input type="text" class="textcommand_area border" name="mail" placeholder="コマンドを入力">
+        <input type="submit" class="submitbtn border hover" value="実行" onclick="check()">
+        <input type="submit" class="submitbtn2 border hover" value="help" onclick="command_help()">
     </form>
     </div>
     </div>
@@ -1029,7 +1030,7 @@
             display: none;
             background: darkgray;
             width: 140px;
-            height: 130px;
+            height: 135px;
             position: absolute;
             bottom: 40px;
             left: 1px;
@@ -1612,16 +1613,29 @@
         .command_menu {
             display: none;
             background: darkgray;
-            width: 220px;
-            height: 50px;
+            width: 250px;
+            height: 80px;
             position: absolute;
             top: 280px;
             left: 100px;
         }
         .textcommand_area {
-            position: relative;
-            top: 12px;
-            left: 0px;
+            font-size: medium;
+            width: 90%;
+            height: 40px;
+            position: absolute;
+            top: 15px;
+            left: 3px;
+        }
+        .submitbtn {
+            position: absolute;
+            top: 15px;
+            right: -18px;
+        }
+        .submitbtn2 {
+            position: absolute;
+            top: 42px;
+            right: -16px;
         }
 
         .app_menu {
@@ -2775,7 +2789,6 @@ let counts = 0;
         command_menu.style.display = "block";
     }
 
-
     function iframe1_close(){
         const iframe1 = document.querySelector(".iframe1");
         iframe1.style.display = "none";
@@ -2814,10 +2827,20 @@ let counts = 0;
             //条件に一致する場合(空の場合)
             alert('コマンドが実行されました！');
             location.reload();
+        }else if (mail_form.mail.value === "shutdown"){
+            //条件に一致する場合(空の場合)
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            screen_close();
+            allwindow_close();
+            sound2();
         }else{
             //条件に一致しない場合(入力されている場合)
             alert('コマンドが正しくありません！');
         }
+    }
+
+    function command_help(){
+        alert("1.shutdown 2.Reload")
     }
 
 
