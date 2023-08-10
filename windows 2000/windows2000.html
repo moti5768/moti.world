@@ -356,7 +356,9 @@
     <div class="bom border shape">
         <span class="menu_bluebar">マインスイーパー</span>
         <button class="blacktext closebutton border hover2" onclick="bom_close()">X</button>
-        <div id="setting">
+        <button class="blacktext bigbutton border hover2" onclick="bom_bigscreen()">☐</button>
+        <button class="blacktext minbutton border hover2" onclick="bom_minscreen()">ー</button>
+        <div id="setting">☐
             W
             <input type="number" id="w" value="9" min="2" max="50">
             H
@@ -694,7 +696,7 @@
             display: block;
             background: darkgray;
             width: 180px;
-            height: 45px;
+            height: 40px;
             position: absolute;
             right: 1px;
             bottom: 43px;
@@ -703,13 +705,6 @@
             border-left: solid 2px white;
             border-bottom: solid 2px black;
             z-index: 99998;
-        }
-        .taskbar_blue {
-            background: darkblue;
-            width: 100%;
-            height: 10px;
-            position: absolute;
-            top: 2px;
         }
 
         .task_content_border {
@@ -898,10 +893,10 @@
             margin-left: 0px;
             background: darkgray;
             width: 30px;
-            height: 30px;
+            height: 35px;
             position: relative;
-            top: 14px;
-            left: 1px;
+            top: 3px;
+            left: 2px;
             border-top: solid 2px white;
             border-left: solid 2px white;
             border-bottom: solid 2px black;
@@ -1535,6 +1530,27 @@
             top: 0px;
             right: 0px;
         }
+
+        .bigbutton {
+            color: black;
+            width: 25px;
+            height: 25px;
+            position: absolute;
+            top: 0px;
+            right: 25px;
+            background: skyblue;
+            color: white;
+        }
+        .minbutton {
+            color: black;
+            width: 25px;
+            height: 25px;
+            position: absolute;
+            top: 0px;
+            right: 50px;
+            background: skyblue;
+            color: white;
+        }
         .reload_button {
             width: 80px;
             height: 25px;
@@ -1806,17 +1822,26 @@
 .bom {
     display: none;
     background: white;
-  width: 300px;
-  height: 400px;
-  position: absolute;
-  top: 160px;
-  right: 0px;
+    width: 310px;
+    height: 400px;
+    position: absolute;
+    top: 160px;
+    right: 0px;
+}
+
+.bom.active {
+    background: white;
+    width: 100%;
+    height: 98%;
+    position: absolute;
+    top: 0px;
+    right: 0px;
 }
 
 /* setting */
 #setting {
     position: absolute;
-    top: 20px;
+    top: 30px;
   width: 290px;
   margin: 0 auto;
 }
@@ -1848,6 +1873,7 @@
 }
 #btn {
   width: 100%;
+  height: 20px;
   margin: 3px auto;
   padding: 2px;
   font-weight: bold;
@@ -2343,7 +2369,6 @@ td {
             sound2.play();
         }
 
-
         function screen_start() {
             let user = document.querySelector(".user");
             user.style.display = "block";
@@ -2819,6 +2844,15 @@ let counts = 0;
     function bom_open(){
         const bom = document.querySelector(".bom");
         bom.style.display = "block";
+    }
+
+    function bom_bigscreen() {
+        let bombig = document.getElementsByClassName('bom');
+        bombig[0].classList.add('active');
+    }
+    function bom_minscreen() {
+        let bombig = document.getElementsByClassName('bom');
+        bombig[0].classList.remove('active');
     }
 
 
