@@ -23,17 +23,98 @@ function no(){
     alert("お使いの端末は対応していません!");
     no();
 }
+
+const screen2 = document.querySelector(".screen");
+const passs = document.querySelector('#passkey');
+const passkey = localStorage.getItem('iddata');
+const content_file = document.querySelector(".content8");
+const eastermenu = document.querySelector(".easter_menu");
+
 function passcheck(){
-if (pass_form.pass.value === "0000"){
+if (pass_form.pass.value === "0000" && localStorage.getItem('iddata') === (userid_form.userid_text.value)){
+    alert("ログイン成功!");
     const alerttext = document.querySelector('.alerttext');
     alerttext.style.display = "";
     screen_start();
     playsound();
-}else{
-    alert('パスワードが正しくありません！');
+} else if (userid_form.userid_text.value === ""){
+    alert("IDが入力されていません!");
+} else {
+    alert('IDもしくはパスワードが正しくありません!');
 }
 }
 
+function id_alert(){
+    if (localStorage.getItem('iddata')){
+        alert(localStorage.getItem('iddata'));
+    } else {
+        alert("IDが登録されていません!");
+        localStorage.removeItem('iddata');
+    }
+}
+
+function loadStorage() {
+    if (passkey) {
+      passs.textContent = `${passkey}`;
+    }
+  }
+
+function passcheck2(){
+    const userid_text = document.querySelector('#useridtext');
+    userid_text.textContent = (pass_set_form.set_pass.value);
+    const iddata = document.pass_set_form.set_pass.value;
+    localStorage.setItem('iddata', iddata);
+if (localStorage.getItem('iddata')){
+    alert("IDが登録されました。");
+} else {
+    idload();
+    localStorage.removeItem('iddata');
+}
+}
+
+const value = localStorage.getItem('iddata');
+console.log(value);
+
+let isReload = false;
+window.addEventListener('load', () => {
+    const perfEntries = performance.getEntriesByType("navigation");
+    isReload = perfEntries[0].type === 'reload';
+    iddata = localStorage.getItem('iddata');
+    document.getElementById("useridtext").innerHTML = iddata;
+    if (localStorage.getItem('iddata')){
+        console.log("ID TRUE");
+        let screen = document.querySelector('.screen');
+        screen.style.display = "none";
+        pass.style.display = "none";
+        userid2.style.display = "none";
+        start.style.display = "block";
+    } else {
+        console.log("ID FALSE");
+        let screen = document.querySelector('.screen');
+        screen.style.display = "block";
+        pass.style.display = "block";
+        userid2.style.display = "block";
+        start.style.display = "none";
+    }
+});
+
+
+function idload() {
+    if (localStorage.getItem('iddata')){
+        let screen = document.querySelector('.screen');
+        screen.style.display = "none";
+        pass.style.display = "none";
+        userid2.style.display = "none";
+        start.style.display = "block";
+    } else {
+        alert("IDが入力されていません!");
+        let screen = document.querySelector('.screen');
+        screen.style.display = "block";
+        pass.style.display = "block";
+        userid2.style.display = "block";
+        start.style.display = "none";
+    }
+}
 
 (function(){
     // 5分
@@ -70,6 +151,8 @@ if (pass_form.pass.value === "0000"){
             
     const star = document.querySelector(".star");
     const pass = document.querySelector('.pass_area');
+    const userid2 = document.querySelector('.userid_area');
+    const start = document.querySelector('.start');
     const popupwrap = document.getElementsByClassName('popupwrap');
     const screen_open = document.querySelector(".Windows95_group");
     const content = document.querySelector(".content");
@@ -103,6 +186,7 @@ if (pass_form.pass.value === "0000"){
     const windows = document.querySelector(".windows");
     const debug = document.querySelector(".debug");
     const stopwatch = document.querySelector(".stopwatch");
+    const set_pass = document.querySelector(".pass_setting");
 
     function twoDigit(num) {
             let ret;
@@ -189,6 +273,9 @@ if (pass_form.pass.value === "0000"){
         }
 
         function screen_close() {
+            document.getElementsByClassName("pass_area")[0].value = '';
+            document.getElementsByClassName("userid")[0].value = '';
+            idload();
             let targets = document.querySelectorAll(`input[type='checkbox'][name='checkbox']`);
             for (const i of targets) {		
                 i.checked = false;
@@ -207,24 +294,22 @@ if (pass_form.pass.value === "0000"){
             let screen_start2 = document.getElementsByClassName('screen_start');
             screen_start2[0].classList.remove('fadeout');
             setTimeout(function() {
-            let screen = document.getElementsByClassName('screen');
-            screen[0].classList.add('active');
+            let screen = document.querySelector('.screen');
+            screen.style.display = "block";
             let screen_close = document.getElementsByClassName('screen_close');
             screen_close[0].classList.remove('active');
             let screen_close2 = document.getElementsByClassName('screen_close');
             screen_close2[0].classList.remove('fadein');
-            pass.style.display = "block";
         }, 10000);
     };
 
         function screen_start() {
-            document.getElementsByClassName("pass")[0].value = '';
-            pass.style.display = "none";
+            loadStorage();
             document.getElementById("backcolor").style.backgroundColor = "black";
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.add('active');
-            let screen = document.getElementsByClassName('screen');
-            screen[0].classList.remove('active');
+            let screen = document.querySelector('.screen');
+            screen.style.display = "none";
         setTimeout(function() {
             let screen_start = document.getElementsByClassName('screen_start');
             screen_start[0].classList.remove('active');
@@ -240,8 +325,8 @@ if (pass_form.pass.value === "0000"){
 };
 
      window.addEventListener('load', function() {
-            if ( !sessionStorage.getItem('disp_popup') ) {
-                sessionStorage.setItem('disp_popup', 'on');
+            if ( !this.localStorage.getItem('disp_popup') ) {
+                this.localStorage.setItem('disp_popup', 'on');
                 let popup = document.getElementsByClassName('popupwrap');
                 popup[0].style.display = "block";
             }
@@ -432,6 +517,14 @@ function settingbox5(){
         screen_open.style.display = "block";
     }
 }
+function settingbox6(){
+    if (document.getElementById("setting_box6").checked) {
+        content_file.style.display = "block";
+    } else {
+        content_file.style.display = "none";
+    }
+}
+
 
     function testalert(){
         alert("test");
@@ -707,10 +800,26 @@ function settingbox5(){
         alerttextmenu.style.display = "block";
     }
 
+    function setpass_close(){
+        set_pass.style.display = "none";
+    }
+    function setpass_open(){
+        set_pass.style.display = "block";
+    }
+
+    function eastermenu_close(){
+        eastermenu.style.display = "none";
+    }
+    function eastermenu_open(){
+        eastermenu.style.display = "block";
+    }
+
     function check(){
         if (mail_form.mail.value === "Reload"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             window.location = '';
+        }else if (mail_form.mail.value === ""){
+            alert('コマンドが入力されていません！');
         }else if (mail_form.mail.value === "shutdown"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             screen_close();
@@ -723,10 +832,15 @@ function settingbox5(){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             settingmenu_open();
         }else if (mail_form.mail.value === "Storage_clear"){
-            document.getElementsByClassName("textcommand_area")[0].value = '';
-            localStorage.clear();
-            sessionStorage.clear();
-        }else if (mail_form.mail.value === "windows95_color"){
+            var res = confirm("windowsystemに保存されたデータは削除されます。それでもよろしいですか？");
+            if( res == true ) {
+                document.getElementsByClassName("textcommand_area")[0].value = '';
+                localStorage.clear();
+                sessionStorage.clear();
+                screen_close();
+                allwindow_close();
+                playsound2();
+        } else {}}else if (mail_form.mail.value === "windows95_color"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             document.getElementById("backcolor").style.background = "teal";
         }else if (mail_form.mail.value === "gra_color1"){
@@ -787,9 +901,21 @@ function settingbox5(){
         }
     }
 
+    function sclear(){
+        alert("windowsystemのストレージが削除されました");
+        localStorage.clear();
+        sessionStorage.clear();
+        iddata = localStorage.getItem('iddata');
+        document.getElementById("useridtext").innerHTML = iddata;
+        setTimeout('idload()',5000);
+    }
+
     function check2(){
         let alerttext2 = document.querySelector('#alerttext2');
         alerttext2.textContent = (mail_form2.mail2.value);
+    }
+    function check3(){
+        alert(mail_form2.mail2.value);
     }
 
     function helpcommand(){
@@ -821,6 +947,8 @@ function settingbox5(){
     draggable(document.querySelector('.drag22'));
     draggable(document.querySelector('.drag23'));
     draggable(document.querySelector('.drag24'));
+    draggable(document.querySelector('.drag25'));
+    draggable(document.querySelector('.drag26'));
     
 
     function draggable(target) {
@@ -852,7 +980,7 @@ function settingbox5(){
             let eleShape = document.getElementsByClassName("shape");
             for(var i=0; i< eleShape.length; i++){
                 // クリックイベント登録
-                eleShape[i].addEventListener("click", moveFront, event);
+                eleShape[i].addEventListener("mousedown", moveFront, event);
                 // 図形にz-indexを表示
             }
             // クリックされた要素のz-indexに、クリックされた回数を設定する
@@ -863,9 +991,8 @@ function settingbox5(){
                 e.target.style.zIndex = count;
                 // 図形にz-indexを表示
             }
-               
-    let ele = document.documentElement;
 
+    let ele = document.documentElement; 
     function full() {
 
        // 全画面表示      
