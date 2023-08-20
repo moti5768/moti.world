@@ -172,23 +172,18 @@ audio {
 
 .hover:hover {
     background-color: lightblue;
-    border: solid 1px skyblue;
     opacity: 0.8;
     color: white;
 }
 .hover2:hover {
     background-color: red;
-    border: solid 1px skyblue;
     opacity: 0.8;
     color: white;
 }
-
 .hover3:hover {
-    display: inline-block;
     border: solid 1px skyblue;
     opacity: 0.8;
     color: white;
-    padding: 0px;
 }
 
 .alerttext {
@@ -220,12 +215,23 @@ a {
 }
 
 .screen {
-    display: none;
-}
-.screen.active {
     display: block;
     z-index: 99999;
     background-color: black;
+}
+.start {
+    display: block;
+    color: white;
+    font-size: large;
+    background: linear-gradient(25deg, silver, skyblue);
+    border: solid 2px steelblue;
+    border-radius: 5px;
+    box-shadow: 1px 1px 10px black;
+    position: absolute;
+    top: 60%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 99999;
 }
 .pass {
     position: relative;
@@ -240,11 +246,65 @@ a {
 .pass_area {
     position: absolute;
     width: auto;
+    top: 63%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 99999;
+}
+
+.pass_setting {
+    display: none;
+    color: white;
+    background: linear-gradient(45deg, darkblue, blue);
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    z-index: 99999;
+}
+.pass_setting2 {
+    position: absolute;
+    top: 50%; 
+    left: 50%; 
+    transform: translate(-50%, -50%);
+    z-index: 99999;
+}
+.set_pass {
+    height: 30px;
+    background-color: blue;
+    border: solid 2px white;
+    border-radius: 5px;
+    box-shadow: 2.5px 2.5px 15px whitesmoke;
+}
+.set_pass2 {
+    color: white;
+    height: 30px;
+    width: 80px;
+    background-color: blue;
+    border: solid 2px white;
+    border-radius: 5px;
+    box-shadow: 2.5px 2.5px 15px whitesmoke;
+}
+
+
+.userid {
+    position: relative;
+    width: 50%;
+    height: 25px;
+}
+.userid2 {
+    position: relative;
+    width: 40px;
+    height: 25px;
+}
+.userid_area {
+    position: absolute;
+    width: auto;
     top: 58%;
     left: 50%;
     transform: translate(-50%, -50%);
     z-index: 99999;
 }
+
 
 .screen_start {
     display: none;
@@ -423,56 +483,68 @@ a {
 .files1 {
     position: absolute;
     left: 5px;
+    width: 80px;
 }
 .files2 {
     position: absolute;
     left: 95px;
+    width: 80px;
 }
 .files3 {
     position: absolute;
     left: 185px;
+    width: 80px;
 }
 .files4 {
     position: absolute;
     left: 275px;
+    width: 80px;
 }
 .files5 {
     position: absolute;
     left: 365px;
+    width: 80px;
 }
 .files6 {
     position: absolute;
     left: 455px;
+    width: 80px;
 }
 .files7 {
     position: absolute;
     left: 5px;
     top: 85px;
+    width: 80px;
 }
 .files8 {
     position: absolute;
     left: 95px;
     top: 85px;
+    width: 80px;
 }
 .files9 {
     position: absolute;
     left: 185px;
     top: 85px;
+    width: 80px;
 }
 .files10 {
     position: absolute;
     left: 275px;
     top: 85px;
+    width: 80px;
 }
 .files11 {
     position: absolute;
     left: 365px;
     top: 85px;
+    width: 80px;
 }
 .files12 {
     position: absolute;
     left: 455px;
     top: 85px;
+    width: 80px;
 }
 
 .taskbar {
@@ -760,8 +832,6 @@ a.underbarcontent {
 .content {
     display: block;
     font-size: small;
-    position: relative;
-    top: 0px;
 }
 .content-icons {
     position: absolute;
@@ -804,6 +874,17 @@ a.underbarcontent {
     top: 120px;
     left: 130px;
     width: 150px;
+}
+.content8 {
+    display: none;
+    position: absolute;
+    top: 220px;
+    left: 130px;
+    width: 150px;
+}
+
+.easter_menu {
+    display: none;
 }
 
 .icon {
@@ -862,9 +943,6 @@ a.underbarcontent {
 
 .file_text {
     font-size: x-small;
-    margin-left: 0px;
-    width: 60px;
-    height: 15px;
     position: absolute;
     top: 90px;
     left: 15px;
@@ -949,7 +1027,7 @@ span.timer2 {
     margin-top: 5px;
     margin-left: 10px;
     background: skyblue;
-    width: 35px;
+    width: 40px;
     height: 30px;
     position: relative;
     top: 20px;
@@ -972,8 +1050,6 @@ span.timer2 {
     height: 20px;
     position: absolute;
     right: 0px;
-    border: solid 1px #0099FF;
-    border-radius: 3px;
 }
 .taskbutton {
     font-size: small;
@@ -984,8 +1060,6 @@ span.timer2 {
     position: absolute;
     top: 0px;
     right: 30px;
-    border: solid 1px #0099FF;
-    border-radius: 3px;
 }
 
 .Credit {
@@ -1141,7 +1215,7 @@ span.timer2 {
     margin-left: 10px;
     font-size: large;
     border-radius: 0;
-    width: 80%;
+    width: 85%;
     height: 30px;
     position: absolute;
     top: 32px;
@@ -1220,8 +1294,8 @@ textarea {
     width: 10px;
     height: 10px;
     position: absolute;
-    right: 100px;
-    bottom: 2px;
+    left: 100px;
+    top: 22px;
     border: solid 1px black;
 }
 .icon_4g.online {
@@ -1229,8 +1303,8 @@ textarea {
     width: 10px;
     height: 10px;
     position: absolute;
-    right: 100px;
-    bottom: 2px;
+    left: 100px;
+    top: 22px;
     border: solid 1px black;
 }
 .icon_wifi {
@@ -1238,8 +1312,8 @@ textarea {
     width: 10px;
     height: 10px;
     position: absolute;
-    right: 100px;
-    bottom: 20px;
+    left: 100px;
+    top: 42px;
     border: solid 1px black;
 }
 .icon_wifi.online {
@@ -1247,8 +1321,8 @@ textarea {
     width: 10px;
     height: 10px;
     position: absolute;
-    right: 100px;
-    bottom: 20px;
+    left: 100px;
+    top: 42px;
     border: solid 1px black;
 }
 .nettext1 {
@@ -1295,7 +1369,7 @@ textarea {
     font-size: small;
     font-weight: bold;
     position: absolute;
-    right: 24%;
+    right: 222px;
     top: 1px;
     z-index: 99997;
 }
