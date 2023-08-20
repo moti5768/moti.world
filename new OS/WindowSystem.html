@@ -13,11 +13,23 @@
         <span class="screencolor"></span>
         <p class="alerttext"></p>
         <p class="screentext bold">WindowSystem</p>
+        <div class="userid_area">
+            <form autocomplete="off" method="get" name="userid_form" onsubmit="return false;">
+                <span>ID:&emsp;</span>
+                <input type="text" class="userid border" name="userid_text" maxlength="10" placeholder="10文字まで">
+            </form>
+        </div>
         <div class="pass_area" id="pass">
-        <form method="get" name="pass_form" onsubmit="return false;">
+        <form autocomplete="off" method="get" name="pass_form" onsubmit="return false;">
+            <span>pass:&emsp;</span>
             <input type="password" class="pass border" name="pass" maxlength="4" placeholder="0000">
+
             <input type="submit" class="pass2 border hover" value="実行" onclick="passcheck()">
         </form>
+    </div>
+    <a class="white button hover2" onclick="setpass_open()" style="position: absolute; z-index: 99999;">IDの登録</a>
+    <div class="start">
+        <a class="bold" onclick="screen_start(),playsound()">&emsp;start WindowSystem&emsp;</a>
     </div>
     </div>
 
@@ -33,6 +45,20 @@
 
     <div class="error2">
         <p class="white">エラーが発生しました。再起動します。</p>
+    </div>
+
+    <div class="pass_setting">
+        <span class="white" style="position: absolute; top: 0px; left: 0px; font-weight: bold;">IDの設定</span>
+        <a class="white bold hover2" onclick="id_alert()" style="position: absolute; bottom: 0px; border: solid 2px white;">IDを忘れた場合</a>
+        <div class="pass_setting2">
+            <span class="white bold">setting</span>
+            <form method="get" name="pass_set_form" onsubmit="return false;">
+                <span>ID:&emsp;</span>
+                <input type="password" class="set_pass" name="set_pass" maxlength="10" placeholder="10文字まで">
+                <input type="submit" class="set_pass2 hover" value="登録" onclick="passcheck2()">
+            </form>
+        </div>
+        <a class="white closebutton hover2" onclick="setpass_close()">X</a>
     </div>
 
 <div class="Windows95_group" id="win95">
@@ -59,8 +85,8 @@
     <!-- statmenu -->
 
     <div class="start_menu border">
-        <button class="blacktext closebutton hover2" onclick="startmenu_close()">X</button>
-        <p class="white username">&emsp;user 0000&emsp;</p><br><br><br>
+        <a class="white closebutton hover2" onclick="startmenu_close()">X</a>
+        <span class="white username" id="useridtext">pass none</span><br><br><br>
         <div class="startmenu_white border">
         <a class="blacktext menubtn hover" onclick="testalert()">TEST1</a>
         <a class="blacktext menubtn hover" onclick="testalert()">TEST2</a>
@@ -71,12 +97,12 @@
         <a class="blacktext menubtn hover" onclick="settingmenu_open(),programmenu_close(),appmenu_close(),startmenu_close()">設定</a>
         </div>
         <span class="pic border"></span>
-        <a class="white finishbtn border hover" onclick="screen_close(),allwindow_close(),playsound2()">Systemの終了</a>
+        <a class="white finishbtn border hover3" onclick="screen_close(),allwindow_close(),playsound2()">Systemの終了</a>
         <!-- programmenu -->
         <div class="program_menu border">
             <a class="white menubtn hover" onclick="appmenu_open()">アクセサリ</a>
             <a class="white menubtn hover" onclick="commandmenu_open(),startmenu_close()">コマンド</a><br>
-            <button class="blacktext closebutton hover2" onclick="programmenu_close()">X</button>
+            <a class="white closebutton hover2" onclick="programmenu_close()">X</a>
                     <!-- appmenu -->
         <div class="app_menu border">
             <a class="white menubtn hover" onclick="stopwatch_open(),startmenu_close()">stopwatch</a>
@@ -84,7 +110,7 @@
             <a class="white menubtn hover" onclick="memo_open(),startmenu_close()">メモ帳</a>
             <a class="white menubtn hover" onclick="calc_open(),startmenu_close()">電卓</a>
             <a class="white menubtn hover" onclick="omikuji()">おみくじ</a><br>
-            <button class="blacktext closebutton hover2" onclick="appmenu_close()">X</button>
+            <a class="white closebutton hover2" onclick="appmenu_close()">X</a>
         </div>
         <!-- /appmenu -->
         </div>
@@ -124,6 +150,10 @@
             <a class="icon hover3" ondblclick="window.updatemenu_open()"></a>
             <a class="test white hover3" ondblclick="window.updatemenu_open()">次期アップデートの<br>お知らせ</a>
             </div>
+            <div class="content8 drag25">
+                <a class="icon hover3" ondblclick="window.eastermenu_open()"></a>
+                <a class="test white hover3" ondblclick="window.eastermenu_open()">？？？</a>
+            </div>
         </div>
     </div>
 
@@ -137,7 +167,7 @@
 
         <div class="backcolor_menu border shape" style="opacity: 0.95;">
             <span class="menu_graybar">画面のプロパティ</span>
-            <button class="closebutton hover2" onclick="backcolormenu_close()">X</button>
+            <a class="closebutton hover2" onclick="backcolormenu_close()">X</a>
             <a class="backcolor_reset hover" onclick="backcolor_reset()">リセット</a>
     
             <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()"></input>
@@ -170,9 +200,9 @@
         <a class="blacktext closebutton hover2" onclick="commandmenu_close()">X</a>
     <form autocomplete="off" method="get" name="mail_form" onsubmit="return false;">
         <input type="text" class="textcommand_area" name="mail" placeholder="コマンドを入力">
-        <input type="submit" class="submitbtn hover" value="実行" onclick="check()"><br>
-        <input type="button" class="submitbtn2 hover" value="help" onclick="helpcommand()">
-        <p class="small white" style="position: absolute; right: 5px; bottom: 2px;">ver 0.1</p>
+        <input type="submit" class="submitbtn hover3" value="実行" onclick="check()"><br>
+        <input type="button" class="submitbtn2 hover3" value="help" onclick="helpcommand()">
+        <p class="small white" style="position: absolute; right: 3px; bottom: 2px;">ver 0.1</p>
     </form>
     </div>
 
@@ -182,7 +212,8 @@
         <a class="blacktext closebutton hover2" onclick="alerttextmenu_close()">X</a>
     <form autocomplete="off" method="get" name="mail_form2" onsubmit="return false;">
         <input type="text" class="textcommand_area2" name="mail2" placeholder="文字を入力">
-        <input type="submit" class="submitbtn hover" value="実行" onclick="check2()"><br>
+        <input type="submit" class="submitbtn hover3" value="出力" onclick="check2()"><br>
+        <input type="submit" class="submitbtn2 hover3" value="実行" onclick="check3()">
         </form>
         <br><br><br><p class="white">&nbsp;出力</p>
         <p class="white border" style="background: black; height: 90px; width: 280px; position: absolute; left: 10px;">alert('<span id="alerttext2">ここに文字が入ります。</span>')</p>
@@ -206,11 +237,11 @@
         <div class="error">
             <div class="shape error_window border" style="opacity: 0.95;">
                 <span class="menu_redbar"><span class="white">&emsp;確認</span></span>
-                <a class="blacktext closebutton hover2" onclick="error_close(),memo_close()">X</a>
+                <a class="blacktext closebutton hover2" onclick="error_close()">X</a>
                 <div class="error_window_white">
                 このページを閉じてもよろしいですか？
                 </div>
-                <button class="btn bottom hover" onclick="error_close()" style="position: absolute; bottom: 10px; left:15px;">キャンセル</button>
+                <button class="btn bottom hover" onclick="error_close(),memo_close()" style="position: absolute; bottom: 10px; left:15px;">YES</button>
             </div>
         </div>
     </div>
@@ -306,6 +337,10 @@
                     <div class="box_text5">
                         <input type="checkbox" class="box" id="setting_box5" placeholder="test" onclick="settingbox5()"></input>
                         <p class="small" style="color:red">全ての表示を無効化(※注意)</p>
+                    </div>
+                    <div class="box_text6">
+                        <input type="checkbox" class="box" id="setting_box6" placeholder="test" onclick="settingbox6()"></input>
+                        <p class="small" style="color:blue">easter egg file</p>
                     </div>
                 </div>
             </div>
@@ -404,11 +439,11 @@
             <span class="menu_bluebar">&emsp;ネットワーク</span>
             <a class="blacktext closebutton hover2" onclick="netmenu_close()">X</a>
             <span class="small_window_white">
+            <p class="small">接続状態(水：良好&emsp;灰：切)</p>
+            <p class="small nettext1">TEST(WiFi)</p>
+            <p class="small nettext2">ONLINE(4G)</p>
             <span class="icon_4g"></span>
             <span class="icon_wifi"></span>
-            <p class="small">接続状態(水：良好&emsp;灰：切)</p>
-            <p class="small nettext1">TEST</p>
-            <p class="small nettext2">ONLINE</p>
             </span>
         </div>
     </div>
@@ -449,7 +484,7 @@
         <div class="screenserver" id="wrapper">
             <canvas id="waveCanvas"></canvas>
             <p class="white bold bigtext server">WindowSystem<br><span class="medium" style="position: absolute; bottom: -10px; right: 0px;">screen server</span></p>
-            <a class="closebutton white border hover" style="z-index: 99999;" onclick="server_close()">X</a>
+            <a class="closebutton white hover2" style="z-index: 99999;" onclick="server_close()">X</a>
         </div>
 
         <div class="updown_menu">
@@ -502,6 +537,9 @@
 
     <div class="debug">
         <div class="drag22 shape medium_window border" style="opacity: 0.95;">
+            <div style="position: absolute; bottom: 15px; right: 100px; z-index: 1;">
+                <a class="button hover2" onclick="sclear()">clear</a>
+            </div>
         <div class="medium_window_white">
             <div class="debug_screen small">
                 <p class="small" style="color: lime;">NAME: WindowSystem<br>
@@ -514,6 +552,7 @@
                     <p>Time to complete charging:&emsp;<span id="chargingTime"></span>[s]</p><br>
                     <p>system version 1.0.0</p>
                 </div>
+                <p class="white" style="display: none;">key:&emsp;<span class="white" id="passkey">IDが登録されていません。</span></p>
             </div>
         </div>
         <span class="menu_bluebar">debug</span>
@@ -535,6 +574,17 @@
       </div>
       </div>
       <!-- /stopwatch    -->
+
+
+      <div class="easter_menu">
+        <div class="drag26 shape medium_window border" style="opacity: 0.95; height: 90%; width: 60%;">
+            <span class="menu_bluebar">&emsp;easter_window</span>
+            <a class="blacktext closebutton hover2" onclick="eastermenu_close()">X</a>
+            <div style="z-index: 99999;">
+            <iframe src="https://moti5768.github.io/moti.world/windows%202000/windows2000.html" frameborder="0" style="height: 100%; width: 100%; position: absolute; top: 20px; left: 0px;"></iframe>
+            </div>
+        </div>
+    </div>
 
     <div class="Credit">
         <p class="bold Credit_text">WindowSystem</p>
@@ -573,6 +623,7 @@
         <a class="soft hover3" onclick="paint_open()">&nbsp;paint&nbsp;</a>
         <a class="soft hover3" onclick="netmenu_open()">&nbsp;network&nbsp;</a>
         <a class="soft hover3" onclick="sound_open()">&nbsp;sound&nbsp;</a>
+        <a class="soft hover3" onclick="stopwatch_open()">&nbsp;stopwatch&nbsp;</a>
     </div>
 
     <!-- under taskbar -->
