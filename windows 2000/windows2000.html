@@ -11,8 +11,8 @@
 <body id="backcolor">
     <div class="screen">
         <span class="screencolor"></span>
-        <p class="screentext bold">Windows2000<br>(バグ発生中)</p>
-        <p class="screensubtext bold">test&nbsp;0.1&copy;</p>
+        <p class="screentext bold">Windows2000</p>
+        <p class="screensubtext bold">test&nbsp;0.1.1&copy;</p>
         <button class="screenbutton bold border" onclick="screen_start(),sound()">スタート</button>
     </div>
 
@@ -55,7 +55,7 @@
     <div class="title">
         <div class="titleline"></div>
         <p class="bold white">Windows2000&emsp;&emsp;&emsp;</p>
-        <p class="bold white medium subtitle">test&nbsp;0.1&copy;</p>
+        <p class="bold white medium subtitle">test&nbsp;0.1.1&copy;</p>
     </div>
 
     <div class="start_menu border">
@@ -197,13 +197,11 @@
     <div class="command_menu border shape">
         <div class="menu_bluebar">コマンド入力</div>
         <button class="blacktext closebutton border hover2" onclick="commandmenu_close()">X</button>
-        <div class="textcommand_area">
     <form method="get" name="mail_form" onsubmit="return false;" autocomplete="off">
         <input type="text" class="textcommand_area border" name="mail" placeholder="コマンドを入力">
         <input type="submit" class="submitbtn border hover" value="実行" onclick="check()">
         <input type="submit" class="submitbtn2 border hover" value="help" onclick="command_help()">
     </form>
-    </div>
     </div>
 
     <div class="app_memo border shape">
@@ -226,37 +224,52 @@
         <input class="calc textcalc" style="text-align: right;"></input><br>
         <button class="closebutton blacktext border hover2" onclick="task_content3_close(),calc_close()">X</button>
         <button class="blacktext taskbutton border hover" onclick="task_content3_open(),calc_close()">一</button>
-        <button class="calc button_calc" onclick="append( '1' )" >1</button>
-        <button class="calc button_calc" onclick="append( '2' )" >2</button>
-        <button class="calc button_calc" onclick="append( '3' )" >3</button>
-        <button class="calc button_calc" onclick="append( '4' )" >4</button>
-        <button class="calc button_calc" onclick="append( '5' )" >5</button><br />
-        <button class="calc button_calc" onclick="append( '6' )" >6</button>
-        <button class="calc button_calc" onclick="append( '7' )" >7</button>
-        <button class="calc button_calc" onclick="append( '8' )" >8</button>
-        <button class="calc button_calc" onclick="append( '9' )" >9</button>
-        <button class="calc button_calc" onclick="append( '0' )" >0</button><br />
-        <button class="calc button_calc" onclick="append( '00' )" >00</button>
-        <button class="calc button_calc" onclick="append( '.' )" >.</button>
-        <button class="calc button_calc" onclick="append( '+' )" >+</button>
-        <button class="calc button_calc" onclick="append( '-' )" >-</button>
-        <button class="calc button_calc" onclick="append( '*' )" >x</button><br />
-        <button class="calc button_calc" onclick="append( '/' )" >÷</button>
-        <button class="calc button_calc" onclick="append( '**' )" >^</button>
-        <button class="calc button_calc" onclick="append( '**0.5' )" >√</button>
-        <button class="calc button_calc" onclick="calc()">=</button>
-        <button class="calc button_calc" onclick="update( '' ) " >CLR</button>
+        <button class="calc button_calc hover" onclick="append( '1' )" >1</button>
+        <button class="calc button_calc hover" onclick="append( '2' )" >2</button>
+        <button class="calc button_calc hover" onclick="append( '3' )" >3</button>
+        <button class="calc button_calc hover" onclick="append( '4' )" >4</button>
+        <button class="calc button_calc hover" onclick="append( '5' )" >5</button><br />
+        <button class="calc button_calc hover" onclick="append( '6' )" >6</button>
+        <button class="calc button_calc hover" onclick="append( '7' )" >7</button>
+        <button class="calc button_calc hover" onclick="append( '8' )" >8</button>
+        <button class="calc button_calc hover" onclick="append( '9' )" >9</button>
+        <button class="calc button_calc hover" onclick="append( '0' )" >0</button><br />
+        <button class="calc button_calc hover" onclick="append( '00' )" >00</button>
+        <button class="calc button_calc hover" onclick="append( '.' )" >.</button>
+        <button class="calc button_calc hover" onclick="append( '+' )" >+</button>
+        <button class="calc button_calc hover" onclick="append( '-' )" >-</button>
+        <button class="calc button_calc hover" onclick="append( '*' )" >x</button><br />
+        <button class="calc button_calc hover" onclick="append( '/' )" >÷</button>
+        <button class="calc button_calc hover" onclick="append( '**' )" >^</button>
+        <button class="calc button_calc hover" onclick="append( '**0.5' )" >√</button>
+        <button class="calc button_calc hover" onclick="calc()">=</button>
+        <button class="calc button_calc hover" onclick="update( '' ) " >CLR</button>
     </div>
 
     <div class="controlpanel">
         <div class="controlpanel_window border shape">
             <span class="menu_bluebar">　　コントロールパネル</span>
             <span class="controlpanel_white border"></span>
-            <a class="controlpanel_text hover" onclick="testalert()">テスト</a>
+            <a class="controlpanel_text hover" onclick="soundmenu_open(),controlpanel_close()">サウンド</a>
             <span class="controlpanel_icon"></span>
-            <a class="controlpanel_icon2" onclick="testalert()"></a>
+            <a class="controlpanel_icon2" onclick="soundmenu_open(),controlpanel_close()"></a>
             <button class="blacktext closebutton border hover2" onclick="task_content2_close(),controlpanel_close()">X</button>
             <button class="blacktext taskbutton border hover" onclick="task_conent2_open(),controlpanel_close()">一</button>
+        </div>
+    </div>
+
+    <div class="sound_menu">
+        <div class="controlpanel_window border shape">
+            <span class="menu_bluebar">　　サウンド</span>
+            <span class="controlpanel_white border"></span>
+            <a class="controlpanel_text hover" onclick="sound()">起動音</a>
+            <span class="controlpanel_icon"></span>
+            <a class="controlpanel_icon2" onclick="sound()"></a>
+
+            <a class="controlpanel_text2 hover" onclick="sound2()">終了音</a>
+            <a class="controlpanel_icon3" onclick="sound2()"></a>
+            <button class="blacktext closebutton border hover2" onclick="task_content2_close(),soundmenu_close()">X</button>
+            <button class="blacktext taskbutton border hover" onclick="task_conent2_open(),soundmenu_close()" style="display: none;">一</button>
         </div>
     </div>
 
@@ -1255,11 +1268,18 @@
         .controlpanel_text {
             font-size: small;
             margin-left: 10px;
-            width: 50px;
             height: 15px;
             position: absolute;
             top: 90px;
-            left: 15px;
+            left: 5px;
+        }
+        .controlpanel_text2 {
+            font-size: small;
+            margin-left: 10px;
+            height: 15px;
+            position: absolute;
+            top: 90px;
+            left: 95px;
         }
         .controlpanel_icon {
             margin-left: 10px;
@@ -1280,6 +1300,17 @@
             position: absolute;
             top: 40px;
             left: 5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .controlpanel_icon3 {
+            margin-left: 10px;
+            background: khaki;
+            width: 60px;
+            height: 45px;
+            position: absolute;
+            top: 40px;
+            left: 95px;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
@@ -1494,11 +1525,11 @@
         }
         .button_calc {
             color: black;
-            margin-top: 5px;
+            margin-top: 2.5px;
             margin-left: 10px;
             background: darkgray;
-            width: 35px;
-            height: 30px;
+            width: 40px;
+            height: 35px;
             position: relative;
             top: 20px;
             left: 0px;
@@ -1636,22 +1667,24 @@
             left: 100px;
         }
         .textcommand_area {
+            background-color: black;
+            color: white;
             font-size: medium;
-            width: 90%;
+            width: 80%;
             height: 40px;
             position: absolute;
-            top: 15px;
+            top: 30px;
             left: 3px;
         }
         .submitbtn {
             position: absolute;
-            top: 15px;
-            right: -18px;
+            top: 30px;
+            right: 5px;
         }
         .submitbtn2 {
             position: absolute;
-            top: 42px;
-            right: -16px;
+            top: 55px;
+            right: 5px;
         }
 
         .app_menu {
@@ -1696,6 +1729,9 @@
         }
 
         .controlpanel {
+            display: none;
+        }
+        .sound_menu {
             display: none;
         }
         .controlpanel_window {
@@ -2050,10 +2086,12 @@ td {
             margin: none;
             color: black;
             background: darkgray;
-            width: 30px;
-            height: 25px;
+            margin: 1px;
+            width: 35px;
+            height: 30px;
             position: relative;
             top: 20px;
+            left: 10px;
             border-top: solid 2px white;
             border-left: solid 2px white;
             border-bottom: solid 2px black;
@@ -2088,11 +2126,18 @@ td {
         .controlpanel_text {
             font-size: x-small;
             margin-left: 10px;
-            width: 50px;
             height: 15px;
             position: absolute;
             top: 75px;
-            left: 10px;
+            left: 5px;
+        }
+        .controlpanel_text2 {
+            font-size: x-small;
+            margin-left: 10px;
+            height: 15px;
+            position: absolute;
+            top: 75px;
+            left: 65px;
         }
         .controlpanel_icon {
             margin-left: 10px;
@@ -2113,6 +2158,17 @@ td {
             position: absolute;
             top: 40px;
             left: 5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
+        .controlpanel_icon3 {
+            margin-left: 10px;
+            background: khaki;
+            width: 40px;
+            height: 30px;
+            position: absolute;
+            top: 40px;
+            left: 65px;
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
@@ -2464,9 +2520,6 @@ td {
             const Credit = document.querySelector(".Credit");
             Credit.style.display = "none";
     }, 2000);
-
-         setInterval('sound()',1000);
-         setInterval('sound2()',1000);
 };
 
         function twoDigit(num) {
@@ -2623,6 +2676,9 @@ let counts = 0;
         const mycomputer = document.querySelector(".mycomputer");
         mycomputer.style.display = "none";
 
+        const sound_menu = document.querySelector(".sound_menu");
+        sound_menu.style.display = "none";
+
         const app_calc = document.querySelector(".app_calc");
         app_calc.style.display = "none";
 
@@ -2754,6 +2810,15 @@ let counts = 0;
     function settingmenu_close(){
         const setting_menu = document.querySelector(".setting_menu");
         setting_menu.style.display = "none";
+    }
+
+    function soundmenu_close(){
+        const sound_menu = document.querySelector(".sound_menu");
+        sound_menu.style.display = "none";
+    }
+    function soundmenu_open(){
+        const sound_menu = document.querySelector(".sound_menu");
+        sound_menu.style.display = "block";
     }
 
     function task_conent1_open(){
