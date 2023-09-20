@@ -138,7 +138,7 @@
         <button class="blacktext bar_button hover" onclick="backcolormenu_open(),popupwindow_close()">C</button>
         <button class="blacktext bar_button hover" onclick="cssmenu_open(),popupwindow_close()">CS</button>
         <button class="blacktext bar_button hover x-small" onclick="itiran_open()">一覧</button>
-        <button class="blacktext bar_button hover">T</button>
+        <button class="blacktext bar_button hover" onclick="omikuji()">OMI</button>
         <button class="blacktext bar_button hover">T</button>
 
 
@@ -3173,6 +3173,21 @@ function timer() {
   timeoutId = setTimeout(() => {
     timer();
   }, 1000);
+}
+
+
+function omikuji() {
+	rand = Math.floor(Math.random()*100);
+	msg = "大吉";
+	if (rand > 9) msg = "吉";
+	if (rand > 29) msg = "中吉";
+	if (rand > 39) msg = "小吉";
+	if (rand > 49) msg = "大凶";
+    if (rand > 59) msg = "中吉";
+	if (rand > 69) msg = "末吉";
+	if (rand > 79) msg = "凶";
+	if (rand > 89) msg = "残念!! 今日はおみくじがなかったみたい..."; 
+	alert(msg);
 }
 
     </script>
