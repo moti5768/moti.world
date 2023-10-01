@@ -29,10 +29,52 @@ const passs = document.querySelector('#passkey');
 const passkey = localStorage.getItem('iddata');
 const content_file = document.querySelector(".content8");
 const eastermenu = document.querySelector(".easter_menu");
+const title = document.getElementById('title');
+
+function passload(){
+const passkey = localStorage.getItem('iddata');
+passs.textContent = (passkey);
+}
+setInterval(() => {
+    passload();
+    if ((passkey.value = "black") === localStorage.getItem('iddata')){
+        backcolor_black();
+        taskcolor_black();
+        title.textContent = "WindowSystem　　　";
+    } else if ((passkey.value = "white") === localStorage.getItem('iddata')) {
+        backcolor_white();
+        taskcolor_white();
+        title.textContent = "WindowSystem　　　";
+    } else if ((passkey.value = "minecraft") === localStorage.getItem('iddata')) {
+        title.textContent = "Minecraft　　　";
+    } else if ((passkey.value = "menu") === localStorage.getItem('iddata')) {
+        content.style.display = "none";
+        underbar.style.display = "none";
+        taskbar.style.display = "none";
+        start_menu.style.display = "none";
+        const menu = document.querySelector('.menu');
+        menu.style.display = "block";
+        title.textContent = "WindowSystem　　　";
+    } else {
+        title.textContent = "WindowSystem　　　";
+    }
+}, 100);
+
+function menu_close(){
+    content.style.display = "block";
+    underbar.style.display = "block";
+    const menu = document.querySelector('.menu');
+    menu.style.display = "none";
+    if(document.getElementById("setting_box4").checked) {
+    taskbar.style.display = "none";
+    } if (document.getElementById("setting_box3").checked) {
+        content.style.display = "none";
+    }
+}
 
 function passcheck(){
 if (pass_form.pass.value === "0000" && localStorage.getItem('iddata') === (userid_form.userid_text.value)){
-    alert("ログイン成功!");
+    console.log("ログイン成功!");
     const alerttext = document.querySelector('.alerttext');
     alerttext.style.display = "";
     screen_start();
@@ -60,12 +102,14 @@ function loadStorage() {
   }
 
 function passcheck2(){
+    menu_close();
     const userid_text = document.querySelector('#useridtext');
     userid_text.textContent = (pass_set_form.set_pass.value);
     const iddata = document.pass_set_form.set_pass.value;
     localStorage.setItem('iddata', iddata);
 if (localStorage.getItem('iddata')){
-    alert("IDが登録されました。");
+    const pass_text = document.getElementById('pass_text');
+    pass_text.textContent = "保存しました!";
 } else {
     idload();
     localStorage.removeItem('iddata');
@@ -107,7 +151,8 @@ function idload() {
         userid2.style.display = "none";
         start.style.display = "block";
     } else {
-        alert("IDが入力されていません!");
+        const pass_text = document.getElementById('pass_text');
+        pass_text.textContent = "IDが入力されていません!";
         let screen = document.querySelector('.screen');
         screen.style.display = "block";
         pass.style.display = "block";
@@ -142,7 +187,7 @@ function idload() {
     // ログアウト
     function server() {
         server_open();
-        alert("一定時間放置されてます！");
+        console.log("5分間放置されていたため、スクリーンセーバーが起動しました！");
     }
 
     setTimer();
@@ -165,6 +210,7 @@ function idload() {
     const command_menu = document.querySelector(".command_menu");
     const alerttextmenu = document.querySelector(".alerttext_menu");
     const backcolor_menu = document.querySelector(".backcolor_menu");
+    const taskcolor_menu = document.querySelector(".taskcolor_menu");
     const colorbtn = document.querySelector(".colorbtn");
     const controlpanel = document.querySelector(".controlpanel");
     const mycomputer = document.querySelector(".mycomputer");
@@ -187,6 +233,10 @@ function idload() {
     const debug = document.querySelector(".debug");
     const stopwatch = document.querySelector(".stopwatch");
     const set_pass = document.querySelector(".pass_setting");
+    const help_command = document.querySelector(".help_command");
+    const alarm = document.querySelector(".alarm");
+    const weather_menu = document.querySelector(".weather_menu");
+    const update_log = document.querySelector(".update_log");
 
     function twoDigit(num) {
             let ret;
@@ -366,6 +416,8 @@ function idload() {
     function save() {
         let MemoData = document.form1.Memo.value;
         localStorage.setItem('MemoData', MemoData);
+        const memo_save = document.getElementById('memo_save_text');
+        memo_save.textContent = "保存しました！";
     }
     document.getElementById('cleartextbtn').addEventListener('click',function (){
         document.getElementsByClassName("Memo")[0].value = '';
@@ -460,11 +512,15 @@ document.getElementById("text").innerHTML = msg3;
 
 function omikuji() {
 	rand = Math.floor(Math.random()*100);
-	msg = "大吉"; //0～9（10%）
-	if (rand > 9) msg = "中吉"; //10～29（20%）
-	if (rand > 29) msg = "吉"; //30～69（40%）
-	if (rand > 69) msg = "凶"; //70～89（20%）
-	if (rand > 89) msg = "大凶"; //90～99（10%）
+	msg = "大吉";
+	if (rand > 9) msg = "吉";
+	if (rand > 29) msg = "中吉";
+	if (rand > 39) msg = "小吉";
+	if (rand > 49) msg = "大凶";
+    if (rand > 59) msg = "中吉";
+	if (rand > 69) msg = "末吉";
+	if (rand > 79) msg = "凶";
+	if (rand > 89) msg = "残念!! 今日はおみくじがなかったみたい..."; 
 	alert(msg);
 }
 
@@ -488,8 +544,9 @@ function settingbox(){
 function settingbox2(){
     if (document.getElementById("setting_box2").checked) {
         taskbar.style.display = "none";
-    } else {
+    } else if (taskbar2.style.display = "none") {
         taskbar.style.display = "block";
+        task_soft.style.display = "block";
     }
 }
 function settingbox3(){
@@ -504,6 +561,8 @@ function settingbox4(){
         task_soft.style.display = "none";
         taskbar2.style.display = "block";
         taskbar.style.display = "none";
+    } else if (document.getElementById("setting_box2").checked) {
+        console.log("test");
     } else {
         task_soft.style.display = "block";
         taskbar2.style.display = "none";
@@ -543,6 +602,9 @@ function settingbox6(){
 
     function backcolor_black(){
         document.getElementById("backcolor").style.background = "black";
+    }
+    function backcolor_white(){
+        document.getElementById("backcolor").style.background = "white";
     }
     function backcolor_gray(){
         document.getElementById("backcolor").style.background = "gray";
@@ -593,15 +655,92 @@ function settingbox6(){
         document.getElementById("backcolor").style.background = "";
     }
 
+
+    function taskcolor_black(){
+        document.getElementById("taskbar").style.background = "black";
+        document.getElementById("taskbar").style.borderColor = "black";
+    }
+    function taskcolor_white(){
+        document.getElementById("taskbar").style.background = "white";
+        document.getElementById("taskbar").style.borderColor = "white";
+    }
+    function taskcolor_gray(){
+        document.getElementById("taskbar").style.background = "gray";
+        document.getElementById("taskbar").style.borderColor = "gray";
+    }
+    function taskcolor_silver(){
+        document.getElementById("taskbar").style.background = "silver";
+        document.getElementById("taskbar").style.borderColor = "silver";
+    }
+    function taskcolor_darkblue(){
+        document.getElementById("taskbar").style.background = "darkblue";
+        document.getElementById("taskbar").style.borderColor = "darkblue";
+    }
+    function taskcolor_lightskyblue(){
+        document.getElementById("taskbar").style.background = "#87cefa";
+        document.getElementById("taskbar").style.borderColor = "#87cefa";
+    }
+    function taskcolor_red(){
+        document.getElementById("taskbar").style.background = "red";
+        document.getElementById("taskbar").style.borderColor = "red";
+    }
+    function taskcolor_orange(){
+        document.getElementById("taskbar").style.background = "orange";
+        document.getElementById("taskbar").style.borderColor = "orange";
+    }
+    function taskcolor_yellow(){
+        document.getElementById("taskbar").style.background = "yellow";
+        document.getElementById("taskbar").style.borderColor = "yellow";
+    }
+    function taskcolor_green(){
+        document.getElementById("taskbar").style.background = "green";
+        document.getElementById("taskbar").style.borderColor = "green";
+    }
+    function taskcolor_lime(){
+        document.getElementById("taskbar").style.background = "lime";
+        document.getElementById("taskbar").style.borderColor = "lime";
+    }
+    function taskcolor_purple(){
+        document.getElementById("taskbar").style.background = "purple";
+        document.getElementById("taskbar").style.borderColor = "purple";
+    }
+    function taskcolor_redpurple(){
+        document.getElementById("taskbar").style.background = "#c450a0";
+        document.getElementById("taskbar").style.borderColor = "#c450a0";
+    }
+    function taskcolor_bluepurple(){
+        document.getElementById("taskbar").style.background = "#704cbc";
+        document.getElementById("taskbar").style.borderColor = "#704cbc";
+    }
+    function taskcolor_brown(){
+        document.getElementById("taskbar").style.background = "brown";
+        document.getElementById("taskbar").style.borderColor = "brown";
+    }
+    function taskcolor_pink(){
+        document.getElementById("taskbar").style.background = "pink";
+        document.getElementById("taskbar").style.borderColor = "pink";
+    }
+    function taskcolor_skincolor(){
+        document.getElementById("taskbar").style.background = "#fedcbd";
+        document.getElementById("taskbar").style.borderColor = "#fedcbd";
+    }
+    function taskcolor_reset(){
+        document.getElementById("taskbar").style.background = "";
+        document.getElementById("taskbar").style.borderColor = "";
+    }
+
     function allwindow_close(){
+        popupwrap[0].style.display = "none";
         screen_open.style.display = "none";
         start_menu.style.display = "none";
         taskbar.style.display = "block";
+        taskcolor_menu.style.display = "none";
         backcolor_menu.style.display = "none";
         program_menu.style.display = "none";
         app_menu.style.display = "none";
         setting_menu.style.display = "none";
         command_menu.style.display = "none";
+        help_command.style.display = "none";
         controlpanel.style.display = "none";
         mycomputer.style.display = "none";
         app_calc.style.display = "none";
@@ -619,6 +758,10 @@ function settingbox6(){
         stopwatch.style.display = "none";
         error2.style.display = "none";
         alerttextmenu.style.display = "none";
+        alarm.style.display = "none";
+        weather_menu.style.display = "none";
+        update_log.style.display = "none";
+        
     }
     
     function startmenu_close(){
@@ -688,6 +831,13 @@ function settingbox6(){
         backcolor_menu.style.display = "block";
     }
 
+    function taskcolormenu_close(){
+        taskcolor_menu.style.display = "none";
+    }
+    function taskcolormenu_open(){
+        taskcolor_menu.style.display = "block";
+    }
+
     function programmenu_close(){
         program_menu.style.display = "none";
         app_menu.style.display = "none";
@@ -723,10 +873,13 @@ function settingbox6(){
     }
     function memo_close(){
         app_memo.style.display = "none";
+        const memo_save = document.getElementById('memo_save_text');
+        memo_save.textContent = "";
     }
 
     function commandmenu_close(){
         command_menu.style.display = "none";
+        help_command_close();
     }
     function commandmenu_open(){
         command_menu.style.display = "block";
@@ -802,6 +955,8 @@ function settingbox6(){
 
     function setpass_close(){
         set_pass.style.display = "none";
+        const pass_text = document.getElementById('pass_text');
+        pass_text.textContent = "";
     }
     function setpass_open(){
         set_pass.style.display = "block";
@@ -814,8 +969,38 @@ function settingbox6(){
         eastermenu.style.display = "block";
     }
 
+
+    function help_command_close(){
+        help_command.style.display = "none";
+    }
+    function help_command_open(){
+        help_command.style.display = "block";
+    }
+
+
+    function alarm_close(){
+        alarm.style.display = "none";
+    }
+    function alarm_open(){
+        alarm.style.display = "block";
+    }
+
+    function weathermenu_open(){
+        weather_menu.style.display = "block";
+    }
+    function weathermenu_close(){
+        weather_menu.style.display = "none";
+    }
+
+    function updatelog_open(){
+        update_log.style.display = "block";
+    }
+    function updatelog_close(){
+        update_log.style.display = "none";
+    }
+
     function check(){
-        if (mail_form.mail.value === "Reload"){
+        if (mail_form.mail.value === "reload"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             window.location = '';
         }else if (mail_form.mail.value === ""){
@@ -831,58 +1016,61 @@ function settingbox6(){
         }else if (mail_form.mail.value === "setting"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             settingmenu_open();
-        }else if (mail_form.mail.value === "Storage_clear"){
+        }else if (mail_form.mail.value === "storage.clear"){
             var res = confirm("windowsystemに保存されたデータは削除されます。それでもよろしいですか？");
             if( res == true ) {
                 document.getElementsByClassName("textcommand_area")[0].value = '';
                 localStorage.clear();
                 sessionStorage.clear();
-                screen_close();
                 allwindow_close();
+                screen_close();
                 playsound2();
-        } else {}}else if (mail_form.mail.value === "windows95_color"){
+        } else {}}else if (mail_form.mail.value === "backcolor.windows95"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             document.getElementById("backcolor").style.background = "teal";
-        }else if (mail_form.mail.value === "gra_color1"){
+        }else if (mail_form.mail.value === "backcolor.windows2000"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            document.getElementById("backcolor").style.background = "steelblue";
+        }else if (mail_form.mail.value === "gradation.color1"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             const box = document.getElementById('backcolor');
             box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkblue), color-stop(1, blue))';
-        }else if (mail_form.mail.value === "gra_color2"){
+        }else if (mail_form.mail.value === "gradation.color2"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             const box = document.getElementById('backcolor');
             box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, darkred), color-stop(1, red))';
-        }else if (mail_form.mail.value === "gra_color3"){
+        }else if (mail_form.mail.value === "gradation.color3"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             const box = document.getElementById('backcolor');
             box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, yellow), color-stop(1, green))';
-        }else if (mail_form.mail.value === "gra_color4"){
+        }else if (mail_form.mail.value === "gradation.color4"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             const box = document.getElementById('backcolor');
             box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, black), color-stop(1, white))';
-        }else if (mail_form.mail.value === "gra_color-1"){
+        }else if (mail_form.mail.value === "gradation.color-1"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             const box = document.getElementById('backcolor');
             box.style.background = '-webkit-gradient(linear, left top, right top, color-stop(0.5, black), color-stop(0.5, white))';
-        }else if (mail_form.mail.value === "backcolor_reset"){
+        }else if (mail_form.mail.value === "backcolor.reset"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             const box = document.getElementById('backcolor');
             box.style.background = '';
-        }else if (mail_form.mail.value === "screen_full"){
+        }else if (mail_form.mail.value === "fullscreen.set"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             full();
-        }else if (mail_form.mail.value === "screen_reset"){
+        }else if (mail_form.mail.value === "fullscreen.reset"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             min();
-        }else if (mail_form.mail.value === "backcolor_NT"){
+        }else if (mail_form.mail.value === "backcolor.NT"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             windowsNT();
-        }else if (mail_form.mail.value === "backcolor_NT.r"){
+        }else if (mail_form.mail.value === "backcolor.NT.r"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             windowsNT_r();
         }else if (mail_form.mail.value === "alert"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             alerttextmenu_open();
-        }else if (mail_form.mail.value === "css_remove"){
+        }else if (mail_form.mail.value === "css.remove"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
             document.getElementById("backcolor").style.backgroundColor = "white";
         const style = document.querySelectorAll("link");
@@ -891,24 +1079,49 @@ function settingbox6(){
         })
         }else if (mail_form.mail.value === "windowsystem"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
-            document.getElementById("backcolor").style.background = "darkblue";
             allwindow_close();
             error2_open();
             setTimeout('screen_close(),playsound2()',1000);
             setTimeout('screen_start(),playsound(),backcolor_reset()',11500);
+        }else if (mail_form.mail.value === "help"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            help_command_open();
+        }else if (mail_form.mail.value === "backcolor.menu"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            backcolormenu_open();
+        }else if (mail_form.mail.value === "taskcolor.menu"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            taskcolormenu_open();
+        }else if (mail_form.mail.value === "cpu.bench"){
+            document.getElementsByClassName("textcommand_area")[0].value = '';
+            cpubench();
         }else{
             alert('コマンドが正しくありません！');
         }
     }
 
     function sclear(){
+        allwindow_close();
         alert("windowsystemのストレージが削除されました");
         localStorage.clear();
         sessionStorage.clear();
         iddata = localStorage.getItem('iddata');
         document.getElementById("useridtext").innerHTML = iddata;
-        setTimeout('idload()',5000);
+        setTimeout('idload()',1000);
     }
+
+    function cpubench(){
+        const start=(new Date()).getTime();
+        n=0;
+        for (i=0; i<10000; i++){
+        for (j=0; j<10000; j++){
+        n=(n+i)/j;
+        }
+        }
+        end=(new Date()).getTime();
+        const time=(end-start)/10000;
+        alert('計算時間は'+time+'秒でした');
+        }
 
     function check2(){
         let alerttext2 = document.querySelector('#alerttext2');
@@ -918,10 +1131,68 @@ function settingbox6(){
         alert(mail_form2.mail2.value);
     }
 
-    function helpcommand(){
-        alert('1.Reload 2.shutdown 3.debug 4.setting 5.Storage_clear 6.windows95_color 7.gra_color1 (1-4)'+
-        '8.backcolor_reset 9.css_remove 10.screen_full 11.screen_reset 12.backcolor_NT(.r) 13.alert 14.windowsystem');
+    function invisible_remove(){
+    const invisible = document.getElementsByClassName('invisible');
+    invisible[0].classList.add('none');
+    invisible[1].classList.add('none');
+    invisible[2].classList.add('none');
+    invisible[3].classList.add('none');
+    invisible[4].classList.add('none');
+    invisible[5].classList.add('none');
+    invisible[6].classList.add('none');
+    invisible[7].classList.add('none');
+    invisible[8].classList.add('none');
+    invisible[9].classList.add('none');
+    invisible[10].classList.add('none');
+    invisible[11].classList.add('none');
+    invisible[12].classList.add('none');
+    invisible[13].classList.add('none');
+    invisible[14].classList.add('none');
+    invisible[15].classList.add('none');
+    invisible[16].classList.add('none');
+    invisible[17].classList.add('none');
+    invisible[18].classList.add('none');
+    invisible[19].classList.add('none');
+    invisible[20].classList.add('none');
+    invisible[21].classList.add('none');
+    invisible[22].classList.add('none');
+    invisible[23].classList.add('none');
+    invisible[24].classList.add('none');
+    invisible[25].classList.add('none');
+    invisible[26].classList.add('none');
     }
+
+    function invisible_add(){
+        const invisible = document.getElementsByClassName('invisible');
+        invisible[0].classList.remove('none');
+        invisible[1].classList.remove('none');
+        invisible[2].classList.remove('none');
+        invisible[3].classList.remove('none');
+        invisible[4].classList.remove('none');
+        invisible[5].classList.remove('none');
+        invisible[6].classList.remove('none');
+        invisible[7].classList.remove('none');
+        invisible[8].classList.remove('none');
+        invisible[9].classList.remove('none');
+        invisible[10].classList.remove('none');
+        invisible[11].classList.remove('none');
+        invisible[12].classList.remove('none');
+        invisible[13].classList.remove('none');
+        invisible[14].classList.remove('none');
+        invisible[15].classList.remove('none');
+        invisible[16].classList.remove('none');
+        invisible[17].classList.remove('none');
+        invisible[18].classList.remove('none');
+        invisible[19].classList.remove('none');
+        invisible[20].classList.remove('none');
+        invisible[21].classList.remove('none');
+        invisible[22].classList.remove('none');
+        invisible[23].classList.remove('none');
+        invisible[24].classList.remove('none');
+        invisible[25].classList.remove('none');
+        invisible[26].classList.remove('none');
+        }
+
     
     draggable(document.querySelector('.drag1'));
     draggable(document.querySelector('.drag2'));
@@ -949,6 +1220,11 @@ function settingbox6(){
     draggable(document.querySelector('.drag24'));
     draggable(document.querySelector('.drag25'));
     draggable(document.querySelector('.drag26'));
+    draggable(document.querySelector('.drag27'));
+    draggable(document.querySelector('.drag28'));
+    draggable(document.querySelector('.drag29'));
+    draggable(document.querySelector('.drag30'));
+    draggable(document.querySelector('.drag31'));
     
 
     function draggable(target) {
@@ -1340,3 +1616,284 @@ resetButton.addEventListener('click', function() {
   time.textContent = '00:00:00.000';
   stopTime = 0;
 });
+
+
+
+
+
+'use strict';
+            let currentDate = new Date();
+            let hours = currentDate.getHours();
+            let minutes = currentDate.getMinutes();
+            let seconds = currentDate.getSeconds();
+            let timerText = document.getElementById('timerText');
+            let set_btn = document.getElementById('set_btn');
+            let delete_btn = document.getElementById('delete_btn');
+            let option_hours;
+            let option_minutes;
+            let parent_list = document.getElementById('parent_list');
+            let record = []; //アラーム設定格納
+            let x = 0; // 計算用の変数
+
+            //アラーム設定用オブジェクト
+            let Setting = function(sethour, setminute){
+                this.sethour = sethour;
+                this.setminute = setminute;
+            };
+
+            // 時計の"12:1"を"12:01"と表記
+            function adjustDigit (num){
+                let digit;
+                if( num < 10 ) {digit = `0${num}`;}
+                else { digit = num; }
+                return digit;
+            }
+
+            // アラームセット
+            set_btn.addEventListener('click', function(){
+                //アラームは最大5まで
+                let lis = parent_list.getElementsByTagName('li');
+                let len = lis.length;
+                if (len >= 5) {return;}
+
+                //設定時間を記録
+                option_hours = document.alarm_form.option_hours.value;
+                option_minutes = document.alarm_form.option_minutes.value;
+                record[x] = new Setting(option_hours, option_minutes);
+
+                 //設定時間を表示
+                 let container_list = document.createElement('li');
+                 let list_content = document.createTextNode(`${record[x].sethour}時${record[x].setminute}分`);
+                 parent_list.appendChild(container_list);
+                 container_list.appendChild(list_content);
+
+                //表示削除用ボタン
+                let list_span = document.createElement('span');
+                let id_li = document.createAttribute('id'); 
+                let id_span = document.createAttribute('id'); 
+                let span_content = document.createTextNode('削除');
+                container_list.appendChild(list_span);
+                list_span.appendChild(span_content);
+                container_list.setAttributeNode(id_li);
+                container_list.id = x;
+                container_list.classList.add('deletes');
+                list_span.classList.add('delete_btn');
+
+                //設定時刻と表示を削除
+                let deletes = document.getElementsByClassName('deletes');
+                for( var i = 0, de_len = deletes.length; i < de_len; i++) {
+                    deletes[i].onclick = function () {
+                        record[this.id] = 'disabled';
+                        this.id = 'temp';
+                        var temp = document.getElementById('temp');
+                        temp.parentNode.removeChild(temp);
+                    };
+                };
+                x++;
+            });
+
+            //時計を動かす
+            function updateCurrentTime(){
+                setTimeout(function(){
+                    currentDate = new Date();
+                    hours = adjustDigit(currentDate.getHours());
+                    minutes = adjustDigit(currentDate.getMinutes());
+                    seconds = adjustDigit(currentDate.getSeconds());
+                    timerText.innerHTML = `${hours}:${minutes}:${seconds}`;
+
+                    //アラーム機能
+                    for (var i = 0, len = record.length; i < len; i++){
+                        if (record[i].sethour == currentDate.getHours() && record[i].setminute == currentDate.getMinutes() && seconds == 0){
+                            alert('お時間です!');
+                        };
+                    };
+                    updateCurrentTime();
+                }, 100);
+            }updateCurrentTime();
+
+
+            const weatherCode = {
+                100: ["100.svg", "500.svg", "晴れ"],
+                101: ["101.svg", "501.svg", "晴れ時々曇り"],
+                102: ["102.svg", "502.svg", "晴れ一時雨"],
+                103: ["102.svg", "502.svg", "晴れ時々雨"],
+                104: ["104.svg", "504.svg", "晴れ一時雪"],
+                105: ["104.svg", "504.svg", "晴れ時々雪"],
+                106: ["102.svg", "502.svg", "晴れ一時雨か雪"],
+                107: ["102.svg", "502.svg", "晴れ時々雨か雪"],
+                108: ["102.svg", "502.svg", "晴れ一時雨か雷雨"],
+                110: ["110.svg", "510.svg", "晴れ後時々曇り"],
+                111: ["110.svg", "510.svg", "晴れ後曇り"],
+                112: ["112.svg", "512.svg", "晴れ後一時雨"],
+                113: ["112.svg", "512.svg", "晴れ後時々雨"],
+                114: ["112.svg", "512.svg", "晴れ後雨"],
+                115: ["115.svg", "515.svg", "晴れ後一時雪"],
+                116: ["115.svg", "515.svg", "晴れ後時々雪"],
+                117: ["115.svg", "515.svg", "晴れ後雪"],
+                118: ["112.svg", "512.svg", "晴れ後雨か雪"],
+                119: ["112.svg", "512.svg", "晴れ後雨か雷雨"],
+                120: ["102.svg", "502.svg", "晴れ朝夕一時雨"],
+                121: ["102.svg", "502.svg", "晴れ朝の内一時雨"],
+                122: ["112.svg", "512.svg", "晴れ夕方一時雨"],
+                123: ["100.svg", "500.svg", "晴れ山沿い雷雨"],
+                124: ["100.svg", "500.svg", "晴れ山沿い雪"],
+                125: ["112.svg", "512.svg", "晴れ午後は雷雨"],
+                126: ["112.svg", "512.svg", "晴れ昼頃から雨"],
+                127: ["112.svg", "512.svg", "晴れ夕方から雨"],
+                128: ["112.svg", "512.svg", "晴れ夜は雨"],
+                130: ["100.svg", "500.svg", "朝の内霧後晴れ"],
+                131: ["100.svg", "500.svg", "晴れ明け方霧"],
+                132: ["101.svg", "501.svg", "晴れ朝夕曇り"],
+                140: ["102.svg", "502.svg", "晴れ時々雨と雷"],
+                160: ["104.svg", "504.svg", "晴れ一時雪か雨"],
+                170: ["104.svg", "504.svg", "晴れ時々雪か雨"],
+                181: ["115.svg", "515.svg", "晴れ後雪か雨"],
+                200: ["200.svg", "200.svg", "曇り"],
+                201: ["201.svg", "601.svg", "曇り時々晴れ"],
+                202: ["202.svg", "202.svg", "曇り一時雨"],
+                203: ["202.svg", "202.svg", "曇り時々雨"],
+                204: ["204.svg", "204.svg", "曇り一時雪"],
+                205: ["204.svg", "204.svg", "曇り時々雪"],
+                206: ["202.svg", "202.svg", "曇り一時雨か雪"],
+                207: ["202.svg", "202.svg", "曇り時々雨か雪"],
+                208: ["202.svg", "202.svg", "曇り一時雨か雷雨"],
+                209: ["200.svg", "200.svg", "霧"],
+                210: ["210.svg", "610.svg", "曇り後時々晴れ"],
+                211: ["210.svg", "610.svg", "曇り後晴れ"],
+                212: ["212.svg", "212.svg", "曇り後一時雨"],
+                213: ["212.svg", "212.svg", "曇り後時々雨"],
+                214: ["212.svg", "212.svg", "曇り後雨"],
+                215: ["215.svg", "215.svg", "曇り後一時雪"],
+                216: ["215.svg", "215.svg", "曇り後時々雪"],
+                217: ["215.svg", "215.svg", "曇り後雪"],
+                218: ["212.svg", "212.svg", "曇り後雨か雪"],
+                219: ["212.svg", "212.svg", "曇り後雨か雷雨"],
+                220: ["202.svg", "202.svg", "曇り朝夕一時雨"],
+                221: ["202.svg", "202.svg", "曇り朝の内一時雨"],
+                222: ["212.svg", "212.svg", "曇り夕方一時雨"],
+                223: ["201.svg", "601.svg", "曇り日中時々晴れ"],
+                224: ["212.svg", "212.svg", "曇り昼頃から雨"],
+                225: ["212.svg", "212.svg", "曇り夕方から雨"],
+                226: ["212.svg", "212.svg", "曇り夜は雨"],
+                228: ["215.svg", "215.svg", "曇り昼頃から雪"],
+                229: ["215.svg", "215.svg", "曇り夕方から雪"],
+                230: ["215.svg", "215.svg", "曇り夜は雪"],
+                231: ["200.svg", "200.svg", "曇り海岸霧か霧雨"],
+                240: ["202.svg", "202.svg", "曇り時々雨と雷"],
+                250: ["204.svg", "204.svg", "曇り時々雪と雷"],
+                260: ["204.svg", "204.svg", "曇り一時雪か雨"],
+                270: ["204.svg", "204.svg", "曇り時々雪か雨"],
+                281: ["215.svg", "215.svg", "曇り後雪か雨"],
+                300: ["300.svg", "300.svg", "雨"],
+                301: ["301.svg", "701.svg", "雨時々晴れ"],
+                302: ["302.svg", "302.svg", "雨時々止む"],
+                303: ["303.svg", "303.svg", "雨時々雪"],
+                304: ["300.svg", "300.svg", "雨か雪"],
+                306: ["300.svg", "300.svg", "大雨"],
+                308: ["308.svg", "308.svg", "雨で暴風を伴う"],
+                309: ["303.svg", "303.svg", "雨一時雪"],
+                311: ["311.svg", "711.svg", "雨後晴れ"],
+                313: ["313.svg", "313.svg", "雨後曇り"],
+                314: ["314.svg", "314.svg", "雨後時々雪"],
+                315: ["314.svg", "314.svg", "雨後雪"],
+                316: ["311.svg", "711.svg", "雨か雪後晴れ"],
+                317: ["313.svg", "313.svg", "雨か雪後曇り"],
+                320: ["311.svg", "711.svg", "朝の内雨後晴れ"],
+                321: ["313.svg", "313.svg", "朝の内雨後曇り"],
+                322: ["303.svg", "303.svg", "雨朝晩一時雪"],
+                323: ["311.svg", "711.svg", "雨昼頃から晴れ"],
+                324: ["311.svg", "711.svg", "雨夕方から晴れ"],
+                325: ["311.svg", "711.svg", "雨夜は晴れ"],
+                326: ["314.svg", "314.svg", "雨夕方から雪"],
+                327: ["314.svg", "314.svg", "雨夜は雪"],
+                328: ["300.svg", "300.svg", "雨一時強く降る"],
+                329: ["300.svg", "300.svg", "雨一時みぞれ"],
+                340: ["400.svg", "400.svg", "雪か雨"],
+                350: ["300.svg", "300.svg", "雨で雷を伴う"],
+                361: ["411.svg", "811.svg", "雪か雨後晴れ"],
+                371: ["413.svg", "413.svg", "雪か雨後曇り"],
+                400: ["400.svg", "400.svg", "雪"],
+                401: ["401.svg", "801.svg", "雪時々晴れ"],
+                402: ["402.svg", "402.svg", "雪時々止む"],
+                403: ["403.svg", "403.svg", "雪時々雨"],
+                405: ["400.svg", "400.svg", "大雪"],
+                406: ["406.svg", "406.svg", "風雪強い"],
+                407: ["406.svg", "406.svg", "暴風雪"],
+                409: ["403.svg", "403.svg", "雪一時雨"],
+                411: ["411.svg", "811.svg", "雪後晴れ"],
+                413: ["413.svg", "413.svg", "雪後曇り"],
+                414: ["414.svg", "414.svg", "雪後雨"],
+                420: ["411.svg", "811.svg", "朝の内雪後晴れ"],
+                421: ["413.svg", "413.svg", "朝の内雪後曇り"],
+                422: ["414.svg", "414.svg", "雪昼頃から雨"],
+                423: ["414.svg", "414.svg", "雪夕方から雨"],
+                425: ["400.svg", "400.svg", "雪一時強く降る"],
+                426: ["400.svg", "400.svg", "雪後みぞれ"],
+                427: ["400.svg", "400.svg", "雪一時みぞれ"],
+                450: ["400.svg", "400.svg", "雪で雷を伴う"],
+              };
+              
+              const url = "https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json";
+              
+              const dayList = ["日", "月", "火", "水", "木", "金", "土"];
+              
+              const timeDefinesList = new Array();
+              const weatherCodeList = new Array();
+              const tempsMinList = new Array();
+              const tempsMaxList = new Array();
+              
+              // JSON取得
+              fetch(url)
+                .then(function (response) {
+                  return response.json();
+                })
+                .then(function (weather) {
+                  document
+                    .getElementById("location")
+                    .prepend(
+                      `${weather[1].publishingOffice}: ${weather[1].timeSeries[0].areas[0].area.name} `
+                    );
+                  const isTodaysData = weather[0].timeSeries[2].timeDefines.length === 4;
+                  const weatherCodes = weather[0].timeSeries[0].areas[0].weatherCodes;
+                  const timeDefines = weather[0].timeSeries[0].timeDefines;
+                  const temps = weather[0].timeSeries[2].areas[0].temps;
+                  weatherCodeList.push(weatherCodes[0], weatherCodes[1]);
+                  timeDefinesList.push(timeDefines[0], timeDefines[1]);
+                  if (isTodaysData) {
+                    tempsMinList.push(temps[0] === temps[1] ? "--" : temps[0], temps[2]);
+                    tempsMaxList.push(temps[1], temps[3]);
+                  } else {
+                    tempsMinList.push("--", temps[0]);
+                    tempsMaxList.push("--", temps[1]);
+                  }
+              
+                  const startCount =
+                    weather[1].timeSeries[0].timeDefines.indexOf(timeDefines[1]) + 1;
+                  for (let i = startCount; i < startCount + 5; i++) {
+                    weatherCodeList.push(weather[1].timeSeries[0].areas[0].weatherCodes[i]);
+                    timeDefinesList.push(weather[1].timeSeries[0].timeDefines[i]);
+                    tempsMinList.push(weather[1].timeSeries[1].areas[0].tempsMin[i]);
+                    tempsMaxList.push(weather[1].timeSeries[1].areas[0].tempsMax[i]);
+                  }
+              
+                  const date = document.getElementsByClassName("dates");
+                  const weatherImg = document.getElementsByClassName("weatherImg");
+                  const weatherTelop = document.getElementsByClassName("weatherTelop");
+                  const tempMin = document.getElementsByClassName("tempMin");
+                  const tempMax = document.getElementsByClassName("tempMax");
+              
+                  weatherCodeList.forEach(function (el, i) {
+                    let dt = new Date(timeDefinesList[i]);
+                    let weekdayCount = dt.getDay();
+                    if (weekdayCount === 0) date[i].style.color = "red";
+                    if (weekdayCount === 6) date[i].style.color = "blue";
+                    var m = ("00" + (dt.getMonth() + 1)).slice(-2);
+                    var d = ("00" + dt.getDate()).slice(-2);
+                    date[i].textContent = `${m}/${d}(${dayList[weekdayCount]})`;
+                    var isNight = Number(i === 0 && !isTodaysData)
+                    weatherImg[i].src = "https://www.jma.go.jp/bosai/forecast/img/" + weatherCode[el][isNight];
+                    weatherTelop[i].textContent = weatherCode[el][2];
+                    tempMin[i].textContent = tempsMinList[i] + "℃";
+                    tempMax[i].textContent = tempsMaxList[i] + "℃";
+                  });
+                });
