@@ -127,6 +127,24 @@ audio {
 
 .error2 {
     display: none;
+    background-color: darkblue;
+    width: 100%;
+    height: 100vh;
+}
+.error_title {
+    background: gray;
+    font-weight: bold;
+    color: darkblue;
+    position: absolute;
+    top: 45%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+.error_text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
 }
 
 .medium_window_white {
@@ -149,6 +167,22 @@ audio {
     left: 3%;
     pointer-events: none;
 }
+
+.menu {
+    display: none;
+    position: absolute;
+    top: 25%;
+    left: 25%;
+    transform: translate(-50%, -50%);
+}
+
+.invisible {
+    opacity: 0.95;
+}
+.invisible.none {
+    opacity: 1;
+}
+
 
 .updown_menu {
     display: none;
@@ -250,6 +284,12 @@ a {
     left: 50%;
     transform: translate(-50%, -50%);
     z-index: 99999;
+}
+#pass_text {
+    position: absolute;
+    right: 0px;
+    top: 65px;
+    color: white;
 }
 
 .pass_setting {
@@ -363,6 +403,15 @@ a {
     text-shadow: 2px 2px 4px black;
     z-index: 99998;
 }
+.screen_subtext {
+    color: dimgray;
+    font-size: 15px;
+    position: absolute;
+    top: 55px;
+    right: 0px;
+    text-shadow: 0px 0px 2px black;
+    z-index: 99998;
+}
 .screencolor {
     background: radial-gradient( at 50px 800px, skyblue, white, whitesmoke, silver, skyblue);
     width: 100%;
@@ -385,16 +434,16 @@ a {
 .popup_window {
     background: linear-gradient(0deg, #339999, steelblue);
     width: 550px;
-    height: 440px;
+    height: 150px;
     position: absolute;
-    top: 15%;
-    left: 25%;
+    top: 30%;
+    left: 30%;
     box-shadow: 3px 3px 6px black;
 }
 .popup_window_white {
     background: white;
     width: 530px;
-    height: 360px;
+    height: 70px;
     position: absolute;
     top: 70px;
     left: 10px;
@@ -561,10 +610,10 @@ a {
 .taskbar2 {
     display: none;
     background: rgba();
-    width: 170px;
+    width: 210px;
     height: 30px;
     position: absolute;
-    right: 45%;
+    right: 43%;
     bottom: 6px;
     border-radius: 2px;
     z-index: 99997;
@@ -639,14 +688,14 @@ a {
 .backcolor_text {
     font-size: small;
     position: absolute;
-    right: 0px;
-    bottom: 40px;
+    left: 5px;
+    bottom: 5px;
 }
 .backcolor_box {
     transform: scale(2);
     position: absolute;
-    left: 10px;
-    bottom: 43px;
+    left: 120px;
+    bottom: 10px;
 }
 .backbutton_black {
     background: black;
@@ -696,6 +745,9 @@ a {
 .backbutton_skincolor {
     background: #fedcbd;
 }
+.backbutton_white {
+    background: white;
+}
 .backcolor_save {
     width: 40px;
     height: 30px;
@@ -705,16 +757,22 @@ a {
 }
 .backcolor_menu {
     display: none;
+
+}
+
+.taskcolor_menu {
+    display: none;
     background: linear-gradient(0deg, #111111, #444444);
     color: white;
     font-size: medium;
-    width: 160px;
-    height: 250px;
-    position: relative;
-    bottom: 277px;
-    right: 31px;
+    width: 620px;
+    height: 100px;
+    position: absolute;
+    top: 25%;
+    left: 25%;
     box-shadow: 3px 3px 6px black;
 }
+
 .backcolor_reset {
     height: 20px;
     font-size: small;
@@ -803,6 +861,7 @@ a {
     width: 100%;
     height: 20px;
     position: absolute;
+    pointer-events: none;
 }
 
 .underbar {
@@ -836,51 +895,58 @@ a.underbarcontent {
 .content-icons {
     position: absolute;
     width: 200px;
-    top: 0px;
 }
 .content1 {
     position: absolute;
     top: 20px;
-    width: 150px;
+    width: 115px;
+    height: 90px;
 }
 .content2 {
     position: absolute;
     top: 120px;
-    width: 150px;
+    width: 115px;
+    height: 80px;
 }
 .content3 {
     position: absolute;
     top: 220px;
-    width: 150px;
+    width: 115px;
+    height: 80px;
 }
 .content4 {
     position: absolute;
     top: 320px;
-    width: 150px;
+    width: 115px;
+    height: 80px;
 }
 .content5 {
     position: absolute;
     top: 420px;
-    width: 150px;
+    width: 115px;
+    height: 80px;
 }
 .content6 {
     position: absolute;
     top: 20px;
     left: 130px;
-    width: 150px;
+    width: 115px;
+    height: 80px;
 }
 .content7 {
     position: absolute;
     top: 120px;
     left: 130px;
-    width: 150px;
+    width: 115px;
+    height: 90px;
 }
 .content8 {
     display: none;
     position: absolute;
     top: 220px;
     left: 130px;
-    width: 150px;
+    width: 115px;
+    height: 80px;
 }
 
 .easter_menu {
@@ -889,7 +955,7 @@ a.underbarcontent {
 
 .icon {
     margin-left: 10px;
-    margin-top: 0px;
+    margin-top: 5px;
     background: khaki;
     width: 60px;
     height: 45px;
@@ -917,7 +983,7 @@ a.underbarcontent {
 }
 .icon_garbage {
     margin-left: 10px;
-    margin-top: 0px;
+    margin-top: 5px;
     background: whitesmoke;
     width: 60px;
     height: 45px;
@@ -930,7 +996,9 @@ a.underbarcontent {
     margin-left: 10px;
     margin-bottom: 50px;
     position: absolute;
-    top: 50px;
+    top: 55px;
+    font-size: 11px;
+    pointer-events: none;
 }
 
 .file {
@@ -1004,19 +1072,30 @@ span.timer2 {
     left: 70px;
 }
 
+.top {
+    position: absolute;
+    top: 0px;
+}
+
+.right {
+    position: absolute;
+    right: 0px;
+}
+
+.left {
+    position: absolute;
+    left: 0px;
+}
+
 .bottom {
     position: absolute;
     bottom: 0px;
-    left: 10px;
 }
 
 .button {
-    margin-left: 3px;
     background: darkgray;
-    width: 70px;
     height: 30px;
     position: absolute;
-    bottom: 3px;
     border-top: solid 2px white;
     border-left: solid 2px white;
     border-bottom: solid 2px black;
@@ -1062,15 +1141,22 @@ span.timer2 {
     right: 30px;
 }
 
+.update_log {
+    display: none;
+    position: absolute;
+}
+
 .Credit {
     display: none;
     background-color: black;
+    opacity: 1;
     color: white;
     width: 100%;
     height: 100%;
     position: absolute;
     top: 0px;
     z-index: 99996;
+    pointer-events: none;
 }
 .Credit_text {
     font-size: 50px;
@@ -1152,31 +1238,37 @@ span.timer2 {
 }
 
 .box_text {
+    width: 40%;
     position: relative;
     left: 20px;
     top: 50px;
 }
 .box_text2 {
+    width: 40%;
     position: relative;
     left: 20px;
     top: 60px;
 }
 .box_text3 {
+    width: 40%;
     position: relative;
     left: 20px;
     top: 70px;
 }
 .box_text4 {
+    width: 40%;
     position: relative;
     left: 20px;
     top: 80px;
 }
 .box_text5 {
+    width: 40%;
     position: relative;
     left: 20px;
     top: 90px;
 }
 .box_text6 {
+    width: 40%;
     position: relative;
     left: 20px;
     top: 100px;
@@ -1555,6 +1647,7 @@ td.today {
 .stopwatch {
     display: none;
     position: absolute;
+    top: 0px;
 }
 #time {
     position: relative;
@@ -1585,4 +1678,119 @@ td.today {
     font-size: 30px;
     border-radius: 5px;
     box-shadow: 0 0 5px black;
+  }
+
+  .help_command {
+    display: none;
+  }
+
+  .alarm {
+    display: none;
+  }
+  #timerText {
+    color: black;
+    font-size: 100px;
+    text-align: center;
+    margin-top: 20px;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+select {
+    font-size: 15px;
+    padding: 3px;
+}
+
+.time_btn{
+    margin-left: 5px;
+    display: inline-block;
+    font-weight: bold;
+    width: 60px;
+    padding: 0.5px;
+    border-radius: 5px;
+    box-shadow: 0 2px 0 #CDC9C9;
+    background: #EEE9E9;
+    cursor: pointer;
+}
+
+.time_text {
+    position: absolute;
+    left: 150px;
+    top: 150px;
+}
+
+.delete_btn {
+    margin-left: 15px;
+    font-weight: bold;
+    width: 60px;
+    padding: 3px;
+    border-radius: 5px;
+    background: #FF4500;
+    box-shadow: 0 2px 0 red;
+    cursor: pointer;
+    color: #fff;
+}
+
+.container {
+    text-align: left;
+    position: absolute;
+    bottom: 20px;
+    left: 125px;
+    background: #e0e0e0;
+    width: 350px;
+    height: 190px;
+}
+.container p {
+    font-size: 16px;
+    margin: 5px;
+}
+
+.container li{
+    position: relative;
+    left: 25px;
+    margin-bottom: 7px; 
+    width: 38%;
+}
+
+.deletes {
+    width: 100%;
+}
+
+.dates {
+    position: relative;
+}
+
+.weather_menu {
+    display: none;
+}
+
+.weatherForecast {
+    width: 840px;
+    height: 120px;
+    display: flex;
+    text-align: center;
+    border: 1px solid #000;
+  }
+  
+  .weather {
+    width: calc(100% / 7);
+    height: 100%;
+    box-sizing: border-box;
+    border: 1px solid #666;
+  }
+  
+  .weather > div {
+    height: 20%;
+    font-size: 14px;
+  }
+  
+  .weatherImg {
+    height: 40%;
+  }
+  
+  .tempMin {
+    color: blue;
+  }
+  
+  .tempMax {
+    color: red;
   }
