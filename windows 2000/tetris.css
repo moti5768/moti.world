@@ -103,3 +103,94 @@ html {
     height: 100%;
     background: green;
 }
+
+.tetline {
+    position: absolute;
+    top: 0px;
+    right: 2px;
+    height: 100%;
+    width: 0.5px;
+    left: 19px;
+    background-color: white;
+    z-index: 99999;
+}
+.tetline2 {
+    position: absolute;
+    top: 0px;
+    right: 2px;
+    height: 100%;
+    width: 0.5px;
+    left: 37px;
+    background-color: white;
+    z-index: 99999;
+}
+.tetline3 {
+    position: absolute;
+    top: 0px;
+    right: 2px;
+    height: 100%;
+    width: 0.5px;
+    left: 53px;
+    background-color: white;
+    z-index: 99999;
+}
+.tetline4 {
+    position: absolute;
+    top: 0px;
+    right: 2px;
+    height: 100%;
+    width: 0.5px;
+    left: 72px;
+    background-color: white;
+    z-index: 99999;
+}
+.tetline5 {
+    position: absolute;
+    top: 0px;
+    right: 2px;
+    height: 100%;
+    width: 0.5px;
+    left: 90px;
+    background-color: white;
+    z-index: 99999;
+}
+.tetline6 {
+    position: absolute;
+    top: 0px;
+    right: 2px;
+    height: 100%;
+    width: 0.5px;
+    left: 108px;
+    background-color: white;
+    z-index: 99999;
+}
+.tetline7 {
+    position: absolute;
+    top: 0px;
+    right: 2px;
+    height: 100%;
+    width: 0.5px;
+    left: 127px;
+    background-color: white;
+    z-index: 99999;
+}
+.tetline8 {
+    position: absolute;
+    top: 0px;
+    right: 2px;
+    height: 100%;
+    width: 0.5px;
+    left: 143px;
+    background-color: white;
+    z-index: 99999;
+}
+.tetline9 {
+    position: absolute;
+    top: 0px;
+    right: 2px;
+    height: 100%;
+    width: 0.5px;
+    left: 162px;
+    background-color: white;
+    z-index: 99999;
+}
