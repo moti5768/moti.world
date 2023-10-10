@@ -107,10 +107,10 @@ html {
 .tetline {
     position: absolute;
     top: 0px;
-    right: 2px;
+    right: 0px;
     height: 100%;
-    width: 0.3px;
-    left: 19px;
+    width: 0.2px;
+    left: 18px;
     background-color: white;
     z-index: 99999;
 }
@@ -119,8 +119,8 @@ html {
     top: 0px;
     right: 2px;
     height: 100%;
-    width: 0.3px;
-    left: 37px;
+    width: 0.2px;
+    left: 36px;
     background-color: white;
     z-index: 99999;
 }
@@ -129,8 +129,8 @@ html {
     top: 0px;
     right: 2px;
     height: 100%;
-    width: 0.3px;
-    left: 53px;
+    width: 0.2px;
+    left: 54px;
     background-color: white;
     z-index: 99999;
 }
@@ -139,7 +139,7 @@ html {
     top: 0px;
     right: 2px;
     height: 100%;
-    width: 0.3px;
+    width: 0.2px;
     left: 72px;
     background-color: white;
     z-index: 99999;
@@ -149,7 +149,7 @@ html {
     top: 0px;
     right: 2px;
     height: 100%;
-    width: 0.3px;
+    width: 0.2px;
     left: 90px;
     background-color: white;
     z-index: 99999;
@@ -159,7 +159,7 @@ html {
     top: 0px;
     right: 2px;
     height: 100%;
-    width: 0.3px;
+    width: 0.2px;
     left: 108px;
     background-color: white;
     z-index: 99999;
@@ -169,8 +169,8 @@ html {
     top: 0px;
     right: 2px;
     height: 100%;
-    width: 0.3px;
-    left: 127px;
+    width: 0.2px;
+    left: 126px;
     background-color: white;
     z-index: 99999;
 }
@@ -179,8 +179,8 @@ html {
     top: 0px;
     right: 2px;
     height: 100%;
-    width: 0.3px;
-    left: 143px;
+    width: 0.2px;
+    left: 144px;
     background-color: white;
     z-index: 99999;
 }
@@ -189,7 +189,7 @@ html {
     top: 0px;
     right: 2px;
     height: 100%;
-    width: 0.3px;
+    width: 0.2px;
     left: 162px;
     background-color: white;
     z-index: 99999;
