@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" type="text/css" href="tetris.css">
     <script type="text/javascript" src="tetris.js"></script>
-    <title>windows2000</title>
+    <title>windows2000_beta</title>
 </head>
 <body id="backcolor">
     <div class="screen">
@@ -347,10 +347,10 @@
             <canvas class="stage" id="stage" width="250px" height="500px" style="background-color:black;">
             </canvas>
             <span class="tetris-panel-container">
-              <p>Next&emsp;&nbsp;ver 0.2.1</p>
+              <p>Next&emsp;&nbsp;ver 0.2.2</p>
               <canvas id="next" class="line" width="130px" height="150px" style="background-color:black;">
             </canvas>
-            <div>
+            <div class="tetlines">
                 <span class="tetline"></span>
                 <span class="tetline2"></span>
                 <span class="tetline3"></span>
@@ -361,7 +361,8 @@
                 <span class="tetline8"></span>
                 <span class="tetline9"></span>
             </div>
-              <p>LINES:<span id="lines">0</span></p>
+              <p class="small">スコア:<span id="lines">0</span></p>
+              <p class="small">前回のスコア:<span id="lines2">0</span></p>
               <p><span id="message"></span></p>
               <div class="tetris-panel-container-padding"></div>
               <table class="tetris-button-panel tetbtn">
@@ -376,6 +377,10 @@
               </table>
             </span>
         </span>
+        <a class="button hover small" onclick="tetlines_2()" style="position: absolute; bottom:
+        -35px; left: 0px;">線の非表示</a>
+        <a class="button hover small" onclick="tetlines_1()" style="position: absolute; bottom:
+        -35px; left: 75px;">線の表示</a>
     </div>
     <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
     <button class="blacktext bigbutton border hover2" onclick="tetris_bigscreen()">☐</button>
@@ -2016,6 +2021,10 @@ td {
     display: none;
 }
 
+.tetlines {
+    pointer-events: none;
+}
+
 @keyframes fadein {
   0% {
     opacity: 0;
@@ -2802,6 +2811,15 @@ let counts = 0;
     function mycomputer_close(){
         const mycomputer = document.querySelector(".mycomputer");
         mycomputer.style.display = "none";
+    }
+
+    function tetlines_1(){
+        const tetlines = document.querySelector(".tetlines");
+        tetlines.style.display = "block";
+    }
+    function tetlines_2(){
+        const tetlines = document.querySelector(".tetlines");
+        tetlines.style.display = "none";
     }
 
 
