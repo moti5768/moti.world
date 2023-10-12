@@ -187,6 +187,8 @@ class tetris {
         if (!this.checkBlockMove(this.blockX, this.blockY, this.currentBlock, this.blockAngle)) {
             let messageElem = document.getElementById("message");
             messageElem.innerText = "GAME OVER";
+            let linesElem2 = document.getElementById("lines2");
+            linesElem2.innerText = "" + this.deletedLines;
             return false;
         }
         return true;
