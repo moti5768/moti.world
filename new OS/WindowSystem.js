@@ -538,7 +538,6 @@ function settingbox(){
         start_menu.style.display = "none";
     } else {
         underbar.style.display = "block";
-        start_menu.style.display = "block";
     }
 }
 function settingbox2(){
