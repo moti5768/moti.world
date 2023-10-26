@@ -160,6 +160,17 @@ class tetris {
         this.mainLoop();
     }
 
+    startGame2() {
+        let virtualStage = new Array(this.stageWidth);
+        for (let i = 0; i < this.stageWidth; i++) {
+            virtualStage[i] = new Array(this.stageHeight).fill(null);
+        }
+        this.virtualStage = virtualStage;
+        this.currentBlock = null;
+        this.nextBlock = this.getRandomBlock();
+        this.mainLoop2();
+    }
+
     mainLoop() {
         if (this.currentBlock == null) {
             if (!this.createNewBlock()) {
@@ -174,7 +185,24 @@ class tetris {
                 this.stageTopPadding + this.blockY * this.cellSize,
                 this.currentBlock, this.blockAngle, this.stageCanvas);
         }
-        setTimeout(this.mainLoop.bind(this), 500);
+        setTimeout(this.mainLoop.bind(this), 550);
+    }
+
+    mainLoop2() {
+        if (this.currentBlock == null) {
+            if (!this.createNewBlock()) {
+                return;
+            }
+        } else {
+            this.fallBlock();
+        }
+        this.drawStage();
+        if (this.currentBlock != null) {
+            this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
+                this.stageTopPadding + this.blockY * this.cellSize,
+                this.currentBlock, this.blockAngle, this.stageCanvas);
+        }
+        setTimeout(this.mainLoop2.bind(this), 50);
     }
 
     createNewBlock() {
@@ -187,8 +215,6 @@ class tetris {
         if (!this.checkBlockMove(this.blockX, this.blockY, this.currentBlock, this.blockAngle)) {
             let messageElem = document.getElementById("message");
             messageElem.innerText = "GAME OVER";
-            let linesElem2 = document.getElementById("lines2");
-            linesElem2.innerText = "" + this.deletedLines;
             return false;
         }
         return true;
@@ -258,6 +284,9 @@ class tetris {
             let linesElem = document.getElementById("lines");
                 this.deletedLines++;
                 linesElem.innerText = "" + this.deletedLines;
+                let linesElem2 = document.getElementById("lines2");
+                this.deletedLines2++;
+                linesElem2.innerText = "" + this.deletedLines;
             } else {
                 y--;
             }
@@ -341,4 +370,5 @@ function reset() {
     this.stageLeftPadding = (this.stageCanvas.width - this.cellSize * this.stageWidth) / 2;
     this.stageTopPadding = (this.stageCanvas.height - this.cellSize * this.stageHeight) / 2;
     this.deletedLines = 100;
+    this.deletedLines2 = 100;
 }
