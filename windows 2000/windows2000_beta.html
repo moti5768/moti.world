@@ -12,7 +12,7 @@
     <div class="screen">
         <span class="screencolor"></span>
         <p class="screentext bold">Windows2000</p>
-        <p class="screensubtext bold">test&nbsp;0.1.2 beta&copy;</p>
+        <p class="screensubtext bold">test&nbsp;0.1.3 beta&copy;</p>
         <button class="screenbutton bold border" onclick="screen_start(),sound()">スタート</button>
     </div>
 
@@ -23,7 +23,7 @@
         <div class="start_window_white">
         <p class="blacktext" id="user"></p>
         </div>
-        <span class="xx-small" style="color: lime; position: absolute; bottom: 0px; z-index: 99999;">version 0.1.2 beta<span class="blacktext">&emsp;&emsp;Windows2000を起動しています...</span></span>
+        <span class="xx-small" style="color: lime; position: absolute; bottom: 0px; z-index: 99999;">version 0.1.3 beta<span class="blacktext">&emsp;&emsp;Windows2000を起動しています...</span></span>
         </div>
     </div>
 
@@ -60,7 +60,7 @@
     <div class="title">
         <div class="titleline"></div>
         <p class="bold white">Windows2000&emsp;&emsp;&emsp;</p>
-        <p class="bold white medium subtitle">test&nbsp;0.1.2 beta&copy;</p>
+        <p class="bold white medium subtitle">test&nbsp;0.1.3 beta&copy;</p>
     </div>
 
     <div class="start_menu border">
@@ -187,8 +187,6 @@
             <button class="backcolor_button gradation backbutton_test4" onclick="backcolor_test4()"></button>
         </div>
         </div>
-
-
 
         <div class="itiran border shape">
             <span class="menu_bluebar">一覧</span>
@@ -337,7 +335,7 @@
     </div>
 
     <div class="Credit">
-        <p class="bold Credit_text">Windows2000 ver 0.1.2</p>
+        <p class="bold Credit_text">Windows2000 ver 0.1.3</p>
     </div>
 
     <div class="tetris border shape">
@@ -347,7 +345,7 @@
             <canvas class="stage" id="stage" width="250px" height="500px" style="background-color:black;">
             </canvas>
             <span class="tetris-panel-container">
-              <p>Next&emsp;&nbsp;ver 0.2.2</p>
+              <p>Next&emsp;&nbsp;ver 0.2.3</p>
               <canvas id="next" class="line" width="130px" height="150px" style="background-color:black;">
             </canvas>
             <div class="tetlines">
@@ -362,7 +360,7 @@
                 <span class="tetline9"></span>
             </div>
               <p class="small">スコア:<span id="lines">0</span></p>
-              <p class="small">前回のスコア:<span id="lines2">0</span></p>
+              <p class="small">最高スコア:<span id="lines2">0</span></p>
               <p><span id="message"></span></p>
               <div class="tetris-panel-container-padding"></div>
               <table class="tetris-button-panel tetbtn">
@@ -386,7 +384,8 @@
     <button class="blacktext bigbutton border hover2" onclick="tetris_bigscreen()">☐</button>
         <button class="blacktext minbutton border hover2" onclick="tetris_minscreen()">ー</button>
     <button class="blacktext reload_button border hover3" onclick="reloads()">再読み込み</button>
-    <button class="blacktext start_button border hover" onclick="tetris.startGame(),mereset(),tetris_linereset()">&nbsp;START(バグ有)&nbsp;</button>
+    <button class="blacktext start_button border hover" onclick="tetris.startGame(),mereset(),tetris_linereset()">&nbsp;START easy&nbsp;</button>
+    <button class="blacktext button border hover" onclick="tetris.startGame2(),mereset(),tetris_linereset()">&nbsp;START hard&nbsp;</button>
     </div>
 
 
@@ -407,7 +406,7 @@
         </div>
         <div id="setting2">
             <div id="btn">
-                START
+                スタート
             </div>
             <span id="time" class="timers">000</span>
         </div>
@@ -427,6 +426,7 @@
             </h3>
             <p>左クリック: マスを開ける</p>
             <p>右クリック: <span class="flag"></span>マークを付ける</p>
+            <p class="bold" style="color: red;">(タッチ操作対応 一部非対応)</p>
         </div>
     </div>
 
@@ -438,7 +438,7 @@
             <div class="debug_screen small" style="background: black; color: lime; height: 100%;">
                 <p class="small">NAME: windows2000<br>
                 BASE: Windows95 homeEdition1.0</p>
-                <p>system: version 0.1.2</p>
+                <p>system: version 0.1.3</p>
             </div>
         </div>
         <span class="menu_bluebar">debug</span>
@@ -626,7 +626,7 @@
             font-size: 20px;
             position: absolute;
             top: 350px;
-            left: 600px;
+            left: 550px;
             z-index: 99999;
         }
         .screencolor {
@@ -1855,6 +1855,7 @@
             top: 55px;
             right: 5px;
             border-radius: 0;
+            resize: none;
         }
         .memo_button_save {
             background: darkgray;
@@ -1955,8 +1956,8 @@
   font-weight: bold;
   text-align: center;
   color: white;
-  border: solid 1px black;
-  background: black;
+  border: solid 1px dimgray;
+  background: linear-gradient(90deg, yellowgreen, skyblue);
   border-radius: 5px;
   cursor: pointer;
 }
@@ -1977,17 +1978,20 @@
     top: 100px;
   margin: 0 auto;
   border-collapse: collapse;
-  background: yellowgreen;
+  background: dimgray;
 }
 td {
-  border: solid 3px #333333;
+  border-top: solid 2.5px black;
+  border-left: solid 2.5px black;
+  border-right: solid 2.5px black;
+  border-bottom: solid 2.5px black;
   width: 30px;
   height: 30px;
   font-weight: bold;
   text-align: center;
 }
 .open {
-  background: #e6e6e6;
+  background: whitesmoke;
   animation: fadein 0.7s;
 }
 .flag::before {
@@ -1997,15 +2001,15 @@ td {
 }
 .bomb {
   background: red;
-  animation: fadein 1s infinite;
+  animation: fadein 1.5s infinite;
 }
 .bomb::before {
   font-family: "Material Icons";
   content: "\ea0b";
 }
 .clear {
-  background: pink;
-  animation: fadein 5s infinite;
+  background: yellowgreen;
+  animation: fadein 3s infinite;
 }
 .clear::before {
   font-family: "Material Icons";
@@ -2019,10 +2023,6 @@ td {
 
 .debug {
     display: none;
-}
-
-.tetlines {
-    pointer-events: none;
 }
 
 @keyframes fadein {
@@ -2068,7 +2068,7 @@ td {
             font-size: 10px;
             position: absolute;
             top: 345px;
-            left: 210px;
+            left: 190px;
             z-index: 99999;
         }
         .screencolor {
@@ -2153,6 +2153,8 @@ td {
             position: absolute;
             top: 55px;
             right: 5px;
+            border-radius: 0;
+            resize: none;
         }
 
         .controlpanel_window {
@@ -3280,7 +3282,7 @@ function cpubench(){
         }
         }
         end=(new Date()).getTime();
-        const time=(end-start)/10000;
+        const time=(end-start)/1000;
         alert('計算時間は'+time+'秒でした');
         }
 
