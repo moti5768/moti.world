@@ -174,7 +174,7 @@ class tetris {
                 this.stageTopPadding + this.blockY * this.cellSize,
                 this.currentBlock, this.blockAngle, this.stageCanvas);
         }
-        setTimeout(this.mainLoop.bind(this), 100);
+        setTimeout(this.mainLoop.bind(this), 50);
     }
 
     createNewBlock() {
