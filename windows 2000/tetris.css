@@ -2,6 +2,17 @@ html {
     touch-action: manipulation;
 }
 
+.tetlines {
+    display: block;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.tetline {
+    display: block;
+    position: relative;
+}
+
 #next {
     position: relative;
     left: 5px;
@@ -11,10 +22,12 @@ html {
 .stage {
     width: 50%;
     height: 50%;
+    pointer-events: none;
 }
 .stage.active {
     width: 100%;
     height: 100%;
+    pointer-events: none;
 }
 .tetris.active {
     width: 100%;
