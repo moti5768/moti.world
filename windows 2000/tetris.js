@@ -171,6 +171,17 @@ class tetris {
         this.mainLoop2();
     }
 
+    startGame3() {
+        let virtualStage = new Array(this.stageWidth);
+        for (let i = 0; i < this.stageWidth; i++) {
+            virtualStage[i] = new Array(this.stageHeight).fill(null);
+        }
+        this.virtualStage = virtualStage;
+        this.currentBlock = null;
+        this.nextBlock = this.getRandomBlock();
+        this.mainLoop3();
+    }
+
     mainLoop() {
         if (this.currentBlock == null) {
             if (!this.createNewBlock()) {
@@ -185,7 +196,7 @@ class tetris {
                 this.stageTopPadding + this.blockY * this.cellSize,
                 this.currentBlock, this.blockAngle, this.stageCanvas);
         }
-        setTimeout(this.mainLoop.bind(this), 550);
+        setTimeout(this.mainLoop.bind(this), 800);
     }
 
     mainLoop2() {
@@ -202,7 +213,23 @@ class tetris {
                 this.stageTopPadding + this.blockY * this.cellSize,
                 this.currentBlock, this.blockAngle, this.stageCanvas);
         }
-        setTimeout(this.mainLoop2.bind(this), 50);
+        setTimeout(this.mainLoop2.bind(this), 500);
+    }
+    mainLoop3() {
+        if (this.currentBlock == null) {
+            if (!this.createNewBlock()) {
+                return;
+            }
+        } else {
+            this.fallBlock();
+        }
+        this.drawStage();
+        if (this.currentBlock != null) {
+            this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
+                this.stageTopPadding + this.blockY * this.cellSize,
+                this.currentBlock, this.blockAngle, this.stageCanvas);
+        }
+        setTimeout(this.mainLoop3.bind(this), 250);
     }
 
     createNewBlock() {
