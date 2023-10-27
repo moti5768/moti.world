@@ -340,6 +340,16 @@
 
     <div class="tetris border shape">
         <span class="menu_bluebar">テトリス(改)</span>
+
+        <div class="tetris_menu1">
+            <p class="white x-large" style="position: absolute; top: 30px;">難易度選択</p>
+            <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
+            <button class="blacktext start_button border hover" style="font-size: 40px; background-color: yellow;" onclick="tetris.startGame(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;イージー&nbsp;</button><br>
+            <button class="blacktext start_button border hover" style="font-size: 40px; background-color: yellowgreen;" onclick="tetris.startGame2(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;ノーマル&nbsp;</button><br>
+            <button class="blacktext start_button border hover" style="font-size: 40px; background-color: red;" onclick="tetris.startGame3(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;ハード&nbsp;</button><br>
+        </div>
+
+        <div class="tetris_menu2" style="display: none;">
     <div class="wrapper-container">
         <span class="tetris-container">
             <canvas class="stage" id="stage" width="250px" height="500px" style="background-color:black;">
@@ -384,8 +394,7 @@
     <button class="blacktext bigbutton border hover2" onclick="tetris_bigscreen()">☐</button>
         <button class="blacktext minbutton border hover2" onclick="tetris_minscreen()">ー</button>
     <button class="blacktext reload_button border hover3" onclick="reloads()">再読み込み</button>
-    <button class="blacktext start_button border hover" onclick="tetris.startGame(),mereset(),tetris_linereset()">&nbsp;START easy&nbsp;</button>
-    <button class="blacktext button border hover" onclick="tetris.startGame2(),mereset(),tetris_linereset()">&nbsp;START hard&nbsp;</button>
+    </div>
     </div>
 
 
@@ -1634,10 +1643,10 @@
             right: 80px;
         }
         .start_button {
-            height: 25px;
-            position: absolute;
-            top: 0px;
-            right: 160px;
+            margin-top: 10px;
+            height: 60px;
+            position: relative;
+            top: 70px;
         }
 
         .button2 {
@@ -2991,6 +3000,13 @@ let counts = 0;
     function bom_minscreen() {
         let bombig = document.getElementsByClassName('bom');
         bombig[0].classList.remove('active');
+    }
+
+    function tetrismenu2_open(){
+        let tetmenu1 = document.querySelector('.tetris_menu1');
+        tetmenu1.style.display = "none";
+        let tetmenu2 = document.querySelector('.tetris_menu2');
+        tetmenu2.style.display = "block";
     }
 
     function tetris_bigscreen(){
