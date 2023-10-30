@@ -6,33 +6,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" type="text/css" href="tetris.css">
     <script type="text/javascript" src="tetris.js"></script>
-    <title>windows2000_beta</title>
+    <title>windows2000 Halloween</title>
 </head>
 <body id="backcolor">
     <div class="screen">
         <span class="screencolor"></span>
         <p class="screentext bold">Windows2000</p>
-        <p class="screensubtext bold">test&nbsp;0.1.3 beta&copy;</p>
+        <p class="screensubtext bold">Halloween&copy;</p>
         <button class="screenbutton bold border" onclick="screen_start(),sound()">スタート</button>
     </div>
 
     <div class="screen_start">
         <span class="screencolor2"></span>
         <div class="start_window border">
-        <span class="menu_bluebar">windows2000 beta startup</span>
+        <span class="menu_bluebar">windows2000 Halloween startup</span>
         <div class="start_window_white">
         <p class="blacktext" id="user"></p>
         </div>
-        <span class="xx-small" style="color: lime; position: absolute; bottom: 0px; z-index: 99999;">version 0.1.3 beta<span class="blacktext">&emsp;&emsp;Windows2000を起動しています...</span></span>
+        <span class="xx-small" style="color: lime; position: absolute; bottom: 0px; z-index: 99999;">Halloween<span class="blacktext">&emsp;&emsp;Windows2000を起動しています...</span></span>
         </div>
     </div>
 
     <div class="screen_close">
         <span class="screencolor2"></span>
         <div class="close_window border">
-            <span class="menu_bluebar">windows2000 shutdown</span>
+            <span class="menu_bluebar">windows2000 Halloween shutdown</span>
             <div class="close_window_white"></div>
-        <span class="xx-small" style="position: absolute; bottom: 0px; z-index: 99999;">Windows2000を終了しています...</span>
+        <span class="xx-small" style="position: absolute; bottom: 0px; z-index: 99999;">Windows2000 Halloweenを終了しています...</span>
         </div>
         </div>
     </div>
@@ -40,28 +40,20 @@
 <div class="Windows95_group">
     <span class="logo"></span>
     <div class="popupwrap popup_window border">
-        <p class="popup_window_text">Windows<span class="white">2000</span>&nbsp;へようこそ</p>
+        <p class="popup_window_text">Windows<span class="white">2000</span>&nbsp;Halloweenへようこそ</p>
         <div class="popup_window_white border">
-            <p class="popup_window_text2">Windows2000&nbsp;へようこそ<br>
-                このアップデートには新機能の追加・変更・修正が含まれています。<br>
-                ・コマンド入力欄の改善・新コマンド追加<br>
-                ・電卓の改善<br>
-                ・おみくじ機能の改善<br>
-                ・debug画面の追加<br>
-                ・メモ帳　保存　読み込み　クリアボタンの改善<br>
-                ・テトリスのスコアがリセットされない問題の修正<br>
-                ・test gameファイルの追加(試験的)<br><br><br>
-                <span class="bold" style="color: red;">・近々　ストップウォッチの追加予定</span>
+            <p class="popup_window_text2">Windows2000&nbsp;Halloweenへようこそ<br>
+                <span class="bold" style="color: red;">・くれないと...</span>
                 </p>
         </div>
-        <span class="menu_bluebar">ようこそ</span>
+        <span class="menu_bluebar">ようこそ Halloweenへ</span>
         <button class="blacktext closebutton border hover2" onclick="popupwindow_close()">X</button>
     </div>
 
     <div class="title">
         <div class="titleline"></div>
         <p class="bold white">Windows2000&emsp;&emsp;&emsp;</p>
-        <p class="bold white medium subtitle">test&nbsp;0.1.3 beta&copy;</p>
+        <p class="bold white medium subtitle">Halloween&copy;</p>
     </div>
 
     <div class="start_menu border">
@@ -450,9 +442,9 @@
             </div>
         <div class="mycomputer_white">
             <div class="debug_screen small" style="background: black; color: lime; height: 100%;">
-                <p class="small">NAME: windows2000<br>
-                BASE: Windows95 homeEdition1.0</p>
-                <p>system: version 0.1.3</p>
+                <p class="small">NAME: Windows2000 Halloween<br>
+                BASE: Windows2000</p>
+                <p>system: version 1.0.31</p>
             </div>
         </div>
         <span class="menu_bluebar">debug</span>
@@ -478,7 +470,7 @@
 
         body {
             font-family: sans-serif;
-            background: steelblue;
+            background: orange;
         }
 
         audio {
@@ -616,7 +608,7 @@
         }
 
         .screenbutton {
-            background: linear-gradient(-35deg, white, teal, steelblue);
+            background: linear-gradient(-35deg, red, purple, orange);
             color: white;
             width: 150px;
             height: 50px;
@@ -644,14 +636,14 @@
             z-index: 99999;
         }
         .screencolor {
-            background: linear-gradient(-35deg, teal, steelblue, silver, white);
+            background: linear-gradient(-35deg, black, orange, purple, white);
             width: 100%;
             height: 100%;
             position: absolute;
             z-index: 99999;
         }
         .screencolor2 {
-            background-color: steelblue;
+            background-color: orange;
             width: 100%;
             height: 100%;
             position: absolute;
@@ -780,13 +772,14 @@
             position: absolute;
             left: 78px;
             bottom: 1px;
-            border-top: solid 2px gray;
-            border-right: solid 2px gray;
-            border-left: solid 2px gray;
-            border-bottom: solid 2px white;
+            border-top: solid 2px black;
+            border-right: solid 2px black;
+            border-left: solid 2px black;
+            border-bottom: solid 2px black;
         }
 
         .online_bar {
+            color: white;
             width: 45px;
             height: 35px;
             position: absolute;
@@ -1144,7 +1137,7 @@
             right: 31px;
         }
         .menu_bluebar {
-            background: linear-gradient(90deg, darkblue, blue, skyblue);
+            background: linear-gradient(90deg, black, orange, purple);
             color: white;
             width: 100%;
             height: 25px;
@@ -1152,7 +1145,7 @@
             pointer-events: none;
         }
         .menu_bluebar2 {
-            background: linear-gradient(0deg, black, darkblue, blue);
+            background: linear-gradient(0deg, black, orange, purple);
             color: white;
             width: 15%;
             height: 100%;
@@ -1168,12 +1161,12 @@
         }
 
         .underbar {
-            background: darkgray;
+            background: purple;
             width: 100%;
             height: 40px;
             position: absolute;
             bottom: 0px;
-            border-top: solid 2px white;
+            border-top: solid 2px #9933FF;
             z-index: 99998;
         }
 
@@ -1534,7 +1527,8 @@
         }
 
         span.timer {
-            background: darkgray;
+            color: white;
+            background: orange;
             font-size: small;
             display: inline;
             text-decoration: none;
@@ -1546,7 +1540,8 @@
             border-bottom: solid 2px white;
         }
         span.timer2 {
-            background: darkgray;
+            color: white;
+            background: orange;
             font-size: small;
             display: inline;
             text-decoration: none;
@@ -1628,7 +1623,7 @@
             position: absolute;
             top: 0px;
             right: 25px;
-            background: skyblue;
+            background: purple;
             color: white;
         }
         .minbutton {
@@ -1638,7 +1633,7 @@
             position: absolute;
             top: 0px;
             right: 50px;
-            background: skyblue;
+            background: orange;
             color: white;
         }
         .reload_button {
@@ -1972,7 +1967,7 @@
   text-align: center;
   color: white;
   border: solid 1px dimgray;
-  background: linear-gradient(90deg, yellowgreen, skyblue);
+  background: linear-gradient(90deg, purple, orange);
   border-radius: 5px;
   cursor: pointer;
 }
@@ -1993,20 +1988,18 @@
     top: 100px;
   margin: 0 auto;
   border-collapse: collapse;
-  background: dimgray;
+  background: orange;
+  color: red;
 }
 td {
-  border-top: solid 2.5px black;
-  border-left: solid 2.5px black;
-  border-right: solid 2.5px black;
-  border-bottom: solid 2.5px black;
+  border: solid 2.5px purple;
   width: 30px;
   height: 30px;
   font-weight: bold;
   text-align: center;
 }
 .open {
-  background: whitesmoke;
+  background: black;
   animation: fadein 0.7s;
 }
 .flag::before {
@@ -2399,10 +2392,10 @@ td {
             position: absolute;
             left: 78px;
             bottom: 1px;
-            border-top: solid 2px gray;
-            border-right: solid 2px gray;
-            border-left: solid 2px gray;
-            border-bottom: solid 2px white;
+            border-top: solid 2px black;
+            border-right: solid 2px black;
+            border-left: solid 2px black;
+            border-bottom: solid 2px black;
         }
 
         iframe {
