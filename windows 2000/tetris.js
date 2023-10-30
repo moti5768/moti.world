@@ -182,6 +182,17 @@ class tetris {
         this.mainLoop3();
     }
 
+    startGame4() {
+        let virtualStage = new Array(this.stageWidth);
+        for (let i = 0; i < this.stageWidth; i++) {
+            virtualStage[i] = new Array(this.stageHeight).fill(null);
+        }
+        this.virtualStage = virtualStage;
+        this.currentBlock = null;
+        this.nextBlock = this.getRandomBlock();
+        this.mainLoop4();
+    }
+
     mainLoop() {
         if (this.currentBlock == null) {
             if (!this.createNewBlock()) {
@@ -215,6 +226,7 @@ class tetris {
         }
         setTimeout(this.mainLoop2.bind(this), 500);
     }
+
     mainLoop3() {
         if (this.currentBlock == null) {
             if (!this.createNewBlock()) {
@@ -232,6 +244,23 @@ class tetris {
         setTimeout(this.mainLoop3.bind(this), 250);
     }
 
+    mainLoop4() {
+        if (this.currentBlock == null) {
+            if (!this.createNewBlock()) {
+                return;
+            }
+        } else {
+            this.fallBlock();
+        }
+        this.drawStage();
+        if (this.currentBlock != null) {
+            this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
+                this.stageTopPadding + this.blockY * this.cellSize,
+                this.currentBlock, this.blockAngle, this.stageCanvas);
+        }
+        setTimeout(this.mainLoop4.bind(this), 100);
+    }
+
     createNewBlock() {
         this.currentBlock = this.nextBlock;
         this.nextBlock = this.getRandomBlock();
@@ -242,6 +271,8 @@ class tetris {
         if (!this.checkBlockMove(this.blockX, this.blockY, this.currentBlock, this.blockAngle)) {
             let messageElem = document.getElementById("message");
             messageElem.innerText = "GAME OVER";
+            let difficulty = document.querySelector('.difficulty_button');
+            difficulty.style.display = "block";
             return false;
         }
         return true;
@@ -324,6 +355,8 @@ class tetris {
         this.clear(this.stageCanvas);
 
         let context = this.stageCanvas.getContext("2d");
+        let difficulty = document.querySelector('.difficulty_button');
+            difficulty.style.display = "none";
         for (let x = 0; x < this.virtualStage.length; x++) {
             for (let y = 0; y < this.virtualStage[x].length; y++) {
                 if (this.virtualStage[x][y] != null) {
