@@ -50,7 +50,8 @@
                 ・debug画面の追加<br>
                 ・メモ帳　保存　読み込み　クリアボタンの改善<br>
                 ・テトリスのスコアがリセットされない問題の修正<br>
-                ・test gameファイルの追加(試験的)<br>
+                ・test gameファイルの追加(試験的)<br><br><br>
+                <span class="bold" style="color: red;">・近々　ストップウォッチの追加予定</span>
                 </p>
         </div>
         <span class="menu_bluebar">ようこそ</span>
@@ -338,15 +339,16 @@
         <p class="bold Credit_text">Windows2000 ver 0.1.3</p>
     </div>
 
-    <div class="tetris border shape">
+    <div class="tetris border shape" style="display: none;">
         <span class="menu_bluebar">テトリス(改)</span>
 
-        <div class="tetris_menu1">
+        <div class="tetris_menu1" style="display: block;">
             <p class="white x-large" style="position: absolute; top: 30px;">難易度選択</p>
             <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
             <button class="blacktext start_button border hover" style="font-size: 40px; background-color: yellow;" onclick="tetris.startGame(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;イージー&nbsp;</button><br>
             <button class="blacktext start_button border hover" style="font-size: 40px; background-color: yellowgreen;" onclick="tetris.startGame2(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;ノーマル&nbsp;</button><br>
             <button class="blacktext start_button border hover" style="font-size: 40px; background-color: red;" onclick="tetris.startGame3(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;ハード&nbsp;</button><br>
+            <button class="white start_button border hover" style="font-size: 40px; background-color: purple;" onclick="tetris.startGame4(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;エクストラ&nbsp;</button>
         </div>
 
         <div class="tetris_menu2" style="display: none;">
@@ -389,6 +391,9 @@
         -35px; left: 0px;">線の非表示</a>
         <a class="button hover small" onclick="tetlines_1()" style="position: absolute; bottom:
         -35px; left: 75px;">線の表示</a>
+        <a class="button hover small difficulty_button" onclick="tetrismenu1_open()" style="width: 80px; position: absolute; bottom:
+        -35px; right: 5px; display: none;">難易度の選択</a>
+
     </div>
     <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
     <button class="blacktext bigbutton border hover2" onclick="tetris_bigscreen()">☐</button>
@@ -1638,9 +1643,10 @@
         }
         .reload_button {
             height: 25px;
+            width: 160px;
             position: absolute;
             top: 0px;
-            right: 80px;
+            left: 100px;
         }
         .start_button {
             margin-top: 10px;
@@ -3002,6 +3008,12 @@ let counts = 0;
         bombig[0].classList.remove('active');
     }
 
+    function tetrismenu1_open(){
+        let tetmenu1 = document.querySelector('.tetris_menu1');
+        tetmenu1.style.display = "block";
+        let tetmenu2 = document.querySelector('.tetris_menu2');
+        tetmenu2.style.display = "none";
+    }
     function tetrismenu2_open(){
         let tetmenu1 = document.querySelector('.tetris_menu1');
         tetmenu1.style.display = "none";
