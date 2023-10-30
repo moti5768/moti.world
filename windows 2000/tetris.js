@@ -111,6 +111,24 @@ class tetris {
                 color: "rgb(100, 100, 100)",
                 highlight: "rgb(255, 255, 255)",
                 shadow: "rgb(128, 128, 128)"
+            },
+            {
+                shape: [[[0, 1], [0, 0], [0, 1], [1, 0]],
+                        [[0, -1], [0, 0], [0, 1], [1, 0]],
+                        [[-1, 1], [0, 1], [0, 0], [0, 1]],
+                        [[0, 1], [0, 0], [0, 1], [1, 0]]],
+                color: "rgb(0, 128, 128)",
+                highlight: "rgb(0, 128, 128)",
+                shadow: "rgb(255, 255, 255)"
+            },
+            {
+                shape: [[[0, 1], [0, 1], [0, 0], [0, 0]],
+                        [[0, 1], [0, 1], [0, 0], [0, 0]],
+                        [[0, 1], [0, 1], [0, 0], [0, 0]],
+                        [[0, 1], [0, 1], [0, 0], [0, 0]],],
+                color: "rgb(153, 0, 0)",
+                highlight: "rgb(153, 0, 0)",
+                shadow: "rgb(255, 255, 255)"
             }
         ];
         return blocks;
@@ -285,7 +303,7 @@ class tetris {
     }
 
     getRandomBlock() {
-        return  Math.floor(Math.random() * 8);
+        return  Math.floor(Math.random() * 10);
     }
 
     fallBlock() {
