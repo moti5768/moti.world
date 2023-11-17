@@ -191,6 +191,7 @@ class tetris {
         this.currentBlock = null;
         this.nextBlock = this.getRandomBlock();
         this.mainLoop4();
+        this.reset();
     }
 
     mainLoop() {
@@ -271,8 +272,6 @@ class tetris {
         if (!this.checkBlockMove(this.blockX, this.blockY, this.currentBlock, this.blockAngle)) {
             let messageElem = document.getElementById("message");
             messageElem.innerText = "GAME OVER";
-            let difficulty = document.querySelector('.difficulty_button');
-            difficulty.style.display = "block";
             return false;
         }
         return true;
@@ -355,8 +354,6 @@ class tetris {
         this.clear(this.stageCanvas);
 
         let context = this.stageCanvas.getContext("2d");
-        let difficulty = document.querySelector('.difficulty_button');
-            difficulty.style.display = "none";
         for (let x = 0; x < this.virtualStage.length; x++) {
             for (let y = 0; y < this.virtualStage[x].length; y++) {
                 if (this.virtualStage[x][y] != null) {
@@ -418,17 +415,19 @@ class tetris {
         context.fillRect(0, 0, canvas.width, canvas.height);
     }
 
-}
-function reset() {
-    this.stageWidth = 10;
-    this.stageHeight = 20;
-    this.stageCanvas = document.getElementById("stage");
-    this.nextCanvas = document.getElementById("next");
-    let cellWidth = this.stageCanvas.width / this.stageWidth;
-    let cellHeight = this.stageCanvas.height / this.stageHeight;
-    this.cellSize = cellWidth < cellHeight ? cellWidth : cellHeight;
-    this.stageLeftPadding = (this.stageCanvas.width - this.cellSize * this.stageWidth) / 2;
-    this.stageTopPadding = (this.stageCanvas.height - this.cellSize * this.stageHeight) / 2;
-    this.deletedLines = 100;
-    this.deletedLines2 = 100;
+    reset() {
+        clearTimeout(this.mainLoop4.bind(this));
+        this.stageWidth = 10;
+        this.stageHeight = 20;
+        this.stageCanvas = document.getElementById("stage");
+        this.nextCanvas = document.getElementById("next");
+        let cellWidth = this.stageCanvas.width / this.stageWidth;
+        let cellHeight = this.stageCanvas.height / this.stageHeight;
+        this.cellSize = cellWidth < cellHeight ? cellWidth : cellHeight;
+        this.stageLeftPadding = (this.stageCanvas.width - this.cellSize * this.stageWidth) / 2;
+        this.stageTopPadding = (this.stageCanvas.height - this.cellSize * this.stageHeight) / 2;
+        this.deletedLines = 100;
+        this.deletedLines2 = 100;
+    }
+
 }
