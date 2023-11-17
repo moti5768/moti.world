@@ -85,23 +85,31 @@
             <span class="menu_bluebar">&emsp;update_log</span>
             <a class="blacktext closebutton hover2" onclick="updatelog_close()">✕</a>
             <a class="blacktext taskbutton hover" onclick="updatelog_close()">一</a>
-            <div class="medium_window_white">
+            <div class="medium_window_white small">
             <p class="small" style="background: black; color: lime; display: inline;">version 1.0</p>
-            <p class="small">[新機能] <br>
+            <p class="xx-small">[新機能] <br>
             ・タスクバーのカラーを設定できるようになりました。<br>
-            ・ウィンドウの半透明化をオン・オフと設定できるようになりました。<br>
             ・背景のプロパティ画面の刷新<br>
             ・エラー画面の刷新<br>
             ・スタートメニューからIDの変更が可能になりました。<br>
             ・アラーム機能・天気予報の追加<br>
+            ・タスクバー右端の小さなボタンで一時的にウィンドウの縁が透明になるようになりました。<br>
+            ・設定からウィンドウの縁透明切り替えができるようになりました。<br>
+            ・設定からウィンドウ全体の透明性切り替えができるようになりました。<br>
+            ・メモ帳に文字の色変更　太字　下線　の切り替えができるようになりました。<br>
+            ・フォントの切り替えができるようになりました。<br>
             [コマンド入力欄] <br>
             ・新コマンドの追加<br>
             ・今までの既存コマンドの名前変更<br>
             [その他] <br>
-            ・その他 大量のバグ修正<br>
+            ・その他 バグ修正<br>
             ・背景色・タスクカラーメニューに新色&emsp;白&emsp;を追加<br>
             ・IDの設定文字数を10文字から13文字へ緩和しました。<br>
-            ・タスクバーの通信状態をクリックすると、ネットワークが開くようになりました。</p>
+            ・タスクバーの通信状態をクリックすると、ネットワークが開くようになりました。<br>
+            ・ネットワークウィンドウの大きさを小さくしました。<br>
+            ・スクリーンセーバーファイルがコントロールパネルからマイコンピュータに移動しました。<br>
+            ・サウンドの種類が増えました。
+        </p>
         </div>
     </div>
     </div>
@@ -126,8 +134,11 @@
         <a class="blacktext menubtn hover" onclick="programmenu_open()">プログラム</a>
         <a class="blacktext menubtn hover" onclick="settingmenu_open(),programmenu_close(),appmenu_close(),startmenu_close()">設定</a>
         </div>
-        <span class="pic border"></span>
+        <span class="pic border" onclick="test(alert('test'))"></span>
+        <div style="position: absolute; right: 2.5px; bottom: 5px;">
+        <a class="white finishbtn border hover3" onclick="restart()">Systemの再起動</a><br>
         <a class="white finishbtn border hover3" onclick="screen_close(),allwindow_close(),playsound2()">Systemの終了</a>
+        </div>
         <!-- programmenu -->
         <div class="program_menu border">
             <a class="white menubtn hover" onclick="appmenu_open()">アクセサリ</a>
@@ -215,8 +226,8 @@
             9.backcolor.reset 10.css.remove 11.fullscreen.set 12.fullscreen.reset 13.backcolor.NT(.r) 14.alert 15.windowsystem 16.backcolor.menu 17.taskcolor.menu 18.cpu.bench</p>
     </div>
     </div>
-
     </div>
+
     <div class="drag24 shape alerttext_menu small_window border invisible">
         <div class="menu_bluebar">&emsp;アラートテキスト入力&nbsp;出力</div>
         <a class="blacktext closebutton hover2" onclick="alerttextmenu_close()">✕</a>
@@ -234,16 +245,24 @@
         <span class="menu_bluebar">&emsp;無題-メモ帳</span>
         <a class="closebutton blacktext hover2" onclick="error_open()">✕</a>
         <a class="blacktext taskbutton hover" onclick="memo_close()">一</a>
-        <form name="form1">
-            <textarea name="Memo" class="Memo" onkeyup="ShowLength(value);"></textarea>
+        <form name="form1" action="">
+            <textarea name="Memo" class="Memo"  cols="50" rows="10" onkeyup="ShowLength(value);"></textarea>
         </form>
         <p class="bottom white small" id="inputlength">0文字</p>
         <p class="white small" style="position: absolute; right: 10px; bottom: 0px;" id="memo_save_text"></p>
-        <p>
-            <input type="button" class="blacktext hover memo_button_save" value="&emsp;保存&emsp;" onclick=save(); ></input>
-            <input type="button" class="blacktext hover memo_button_load" value="&emsp;読込&emsp;" onclick=load(); ></input>
-            <input type="button" id="cleartextbtn" class="blacktext hover memo_button_clear" value="&emsp;クリア&emsp;"></input>
-        </p>
+        <div>
+            <input type="button" class="blacktext hover memo_button_save" value="&emsp;保存&emsp;" onclick=save(); >
+            <input type="button" class="blacktext hover memo_button_load" value="&emsp;読込&emsp;" onclick=load(); >
+            <input type="button" id="cleartextbtn" class="blacktext hover memo_button_clear" value="&emsp;クリア&emsp;">
+            <input type="button" class="blacktext hover memo_button" value="&emsp;" style="background: red;" onclick="memotext_red()">
+            <input type="button" class="blacktext hover memo_button" value="&emsp;" style="background: orange;" onclick="memotext_orange()">
+            <input type="button" class="blacktext hover memo_button" value="&emsp;" style="background: blue;" onclick="memotext_blue()">
+            <input type="button" class="blacktext hover memo_button" value="&emsp;" style="background: green;" onclick="memotext_green()">
+            <input type="button" class="blacktext hover memo_button" value="&emsp;" style="background: black;" onclick="memotext_black()">
+            <input type="button" class="blacktext hover memo_button bold" value="&emsp;B&emsp;" onclick="memotext_bold()">
+            <input type="button" class="blacktext hover memo_button" value="&emsp;_&emsp;" onclick="memotext_underline()">
+
+        </div>
 
         <div class="error">
             <div class="shape error_window border invisible">
@@ -261,7 +280,7 @@
         <span class="menu_bluebar">&emsp;電卓</span>
         <a class="closebutton blacktext hover2" onclick="calc_close()">✕</a>
         <a class="blacktext taskbutton hover" onclick="calc_close()">一</a><br>
-        <input class="calc textcalc" style="text-align: right;"></input><br>
+        <input class="calc textcalc" style="text-align: right;"><br>
         <button class="calc button_calc hover" onclick="append( '1' )" >1</button>
         <button class="calc button_calc hover" onclick="append( '2' )" >2</button>
         <button class="calc button_calc hover" onclick="append( '3' )" >3</button>
@@ -284,40 +303,36 @@
         <button class="calc button_calc hover" onclick="updates( '' ) " >CLR</button>
     </div>
 
-    <div class="controlpanel">
-        <div class="drag6 shape medium_window border invisible">
-            <span class="menu_bluebar">&emsp;コントロールパネル</span>
-            <a class="blacktext closebutton hover2" onclick="controlpanel_close()">✕</a>
-            <a class="blacktext taskbutton hover" onclick="controlpanel_close()">一</a>
-            <span class="medium_window_white"></span>
-            <div class="files1">
-            <a class="file_text hover" onclick="netmenu_open()">ネットワーク</a>
-            <a class="file_icon hover" onclick="netmenu_open()"></a>
-            </div>
-            <div class="files2">
-            <a class="file_text hover" onclick="server_open()">スクリーンセーバー</a>
-            <a class="file_icon hover" onclick="server_open()"></a>
-            </div>
-            <div class="files3">
-            <a class="file_text hover" onclick="sound_open()">サウンド</a>
-            <a class="file_icon hover" onclick="sound_open()"></a>
-            </div>
-        </div>
-    </div>
-
     <div class="sound">
         <div class="drag7 shape medium_window border invisible">
             <span class="menu_bluebar">&emsp;サウンド</span>
             <a class="blacktext closebutton hover2" onclick="sound_close()">✕</a>
             <a class="blacktext taskbutton hover" onclick="sound_close()">一</a>
             <span class="medium_window_white"></span>
-            <div class="files1">
-            <a class="file_text hover" onclick="playsound()">start</a>
-            <a class="file_icon hover" onclick="playsound()"></a>
+            <div class="files1 hover3">
+            <a class="file_text" onclick="playsound()">windowsystem<br>start</a>
+            <a class="file_icon" onclick="playsound()"></a>
+
             </div>
-            <div class="files2">
-            <a class="file_text hover" onclick="playsound2()">shutdown</a>
-            <a class="file_icon hover" onclick="playsound2()"></a>
+            <div class="files2 hover3">
+            <a class="file_text" onclick="playsound2()">windowsystem<br>shutdown</a>
+            <a class="file_icon" onclick="playsound2()"></a>
+            </div>
+            <div class="files3 hover3">
+            <a class="file_text" onclick="playsound3()">windows2000<br>start</a>
+            <a class="file_icon" onclick="playsound3()"></a>
+            </div>
+            <div class="files4 hover3">
+            <a class="file_text" onclick="playsound4()">windows2000<br>shutdown</a>
+            <a class="file_icon" onclick="playsound4()"></a>
+            </div>
+            <div class="files5 hover3">
+            <a class="file_text" onclick="playsound5()">windows95<br>start</a>
+            <a class="file_icon" onclick="playsound5()"></a>
+            </div>
+            <div class="files6 hover3">
+            <a class="file_text" onclick="playsound6()">windows95<br>shutdown</a>
+            <a class="file_icon" onclick="playsound6()"></a>
             </div>
         </div>
     </div>
@@ -330,31 +345,35 @@
                     <a class="blacktext taskbutton hover" onclick="settingmenu_close()">一</a>
                     <span class="medium_window_white"></span>
                     <div class="box_text">
-                    <input type="checkbox" class="box" id="setting_box" placeholder="test" onclick="settingbox()"></input>
+                    <input type="checkbox" class="box" id="setting_box" placeholder="test" onclick="settingbox()">
                     <p class="small">タスクバーの表示を無効化</p>
                     </div>
                     <div class="box_text2">
-                        <input type="checkbox" name="checkbox" class="box" id="setting_box2" placeholder="test" onclick="settingbox2()"></input>
+                        <input type="checkbox" name="checkbox" class="box" id="setting_box2" placeholder="test" onclick="settingbox2()">
                         <p class="small">タスクバー(小)の表示を無効化</p>
                     </div>
                     <div class="box_text3">
-                        <input type="checkbox" class="box" id="setting_box3" placeholder="test" onclick="settingbox3()"></input>
+                        <input type="checkbox" class="box" id="setting_box3" placeholder="test" onclick="settingbox3()">
                         <p class="small">ファイルアイコンの表示を無効化</p>
                     </div>
                     <div class="box_text4">
-                        <input type="checkbox" name="checkbox" class="box" id="setting_box4" placeholder="test" onclick="settingbox4()"></input>
+                        <input type="checkbox" name="checkbox" class="box" id="setting_box4" placeholder="test" onclick="settingbox4()">
                         <p class="small">タスクバー(小)を結合化</p>
                     </div>
                     <div class="box_text5">
-                        <input type="checkbox" class="box" id="setting_box5" placeholder="test" onclick="settingbox5()"></input>
+                        <input type="checkbox" class="box" id="setting_box5" placeholder="test" onclick="settingbox5()">
                         <p class="small" style="color:red">全ての表示を無効化(※注意)</p>
                     </div>
                     <div class="box_text6">
-                        <input type="checkbox" class="box" id="setting_box6" placeholder="test" onclick="settingbox6()"></input>
+                        <input type="checkbox" class="box" id="setting_box6" placeholder="test" onclick="settingbox6()">
                         <p class="small" style="color:blue">easter egg file</p>
                     </div>
-                    <a class="button hover2" onclick="invisible_remove()" style="position: absolute; bottom: 10px; left: 10px;">window invisible none</a>
-                    <a class="button hover2" onclick="invisible_add()" style="position: absolute; bottom: 50px; left: 10px;">window invisible add</a>
+                    <div class="box_text7">
+                        <input type="checkbox" class="box" id="setting_box7" placeholder="test" onclick="settingbox7()">
+                        <p class="small">window縁の透明化</p>
+                    </div>
+                    <a class="button hover2" onclick="invisible_remove()" style="position: absolute; bottom: 15px; left: 15px;">windowの透明性の解除</a>
+                    <a class="button hover2" onclick="invisible_add()" style="position: absolute; bottom: 55px; left: 15px;">windowの透明性の適応</a>
                 </div>
             </div>
         <!-- /settingmenu -->
@@ -363,32 +382,72 @@
         <div class="drag8 shape medium_window border invisible">
             <span class="menu_bluebar">&emsp;マイコンピュータ</span>
             <span class="medium_window_white"></span>
-            <div class="files1">
-            <a class="file_text blacktext hover" onclick="controlpanel_open()">コントロールパネル</a>
-            <a class="file_icon hover" onclick="controlpanel_open()"></a>
+            <div class="files1 hover3" ondblclick="controlpanel_open()">
+            <a class="file_text">コントロールパネル</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files2">
-            <a class="file_text blacktext hover" onclick="updownmenu_open()">拡大縮小</a>
-            <a class="file_icon hover" onclick="updownmenu_open()"></a>
+            <div class="files2 hover3" ondblclick="updownmenu_open()">
+            <a class="file_text">拡大縮小</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files3">
-            <a class="file_text blacktext hover" href="https://google.com" target="_blank" rel="noopener noreferrer">Google</a>
-            <a class="file_icon hover" href="https://google.com" target="_blank" rel="noopener noreferrer"></a>
+            <div class="files3 hover3">
+            <a class="file_text" href="https://google.com" target="_blank" rel="noopener noreferrer">Google</a>
+            <a class="file_icon" href="https://google.com" target="_blank" rel="noopener noreferrer"></a>
             </div>
-            <div class="files4">
-            <a class="file_text blacktext hover" href="https://yahoo.co.jp" target="_blank" rel="noopener noreferrer">Yahoo!</a>
-            <a class="file_icon hover" href="https://yahoo.co.jp" target="_blank" rel="noopener noreferrer"></a>
+            <div class="files4 hover3">
+            <a class="file_text" href="https://yahoo.co.jp" target="_blank" rel="noopener noreferrer">Yahoo!</a>
+            <a class="file_icon" href="https://yahoo.co.jp" target="_blank" rel="noopener noreferrer"></a>
             </div>
-            <div class="files5">
-            <a class="file_text blacktext hover" href="https://youtube.com" target="_blank" rel="noopener noreferrer">Youtube</a>
-            <a class="file_icon hover" href="https://youtube.com" target="_blank" rel="noopener noreferrer"></a>
+            <div class="files5 hover3">
+            <a class="file_text" href="https://youtube.com" target="_blank" rel="noopener noreferrer">Youtube</a>
+            <a class="file_icon" href="https://youtube.com" target="_blank" rel="noopener noreferrer"></a>
             </div>
-            <div class="files6">
-            <a class="file_text blacktext hover" onclick="weathermenu_open()">天気予報</a>
-            <a class="file_icon hover" onclick="weathermenu_open()"></a>
+            <div class="files6 hover3" ondblclick="weathermenu_open()">
+            <a class="file_text">天気予報</a>
+            <a class="file_icon"></a>
+            </div>
+            <div class="files7 hover3" ondblclick="server_open()">
+            <a class="file_text">スクリーンセーバー</a>
+            <a class="file_icon"></a>
             </div>
             <a class="blacktext closebutton hover2" onclick="mycomputer_close()">✕</a>
             <a class="blacktext taskbutton hover" onclick="mycomputer_close()">一</a>
+        </div>
+    </div>
+
+    <div class="controlpanel">
+        <div class="drag6 shape medium_window border invisible">
+            <span class="menu_bluebar">&emsp;コントロールパネル</span>
+            <a class="blacktext closebutton hover2" onclick="controlpanel_close()">✕</a>
+            <a class="blacktext taskbutton hover" onclick="controlpanel_close()">一</a>
+            <span class="medium_window_white"></span>
+            <div class="files1 hover3" ondblclick="netmenu_open()">
+            <a class="file_text">ネットワーク</a>
+            <a class="file_icon"></a>
+            </div>
+            <div class="files2 hover3" ondblclick="sound_open()">
+            <a class="file_text">サウンド</a>
+            <a class="file_icon"></a>
+            </div>
+            <div class="files3 hover3" ondblclick="fontmenu_open()">
+            <a class="file_text">フォント</a>
+            <a class="file_icon"></a>
+            </div>
+        </div>
+    </div>
+
+    <div class="font_menu">
+        <div class="drag32 shape small_window border invisible">
+            <span class="menu_bluebar">&emsp;フォント</span>
+            <a class="blacktext closebutton hover2" onclick="fontmenu_close()">✕</a>
+            <span class="small_window_white"></span>
+            <div style="display: inline-block; position: relative; top: 35px; left: 10px;">
+            <p class="hover2" onclick="font_serif()">serif</p>
+            <p class="hover2" onclick="font_sans_serif()">sans-serif</p>
+            <p class="hover2" onclick="font_cursive()">cursive</p>
+            <p class="hover2" onclick="font_fantasy()">fantasy</p>
+            <p class="hover2" onclick="font_monospace()">monospace</p>
+            </div>
         </div>
     </div>
 
@@ -396,53 +455,53 @@
         <div class="drag21 shape medium_window border invisible">
             <span class="menu_bluebar" style="color: green;">&emsp;WindowSystem</span>
             <span class="medium_window_white"></span>
-            <div class="files1" style="color: red;">
-            <a class="file_text hover" onclick="netmenu_open()">ネットワーク</a>
-            <a class="file_icon hover" onclick="netmenu_open()"></a>
+            <div class="files1 hover3" style="color: red;" ondblclick="netmenu_open()">
+            <a class="file_text">ネットワーク</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files2" style="color: red;">
-            <a class="file_text hover" onclick="updownmenu_open()">拡大縮小</a>
-            <a class="file_icon hover" onclick="updownmenu_open()"></a>
+            <div class="files2 hover3" style="color: red;" ondblclick="updownmenu_open()">
+            <a class="file_text">拡大縮小</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files3" style="color: red;">
-            <a class="file_text hover" onclick="calc_open()">電卓</a>
-            <a class="file_icon hover" onclick="calc_open()"></a>
+            <div class="files3 hover3" style="color: red;" ondblclick="calc_open()">
+            <a class="file_text">電卓</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files4" style="color: red;">
-            <a class="file_text hover" onclick="memo_open()">メモ帳</a>
-            <a class="file_icon hover" onclick="memo_open()"></a>
+            <div class="files4 hover3" style="color: red;" ondblclick="memo_open()">
+            <a class="file_text">メモ帳</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files5" style="color: red;">
-            <a class="file_text hover" onclick="paint_open()">ペイント</a>
-            <a class="file_icon hover" onclick="paint_open()"></a>
+            <div class="files5 hover3" style="color: red;" ondblclick="paint_open()">
+            <a class="file_text">ペイント</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files6" style="color: red;">
-            <a class="file_text hover" onclick="mycomputer_open()">マイコンピュータ</a>
-            <a class="file_icon hover" onclick="mycomputer_open()"></a>
+            <div class="files6 hover3" style="color: red;" ondblclick="mycomputer_open()">
+            <a class="file_text">マイコンピュータ</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files7" style="color: red;">
-            <a class="file_text hover" onclick="controlpanel_open()">コントロールパネル</a>
-            <a class="file_icon hover" onclick="controlpanel_open()"></a>
+            <div class="files7 hover3" style="color: red;" ondblclick="controlpanel_open()">
+            <a class="file_text">コントロールパネル</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files8" style="color: red;">
-            <a class="file_text hover" onclick="sound_open()">サウンド</a>
-            <a class="file_icon hover" onclick="sound_open()"></a>
+            <div class="files8 hover3" style="color: red;" ondblclick="sound_open()">
+            <a class="file_text">サウンド</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files9" style="color: red;">
-            <a class="file_text hover" onclick="calendar_open()">カレンダー</a>
-            <a class="file_icon hover" onclick="calendar_open()"></a>
+            <div class="files9 hover3" style="color: red;" ondblclick="calendar_open()">
+            <a class="file_text">カレンダー</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files10" style="color: red;">
-            <a class="file_text hover" onclick="server_open()">スクリーンセーバー</a>
-            <a class="file_icon hover" onclick="server_open()"></a>
+            <div class="files10 hover3" style="color: red;" ondblclick="server_open()">
+            <a class="file_text">スクリーンセーバー</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files11" style="color: red;">
-            <a class="file_text hover" onclick="debug_open()">debug</a>
-            <a class="file_icon hover" onclick="debug_open()"></a>
+            <div class="files11 hover3" style="color: red;" ondblclick="debug_open()">
+            <a class="file_text">debug</a>
+            <a class="file_icon"></a>
             </div>
-            <div class="files12" style="color: red;">
-            <a class="file_text hover" onclick="commandmenu_open()">command</a>
-            <a class="file_icon hover" onclick="commandmenu_open()"></a>
+            <div class="files12 hover3" style="color: red;" ondblclick="commandmenu_open()">
+            <a class="file_text">command</a>
+            <a class="file_icon"></a>
             </div>
 
             <a class="blacktext closebutton hover2" style="color: blue;" onclick="windows_close()">✕</a>
@@ -452,13 +511,13 @@
 
 
     <div class="network">
-        <div class="drag9 shape small_window border invisible">
+        <div class="drag9 shape small_window border invisible" style="width: 170px; height: 90px;">
             <span class="menu_bluebar">&emsp;ネットワーク</span>
             <a class="blacktext closebutton hover2" onclick="netmenu_close()">✕</a>
-            <span class="small_window_white">
-            <p class="small">接続状態(水：良好&emsp;灰：切)</p>
-            <p class="small nettext1">TEST(WiFi)</p>
-            <p class="small nettext2">ONLINE(4G)</p>
+            <span class="small_window_white" style="height: 60px; position: absolute; top: 25px;">
+            <p class="small bold">接続状態</p>
+            <p class="small nettext1">TEST(WiFi)&emsp;&emsp;&emsp;&emsp;test</p>
+            <p class="small nettext2">ONLINE(4G)&emsp;&emsp;&emsp;&nbsp;test</p>
             <span class="icon_4g"></span>
             <span class="icon_wifi"></span>
             </span>
@@ -509,10 +568,10 @@
                 <span class="menu_bluebar">&emsp;拡大縮小</span>
                 <a class="blacktext closebutton hover2" onclick="updownmenu_close()">✕</a>
                 <span class="small_window_white"></span>
-            <a onclick="hogee()" class="updownbtn border white x-large">拡大</a>
-            <a onclick="fooo()" class="updownbtn border white x-large">縮小</a>
+                <a onclick="hogee()" class="updownbtn border white x-large">拡大</a>
+                <a onclick="fooo()" class="updownbtn border white x-large">縮小</a>
+            </div>
         </div>
-    </div>
 
     <div class="help">
         <div class="drag6 shape help_window border invisible">
@@ -555,7 +614,7 @@
     <div class="debug">
         <div class="drag22 shape medium_window border invisible">
             <div style="position: absolute; bottom: 15px; right: 100px; z-index: 1;">
-                <a class="button bottom right hover2" onclick="sclear()">&nbsp;windowsystem&nbsp;storage&nbsp;clear&nbsp;</a>
+                <a class="button right hover2" style="position: relative; bottom: 5px; right: -80px;" onclick="sclear()">&nbsp;windowsystem&nbsp;storage&nbsp;clear&nbsp;</a>
             </div>
         <div class="medium_window_white">
             <div class="debug_screen small">
@@ -566,10 +625,11 @@
                     <p>battery capacity:&emsp;<span id="level"></span>[%]</p>
                     <p>battery capacity&emsp;<span id="dischargingTime"></span>[s]</p>
                     <p>charging(true/false):&emsp;<span id="charging"></span></p>
-                    <p>Time to complete charging:&emsp;<span id="chargingTime"></span>[s]</p><br>
+                    <p>Time to complete charging:&emsp;<span id="chargingTime"></span>[s]</p>
                     <p>system version 1.0.0</p>
+                    <p>pass:&emsp;<span id="passkey">IDが登録されていません。</span></p>
+                    <p class="memory"></p>
                 </div>
-                <p class="white">pass:&emsp;<span class="white" id="passkey">IDが登録されていません。</span></p>
             </div>
         </div>
         <span class="menu_bluebar">debug</span>
@@ -597,7 +657,7 @@
             <span class="menu_bluebar">&emsp;easter_window</span>
             <a class="blacktext closebutton hover2" onclick="eastermenu_close()">✕</a>
             <div style="z-index: 99999;">
-            <iframe src="https://moti5768.github.io/moti.world/windows%202000/windows2000.html" frameborder="0" style="height: 100%; width: 100%; position: absolute; top: 20px; left: 0px;"></iframe>
+            <iframe src="https://moti5768.github.io/moti.world/windows%202000/windows2000_beta.html" frameborder="0" style="height: 100%; width: 100%; position: absolute; top: 20px; left: 0px;"></iframe>
             </div>
         </div>
     </div>
@@ -608,7 +668,7 @@
         <a class="closebutton hover2" onclick="backcolormenu_close()">✕</a>
         <a class="backcolor_reset hover white" onclick="backcolor_reset()">リセット</a>
 
-        <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()"></input>
+        <input type="checkbox" class="backcolor_box" id="color_box" onclick="colorbox()">
         <p class="backcolor_text white">表示を2色にする。</p>
         <button class="backcolor_button hover3 backbutton_black" onclick="backcolor_black()"></button>
         <button class="backcolor_button hover3 backbutton_gray" onclick="backcolor_gray()"></button>
@@ -764,17 +824,17 @@
             <span class="menu_bluebar">&emsp;menu</span>
             <a class="white bottom hover2 button" onclick="setpass_open()">IDの変更</a><br>
             <p class="x-large">自作OSもどき一覧</p>
-            <a href="https://moti5768.github.io/moti.world/windows95.html" class="medium white hover3">&emsp;windows95(サポート終了)</a>
+            <a href="https://moti5768.github.io/moti.world/windows95.html" class="medium white hover3">&emsp;windows95(サポート終了)</a><br>
             <a href="https://moti5768.github.io/moti.world/windows%202000/windows2000.html" class="medium white hover3">&emsp;windows2000(最新版)</a>
         </div>
     </div>
 
     <div class="weather_menu blacktext">
-        <div class="small_window border drag30 shape invisible" style="width: 845px;">
-            <span class="menu_bluebar">&emsp;天気予報</span>
+        <div class="small_window border drag30 shape invisible" style="width: 845px; height: 180px;">
+            <span class="menu_bluebar">&emsp;<br>天気予報</span>
             <a class="blacktext closebutton hover2" onclick="weathermenu_close()">✕</a>    
     <div id="location"></div><br>
-<div class="weatherForecast">
+<div class="weatherForecast" style="background: white;">
   <div class="weather">
     <div class="dates">--/--(-)</div>
     <img class="weatherImg">
@@ -808,6 +868,8 @@
     </div>
         <span class="timer white" id="timer">time&emsp;&nbsp;</span>
         <span class="timer2 white" id="ampm">test</span>
+
+        <a class="windowvisiblebtn hover3"></a>
 
         <div class="date white" onload="LoadProc();">
             現在日付:
