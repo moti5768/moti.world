@@ -10,6 +10,8 @@ setInterval(() => {
       document.getElementById('chargingTime').innerHTML = battery.chargingTime;
       document.getElementById('dischargingTime').innerHTML = battery.dischargingTime;
     });
+    const memory = document.querySelector('.memory');
+    memory.textContent = (`memory:   ${(performance.memory.usedJSHeapSize / 1024).toFixed(2)}KB`);
 }, 100);
 
 if(navigator.userAgent.match(/(iPhone|iPod|Android.*Mobile)/i)){
@@ -237,6 +239,7 @@ function idload() {
     const alarm = document.querySelector(".alarm");
     const weather_menu = document.querySelector(".weather_menu");
     const update_log = document.querySelector(".update_log");
+    const font_menu = document.querySelector(".font_menu");
 
     function twoDigit(num) {
             let ret;
@@ -316,10 +319,25 @@ function idload() {
             const playsound = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6946.mp3");
             playsound.play();
         }
-
         function playsound2() {
             const playsound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/new%20OS/IMG_6947.mp3");
             playsound2.play();
+        }
+        function playsound3() {
+            const playsound3 = new Audio("https://github.com/moti5768/moti.world/raw/main/windows%202000/IMG_7324.mp3");
+            playsound3.play();
+        }
+        function playsound4() {
+            const playsound4 = new Audio("https://github.com/moti5768/moti.world/raw/main/windows%202000/IMG_7325.mp3");
+            playsound4.play();
+        }
+        function playsound5() {
+            const playsound5 = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6305.mp3");
+            playsound5.play();
+        }
+        function playsound6() {
+            const playsound6 = new Audio("https://github.com/moti5768/moti.world/raw/main/IMG_6307.mp3");
+            playsound6.play();
         }
 
         function screen_close() {
@@ -411,6 +429,8 @@ function idload() {
             document.getElementById("inputlength").innerHTML = MemoData.length + "文字";
         }
         document.form1.Memo.value = MemoData;
+        const memo_save = document.getElementById('memo_save_text');
+        memo_save.textContent = "";
     }
     // 保存
     function save() {
@@ -421,6 +441,8 @@ function idload() {
     }
     document.getElementById('cleartextbtn').addEventListener('click',function (){
         document.getElementsByClassName("Memo")[0].value = '';
+        const memo_save = document.getElementById('memo_save_text');
+        memo_save.textContent = "";
         resetShowLength();
     });
     function ShowLength( str ) {
@@ -428,6 +450,41 @@ function idload() {
     }
     function resetShowLength() {
         document.getElementById("inputlength").innerHTML = "0文字";
+    }
+    function memotext_red() {
+        document.querySelector('.Memo').style.color = "red";
+    }
+    function memotext_orange() {
+        document.querySelector('.Memo').style.color = "orange";
+    }
+    function memotext_blue() {
+        document.querySelector('.Memo').style.color = "blue";
+    }
+    function memotext_green() {
+        document.querySelector('.Memo').style.color = "green";
+    }
+    function memotext_red() {
+        document.querySelector('.Memo').style.color = "red";
+    }
+    function memotext_black() {
+        document.querySelector('.Memo').style.color = "black";
+    }
+
+    function memotext_bold() {
+        var Memo = document.querySelector('.Memo');
+        if(Memo.style.fontWeight == "bold"){
+            Memo.style.fontWeight = "normal";
+        }else{
+            Memo.style.fontWeight = "bold";
+        }
+    }
+    function memotext_underline() {
+        var Memo = document.querySelector('.Memo');
+        if(Memo.style.textDecoration == "underline"){
+            Memo.style.textDecoration = "none";
+        }else{
+            Memo.style.textDecoration = "underline";
+        }
     }
 
     function updates( _v ) // input tag を更新する関数
@@ -580,6 +637,13 @@ function settingbox6(){
         content_file.style.display = "block";
     } else {
         content_file.style.display = "none";
+    }
+}
+function settingbox7(){
+    if (document.getElementById("setting_box7").checked) {
+        window_visible_add();
+    } else {
+        window_visible_remove();
     }
 }
 
@@ -760,6 +824,7 @@ function settingbox6(){
         alarm.style.display = "none";
         weather_menu.style.display = "none";
         update_log.style.display = "none";
+        font_menu.style.display = "none";
         
     }
     
@@ -869,6 +934,7 @@ function settingbox6(){
 
     function memo_open(){
         app_memo.style.display = "block";
+        document.form1.Memo.focus();
     }
     function memo_close(){
         app_memo.style.display = "none";
@@ -998,6 +1064,29 @@ function settingbox6(){
         update_log.style.display = "none";
     }
 
+    function fontmenu_open(){
+        font_menu.style.display = "block";
+    }
+    function fontmenu_close(){
+        font_menu.style.display = "none";
+    }
+
+    function font_serif(){
+        document.querySelector("body, textarea").style.fontFamily = "serif";
+    }
+    function font_sans_serif(){
+        document.querySelector("body, textarea").style.fontFamily = "sans-serif";
+    }
+    function font_cursive(){
+        document.querySelector("body, textarea").style.fontFamily = "cursive";
+    }
+    function font_fantasy(){
+        document.querySelector("body, textarea").style.fontFamily = "fantasy";
+    }
+    function font_monospace(){
+        document.querySelector("body, textarea").style.fontFamily = "monospace";
+    }
+
     function check(){
         if (mail_form.mail.value === "reload"){
             document.getElementsByClassName("textcommand_area")[0].value = '';
@@ -1099,6 +1188,12 @@ function settingbox6(){
         }
     }
 
+    function restart() {
+            allwindow_close();
+            setTimeout('screen_close(),playsound2()',1000);
+            setTimeout('screen_start(),playsound(),backcolor_reset()',11500);
+    }
+
     function sclear(){
         allwindow_close();
         alert("windowsystemのストレージが削除されました");
@@ -1118,7 +1213,7 @@ function settingbox6(){
         }
         }
         end=(new Date()).getTime();
-        const time=(end-start)/10000;
+        const time=(end-start)/1000;
         alert('計算時間は'+time+'秒でした');
         }
 
@@ -1131,67 +1226,43 @@ function settingbox6(){
     }
 
     function invisible_remove(){
-    const invisible = document.getElementsByClassName('invisible');
-    invisible[0].classList.add('none');
-    invisible[1].classList.add('none');
-    invisible[2].classList.add('none');
-    invisible[3].classList.add('none');
-    invisible[4].classList.add('none');
-    invisible[5].classList.add('none');
-    invisible[6].classList.add('none');
-    invisible[7].classList.add('none');
-    invisible[8].classList.add('none');
-    invisible[9].classList.add('none');
-    invisible[10].classList.add('none');
-    invisible[11].classList.add('none');
-    invisible[12].classList.add('none');
-    invisible[13].classList.add('none');
-    invisible[14].classList.add('none');
-    invisible[15].classList.add('none');
-    invisible[16].classList.add('none');
-    invisible[17].classList.add('none');
-    invisible[18].classList.add('none');
-    invisible[19].classList.add('none');
-    invisible[20].classList.add('none');
-    invisible[21].classList.add('none');
-    invisible[22].classList.add('none');
-    invisible[23].classList.add('none');
-    invisible[24].classList.add('none');
-    invisible[25].classList.add('none');
-    invisible[26].classList.add('none');
+        var invisible = document.getElementsByClassName('invisible');
+        for (var i = 0, len = invisible.length; i < len; i++) {
+            invisible[i].classList.add('none');
+        }
+    }
+    function invisible_add(){
+        var invisible = document.getElementsByClassName('invisible');
+        for (var i = 0, len = invisible.length; i < len; i++) {
+            invisible[i].classList.remove('none');
+        }
     }
 
-    function invisible_add(){
-        const invisible = document.getElementsByClassName('invisible');
-        invisible[0].classList.remove('none');
-        invisible[1].classList.remove('none');
-        invisible[2].classList.remove('none');
-        invisible[3].classList.remove('none');
-        invisible[4].classList.remove('none');
-        invisible[5].classList.remove('none');
-        invisible[6].classList.remove('none');
-        invisible[7].classList.remove('none');
-        invisible[8].classList.remove('none');
-        invisible[9].classList.remove('none');
-        invisible[10].classList.remove('none');
-        invisible[11].classList.remove('none');
-        invisible[12].classList.remove('none');
-        invisible[13].classList.remove('none');
-        invisible[14].classList.remove('none');
-        invisible[15].classList.remove('none');
-        invisible[16].classList.remove('none');
-        invisible[17].classList.remove('none');
-        invisible[18].classList.remove('none');
-        invisible[19].classList.remove('none');
-        invisible[20].classList.remove('none');
-        invisible[21].classList.remove('none');
-        invisible[22].classList.remove('none');
-        invisible[23].classList.remove('none');
-        invisible[24].classList.remove('none');
-        invisible[25].classList.remove('none');
-        invisible[26].classList.remove('none');
+        function window_visible_add(){
+            var list = document.querySelectorAll('.medium_window,.small_window,.help_window,.popup_window,.paint_window');
+            for (var i = 0, len = list.length; i < len; i++) {
+                list[i].style.background = "rgba(0,0,0,0)";
+            }
+        }
+        function window_visible_remove(){
+            var list = document.querySelectorAll('.medium_window,.small_window,.help_window,.popup_window,.paint_window');
+            for (var i = 0, len = list.length; i < len; i++) {
+                list[i].style.background = "";
+            }
         }
 
+        const target = document.querySelector('.windowvisiblebtn');
+        target.addEventListener('mouseover', () => {
+            window_visible_add();
+          }, false);
+            target.addEventListener('mouseleave', () => {
+              window_visible_remove();
+            }, false);
+                target.addEventListener('mouseleave', () => {
+                    if (document.getElementById("setting_box7").checked){
+                    window_visible_add();
+                    };
+                  }, false);
     
     draggable(document.querySelector('.drag1'));
     draggable(document.querySelector('.drag2'));
@@ -1224,6 +1295,7 @@ function settingbox6(){
     draggable(document.querySelector('.drag29'));
     draggable(document.querySelector('.drag30'));
     draggable(document.querySelector('.drag31'));
+    draggable(document.querySelector('.drag32'));
     
 
     function draggable(target) {
@@ -1615,9 +1687,6 @@ resetButton.addEventListener('click', function() {
   time.textContent = '00:00:00.000';
   stopTime = 0;
 });
-
-
-
 
 
 'use strict';
