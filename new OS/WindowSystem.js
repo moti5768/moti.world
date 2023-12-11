@@ -342,6 +342,9 @@ function playsound6() {
     playsound6.play();
 }
 
+function finish_mes() {
+    document.querySelector('.ref').textContent = "終了";
+}
 function screen_close() {
     document.getElementsByClassName("pass_area")[0].value = '';
     document.getElementsByClassName("userid")[0].value = '';
