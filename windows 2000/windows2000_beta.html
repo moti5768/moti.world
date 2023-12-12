@@ -12,7 +12,7 @@
     <div class="screen">
         <span class="screencolor"></span>
         <p class="screentext bold">Windows2000</p>
-        <p class="screensubtext bold">test&nbsp;0.1.3 beta&copy;</p>
+        <p class="screensubtext bold">test&nbsp;0.1.4 beta&copy;</p>
         <button class="screenbutton bold border" onclick="screen_start(),sound()">スタート</button>
     </div>
 
@@ -23,7 +23,7 @@
         <div class="start_window_white">
         <p class="blacktext" id="user"></p>
         </div>
-        <span class="xx-small" style="color: lime; position: absolute; bottom: 0px; z-index: 99999;">version 0.1.3 beta<span class="blacktext">&emsp;&emsp;Windows2000を起動しています...</span></span>
+        <span class="xx-small" style="color: lime; position: absolute; bottom: 0px; z-index: 99999;">version 0.1.4 beta<span class="blacktext">&emsp;&emsp;Windows2000を起動しています...</span></span>
         </div>
     </div>
 
@@ -44,14 +44,8 @@
         <div class="popup_window_white border">
             <p class="popup_window_text2">Windows2000&nbsp;へようこそ<br>
                 このアップデートには新機能の追加・変更・修正が含まれています。<br>
-                ・コマンド入力欄の改善・新コマンド追加<br>
-                ・電卓の改善<br>
-                ・おみくじ機能の改善<br>
-                ・debug画面の追加<br>
-                ・メモ帳　保存　読み込み　クリアボタンの改善<br>
-                ・テトリスのスコアがリセットされない問題の修正<br>
-                ・test gameファイルの追加(試験的)<br><br><br>
-                <span class="bold" style="color: red;">・近々　ストップウォッチの追加予定</span>
+                ・ストップウォッチの追加<br>
+                ・起動・終了の際の音量を小さくしました。<span style="color: red;">(試験的)</span>
                 </p>
         </div>
         <span class="menu_bluebar">ようこそ</span>
@@ -61,7 +55,7 @@
     <div class="title">
         <div class="titleline"></div>
         <p class="bold white">Windows2000&emsp;&emsp;&emsp;</p>
-        <p class="bold white medium subtitle">test&nbsp;0.1.3 beta&copy;</p>
+        <p class="bold white medium subtitle">test&nbsp;0.1.4 beta&copy;</p>
     </div>
 
     <div class="start_menu border">
@@ -86,8 +80,10 @@
             <button class="blacktext closebutton border hover2" onclick="appmenu_close()">X</button>
             <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close()">メモ帳</button>
             <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close()">電卓</button>
+            <button class="blacktext appbutton3 hover x-small" onclick="stopwatch_open(),startmenu_close()">ストップウォッチ</button>
             <a class="app_icon" onclick="memo_open(),startmenu_close()"></a>
             <a class="app_icon2" onclick="calc_open(),startmenu_close()"></a>
+            <a class="app_icon3" onclick="stopwatch_open(),startmenu_close()"></a>
         </div>
 
         <div class="setting_menu border">
@@ -336,7 +332,7 @@
     </div>
 
     <div class="Credit">
-        <p class="bold Credit_text">Windows2000 ver 0.1.3</p>
+        <p class="bold Credit_text">Windows2000 ver 0.1.4</p>
     </div>
 
     <div class="tetris border shape" style="display: none;">
@@ -392,7 +388,7 @@
         <a class="button hover small" onclick="tetlines_1()" style="position: absolute; bottom:
         -35px; left: 75px;">線の表示</a>
         <a class="button hover small difficulty_button" onclick="tetrismenu1_open()" style="width: 80px; position: absolute; bottom:
-        -35px; right: 5px; display: none;">難易度の選択</a>
+        -35px; right: 5px; display: block;">難易度の選択</a>
 
     </div>
     <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
@@ -444,6 +440,21 @@
         </div>
     </div>
 
+    <!-- stopwatch -->
+    <div class="stopwatch">
+        <div class="shape mycomputer_window border invisible">
+            <span class="menu_bluebar">&emsp;stopwatch</span>
+            <button class="blacktext closebutton border hover2" onclick="stopwatch_close()">X</button>
+            <div id="times">00:00:00.000</div>
+            <div id="buttons">
+                <input id="start" class="hover" type="button" value="start">
+                <input id="stop" class="hover" type="button" value="stop">
+                <input id="reset" class="hover" type="button" value="reset">
+            </div>
+        </div>
+    </div>
+    <!-- /stopwatch    -->
+
     <div class="debug">
         <div class="shape mycomputer_window border invisible">
             <div style="position: absolute; bottom: 15px; right: 100px; z-index: 1;">
@@ -452,7 +463,7 @@
             <div class="debug_screen small" style="background: black; color: lime; height: 100%;">
                 <p class="small">NAME: windows2000<br>
                 BASE: Windows95 homeEdition1.0</p>
-                <p>system: version 0.1.3</p>
+                <p>system: version 0.1.4</p>
             </div>
         </div>
         <span class="menu_bluebar">debug</span>
@@ -1532,6 +1543,17 @@
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
+        .app_icon3 {
+            margin-left: 10px;
+            background: khaki;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 80px;
+            left: -5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
+        }
 
         span.timer {
             background: darkgray;
@@ -1749,7 +1771,7 @@
             display: none;
             background: darkgray;
             width: 130px;
-            height: 80px;
+            height: 105px;
             position: absolute;
             bottom: 55px;
             left: 142px;
@@ -1765,6 +1787,13 @@
             background: darkgray;
             position: absolute;
             top: 55px;
+            left: 30px;
+            border: none;
+        }
+        .appbutton3 {
+            background: darkgray;
+            position: absolute;
+            top: 80px;
             left: 30px;
             border: none;
         }
@@ -2038,6 +2067,45 @@ td {
 
 .debug {
     display: none;
+}
+
+.stopwatch {
+    display: none;
+    position: absolute;
+    top: 0px;
+}
+
+#times {
+    position: relative;
+    top: 50px;
+    background: whitesmoke;
+    color: dimgray;
+    font-size: 3rem;
+    text-align: center;
+    padding: 1rem;
+    border-radius: 1rem;
+    box-shadow: 0 0 20px black;
+    margin: .5rem;
+}
+
+#buttons {
+    position: relative;
+    top: 100px;
+    border: solid 2px blue;
+    font-size: 3rem;
+    text-align: center;
+    box-shadow: 0px 0px 10px black;
+}
+
+#start,
+#stop,
+#reset {
+    background: linear-gradient(0deg, silver, whitesmoke, white);
+    border: solid 2px gray;
+    width: 20%;
+    font-size: 30px;
+    border-radius: 5px;
+    box-shadow: 0 0 5px black;
 }
 
 @keyframes fadein {
@@ -2420,6 +2488,39 @@ td {
             left: 40px;
         }
 
+
+        #times {
+    position: relative;
+    top: 50px;
+    background: whitesmoke;
+    color: dimgray;
+    font-size: 30px;
+    text-align: center;
+    padding: 1rem;
+    border-radius: 1rem;
+    box-shadow: 0 0 20px black;
+    margin: .5rem;
+}
+
+#buttons {
+    position: relative;
+    top: 100px;
+    border: solid 2px blue;
+    text-align: center;
+    box-shadow: 0px 0px 10px black;
+}
+
+#start,
+#stop,
+#reset {
+    background: linear-gradient(0deg, silver, whitesmoke, white);
+    border: solid 2px gray;
+    width: 25%;
+    font-size: 22.5px;
+    border-radius: 5px;
+    box-shadow: 0 0 5px black;
+}
+
 }
 
     </style>
@@ -2480,6 +2581,7 @@ td {
             function ()
             {
             sound.play();
+            sound.volume = 0.1;
         }, 
         1000);
     }
@@ -2487,6 +2589,7 @@ td {
         function sound2() {
             const sound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/windows%202000/IMG_7325.mp3");
             sound2.play();
+            sound2.volume = 0.1;
         }
 
         function screen_start() {
@@ -2769,6 +2872,9 @@ let counts = 0;
 
         const itiran = document.querySelector(".itiran");
         itiran.style.display = "none";
+
+        const stopwatch = document.querySelector(".stopwatch");
+        stopwatch.style.display = "none";
     }
     
     function startmenu_close(){
@@ -2997,6 +3103,15 @@ let counts = 0;
     function bom_open(){
         const bom = document.querySelector(".bom");
         bom.style.display = "block";
+    }
+
+    function stopwatch_close() {
+        const stopwatch = document.querySelector(".stopwatch");
+        stopwatch.style.display = "none";
+    }
+    function stopwatch_open() {
+        const stopwatch = document.querySelector(".stopwatch");
+        stopwatch.style.display = "block";
     }
 
     function bom_bigscreen() {
@@ -3313,6 +3428,58 @@ function cpubench(){
         const time=(end-start)/1000;
         alert('計算時間は'+time+'秒でした');
         }
+
+
+const times = document.getElementById('times');
+const startButton = document.getElementById('start');
+const stopButton = document.getElementById('stop');
+const resetButton = document.getElementById('reset');
+
+// 開始時間
+let startTimes;
+// 停止時間
+let stopTime = 0;
+// タイムアウトID
+let timeoutID;
+
+// 時間を表示する関数
+function displayTime() {
+    const currentTime = new Date(Date.now() - startTimes + stopTime);
+    const h = String(currentTime.getHours() - 9).padStart(2, '0');
+    const m = String(currentTime.getMinutes()).padStart(2, '0');
+    const s = String(currentTime.getSeconds()).padStart(2, '0');
+    const ms = String(currentTime.getMilliseconds()).padStart(3, '0');
+
+    times.textContent = `${h}:${m}:${s}.${ms}`;
+    timeoutID = setTimeout(displayTime, 10);
+}
+
+// スタートボタンがクリックされたら時間を進める
+startButton.addEventListener('click', () => {
+    startButton.disabled = true;
+    stopButton.disabled = false;
+    resetButton.disabled = true;
+    startTimes = Date.now();
+    displayTime();
+});
+
+// ストップボタンがクリックされたら時間を止める
+stopButton.addEventListener('click', function () {
+    startButton.disabled = false;
+    stopButton.disabled = true;
+    resetButton.disabled = false;
+    clearTimeout(timeoutID);
+    stopTime += (Date.now() - startTimes);
+});
+
+// リセットボタンがクリックされたら時間を0に戻す
+resetButton.addEventListener('click', function () {
+    startButton.disabled = false;
+    stopButton.disabled = true;
+    resetButton.disabled = true;
+    times.textContent = '00:00:00.000';
+    stopTime = 0;
+});
 
     </script>
     </body>
