@@ -191,7 +191,6 @@ class tetris {
         this.currentBlock = null;
         this.nextBlock = this.getRandomBlock();
         this.mainLoop4();
-        this.reset();
     }
 
     mainLoop() {
@@ -416,6 +415,9 @@ class tetris {
     }
 
     reset() {
+        clearTimeout(this.mainLoop.bind(this));
+        clearTimeout(this.mainLoop2.bind(this));
+        clearTimeout(this.mainLoop3.bind(this));
         clearTimeout(this.mainLoop4.bind(this));
         this.stageWidth = 10;
         this.stageHeight = 20;
