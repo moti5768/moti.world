@@ -104,8 +104,8 @@
                 <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
                 <a class="device_icon" onclick="controlpanel_open(),startmenu_close()"></a>
 
-                <button class="blacktext devicebutton2 x-small hover" onclick="alert(),startmenu_close()">タスクバーのプロパティ</button>
-                <a class="device_icon2" onclick="alert(),startmenu_close()"></a>
+                <button class="blacktext devicebutton2 x-small hover" onclick="taskbar_property_open(),startmenu_close()">タスクバーのプロパティ</button>
+                <a class="device_icon2" onclick="taskbar_property_open(),startmenu_close()"></a>
             </div>
         </div>
 
@@ -293,6 +293,19 @@
                     onclick="task_content2_close(),soundmenu_close()">X</button>
                 <button class="blacktext taskbutton border hover" onclick="task_conent2_open(),soundmenu_close()"
                     style="display: none;">一</button>
+            </div>
+        </div>
+
+        <div class="taskbar_property">
+            <div class="controlpanel_window border shape">
+                <span class="menu_bluebar">&nbsp;タスクバーのプロパティ</span>
+                <span class="controlpanel_white border"></span>
+                <button class="blacktext closebutton border hover2"
+                    onclick="taskbar_property_close()">X</button>
+                <a style="position: absolute; top: 40px; left: 10px;">clock</a>
+                <a style="position: absolute; top: 70px; left: 10px;">clock</a>
+                <button class="border large" style="position: absolute; top: 40px; left: 55px;" onclick="clock_on()">on</button>
+                <button class="border large" style="position: absolute; top: 70px; left: 55px;" onclick="clock_off()">off</button>
             </div>
         </div>
 
@@ -2334,6 +2347,10 @@
             box-shadow: 0 0 5px black;
         }
 
+        .taskbar_property {
+            display: none;
+        }
+
         @keyframes fadein {
             0% {
                 opacity: 0;
@@ -3370,6 +3387,24 @@
         function stopwatch_open() {
             const stopwatch = document.querySelector(".stopwatch");
             stopwatch.style.display = "block";
+        }
+
+        function taskbar_property_close() {
+            const taskbar_property = document.querySelector(".taskbar_property");
+            taskbar_property.style.display = "none";
+        }
+        function taskbar_property_open() {
+            const taskbar_property = document.querySelector(".taskbar_property");
+            taskbar_property.style.display = "block";
+        }
+
+        function clock_off() {
+            const taskbar_property = document.querySelector(".timer");
+            taskbar_property.style.display = "none";
+        }
+        function clock_on() {
+            const taskbar_property = document.querySelector(".timer");
+            taskbar_property.style.display = "block";
         }
 
         function bom_bigscreen() {
