@@ -70,7 +70,7 @@
             <button class="blacktext closebutton border hover2" onclick="startmenu_close()">X</button>
             <button class="blacktext button2 border bold hover" onclick="debug_open()">debug</button>
             <button class="blacktext button2 border bold hover"
-                onclick="programmenu_open(),appmenu_close(),settingmenu_close()">プログラム</button>
+                onclick="programmenu_open(),appmenu_close(),gamemenu_close(),settingmenu_close()">プログラム</button>
             <button class="blacktext button2 border bold hover"
                 onclick="settingmenu_open(),programmenu_close(),appmenu_close()">設定</button>
             <button class="blacktext border bold button2 hover"
@@ -90,21 +90,38 @@
                 <button class="blacktext closebutton border hover2" onclick="appmenu_close()">X</button>
                 <button class="blacktext appbutton hover" onclick="memo_open(),startmenu_close()">メモ帳</button>
                 <button class="blacktext appbutton2 hover" onclick="calc_open(),startmenu_close()">電卓</button>
-                <button class="blacktext appbutton3 hover x-small" onclick="stopwatch_open(),startmenu_close()">ストップウォッチ</button>
+                <button class="blacktext appbutton3 hover x-small"
+                    onclick="stopwatch_open(),startmenu_close()">ストップウォッチ</button>
                 <button class="blacktext appbutton4 hover" onclick="commandmenu_open(),startmenu_close()">コマンド</button>
+                <button class="blacktext appbutton5 hover" onclick="gamemenu_open(),appmenu_close()">ゲーム</button>
                 <a class="app_icon" onclick="memo_open(),startmenu_close()"></a>
                 <a class="app_icon2" onclick="calc_open(),startmenu_close()"></a>
                 <a class="app_icon3" onclick="stopwatch_open(),startmenu_close()"></a>
                 <a class="app_icon4" onclick="commandmenu_open(),startmenu_close()"></a>
+                <a class="app_icon5" onclick="gamemenu_open(),appmenu_close()"></a>
+            </div>
+
+            <div class="gamemenu border">
+                <span class="menu_bluebar">ゲーム</span>
+                <button class="blacktext closebutton border hover2" onclick="gamemenu_close()">X</button>
+                <button class="blacktext appbutton hover" onclick="tetris_open(),gamemenu_close()">テトリス</button>
+                <button class="blacktext appbutton2 hover" onclick="bom_open(),gamemenu_close()">マインスイーパ</button>
+                <button class="blacktext appbutton3 hover"
+                    onclick="alert(),startmenu_close()">test game</button>
+                <a class="app_icon" onclick="tetris_open(),gamemenu_close()"></a>
+                <a class="app_icon2" onclick="bom_open(),gamemenu_close()"></a>
+                <a class="app_icon3" onclick="alert(),gamemenu_close()"></a>
             </div>
 
             <div class="setting_menu border">
                 <span class="menu_bluebar">設定</span>
                 <button class="blacktext closebutton border hover2" onclick="settingmenu_close()">X</button>
-                <button class="blacktext devicebutton x-small hover" onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
+                <button class="blacktext devicebutton x-small hover"
+                    onclick="controlpanel_open(),startmenu_close()">コントロールパネル</button>
                 <a class="device_icon" onclick="controlpanel_open(),startmenu_close()"></a>
 
-                <button class="blacktext devicebutton2 x-small hover" onclick="taskbar_property_open(),startmenu_close()">タスクバーのプロパティ</button>
+                <button class="blacktext devicebutton2 x-small hover"
+                    onclick="taskbar_property_open(),startmenu_close()">タスクバーのプロパティ</button>
                 <a class="device_icon2" onclick="taskbar_property_open(),startmenu_close()"></a>
             </div>
         </div>
@@ -133,6 +150,7 @@
                     <input type="file" class="icon file">
                     <input type="file" class="test white file2">
                 </div>
+                <div class="game_files" style="display: none;">
                 <div class="files6">
                     <a class="icon" onclick="tetris_open()"></a>
                     <a class="test white hover" onclick="tetris_open()">テトリス(改)</a>
@@ -145,6 +163,7 @@
                     <a class="icon" onclick="testalert_2()"></a>
                     <a class="test white hover" onclick="testalert_2()">test game</a>
                 </div>
+                </div>
             </div>
         </div>
 
@@ -155,11 +174,11 @@
         </div>
 
         <div class="taskbar">
-            <button class="blacktext bar_button hover" onclick="backcolormenu_open(),popupwindow_close()">C</button>
-            <button class="blacktext bar_button hover" onclick="cssmenu_open(),popupwindow_close()">CS</button>
-            <button class="blacktext bar_button hover x-small" onclick="itiran_open()">一覧</button>
+            <button class="blacktext bar_button hover" onclick="backcolormenu_open(),popupwindow_close(),cssmenu_close(),itiran_close()">C</button>
+            <button class="blacktext bar_button hover" onclick="cssmenu_open(),popupwindow_close(),backcolormenu_close(),itiran_close()">CS</button>
+            <button class="blacktext bar_button hover x-small" onclick="itiran_open(),popupwindow_close(),cssmenu_close(),backcolormenu_close()">一覧</button>
             <button class="blacktext bar_button hover" onclick="omikuji()">omi</button>
-            <button class="blacktext bar_button hover" onclick="debug_open()">D</button>
+            <button class="blacktext bar_button hover" onclick="debug_open(),popupwindow_close()">D</button>
 
 
             <div class="css_menu border shape">
@@ -300,12 +319,13 @@
             <div class="controlpanel_window border shape">
                 <span class="menu_bluebar">&nbsp;タスクバーのプロパティ</span>
                 <span class="controlpanel_white border"></span>
-                <button class="blacktext closebutton border hover2"
-                    onclick="taskbar_property_close()">X</button>
+                <button class="blacktext closebutton border hover2" onclick="taskbar_property_close()">X</button>
                 <a style="position: absolute; top: 40px; left: 10px;">clock</a>
                 <a style="position: absolute; top: 70px; left: 10px;">clock</a>
-                <button class="border large" style="position: absolute; top: 40px; left: 55px;" onclick="clock_on()">on</button>
-                <button class="border large" style="position: absolute; top: 70px; left: 55px;" onclick="clock_off()">off</button>
+                <button class="blacktext border large" style="position: absolute; top: 40px; left: 55px;"
+                    onclick="clock_on()">on</button>
+                <button class="blacktext border large" style="position: absolute; top: 70px; left: 55px;"
+                    onclick="clock_off()">off</button>
             </div>
         </div>
 
@@ -314,7 +334,7 @@
                 <span class="menu_bluebar">　　マイコンピュータ</span>
                 <span class="mycomputer_white border"></span>
                 <span class="mycomputer_icon"></span>
-                <a class="mycomputer_text2 hover" onclick="controlpanel_open(),mycomputer_close()">コントロール<br>パネル</a>
+                <a class="mycomputer_text2 hover" onclick="controlpanel_open(),mycomputer_close()">コントロールパネル</a>
                 <a class="mycomputer_icon2" onclick="controlpanel_open(),mycomputer_close()"></a>
                 <a class="mycomputer_text3 hover" href="https://google.com" target="_blank"
                     rel="noopener noreferrer">Google</a>
@@ -368,8 +388,26 @@
                 <span class="task_icon4"></span>
             </div>
 
-            <span class="timer bottom" id="timer">time　</span>
-            <span class="timer2 bottom" id="ampm">test</span>
+            <div class="timer_menu">
+                <span class="timer bottom" id="timer">time　</span>
+                <span class="timer2 bottom" id="ampm">test</span>
+            </div>
+        </div>
+
+        <div class="menu">
+            <div class="menu_button border hover" onclick="menu_open()">
+                <a class="menu_line"></a>
+                <a class="menu_line"></a>
+                <a class="menu_line"></a>
+            </div>
+
+            <div class="menu2">
+                <div class="menu_window border shape">
+                    <span class="menu_bluebar">&nbsp;メニュー</span>
+                    <button class="blacktext closebutton border hover2" onclick="menu_close()">X</button>
+                </div>
+            </div>
+
         </div>
 
         <div class="Credit">
@@ -430,17 +468,17 @@
                             </table>
                         </span>
                     </span>
-                    <a class="button hover small" onclick="tetlines_2()" style="position: absolute; bottom:
-        -35px; left: 0px;">線の非表示</a>
-                    <a class="button hover small" onclick="tetlines_1()" style="position: absolute; bottom:
-        -35px; left: 75px;">線の表示</a>
-                    <a class="button hover small difficulty_button" onclick="tetrismenu1_open()" style="width: 80px; position: absolute; bottom:
-        -35px; right: 5px; display: block;">難易度の選択</a>
+                    <a class="button hover small" onclick="tetlines_2()"
+                        style="position: absolute; bottom: -35px; left: 0px;">線の非表示</a>
+                    <a class="button hover small" onclick="tetlines_1()"
+                        style="position: absolute; bottom: -35px; left: 75px;">線の表示</a>
+                    <a class="button hover small difficulty_button" onclick="tetrismenu1_open()"
+                        style="width: 80px; position: absolute; bottom: -35px; right: 5px; display: block;">難易度の選択</a>
 
                 </div>
                 <button class="blacktext closebutton border hover2" onclick="tetris_close()">X</button>
                 <button class="blacktext bigbutton border hover2" onclick="tetris_bigscreen()">☐</button>
-                <button class="blacktext minbutton border hover2" onclick="tetris_minscreen()">ー</button>
+                <button class="blacktext minbutton border hover2" onclick="tetris_minscreen()">❏</button>
                 <button class="blacktext reload_button border hover3" onclick="reloads()">再読み込み</button>
             </div>
         </div>
@@ -1215,7 +1253,7 @@
             left: 3px;
             pointer-events: none;
         }
-        
+
 
         .start_menu {
             display: none;
@@ -1472,6 +1510,7 @@
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
+
         .device_icon2 {
             margin-left: 10px;
             background: khaki;
@@ -1566,6 +1605,7 @@
             color: black;
             font-size: x-small;
             margin-left: 10px;
+            width: 60px;
             height: 15px;
             position: absolute;
             top: 90px;
@@ -1722,6 +1762,7 @@
             border-bottom: solid 2px black;
             border-right: solid 2px black;
         }
+
         .app_icon4 {
             margin-left: 10px;
             background: black;
@@ -1732,6 +1773,18 @@
             left: -5px;
             border-bottom: solid 2px white;
             border-right: solid 2px white;
+        }
+
+        .app_icon5 {
+            margin-left: 10px;
+            background: lime;
+            width: 20px;
+            height: 15px;
+            position: absolute;
+            top: 130px;
+            left: -5px;
+            border-bottom: solid 2px black;
+            border-right: solid 2px black;
         }
 
         span.timer {
@@ -1945,6 +1998,8 @@
             position: absolute;
             top: 30px;
             left: 3px;
+            border-radius: 0px;
+            border: solid 1px black;
         }
 
         .submitbtn {
@@ -1959,11 +2014,44 @@
             right: 5px;
         }
 
+        .menu_button {
+            background: gray;
+            width: 50px;
+            height: 60px;
+            position: absolute;
+            right: 0px;
+            top: 100px;
+        }
+
+        .menu_line {
+            display: inline-block;
+            background: black;
+            width: 80%;
+            height: 2px;
+            left: 5px;
+            position: relative;
+            top: -10px;
+        }
+
+        .menu2 {
+            display: none;
+        }
+
         .app_menu {
             display: none;
             background: darkgray;
             width: 130px;
-            height: 135px;
+            height: 155px;
+            position: absolute;
+            bottom: 55px;
+            left: 142px;
+        }
+
+        .gamemenu {
+            display: none;
+            background: darkgray;
+            width: 130px;
+            height: 105px;
             position: absolute;
             bottom: 55px;
             left: 142px;
@@ -2001,6 +2089,14 @@
             border: none;
         }
 
+        .appbutton5 {
+            background: darkgray;
+            position: absolute;
+            top: 130px;
+            left: 30px;
+            border: none;
+        }
+
         .setting_menu {
             display: none;
             background: darkgray;
@@ -2018,6 +2114,7 @@
             left: 30px;
             border: none;
         }
+
         .devicebutton2 {
             font-size: 9px;
             background: darkgray;
@@ -2066,6 +2163,16 @@
             top: 50px;
             position: absolute;
             left: 180px;
+            z-index: 3;
+        }
+
+        .menu_window {
+            background: darkgray;
+            width: 200px;
+            height: 400px;
+            top: 100px;
+            position: absolute;
+            right: 50px;
             z-index: 3;
         }
 
@@ -2612,6 +2719,7 @@
             .mycomputer_text2 {
                 font-size: x-small;
                 margin-left: 10px;
+                width: 50px;
                 height: 15px;
                 position: absolute;
                 top: 75px;
@@ -2846,6 +2954,7 @@
                 let screen_close = document.getElementsByClassName('screen_close');
                 screen_close[0].classList.remove('active');
             }, 4000);
+            closeTabAfterDelay(4500);
         }
 
         function sound() {
@@ -3150,6 +3259,12 @@
 
             const stopwatch = document.querySelector(".stopwatch");
             stopwatch.style.display = "none";
+
+            const menu = document.querySelector(".menu2");
+            menu.style.display = "none";
+
+            const gamemenu = document.querySelector(".gamemenu");
+            gamemenu.style.display = "none";
         }
 
         function startmenu_close() {
@@ -3258,6 +3373,17 @@
         function appmenu_close() {
             const app_menu = document.querySelector(".app_menu");
             app_menu.style.display = "none";
+        }
+
+        function gamemenu_open() {
+            const gamemenu = document.querySelector(".gamemenu");
+            gamemenu.style.display = "block";
+            const app_menu = document.querySelector(".app_menu");
+            app_menu.style.display = "none";
+        }
+        function gamemenu_close() {
+            const gamemenu = document.querySelector(".gamemenu");
+            gamemenu.style.display = "none";
         }
 
         function settingmenu_open() {
@@ -3399,12 +3525,21 @@
         }
 
         function clock_off() {
-            const taskbar_property = document.querySelector(".timer");
+            const taskbar_property = document.querySelector(".timer_menu");
             taskbar_property.style.display = "none";
         }
         function clock_on() {
-            const taskbar_property = document.querySelector(".timer");
+            const taskbar_property = document.querySelector(".timer_menu");
             taskbar_property.style.display = "block";
+        }
+
+        function menu_open() {
+            const menu = document.querySelector(".menu2");
+            menu.style.display = "block";
+        }
+        function menu_close() {
+            const menu = document.querySelector(".menu2");
+            menu.style.display = "none";
         }
 
         function bom_bigscreen() {
@@ -3454,42 +3589,44 @@
             tetline.textContent = "0";
         }
 
-
         function check() {
             if (mail_form.mail.value === "reload") {
-                //条件に一致する場合(空の場合)
                 location.reload();
             } else if (mail_form.mail.value === "shutdown") {
-                //条件に一致する場合(空の場合)
                 document.getElementsByClassName("textcommand_area")[0].value = '';
                 screen_close();
                 allwindow_close();
                 sound2();
+                closeTabAfterDelay(4500);
             } else if (mail_form.mail.value === "cpu.bench") {
-                //条件に一致する場合(空の場合)
                 document.getElementsByClassName("textcommand_area")[0].value = '';
                 cpubench();
             } else if (mail_form.mail.value === "debug") {
-                //条件に一致する場合(空の場合)
                 document.getElementsByClassName("textcommand_area")[0].value = '';
                 debug_open();
             } else if (mail_form.mail.value === "moti") {
-                //条件に一致する場合(空の場合)
                 document.getElementsByClassName("textcommand_area")[0].value = '';
                 iframe1_open();
+            } else if (mail_form.mail.value === "file.game") {
+                document.getElementsByClassName("textcommand_area")[0].value = '';
+                document.querySelector(".game_files").style.display = "block";
+            } else if (mail_form.mail.value === "file.game.none") {
+                document.getElementsByClassName("textcommand_area")[0].value = '';
+                document.querySelector(".game_files").style.display = "none";
             } else {
-                //条件に一致しない場合(入力されている場合)
                 alert('コマンドが正しくありません！');
             }
         }
 
-        function command_help() {
-            alert("1.shutdown 2.reload 3.cpu.bench 4.debug")
+        function closeTabAfterDelay(delay) {
+            setTimeout(function () {
+                window.close(); 
+            }, delay);
         }
 
-
-
-
+        function command_help() {
+            alert("1.shutdown 2.reload 3.cpu.bench 4.debug 5.file.game(none)")
+        }
 
         "use strict";
 
