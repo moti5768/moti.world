@@ -331,6 +331,14 @@
                     onclick="clock_on()">on</button>
                 <button class="blacktext border large" style="position: absolute; top: 70px; left: 55px;"
                     onclick="clock_off()">off</button>
+                <div class="taskbar_colors">
+                <button class="backcolor_button backbutton_red"onclick="taskbar_red()"></button>
+                <button class="backcolor_button backbutton_black" onclick="taskbar_black()"></button>
+                <button class="backcolor_button backbutton_green" onclick="taskbar_green()"></button>
+                <button class="backcolor_button backbutton_yellow" onclick="taskbar_yellow()"></button>
+                <button class="backcolor_button backbutton_blue" onclick="taskbar_blue()"></button>
+                <a class="backcolor_button backbutton hover" onclick="taskbar_colorreset()">reset</a>
+                </div>
             </div>
         </div>
 
@@ -895,6 +903,15 @@
             z-index: 99998;
         }
 
+        .taskbar_colors {
+            position: relative;
+            top: 60px;
+            left: 10px;
+        }
+
+
+
+
         .task_content_border {
             width: 300px;
             height: 34px;
@@ -1240,7 +1257,6 @@
             justify-content: center;
             text-align: center;
             margin-top: 0px;
-            background: darkgray;
             width: 70px;
             height: 30px;
             position: absolute;
@@ -1793,7 +1809,6 @@
         }
 
         span.timer {
-            background: darkgray;
             font-size: small;
             display: inline;
             text-decoration: none;
@@ -1806,7 +1821,6 @@
         }
 
         span.timer2 {
-            background: darkgray;
             font-size: small;
             display: inline;
             text-decoration: none;
@@ -3191,6 +3205,25 @@
         }
         function backcolor_reset() {
             document.getElementById("backcolor").style.background = "";
+        }
+
+        function taskbar_red() {
+            document.querySelector(".underbar").style.background = "red";
+        }
+        function taskbar_black() {
+            document.querySelector(".underbar").style.background = "black";
+        }
+        function taskbar_yellow() {
+            document.querySelector(".underbar").style.background = "yellow";
+        }
+        function taskbar_green() {
+            document.querySelector(".underbar").style.background = "green";
+        }
+        function taskbar_blue() {
+            document.querySelector(".underbar").style.background = "darkblue";
+        }
+        function taskbar_colorreset() {
+            document.querySelector(".underbar").style.background = "";
         }
 
         function backcolor_test() {
