@@ -1350,6 +1350,35 @@ function draggable(target) {
     };
 }
 
+
+
+function draggable(target) {
+    target.touchstart = function (event) {
+        let shiftX = event.clientX - target.getBoundingClientRect().left;
+        let shiftY = event.clientY - target.getBoundingClientRect().top;
+        let top = document.querySelector('.top');
+        moveAt(event.pageX, event.pageY);
+        // ボールを（pageX、pageY）座標の中心に置く
+        function moveAt(pageX, pageY) {
+            target.style.left = pageX - shiftX + 'px';
+            target.style.top = pageY - shiftY + 'px';
+        }
+        function touchmove(event) {
+            moveAt(event.pageX, event.pageY);
+        }
+        // (3) mousemove でボールを移動する
+        document.addEventListener('touchmove', touchmove);
+        // (4) ボールをドロップする。不要なハンドラを削除する
+        target.touchend = function () {
+            document.removeEventListener('touchmove', touchmove);
+            target.touchend = null;
+        };
+    };
+}
+
+
+
+
 let count = 0;
 // 図形にクリックイベント登録＆z-indexを表示
 let eleShape = document.getElementsByClassName("shape");
