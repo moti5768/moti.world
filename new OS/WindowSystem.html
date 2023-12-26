@@ -73,7 +73,6 @@
     </div>
 
     <div class="Windows95_group" id="win95">
-        <span class="logo"></span>
         <div class="drag1 shape popupwrap popup_window border invisible">
             <p class="popup_window_text">WindowSystem&nbsp;へようこそ</p>
             <div class="popup_window_white">
@@ -109,9 +108,18 @@
         </div>
 
         <div class="title">
+            <div class="window_title_logo">
+                <span class="window_logo1"></span>
+                <span class="window_logo2"></span>
+                <span class="window_logo3"></span>
+                <span class="window_logo4"></span>
+            </div>
             <div class="titleline"></div>
             <p class="bold" id="title" onclick="windows_open()">WindowSystem&emsp;&emsp;&emsp;</p>
             <p class="subtitle bold small" onclick="windows_open()">version 1.1</p>
+        </div>
+        <div class="bold under_title">
+            <p>WindowSystem ver1.1</p>
         </div>
 
         <!-- statmenu -->
@@ -386,6 +394,10 @@
                     style="position: absolute; bottom: 15px; left: 15px;">windowの透明性の解除</a>
                 <a class="button hover2" onclick="invisible_add()"
                     style="position: absolute; bottom: 55px; left: 15px;">windowの透明性の適応</a>
+                <div class="taskbar_position_set" style="position: absolute; right: 150px; top: 40px;">
+                    <a class="button hover2" onclick="taskbar_top()">taskbar_top</a><br><br>
+                    <a class="button hover2" onclick="taskbar_reset()">taskbar_reset</a>
+                </div>
             </div>
         </div>
         <!-- /settingmenu -->
@@ -914,13 +926,24 @@
 
 
         <div class="Credit">
-            <p class="bold Credit_text">WindowSystem ver1.1</p>
+            <div class="credit_window_icon">
+                <span class="window_icon1"></span>
+                <span class="window_icon2"></span>
+                <span class="window_icon3"></span>
+                <span class="window_icon4"></span>
+            </div>
+            <p class="bold Credit_text">&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;WindowSystem ver1.1</p>
         </div>
 
         <!-- underbar -->
         <div class="underbar invisible" id="taskbar">
             <a class="blacktext bold start_button hover3" onclick="startmenu_open()"></a>
-            <span class="start_logo"></span>
+            <div class="start_logo">
+                <span class="window_logo1"></span>
+                <span class="window_logo2"></span>
+                <span class="window_logo3"></span>
+                <span class="window_logo4"></span>
+            </div>
 
             <div class="online_bar white hover3" onclick="netmenu_open()">
                 <span class="online_icon"></span>
