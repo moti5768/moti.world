@@ -797,6 +797,19 @@ function taskcolor_reset() {
     document.getElementById("taskbar").style.borderColor = "";
 }
 
+function taskbar_top() {
+    document.querySelector(".underbar").style.top = "0px";
+    document.querySelector(".start_menu").style.top = "40px";
+    document.querySelector('.title').style.display = "none";
+    document.querySelector('.under_title').style.display = "block";
+}
+function taskbar_reset() {
+    document.querySelector(".underbar").style.top = "auto";
+    document.querySelector(".start_menu").style.top = "auto";
+    document.querySelector('.title').style.display = "block";
+    document.querySelector('.under_title').style.display = "none";
+}
+
 function allwindow_close() {
     popupwrap[0].style.display = "none";
     screen_open.style.display = "none";
@@ -1349,35 +1362,6 @@ function draggable(target) {
         };
     };
 }
-
-
-
-function draggable(target) {
-    target.touchstart = function (event) {
-        let shiftX = event.clientX - target.getBoundingClientRect().left;
-        let shiftY = event.clientY - target.getBoundingClientRect().top;
-        let top = document.querySelector('.top');
-        moveAt(event.pageX, event.pageY);
-        // ボールを（pageX、pageY）座標の中心に置く
-        function moveAt(pageX, pageY) {
-            target.style.left = pageX - shiftX + 'px';
-            target.style.top = pageY - shiftY + 'px';
-        }
-        function touchmove(event) {
-            moveAt(event.pageX, event.pageY);
-        }
-        // (3) mousemove でボールを移動する
-        document.addEventListener('touchmove', touchmove);
-        // (4) ボールをドロップする。不要なハンドラを削除する
-        target.touchend = function () {
-            document.removeEventListener('touchmove', touchmove);
-            target.touchend = null;
-        };
-    };
-}
-
-
-
 
 let count = 0;
 // 図形にクリックイベント登録＆z-indexを表示
