@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>nexser</title>
+</head>
+
+<body id="background">
+    <div class="nexser_group">
+
+        <div id="prompt">
+            <div class="prompt_text">[<span class="test_name">nexser</span>]</div>
+            <form action="" autocomplete="off" method="get" name="prompt_text_form" onsubmit="return false;">
+                <input type="text" class="name" name="prompt_text" id="focus">
+            </form>
+            <p class="prompt_error_text"></p>
+        </div>
+
+        <div id="nexser">
+
+            <div id="desktop">
+
+                <div id="files">
+
+
+                </div>
+
+                <div id="soft_window">
+                    <div class="window">
+                        <div class="title">
+                            <a>program window</a>
+                            <div class="title_buttons">
+                                <a class="button">&nbsp;✕&nbsp;</a>
+                            </div>
+                        </div><br>
+                        <div class="title2">
+                            <ul class="black_text">
+                                <li class="hover" onclick="li_menus_close(),li_menus_open()">icon</li>
+                                <li onclick="li_menus_close()">test</li>
+                                <li onclick="li_menus_close()">test</li>
+                                <li onclick="li_menus_close()">test</li>
+                                <li style="width: 100%;" onclick="li_menus_close()"></li>
+                            </ul>
+                        </div>
+                        <div class="li_icon_menu">
+                            <ul class="black_text">
+                                <li onclick="prompt_data_clear()">nexser finish</li>
+                                <li>test</li>
+                                <li>test</li>
+                            </ul>
+                        </div>
+                        <ul class="black_text program_list">
+                            <li>test</li>
+                            <li>test</li>
+                            <li>test</li>
+                            <li>test</li>
+                            <li>test</li>
+                            <li>test</li>
+                            <li>test</li>
+                            <li>test</li>
+                            <li>test</li>
+                            <li>test</li>
+                            <li>test</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div id="taskbar">
+                    <a class="button hover" onclick="prompt_data_clear()">reset</a>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</body>
+<style>
+    * {
+        padding: 0px;
+        margin: 0px;
+    }
+
+    html {
+        background: black;
+        color: white;
+        touch-action: manipulation;
+        width: 100%;
+        height: 100vh;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+    }
+
+    body {
+        font-family: serif;
+    }
+
+    /* li */
+    li {
+        list-style: none;
+    }
+
+    li:hover {
+        background: darkblue;
+        color: white;
+    }
+
+    .hover:hover {
+        background: darkblue;
+        color: white;
+    }
+
+    /* text_color */
+    .black_text {
+        color: black;
+    }
+
+    /* desktop */
+
+    #prompt {
+        font-family: system-ui;
+    }
+
+    .nexser_group {
+        display: block;
+    }
+
+    #prompt .name {
+        width: 100%;
+        background: black;
+        border: none;
+        outline: none;
+        color: white;
+    }
+
+    /* nexser */
+
+    #nexser {
+        width: 100%;
+        height: 100vh;
+        display: none;
+        background: skyblue;
+    }
+
+    /* desktop */
+
+    #desktop {
+        display: none;
+    }
+
+    /* buttons */
+
+    .button {
+        border-top: solid 1.5px white;
+        border-right: solid 1.5px black;
+        border-left: solid 1.5px white;
+        border-bottom: solid 1.5px black;
+        color: black;
+        background: rgba();
+    }
+
+    /* files */
+
+
+
+
+    /* taskbar */
+    #taskbar {
+        width: 100%;
+        height: 40px;
+        background-color: darkgray;
+        position: absolute;
+        bottom: 0;
+    }
+
+    #taskbar .button {
+        position: absolute;
+        bottom: 5px;
+        left: 10px;
+    }
+
+    /* window */
+    #soft_window {
+        width: 100%;
+        height: 100vh;
+        position: relative;
+        top: 0;
+    }
+
+    .window {
+        display: inline-block;
+        border: solid 2px black;
+        background: white;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+
+    .window .title {
+        width: 100%;
+        background-color: darkblue;
+        position: absolute;
+        top: 0;
+        color: white;
+        text-align: center;
+    }
+
+    /* title */
+    .title2 ul {
+        background: whitesmoke;
+        display: flex;
+        border-bottom: solid 1px black;
+    }
+
+    .title2 li {
+        padding-left: 20px;
+        padding-right: 20px;
+        text-align: center;
+    }
+
+    /* title_buttons */
+    .title_buttons .button {
+        display: inline-block;
+        background: darkgray;
+        position: absolute;
+        top: 3.5px;
+        right: 3.5px;
+        text-align: center;
+        font-size: 10px;
+    }
+
+    /* li_menus */
+    .li_icon_menu {
+        display: none;
+        width: 30%;
+        background: white;
+        border: solid 1px black;
+        position: absolute;
+    }
+
+    /* program_list */
+    .program_list {
+        column-count: 2;
+    }
+</style>
+<script text="javascript">
+    var ua = navigator.userAgent;
+    if (!(ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0 || ua.indexOf('Android') > 0 || ua.indexOf('Mobile') > 0)) {
+
+        const nameText = document.querySelector('.name');
+        nameText.value = ''
+        const msg = document.querySelector('.test_name');
+        const prompt = document.getElementById('prompt');
+        const nexser = document.getElementById('nexser');
+        const desktop = document.getElementById('desktop');
+
+        const li_icon_menu = document.querySelector('.li_icon_menu');
+
+        window.addEventListener('load', load_nexser);
+        function load_nexser() {
+            if (localStorage.getItem('prompt_data')) {
+                prompt.style.display = "none";
+                nexser.style.display = "block";
+                desktop.style.display = "block"
+            } else {
+                prompt.style.display = "block";
+                nexser.style.display = "none";
+                desktop.style.display = "none";
+            }
+        }
+
+        function prompt_data_clear() {
+            localStorage.removeItem('prompt_data');
+            window.location = ''
+        }
+
+        document.addEventListener('DOMContentLoaded', pageLoad)
+        function pageLoad() {
+            let textbox = document.querySelector('.name');
+            textbox.addEventListener('keydown', enterKeyPress);
+            function enterKeyPress(event) {
+                if (event.key === 'Enter') {
+                    butotnClick()
+                }
+            }
+        }
+        function butotnClick() {
+            msg.innerText = 'nexser\b' + nameText.value + '';
+            prompt_text_check();
+        }
+        document.getElementById('focus').focus();
+        function prompt_text_check() {
+            if (prompt_text_form.prompt_text.value === "open") {
+                const prompt_data = document.prompt_text_form.prompt_text.value;
+                localStorage.setItem('prompt_data', prompt_data);
+                document.getElementsByClassName("name")[0].value = 'nexserを起動しています';
+                document.querySelector(".prompt_error_text").textContent = 'success';
+                setTimeout(nexser_start, 1000);
+            } else if (prompt_text_form.prompt_text.value === "") {
+                document.querySelector(".prompt_error_text").textContent = '';
+                msg.innerText = 'nexser';
+            } else {
+                document.querySelector(".prompt_error_text").textContent = 'コマンドが違います!';
+                msg.innerText = 'nexser';
+            }
+        }
+        function nexser_start() {
+            prompt.style.display = "none";
+            setTimeout(function () {
+                nexser.style.display = "block";
+                setTimeout(function () {
+                    desktop.style.display = "block";
+                }, 1000);
+            }, 1000);
+        }
+
+
+
+        function li_menus_open() {
+            li_icon_menu.style.display = "block";
+        }
+        function li_menus_close() {
+            li_icon_menu.style.display = "none";
+        }
+
+
+
+
+    } else {
+        document.querySelector('.nexser_group').style.display = "none";
+        alert("この端末は対応していません！")
+    }
+
+</script>
+
+</html>
