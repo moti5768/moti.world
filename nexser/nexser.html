@@ -335,7 +335,8 @@
 
     } else {
         document.querySelector('.nexser_group').style.display = "none";
-        alert("この端末は対応していません！")
+        alert("この端末は対応していません！");
+        document.querySelector(".prompt_error_text").textContent = '端末がpcではないため、起動できません!';
     }
 
 </script>
