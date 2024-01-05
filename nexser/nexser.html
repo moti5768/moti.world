@@ -253,7 +253,83 @@
 <script text="javascript">
     var ua = navigator.userAgent;
     if (!(ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0 || ua.indexOf('Android') > 0 || ua.indexOf('Mobile') > 0)) {
+const nameText = document.querySelector('.name');
+        nameText.value = ''
+        const msg = document.querySelector('.test_name');
+        const prompt = document.getElementById('prompt');
+        const nexser = document.getElementById('nexser');
+        const desktop = document.getElementById('desktop');
 
+        const li_icon_menu = document.querySelector('.li_icon_menu');
+
+        window.addEventListener('load', load_nexser);
+        function load_nexser() {
+            if (localStorage.getItem('prompt_data')) {
+                prompt.style.display = "none";
+                nexser.style.display = "block";
+                desktop.style.display = "block"
+            } else {
+                prompt.style.display = "block";
+                nexser.style.display = "none";
+                desktop.style.display = "none";
+            }
+        }
+
+        function prompt_data_clear() {
+            localStorage.removeItem('prompt_data');
+            window.location = ''
+        }
+
+        document.addEventListener('DOMContentLoaded', pageLoad)
+        function pageLoad() {
+            let textbox = document.querySelector('.name');
+            textbox.addEventListener('keydown', enterKeyPress);
+            function enterKeyPress(event) {
+                if (event.key === 'Enter') {
+                    butotnClick()
+                }
+            }
+        }
+        function butotnClick() {
+            msg.innerText = 'nexser\b' + nameText.value + '';
+            prompt_text_check();
+        }
+        document.getElementById('focus').focus();
+        function prompt_text_check() {
+            if (prompt_text_form.prompt_text.value === "open") {
+                const prompt_data = document.prompt_text_form.prompt_text.value;
+                localStorage.setItem('prompt_data', prompt_data);
+                document.getElementsByClassName("name")[0].value = 'nexserを起動しています';
+                document.querySelector(".prompt_error_text").textContent = 'success';
+                setTimeout(nexser_start, 1000);
+            } else if (prompt_text_form.prompt_text.value === "") {
+                document.querySelector(".prompt_error_text").textContent = '';
+                msg.innerText = 'nexser';
+            } else {
+                document.querySelector(".prompt_error_text").textContent = 'コマンドが違います!';
+                msg.innerText = 'nexser';
+            }
+        }
+        function nexser_start() {
+            prompt.style.display = "none";
+            setTimeout(function () {
+                nexser.style.display = "block";
+                setTimeout(function () {
+                    desktop.style.display = "block";
+                }, 1000);
+            }, 1000);
+        }
+
+
+
+        function li_menus_open() {
+            li_icon_menu.style.display = "block";
+        }
+        function li_menus_close() {
+            li_icon_menu.style.display = "none";
+        }
+    } else {
+        document.querySelector(".prompt_error_text").textContent = '無理やりプログラがいじられたため、起動できるようになりました!';
         const nameText = document.querySelector('.name');
         nameText.value = ''
         const msg = document.querySelector('.test_name');
@@ -329,12 +405,6 @@
         function li_menus_close() {
             li_icon_menu.style.display = "none";
         }
-
-
-
-
-    } else {
-        document.querySelector(".prompt_error_text").textContent = '端末がpcではないため、起動できません!';
     }
 
 </script>
