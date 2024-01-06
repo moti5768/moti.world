@@ -11,12 +11,14 @@
     <div class="nexser_group">
 
         <div id="prompt">
-            <div class="prompt_text">[<span class="test_name">nexser</span>]</div>
-            <form action="" autocomplete="off" method="get" name="prompt_text_form" onsubmit="return false;">
-                <input type="text" class="name" name="prompt_text" id="focus">
+            <div class="prompt_text">[nexser v0.0.1<span class="test_name"></span>]</div>
+            <form autocomplete="off" method="get" name="prompt_text_form" onsubmit="return false;">
+                <input type="text" class="name" name="prompt_text" id="focus"><input type="button" value="test"
+                    style="display: none;">
             </form>
             <p class="prompt_error_text"></p>
-            <button onclick="prompt_text_check()">button</button>
+            <p id="user" class="user"></p>
+            <p class="help"></p>
         </div>
 
         <div id="nexser">
@@ -28,48 +30,112 @@
 
                 </div>
 
-                <div id="soft_window">
-                    <div class="window">
-                        <div class="title">
-                            <a>program window</a>
-                            <div class="title_buttons">
-                                <a class="button">&nbsp;✕&nbsp;</a>
+                <div id="soft_windows">
+
+                    <div class="parent_windows program_manager shape">
+                        <div class="child_windows">
+                            <a class="title">
+                                <span>program manager</span>
+                            </a>
+                            <a class="close_button hover_red">&nbsp;✕&nbsp;</a>
+                            <a class="bigscreen_button hover_red">&nbsp;□&nbsp;</a>
+                            <a class="minscreen_button hover_red">&nbsp;―&nbsp;</a><br>
+                            <div class="title2">
+                                <ul class="black_text">
+                                    <li onclick="li_menus_close(),li_menu_icon_open()">icon</li>
+                                    <li onclick="li_menus_close(),li_menu_option_open()">option</li>
+                                    <li onclick="li_menus_close(),li_menu_window_open()">window</li>
+                                    <li onclick="li_menus_close(),li_menu_help_open()">help</li>
+                                    <li style="width: 100%;" onclick="li_menus_close()"></li>
+                                </ul>
                             </div>
-                        </div><br>
-                        <div class="title2">
-                            <ul class="black_text">
-                                <li class="hover" onclick="li_menus_close(),li_menus_open()">icon</li>
-                                <li onclick="li_menus_close()">test</li>
-                                <li onclick="li_menus_close()">test</li>
-                                <li onclick="li_menus_close()">test</li>
-                                <li style="width: 100%;" onclick="li_menus_close()"></li>
-                            </ul>
-                        </div>
-                        <div class="li_icon_menu">
-                            <ul class="black_text">
-                                <li onclick="prompt_data_clear()">nexser finish</li>
+                            <div class="li_menu_icon">
+                                <ul class="black_text">
+                                    <li onclick="prompt_data_clear()">nexser finish</li>
+                                    <li>test</li>
+                                    <li>test</li>
+                                </ul>
+                            </div>
+                            <div class="li_menu_option">
+                                <ul class="black_text">
+                                    <li>test</li>
+                                </ul>
+                            </div>
+                            <div class="li_menu_window">
+                                <ul class="black_text">
+                                    <li>test</li>
+                                </ul>
+                            </div>
+                            <div class="li_menu_help">
+                                <ul class="black_text">
+                                    <li>test</li>
+                                </ul>
+                            </div><br>
+                            <ul class="black_text program_list">
                                 <li>test</li>
                                 <li>test</li>
-                            </ul>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                            </ul><br>
                         </div>
-                        <ul class="black_text program_list">
-                            <li>test</li>
-                            <li>test</li>
-                            <li>test</li>
-                            <li>test</li>
-                            <li>test</li>
-                            <li>test</li>
-                            <li>test</li>
-                            <li>test</li>
-                            <li>test</li>
-                            <li>test</li>
-                            <li>test</li>
-                        </ul>
+                    </div>
+
+                    <div class="parent_windows main">
+                        <div class="child_windows">
+                            <a class="title shape">
+                                <span>main</span>
+                            </a>
+                            <a class="close_button hover_red">&nbsp;✕&nbsp;</a>
+                            <a class="bigscreen_button hover_red">&nbsp;□&nbsp;</a>
+                            <a class="minscreen_button hover_red">&nbsp;―&nbsp;</a><br>
+                            <div class="li_menu_option">
+                                <ul class="black_text">
+                                    <li>test</li>
+                                </ul>
+                            </div>
+                            <div class="li_menu_window">
+                                <ul class="black_text">
+                                    <li>test</li>
+                                </ul>
+                            </div>
+                            <div class="li_menu_help">
+                                <ul class="black_text">
+                                    <li>test</li>
+                                </ul>
+                            </div><br>
+                            <ul class="black_text window_main_list">
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                                <li>test</li>
+                            </ul><br>
+                        </div>
+
                     </div>
                 </div>
 
-                <div id="taskbar">
-                    <a class="button hover" onclick="prompt_data_clear()">reset</a>
+                <div id="taskbar" style="z-index: 2147483647;">
+                    <a class="start_button border hover_blue" onclick="alert()">start</a>
+                    <div class="taskbar_buttons">
+                        <ul>
+                            <li class="button hover_blue test_button">main</li>
+                            <li class="button hover_blue test_button2">program_manager</li>
+                        </ul>
+                    </div>
 
                 </div>
 
@@ -95,9 +161,11 @@
     }
 
     body {
+        width: 100%;
+        height: 100vh;
+        font-family: serif;
         background: black;
         color: white;
-        font-family: serif;
     }
 
     /* li */
@@ -110,14 +178,36 @@
         color: white;
     }
 
-    .hover:hover {
+    /* hover */
+
+    .hover_blue:hover {
         background: darkblue;
+        color: white;
+    }
+
+    .hover_red:hover {
+        background: red;
         color: white;
     }
 
     /* text_color */
     .black_text {
         color: black;
+    }
+
+    /* text_design */
+
+    .bold {
+        font-weight: bold;
+    }
+
+    /* border */
+
+    .border {
+        border-top: solid 1.5px white;
+        border-right: solid 1.5px black;
+        border-left: solid 1.5px white;
+        border-bottom: solid 1.5px black;
     }
 
     /* desktop */
@@ -142,6 +232,7 @@
 
     #nexser {
         width: 100%;
+        height: 100vh;
         display: none;
         background: skyblue;
     }
@@ -160,7 +251,7 @@
         border-left: solid 1.5px white;
         border-bottom: solid 1.5px black;
         color: black;
-        background: rgba();
+        background: darkgray;
     }
 
     /* files */
@@ -173,26 +264,34 @@
         width: 100%;
         height: 40px;
         background-color: darkgray;
+        border-top: solid 1.5px black;
         position: absolute;
         bottom: 0;
     }
 
-    #taskbar .button {
+    #taskbar .start_button {
         position: absolute;
         bottom: 5px;
         left: 10px;
+        color: black;
+    }
+
+    #taskbar .taskbar_buttons {
+        position: absolute;
+        bottom: 5px;
+        left: 130px;
+        column-count: 2;
     }
 
     /* window */
-    #soft_window {
+    #soft_windows {
         width: 100%;
         height: 100vh;
-        position: relative;
-        top: 0;
     }
 
-    .window {
-        display: inline-block;
+    .child_windows {
+        width: auto;
+        height: auto;
         border: solid 2px black;
         background: white;
         position: absolute;
@@ -201,14 +300,30 @@
         transform: translate(-50%, -50%);
     }
 
-    .window .title {
+    .child_windows.active {
+        display: none;
+    }
+
+    .child_windows.big {
+        height: 99.4%;
+        width: 99.7%;
+        border: solid 2px black;
+        background: white;
+        position: absolute;
+        bottom: 0px;
+    }
+
+    .child_windows .title {
         width: 100%;
         background-color: darkblue;
         position: absolute;
         top: 0;
         color: white;
         text-align: center;
+        pointer-events: none;
     }
+
+    /* icon */
 
     /* title */
     .title2 ul {
@@ -224,18 +339,47 @@
     }
 
     /* title_buttons */
-    .title_buttons .button {
-        display: inline-block;
+    .close_button {
         background: darkgray;
         position: absolute;
         top: 3.5px;
         right: 3.5px;
         text-align: center;
         font-size: 10px;
+        border-top: solid 1.5px white;
+        border-right: solid 1.5px black;
+        border-left: solid 1.5px white;
+        border-bottom: solid 1.5px black;
+    }
+
+    .bigscreen_button {
+        background: darkgray;
+        position: absolute;
+        top: 3.5px;
+        left: 3.5px;
+        text-align: center;
+        font-size: 10px;
+        border-top: solid 1.5px white;
+        border-right: solid 1.5px black;
+        border-left: solid 1.5px white;
+        border-bottom: solid 1.5px black;
+    }
+
+    .minscreen_button {
+        background: darkgray;
+        position: absolute;
+        top: 3.5px;
+        left: 22px;
+        text-align: center;
+        font-size: 10px;
+        border-top: solid 1.5px white;
+        border-right: solid 1.5px black;
+        border-left: solid 1.5px white;
+        border-bottom: solid 1.5px black;
     }
 
     /* li_menus */
-    .li_icon_menu {
+    .li_menu_icon {
         display: none;
         width: 30%;
         background: white;
@@ -243,20 +387,63 @@
         position: absolute;
     }
 
-    /* program_list */
+    .li_menu_option {
+        display: none;
+        width: 30%;
+        background: white;
+        border: solid 1px black;
+        position: absolute;
+        left: 70px;
+    }
+
+    .li_menu_window {
+        display: none;
+        width: 30%;
+        background: white;
+        border: solid 1px black;
+        position: absolute;
+        left: 155px;
+    }
+
+    .li_menu_help {
+        display: none;
+        width: 30%;
+        background: white;
+        border: solid 1px black;
+        position: absolute;
+        left: 250px;
+    }
+
+    /*list */
     .program_list {
-        column-count: 2;
+        column-count: 4;
+    }
+
+    .window_main_list {
+        column-count: 4;
     }
 </style>
 <script text="javascript">
-const nameText = document.querySelector('.name');
-        nameText.value = ''
+    var ua = navigator.userAgent;
+    if (!(ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0 || ua.indexOf('Android') > 0 || ua.indexOf('Mobile') > 0)) {
+
+        const nameText = document.querySelector('.name');
         const msg = document.querySelector('.test_name');
         const prompt = document.getElementById('prompt');
+        const prompt_text = document.querySelector('.prompt_text');
+        const userelement = document.querySelector('.user');
         const nexser = document.getElementById('nexser');
         const desktop = document.getElementById('desktop');
+        const title = document.querySelector('.title');
+        const windows = document.querySelector('.windows');
 
-        const li_icon_menu = document.querySelector('.li_icon_menu');
+        const li_menu_icon = document.querySelector('.li_menu_icon');
+        const li_menu_option = document.querySelector('.li_menu_option');
+        const li_menu_window = document.querySelector('.li_menu_window');
+        const li_menu_help = document.querySelector('.li_menu_help');
+
+        // soft_windows
+        const main = document.querySelector('.main');
 
         window.addEventListener('load', load_nexser);
         function load_nexser() {
@@ -287,24 +474,46 @@ const nameText = document.querySelector('.name');
             }
         }
         function butotnClick() {
-            msg.innerText = 'nexser\b' + nameText.value + '';
+            msg.innerText = '\b' + nameText.value + '';
             prompt_text_check();
         }
         document.getElementById('focus').focus();
         function prompt_text_check() {
-            if (prompt_text_form.prompt_text.value === "open") {
+            if (prompt_text_form.prompt_text.value === "nexser/open") {
                 const prompt_data = document.prompt_text_form.prompt_text.value;
                 localStorage.setItem('prompt_data', prompt_data);
-                document.getElementsByClassName("name")[0].value = 'nexserを起動しています';
-                document.querySelector(".prompt_error_text").textContent = 'success';
+                prompt_text.style.color = "lime";
+                document.getElementsByClassName('name')[0].value = "nexserを起動しています";
+                document.querySelector('.prompt_error_text').textContent = "success";
                 setTimeout(nexser_start, 1000);
             } else if (prompt_text_form.prompt_text.value === "") {
-                document.querySelector(".prompt_error_text").textContent = '';
-                msg.innerText = 'nexser';
+                userelement.textContent = "";
+                document.querySelector('.prompt_error_text').textContent = "";
+                document.querySelector('.help').textContent = "";
+                msg.innerText = "";
+                prompt_text.style.color = "";
+            } else if (prompt_text_form.prompt_text.value === "debug") {
+                document.querySelector('.prompt_error_text').textContent = "";
+                debug();
+                document.querySelector('.help').textContent = "";
+                msg.innerText = "";
+                prompt_text.style.color = "";
+            } else if (prompt_text_form.prompt_text.value === "help") {
+                document.querySelector('.prompt_error_text').textContent = "";
+                document.querySelector('.help').textContent = "nexser/open";
+                msg.innerText = "";
+                prompt_text.style.color = "";
             } else {
-                document.querySelector(".prompt_error_text").textContent = 'コマンドが違います!';
-                msg.innerText = 'nexser';
+                document.querySelector('.prompt_error_text').textContent = "コマンドが違います!";
+                document.querySelector('.help').textContent = "";
+                msg.innerText = "";
+                prompt_text.style.color = "red";
             }
+        }
+        function debug() {
+            userelement.insertAdjacentHTML('afterend', '<p class="white user">BROWSER: ' + navigator.appName + '<br>'
+                + 'VERSION: ' + navigator.appVersion + '<br>' + 'USER: ' + navigator.userAgent + '<br>' + 'WIDTH: ' + screen.width + '<br>'
+                + 'HEIGHT: ' + screen.height + '<br>' + 'BIT: ' + screen.colorDepth + '</p>');
         }
         function nexser_start() {
             prompt.style.display = "none";
@@ -318,12 +527,89 @@ const nameText = document.querySelector('.name');
 
 
 
-        function li_menus_open() {
-            li_icon_menu.style.display = "block";
+        function li_menu_icon_open() {
+            li_menu_icon.style.display = "block";
+        }
+        function li_menu_option_open() {
+            li_menu_option.style.display = "block";
+        }
+        function li_menu_window_open() {
+            li_menu_window.style.display = "block";
+        }
+        function li_menu_help_open() {
+            li_menu_help.style.display = "block";
         }
         function li_menus_close() {
-            li_icon_menu.style.display = "none";
+            li_menu_icon.style.display = "none";
+            li_menu_option.style.display = "none";
+            li_menu_window.style.display = "none";
+            li_menu_help.style.display = "none";
         }
+
+        document.querySelectorAll('.close_button').forEach(function (close_button) {
+            close_button.addEventListener('click', function () {
+                const closebutton = close_button.closest('.child_windows');
+                closebutton.classList.add('active');
+            });
+        })
+        document.querySelectorAll('.bigscreen_button').forEach(function (bigscreen_button) {
+            bigscreen_button.addEventListener('click', function () {
+                const bigscreenbutton = bigscreen_button.closest('.child_windows');
+                bigscreenbutton.classList.add('big');
+            });
+        })
+        document.querySelectorAll('.minscreen_button').forEach(function (minscreen_button) {
+            minscreen_button.addEventListener('click', function () {
+                const minscreenbutton = minscreen_button.closest('.child_windows');
+                minscreenbutton.classList.remove('big');
+            });
+        })
+
+
+        document.querySelectorAll('.test_button').forEach(function (test_button) {
+            test_button.addEventListener('click', function () {
+                const parent_main = document.querySelector('.main');
+                const child_main = parent_main.children;
+                child_main[0].classList.toggle('active');
+            });
+        })
+        document.querySelectorAll('.test_button2').forEach(function (test_button2) {
+            test_button2.addEventListener('click', function () {
+                const parent_program = document.querySelector('.program_manager');
+                const child_program = parent_program.children;
+                child_program[0].classList.toggle('active');
+            });
+        })
+
+
+        let count = 0;
+
+        document.querySelectorAll('.parent_windows').forEach(function (windows) {
+            windows.addEventListener('click', function () {
+                let windows2 = windows.childNodes;
+                console.log(windows2);
+                for (var i = 0; i < windows2.length; i++) {
+                    // クリックイベント登録
+                    windows2[i] = addEventListener('click', moveFront, event);
+                    // 図形にz-indexを表示
+                };
+            });
+        })
+        function moveFront(e) {
+            // 図形のクリック数をカウントアップ
+            count++;
+            // z-indexに図形のクリック数を設定（最前面に表示される）
+            e.target.style.zIndex = count;
+            // 図形にz-indexを表示
+        }
+
+
+
+
+
+    } else {
+        document.querySelector(".prompt_error_text").textContent = 'この端末は対応していません!';
+    }
 
 </script>
 
