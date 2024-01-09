@@ -703,27 +703,15 @@
         }
 
 
-
-
-        function removedrag() {
-            var invisible = document.querySelector('.drag_button');
-            let invisible2 = invisible.closest('child_window');
-            console.log(invisible2);
-            for (var i = 0, len = invisible.length; i < len; i++) {
-                invisible[i].classList.remove('top');
-                invisible[i].classList.remove('left');
-                invisible[i].classList.remove('drag');
-            }
-        }
-
         document.querySelectorAll('.drag_button').forEach(function (drag) {
             drag.addEventListener('click', function () {
+
                 let drag2 = drag.parentElement;
                 drag2.classList.toggle('drag');
 
                 draggable(document.querySelector('.drag'));
                 function draggable(drag) {
-                    drag.onmousedown = function (event) {
+                    drag2.onmousedown = function (event) {
                         let shiftX = event.clientX - drag.getBoundingClientRect().left;
                         let shiftY = event.clientY - drag.getBoundingClientRect().top;
                         let top = document.querySelector('.top');
@@ -742,8 +730,15 @@
                         drag.onmouseup = function () {
                             document.removeEventListener('mousemove', onMouseMove);
                             drag.onmouseup = null;
-                            removedrag();
                         };
+
+                        // if (drag2.classList.contains("drag")) {
+                        // var invisible = document.querySelectorAll('.child_windows');
+                        // console.log(invisible);
+                        // for (var i = 0, len = invisible.length; i < len; i++) {
+                        //     invisible[i].classList.remove('drag');
+                        // }
+                        // }
                     };
                 };
             });
