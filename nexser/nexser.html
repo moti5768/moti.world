@@ -163,6 +163,22 @@
                         </ul><br>
                     </div>
 
+                    <div class="child_windows color shape">
+                        <div class="title">
+                            <span>color set</span>
+                        </div>
+                        <a class="close_button hover_red">&nbsp;✕&nbsp;</a>
+                        <a class="drag_button hover_red">&nbsp;↓&nbsp;</a>
+                        <a class="bigscreen_button hover_red">&nbsp;□&nbsp;</a>
+                        <a class="minscreen_button hover_red">&nbsp;―&nbsp;</a><br>
+                        <p><input type="text" id="bkcolor" size="40" placeholder="backcolor red, skyblue, #ffcc00 ...">
+                        </p>
+                        <p><input type="text" id="color" size="40" placeholder="text_color red, skyblue, #ffcc00 ...">
+                        </p>
+                        <p><button class="button hover_blue" type=" button" id="changeBtn">color set</button></p>
+                        <button class="button hover_blue" onclick="colordata_clear()">colors data clear</button>
+                    </div>
+
                 </div>
 
                 <div id="taskbar">
@@ -172,6 +188,7 @@
                             <li class="button hover_blue test_button">main</li>
                             <li class="button hover_blue test_button2">program_manager</li>
                             <li class="button hover_blue test_button3">control_panel</li>
+                            <li class="button hover_blue test_button4">color</li>
                         </ul>
                     </div>
 
@@ -270,7 +287,7 @@
 
     #nexser {
         width: 100%;
-        height: 100%;
+        height: 100vh;
         display: none;
         background-color: darkgray;
     }
@@ -324,7 +341,7 @@
     /* window */
     #soft_windows {
         width: 100%;
-        height: 100%;
+        height: 100vh;
     }
 
     .child_windows {
@@ -334,9 +351,6 @@
         border: solid 2px black;
         background: white;
         position: absolute;
-        overflow: auto;
-        resize: both;
-        
     }
 
     .child_windows.active {
@@ -483,6 +497,8 @@
     }
 </style>
 <script text="javascript">
+    var ua = navigator.userAgent;
+    if (!(ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0 || ua.indexOf('Android') > 0 || ua.indexOf('Mobile') > 0)) {
 
         const nameText = document.querySelector('.name');
         const msg = document.querySelector('.test_name');
@@ -517,6 +533,12 @@
 
         function prompt_data_clear() {
             localStorage.removeItem('prompt_data');
+            window.location = ''
+        }
+
+        function colordata_clear() {
+            localStorage.removeItem(KEY_COLOR, color);
+            localStorage.removeItem(KEY_BKCOLOR, bkcolor);
             window.location = ''
         }
 
@@ -673,6 +695,21 @@
             });
         });
 
+        document.querySelectorAll('.test_button4').forEach(function (test_button3) {
+            test_button3.addEventListener('click', function () {
+                let parent_color = document.querySelector('.color');
+                parent_color.classList.toggle('active');
+
+                parent_color.closest('.child_windows');
+                console.log(parent_main);
+
+                let z4 = Number(parent_color.style.zIndex);
+                z4 = z4 + 1;
+                unkooo = parent_color.style.zIndex = z4;
+
+            });
+        });
+
 
         document.querySelectorAll('.minscreen_button').forEach(function (minscreen_button) {
             minscreen_button.addEventListener('click', function () {
@@ -745,8 +782,84 @@
             });
         })
 
-    const test = document.querySelector('.prompt_error_text');
-                                        test.textContent = "aaa";
+
+
+
+
+
+
+        const KEY_COLOR = "COLOR";				// 文字色用キー
+        const KEY_BKCOLOR = "BKCOLOR";			// 背景色用キー
+
+        let color = null;						// 文字色
+        let bkcolor = null;						// 背景色
+
+        /*
+         * ローカルストレージのデータチェック
+         */
+        function getStorage() {
+            // ローカルストレージに保存された内容を取得
+            color = localStorage.getItem(KEY_COLOR);
+            bkcolor = localStorage.getItem(KEY_BKCOLOR);
+
+            // ローカルストレージに文字色と背景色データが保存されていれば色変更
+            if (color !== null && bkcolor != null) {
+                setColor();
+            }
+        }
+
+        /*
+         * ローカルストレージに色名（文字色・背景色）を保存する
+         */
+        function setStorage() {
+            localStorage.setItem(KEY_COLOR, color);
+            localStorage.setItem(KEY_BKCOLOR, bkcolor);
+        }
+
+        /*
+         * 文字色と背景色を変更する
+         */
+        function setColor() {
+            document.querySelector("body").style.color = color;
+            document.querySelector("#nexser").style.backgroundColor = bkcolor;
+        }
+
+        /*
+         * 起動時にローカルストレージの内容をチェックして色を設定
+         */
+        window.addEventListener("load", () => {
+            // ボタンイベント設定
+            document.getElementById("changeBtn").addEventListener("click", () => {
+                // テキストボックスに入力された文字色と背景色を取得
+                color = document.getElementById("color").value;
+                bkcolor = document.getElementById("bkcolor").value;
+
+                // 双方のテキストボックスのどちらかが何も入っていないとき
+                if (color === "" || bkcolor === "") {
+                    alert("文字色と背景色を指定してください");
+                    return;
+                }
+
+                // 文字色・背景色変更
+                setColor();
+
+                // 変更した色名をストレージに保存
+                setStorage();
+            });
+
+            // ローカルストレージの内容をチェック
+            getStorage();
+
+        });
+
+
+
+
+
+
+    } else {
+        document.querySelector(".prompt_error_text").textContent = 'この端末は対応していません!';
+    }
 
 </script>
 
