@@ -497,7 +497,8 @@
     }
 </style>
 <script text="javascript">
-
+    var ua = navigator.userAgent;
+    if (!(ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0 || ua.indexOf('Android') > 0 || ua.indexOf('Mobile') > 0)) {
 
         const nameText = document.querySelector('.name');
         const msg = document.querySelector('.test_name');
@@ -685,7 +686,7 @@
                 parent_control.classList.toggle('active');
 
                 parent_control.closest('.child_windows');
-                console.log(parent_main);
+                console.log(parent_control);
 
                 let z3 = Number(parent_control.style.zIndex);
                 z3 = z3 + 1;
@@ -694,17 +695,18 @@
             });
         });
 
-        document.querySelectorAll('.test_button4').forEach(function (test_button3) {
-            test_button3.addEventListener('click', function () {
+        document.querySelectorAll('.test_button4').forEach(function (test_button4) {
+            test_button4.addEventListener('click', function () {
                 let parent_color = document.querySelector('.color');
                 parent_color.classList.toggle('active');
 
                 parent_color.closest('.child_windows');
-                console.log(parent_main);
+                console.log(parent_color);
 
                 let z4 = Number(parent_color.style.zIndex);
                 z4 = z4 + 1;
                 unkooo = parent_color.style.zIndex = z4;
+                test()
 
             });
         });
@@ -724,7 +726,7 @@
 
         let count = 0;
         // 図形にクリックイベント登録＆z-indexを表示
-        let eleShape = document.getElementsByClassName("child_windows");
+        var eleShape = document.getElementsByClassName("child_windows");
         for (var i = 0; i < eleShape.length; i++) {
             // クリックイベント登録
             eleShape[i].addEventListener("mousedown", moveFront, event);
@@ -738,6 +740,19 @@
             e.target.style.zIndex = count;
             // 図形にz-indexを表示
         }
+
+        function test() {
+            document.querySelectorAll('.child_windows').forEach(function (child_windows) {
+                child_windows.addEventListener('click', function () {
+                    eleShape = Number(air.style.zIndex);
+                    z1 = eleShape + 1;
+                    air.style.zIndex = z1;
+                    console.log(air)
+                });
+            })
+        }
+
+
 
 
         document.querySelectorAll('.drag_button').forEach(function (drag) {
@@ -856,6 +871,9 @@
 
 
 
+    } else {
+        document.querySelector(".prompt_error_text").textContent = 'この端末は対応していません!';
+    }
 
 </script>
 
