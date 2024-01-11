@@ -17,8 +17,15 @@
                     style="display: none;">
             </form>
             <p class="prompt_error_text"></p>
-            <p id="user" class="user"></p>
-            <p class="help"></p>
+            <p class="user" class="user"></p>
+            <div style="color: lime;">
+                <p class="memory"></p>
+                <p class="level"></p>
+                <p class="charging"></p>
+                <p class="chargingTime"></p>
+                <p class="dischargingTime"></p>
+            </div>
+            <p class="help" style="color: deepskyblue;"></p>
         </div>
 
         <div id="nexser">
@@ -165,7 +172,7 @@
 
                     <div class="child_windows color shape">
                         <div class="title">
-                            <span>color set</span>
+                            <span>color</span>
                         </div>
                         <a class="close_button hover_red">&nbsp;✕&nbsp;</a>
                         <a class="drag_button hover_red">&nbsp;↓&nbsp;</a>
@@ -505,7 +512,7 @@
         const nexser = document.getElementById('nexser');
         const desktop = document.getElementById('desktop');
         const title = document.querySelector('.title');
-        let child_windows = document.querySelectorAll('.child_windows');
+        let child_windows = document.querySelector('.child_windows');
 
         const li_menu_icon = document.querySelector('.li_menu_icon');
         const li_menu_option = document.querySelector('.li_menu_option');
@@ -558,7 +565,7 @@
             if (prompt_text_form.prompt_text.value === "nexser/open") {
                 const prompt_data = document.prompt_text_form.prompt_text.value;
                 localStorage.setItem('prompt_data', prompt_data);
-                prompt_text.style.color = "lime";
+                prompt_text.style.color = "yellow";
                 document.getElementsByClassName('name')[0].value = "nexserを起動しています";
                 document.querySelector('.prompt_error_text').textContent = "success";
                 setTimeout(nexser_start, 1000);
@@ -591,6 +598,17 @@
                 + 'VERSION: ' + navigator.appVersion + '<br>' + 'USER: ' + navigator.userAgent + '<br>' + 'WIDTH: ' + screen.width + '<br>'
                 + 'HEIGHT: ' + screen.height + '<br>' + 'BIT: ' + screen.colorDepth + '</p>');
         }
+        setInterval(() => {
+            navigator.getBattery().then(function (battery) {
+                document.querySelector('.level').innerHTML = battery.level;
+                document.querySelector('.charging').innerHTML = battery.charging;
+                document.querySelector('.chargingTime').innerHTML = battery.chargingTime;
+                document.querySelector('.dischargingTime').innerHTML = battery.dischargingTime;
+            });
+            const memory = document.querySelector('.memory');
+            memory.textContent = (`memory:   ${(performance.memory.usedJSHeapSize / 1024).toFixed(2)}KB`);
+        }, 100);
+
         function nexser_start() {
             prompt.style.display = "none";
             setTimeout(function () {
@@ -648,10 +666,7 @@
                 parent_main.classList.toggle('active');
 
                 parent_main.closest('.child_windows');
-                console.log(parent_main);
-
-                let z = Number(parent_main.style.zIndex);
-                z = z + 1;
+                z = largestZIndex + 1;
                 unko = parent_main.style.zIndex = z;
 
             });
@@ -663,18 +678,12 @@
                 let program = document.querySelector('.program_manager');
                 program.classList.toggle('active');
 
-                child_windows.forEach((Element) => {
-                    test_button2.addEventListener('click', function () {
-                        console.log(child_windows)
+                program.closest('.child_windows');
+                z2 = largestZIndex + 1;
+                unkoo = program.style.zIndex = z2;
 
-                        let z = Number(program.style.zIndex);
-                        console.log(z)
-                        z2 = z + 1;
-                        z.style.zIndex = z2;
-                    });
-                });
             });
-        })
+        });
 
 
         document.querySelectorAll('.test_button3').forEach(function (test_button3) {
@@ -683,10 +692,7 @@
                 parent_control.classList.toggle('active');
 
                 parent_control.closest('.child_windows');
-                console.log(parent_control);
-
-                let z3 = Number(parent_control.style.zIndex);
-                z3 = z3 + 1;
+                z3 = largestZIndex + 1;
                 unkooo = parent_control.style.zIndex = z3;
 
             });
@@ -698,13 +704,9 @@
                 parent_color.classList.toggle('active');
 
                 parent_color.closest('.child_windows');
-                console.log(parent_color);
 
-                let z4 = Number(parent_color.style.zIndex);
-                z4 = z4 + 1;
-                unkooo = parent_color.style.zIndex = z4;
-                test()
-
+                z4 = largestZIndex + 1;
+                unkoooo = parent_color.style.zIndex = z4;
             });
         });
 
@@ -715,41 +717,6 @@
                 minscreenbutton.classList.remove('big');
             });
         })
-
-        var invisible = document.getElementsByClassName('invisible');
-        for (var i = 0, len = invisible.length; i < len; i++) {
-            invisible[i].classList.add('none');
-        }
-
-        let count = 0;
-        // 図形にクリックイベント登録＆z-indexを表示
-        var eleShape = document.getElementsByClassName("child_windows");
-        for (var i = 0; i < eleShape.length; i++) {
-            // クリックイベント登録
-            eleShape[i].addEventListener("mousedown", moveFront, event);
-            // 図形にz-indexを表示
-        }
-        // クリックされた要素のz-indexに、クリックされた回数を設定する
-        function moveFront(e) {
-            // 図形のクリック数をカウントアップ
-            count++;
-            // z-indexに図形のクリック数を設定（最前面に表示される）
-            e.target.style.zIndex = count;
-            // 図形にz-indexを表示
-        }
-
-        function test() {
-            document.querySelectorAll('.child_windows').forEach(function (child_windows) {
-                child_windows.addEventListener('click', function () {
-                    eleShape = Number(air.style.zIndex);
-                    z1 = eleShape + 1;
-                    air.style.zIndex = z1;
-                    console.log(air)
-                });
-            })
-        }
-
-
 
 
         document.querySelectorAll('.drag_button').forEach(function (drag) {
@@ -780,14 +747,6 @@
                             document.removeEventListener('mousemove', onMouseMove);
                             drag.onmouseup = null;
                         };
-
-                        // if (drag2.classList.contains("drag")) {
-                        // var invisible = document.querySelectorAll('.child_windows');
-                        // console.log(invisible);
-                        // for (var i = 0, len = invisible.length; i < len; i++) {
-                        //     invisible[i].classList.remove('drag');
-                        // }
-                        // }
                     };
                 };
             });
@@ -868,6 +827,50 @@
 
 
 
+
+
+        var largestZIndex = 0;
+        var defaultView = document.defaultView;
+        var getLargestZIndex = function () {
+            var func = function (tagname) {
+                var elems = document.getElementsByTagName(tagname), len = elems.length;
+                for (var i = 0; i < len; i++) {
+                    var elem = elems[i];
+                    var zIndex = elem.style.zIndex;
+                    if (!zIndex) {
+                        var css = elem.currentStyle || defaultView.getComputedStyle(elem, null);
+                        zIndex = css ? css.zIndex : 0;
+                    }
+                    zIndex++;
+                    if (largestZIndex < zIndex) largestZIndex = zIndex;
+                }
+            };
+            if (arguments.length == 0) func('*');
+            else for (var i = 0; i < arguments.length; i++) func(arguments[i]);
+            return largestZIndex;
+        };
+        setInterval(() => {
+            console.log(getLargestZIndex('div', 'p'));
+        }, 1000);
+
+        // ↑setinterval　大事な役割
+
+        let count = 0;
+        // 図形にクリックイベント登録＆z-indexを表示
+        var eleShape = document.getElementsByClassName("child_windows");
+        for (var i = 0; i < eleShape.length; i++) {
+            // クリックイベント登録
+            eleShape[i].addEventListener("mousedown", moveFront, event);
+            // 図形にz-indexを表示
+        }
+        // クリックされた要素のz-indexに、クリックされた回数を設定する
+        function moveFront(e) {
+            // 図形のクリック数をカウントアップ
+            largestZIndex++;
+            // z-indexに図形のクリック数を設定（最前面に表示される）
+            e.target.style.zIndex = largestZIndex;
+            // 図形にz-indexを表示
+        }
 
 </script>
 
