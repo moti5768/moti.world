@@ -20,7 +20,7 @@ html {
 }
 
 .tetline {
-    display: block;
+    display: none;
     position: relative;
 }
 
