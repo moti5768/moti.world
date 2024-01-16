@@ -14,7 +14,7 @@ html {
 }
 
 .tetlines {
-    display: block;
+    display: none;
     z-index: 0;
     pointer-events: none;
 }
