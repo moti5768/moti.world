@@ -1,7 +1,7 @@
 class tetris {
     constructor() {
-        this.stageWidth = 20;
-        this.stageHeight = 40;
+        this.stageWidth = 10;
+        this.stageHeight = 20;
         this.stageCanvas = document.getElementById("stage");
         this.nextCanvas = document.getElementById("next");
         let cellWidth = this.stageCanvas.width / this.stageWidth;
