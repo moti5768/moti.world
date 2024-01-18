@@ -10,30 +10,29 @@
 <body id="background">
     <div class="nexser_group">
 
-        <div id="prompt">
+        <div id="prompt" style="display: none;">
             <div class="prompt_text">[nexser v0.0.1<span class="test_name"></span>]</div>
             <form autocomplete="off" method="get" name="prompt_text_form" onsubmit="return false;">
-                <input type="text" class="name" name="prompt_text" id="focus"><input type="button" value="test"
-                    style="display: none;">
+                <input type="text" class="name" name="prompt_text" id="focus">
             </form>
             <p class="prompt_error_text"></p>
             <p class="user" class="user"></p>
             <div style="color: lime;">
                 <p class="memory"></p>
-                <p class="level"></p>
-                <p class="charging"></p>
-                <p class="chargingTime"></p>
-                <p class="dischargingTime"></p>
+                <p>level:&emsp;<span class="level"></span></p>
+                <p>charging:&emsp;<span class="charging"></span></p>
+                <p>chargingTime:&emsp;<span class="chargingTime"></span></p>
+                <p>dischargingTime:&emsp;<span class="dischargingTime"></span></p>
             </div>
             <p class="help" style="color: deepskyblue;"></p>
         </div>
 
         <div id="nexser">
+            <span class="z_index" style="color: white; position: absolute; bottom: 40px;"></span>
 
             <div id="desktop">
 
                 <div id="files">
-
 
                 </div>
 
@@ -329,6 +328,7 @@
         border-top: solid 1.5px black;
         position: absolute;
         bottom: 0;
+        z-index: 0;
     }
 
     #taskbar .start_button {
@@ -358,6 +358,8 @@
         border: solid 2px black;
         background: white;
         position: absolute;
+        top: 25%;
+        left: 25%;
     }
 
     .child_windows.active {
@@ -504,6 +506,9 @@
     }
 </style>
 <script text="javascript">
+    var ua = navigator.userAgent;
+    if (!(ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0 || ua.indexOf('Android') > 0 || ua.indexOf('Mobile') > 0)) {
+
         const nameText = document.querySelector('.name');
         const msg = document.querySelector('.test_name');
         const prompt = document.getElementById('prompt');
@@ -532,6 +537,7 @@
                 prompt.style.display = "block";
                 nexser.style.display = "none";
                 desktop.style.display = "none";
+                document.getElementById('focus').focus();
             }
         }
 
@@ -560,7 +566,6 @@
             msg.innerText = '\b' + nameText.value + '';
             prompt_text_check();
         }
-        document.getElementById('focus').focus();
         function prompt_text_check() {
             if (prompt_text_form.prompt_text.value === "nexser/open") {
                 const prompt_data = document.prompt_text_form.prompt_text.value;
@@ -662,12 +667,12 @@
 
         document.querySelectorAll('.test_button').forEach(function (test_button) {
             test_button.addEventListener('click', function () {
-                let parent_main = document.querySelector('.main');
-                parent_main.classList.toggle('active');
+                let main = document.querySelector('.main');
+                main.classList.toggle('active');
 
-                parent_main.closest('.child_windows');
+                main.closest('.child_windows');
                 z = largestZIndex + 1;
-                unko = parent_main.style.zIndex = z;
+                unko = main.style.zIndex = z;
 
             });
         });
@@ -679,8 +684,8 @@
                 program.classList.toggle('active');
 
                 program.closest('.child_windows');
-                z2 = largestZIndex + 1;
-                unkoo = program.style.zIndex = z2;
+                z = largestZIndex + 1;
+                unkoo = program.style.zIndex = z;
 
             });
         });
@@ -688,28 +693,27 @@
 
         document.querySelectorAll('.test_button3').forEach(function (test_button3) {
             test_button3.addEventListener('click', function () {
-                let parent_control = document.querySelector('.control_panel');
-                parent_control.classList.toggle('active');
+                let control = document.querySelector('.control_panel');
+                control.classList.toggle('active');
 
-                parent_control.closest('.child_windows');
-                z3 = largestZIndex + 1;
-                unkooo = parent_control.style.zIndex = z3;
+                control.closest('.child_windows');
+                z = largestZIndex + 1;
+                unkooo = control.style.zIndex = z;
 
             });
         });
 
         document.querySelectorAll('.test_button4').forEach(function (test_button4) {
             test_button4.addEventListener('click', function () {
-                let parent_color = document.querySelector('.color');
-                parent_color.classList.toggle('active');
+                let color = document.querySelector('.color');
+                color.classList.toggle('active');
 
-                parent_color.closest('.child_windows');
+                color.closest('.child_windows');
 
-                z4 = largestZIndex + 1;
-                unkoooo = parent_color.style.zIndex = z4;
+                z = largestZIndex + 1;
+                unkoooo = color.style.zIndex = z;
             });
         });
-
 
         document.querySelectorAll('.minscreen_button').forEach(function (minscreen_button) {
             minscreen_button.addEventListener('click', function () {
@@ -850,12 +854,12 @@
             return largestZIndex;
         };
         setInterval(() => {
-            console.log(getLargestZIndex('div', 'p'));
-        }, 1000);
+            const z_index = document.querySelector('.z_index');
+            z_index.textContent = (getLargestZIndex('div', 'p'));
+        }, 100);
 
         // ↑setinterval　大事な役割
 
-        let count = 0;
         // 図形にクリックイベント登録＆z-indexを表示
         var eleShape = document.getElementsByClassName("child_windows");
         for (var i = 0; i < eleShape.length; i++) {
@@ -871,6 +875,95 @@
             e.target.style.zIndex = largestZIndex;
             // 図形にz-indexを表示
         }
+
+
+
+
+
+        // マルチディスプレイ
+
+        const _buttons = {};
+        const _presentation = {
+            request: window.PresentationRequest ? new PresentationRequest('http://127.0.0.1:5500/nexser.html') : null,
+            connection: null
+        };
+
+        const checkAvailability = evt => {
+            _buttons.connect.disabled = !evt.target.value;
+        };
+
+        const connectDisplay = async () => {
+            try {
+                _buttons.connect.disabled = true;
+                _presentation.connection = await _presentation.request.start();
+                _presentation.connection.addEventListener('connect', displayConnected);
+                _presentation.connection.addEventListener('terminate', displayTerminated);
+            } catch (e) {
+                // do nothing when no presentation display is connected
+                _buttons.connect.disabled = false;
+            }
+        };
+
+        const changeImage = () => {
+            _buttons.change.disabled = true;
+            _presentation.connection.send('change');
+        };
+
+        const disconnectDisplay = async () => {
+            if (_presentation.connection.state !== 'closed') {
+                _presentation.connection.terminate();
+            }
+            else {
+                _presentation.connection.addEventListener('connect', () => {
+                    _presentation.connection.terminate();
+                });
+                _presentation.connection.reconnect(_presentation.connection.id);
+            }
+        };
+
+        const displayConnected = () => {
+            _buttons.connect.removeEventListener('click', connectDisplay);
+            _buttons.connect.addEventListener('click', disconnectDisplay);
+            _buttons.connect.classList.add('connected');
+            _buttons.connect.disabled = false;
+            _presentation.connection.addEventListener('message', imageLoaded);
+        };
+
+        const displayTerminated = () => {
+            _buttons.connect.addEventListener('click', connectDisplay);
+            _buttons.connect.classList.remove('connected');
+            _buttons.connect.disabled = false;
+            _buttons.change.disabled = true;
+        };
+
+        const imageLoaded = evt => {
+            if (evt.data === 'loaded')
+                _buttons.change.disabled = false;
+        };
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            _buttons.connect = document.getElementById('connect');
+            _buttons.change = document.getElementById('change');
+            if (!_presentation.request) {
+                alert('This browser does not support Presentation API.');
+                return;
+            }
+            _buttons.connect.addEventListener('click', connectDisplay);
+            _buttons.change.addEventListener('click', changeImage);
+            const availability = await _presentation.request.getAvailability();
+            _buttons.connect.disabled = !availability.value;
+            availability.addEventListener('change', checkAvailability);
+        });
+
+        window.addEventListener('unload', () => {
+            if (_presentation.connection)
+                disconnectDisplay();
+        })
+
+
+    } else {
+        document.querySelector(".prompt_error_text").textContent = 'この端末は対応していません!';
+    }
 
 </script>
 
