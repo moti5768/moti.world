@@ -598,6 +598,21 @@
                 prompt_text.style.color = "red";
             }
         }
+
+// 端末の傾きを検知する
+window.addEventListener("orientationchange", () => {
+ // 端末の傾きを絶対値で取得する
+ var direction = Math.abs(window.orientation);
+ if(direction == 90) {
+ // 横向きの処理
+     alert("横向きです！")
+ } else {
+ // 縦向きの処理
+     alert("縦向きです！")
+ }
+});
+
+ 
         function debug() {
             userelement.insertAdjacentHTML('afterend', '<p class="white user">BROWSER: ' + navigator.appName + '<br>'
                 + 'VERSION: ' + navigator.appVersion + '<br>' + 'USER: ' + navigator.userAgent + '<br>' + 'WIDTH: ' + screen.width + '<br>'
