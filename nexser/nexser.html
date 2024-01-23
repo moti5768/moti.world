@@ -187,17 +187,28 @@
 
                 </div>
 
-                <div id="taskbar">
-                    <a class="start_button border hover_blue" onclick="alert()">start</a>
-                    <div class="taskbar_buttons">
+                <div id="taskbar_group">
+                    <div id="taskbar">
+                        <a id="startbtn" class="start_button border hover_blue">&nbsp;start&nbsp;</a>
+                        <div class="taskbar_buttons">
+                            <ul>
+                                <li class="button hover_blue test_button">main</li>
+                                <li class="button hover_blue test_button2">program_manager</li>
+                                <li class="button hover_blue test_button3">control_panel</li>
+                                <li class="button hover_blue test_button4">color</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div id="start_menu" class="start_menu border">
                         <ul>
-                            <li class="button hover_blue test_button">main</li>
-                            <li class="button hover_blue test_button2">program_manager</li>
-                            <li class="button hover_blue test_button3">control_panel</li>
-                            <li class="button hover_blue test_button4">color</li>
+                            <li class="title">nexser</li><br>
+                            <li class="test_button">main</li>
+                            <li class="test_button2">program_manager</li>
+                            <li class="test_button3">control_panel</li>
+                            <li class="test_button4">color</li>
+                            <li onclick="prompt_data_clear()">nexser finish</li>
                         </ul>
                     </div>
-
                 </div>
 
             </div>
@@ -324,8 +335,8 @@
     #taskbar {
         width: 100%;
         height: 40px;
-        background-color: darkgray;
-        border-top: solid 1.5px black;
+        background-color: #999999;
+        border-top: solid 2px black;
         position: absolute;
         bottom: 0;
         z-index: 0;
@@ -342,7 +353,24 @@
         position: absolute;
         bottom: 5px;
         left: 130px;
-        column-count: 5;
+        column-count: 6;
+    }
+
+    /* start_menu */
+    .start_menu {
+        display: none;
+        width: 10%;
+        background: #999999;
+        position: absolute;
+        bottom: 40px;
+    }
+
+    .start_menu .title {
+        background-color: darkblue;
+        position: absolute;
+        color: white;
+        text-align: center;
+        pointer-events: none;
     }
 
     /* window */
@@ -401,6 +429,16 @@
     /* icon */
 
     /* title */
+    .title {
+        width: 100%;
+        background-color: darkblue;
+        position: absolute;
+        top: 0;
+        color: white;
+        text-align: center;
+        pointer-events: none;
+    }
+
     .title2 ul {
         background: whitesmoke;
         display: flex;
@@ -519,6 +557,9 @@
     var ua = navigator.userAgent;
     if (!(ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0 || ua.indexOf('Android') > 0 || ua.indexOf('Mobile') > 0)) {
 
+        const start = document.querySelector('#startbtn')
+        const start_menu = document.querySelector('.start_menu')
+
         const nameText = document.querySelector('.name');
         const msg = document.querySelector('.test_name');
         const prompt = document.getElementById('prompt');
@@ -527,12 +568,37 @@
         const nexser = document.getElementById('nexser');
         const desktop = document.getElementById('desktop');
         const title = document.querySelector('.title');
-        let child_windows = document.querySelector('.child_windows');
+        const z_index = document.querySelector('.z_index');
 
         const li_menu_icon = document.querySelector('.li_menu_icon');
         const li_menu_option = document.querySelector('.li_menu_option');
         const li_menu_window = document.querySelector('.li_menu_window');
         const li_menu_help = document.querySelector('.li_menu_help');
+
+        let child_windows = document.querySelector('.child_windows');
+
+        // start.addEventListener('mouseover', function () {
+        //     // マウスが要素に乗った際の処理
+        //     start_menu.style.display = "block"
+        //     start.addEventListener('mouseleave', function () {
+        //         // マウスが要素に乗った際の処理
+        //         start_menu.style.display = "none"
+        //     });
+        // });
+        start.addEventListener('click', function () {
+            if (start_menu.style.display == "block") {
+                // noneで非表示
+                start_menu.style.display = "none";
+            } else {
+                // blockで表示
+                start_menu.style.display = "block";
+            }
+        })
+
+        setInterval(() => {
+            console.log(largestZIndex);
+        }, 1000);
+
 
         // soft_windows
         const main = document.querySelector('.main');
@@ -559,7 +625,6 @@
         function colordata_clear() {
             localStorage.removeItem(KEY_COLOR, color);
             localStorage.removeItem(KEY_BKCOLOR, bkcolor);
-            window.location = ''
         }
 
         document.addEventListener('DOMContentLoaded', pageLoad)
@@ -576,10 +641,6 @@
             msg.innerText = '\b' + nameText.value + '';
             prompt_text_check();
         }
-
-
-
-
 
         function prompt_text_check() {
             const prompt_text2 = document.getElementById('focus');
@@ -613,15 +674,19 @@
                     msg.innerText = "";
                     prompt_text.style.color = "";
                     break;
-                case 'sound/play':
+                case 'windows95/sound/play':
+                    document.querySelector('.prompt_error_text').textContent = "";
                     sound();
                     prompt_text.style.color = "";
+                    document.querySelector('.prompt_error_text').textContent = "";
                     break;
                 case 'screen/full':
+                    document.querySelector('.prompt_error_text').textContent = "";
                     full();
                     prompt_text.style.color = "";
                     break;
                 case 'screen/min':
+                    document.querySelector('.prompt_error_text').textContent = "";
                     min();
                     prompt_text.style.color = "";
                     break;
@@ -701,7 +766,6 @@
                 minscreenbutton.classList.remove('big');
             });
         })
-
 
         document.querySelectorAll('.test_button').forEach(function (test_button) {
             test_button.addEventListener('click', function () {
@@ -876,7 +940,6 @@
             return largestZIndex;
         };
         setInterval(() => {
-            const z_index = document.querySelector('.z_index');
             z_index.textContent = (getLargestZIndex('div', 'p'));
         }, 100);
 
