@@ -45,7 +45,8 @@
                         <a class="close_button hover_red">&nbsp;✕&nbsp;</a>
                         <a class="drag_button hover_red">&nbsp;↓&nbsp;</a>
                         <a class="bigscreen_button hover_red">&nbsp;□&nbsp;</a>
-                        <a class="minscreen_button hover_red">&nbsp;―&nbsp;</a><br>
+                        <a class="minscreen_button hover_red">&nbsp;❒&nbsp;</a>
+                        <a class="minimization_button hover_red">&nbsp;―&nbsp;</a><br>
 
                         <div class="title2">
                             <ul class="black_text">
@@ -100,7 +101,8 @@
                         <a class="close_button hover_red">&nbsp;✕&nbsp;</a>
                         <a class="drag_button hover_red">&nbsp;↓&nbsp;</a>
                         <a class="bigscreen_button hover_red">&nbsp;□&nbsp;</a>
-                        <a class="minscreen_button hover_red">&nbsp;―&nbsp;</a><br>
+                        <a class="minscreen_button hover_red">&nbsp;❒&nbsp;</a>
+                        <a class="minimization_button hover_red">&nbsp;―&nbsp;</a><br>
                         <div class="li_menu_option">
                             <ul class="black_text">
                                 <li>test</li>
@@ -138,7 +140,8 @@
                         <a class="close_button hover_red">&nbsp;✕&nbsp;</a>
                         <a class="drag_button hover_red">&nbsp;↓&nbsp;</a>
                         <a class="bigscreen_button hover_red">&nbsp;□&nbsp;</a>
-                        <a class="minscreen_button hover_red">&nbsp;―&nbsp;</a><br>
+                        <a class="minscreen_button hover_red">&nbsp;❒&nbsp;</a>
+                        <a class="minimization_button hover_red">&nbsp;―&nbsp;</a><br>
                         <div class="li_menu_option">
                             <ul class="black_text">
                                 <li>test</li>
@@ -176,7 +179,8 @@
                         <a class="close_button hover_red">&nbsp;✕&nbsp;</a>
                         <a class="drag_button hover_red">&nbsp;↓&nbsp;</a>
                         <a class="bigscreen_button hover_red">&nbsp;□&nbsp;</a>
-                        <a class="minscreen_button hover_red">&nbsp;―&nbsp;</a><br>
+                        <a class="minscreen_button hover_red">&nbsp;❒&nbsp;</a>
+                        <a class="minimization_button hover_red">&nbsp;―&nbsp;</a><br>
                         <p><input type="text" id="bkcolor" size="40" placeholder="backcolor red, skyblue, #ffcc00 ...">
                         </p>
                         <p><input type="text" id="color" size="40" placeholder="text_color red, skyblue, #ffcc00 ...">
@@ -346,7 +350,6 @@
         position: absolute;
         bottom: 5px;
         left: 10px;
-        color: black;
     }
 
     #taskbar .taskbar_buttons {
@@ -366,7 +369,7 @@
     }
 
     .start_menu .title {
-        background-color: darkblue;
+        background-color: #333333;
         position: absolute;
         color: white;
         text-align: center;
@@ -424,6 +427,14 @@
 
     .child_windows.drag .title {
         background: lime;
+    }
+
+    .child_windows.big .minscreen_button {
+        display: block;
+    }
+
+    .child_windows.big .bigscreen_button {
+        display: none;
     }
 
     /* icon */
@@ -492,6 +503,20 @@
     }
 
     .minscreen_button {
+        display: none;
+        background: darkgray;
+        position: absolute;
+        top: 3.5px;
+        left: 3.5px;
+        text-align: center;
+        font-size: 10px;
+        border-top: solid 1.5px white;
+        border-right: solid 1.5px black;
+        border-left: solid 1.5px white;
+        border-bottom: solid 1.5px black;
+    }
+
+    .minimization_button {
         background: darkgray;
         position: absolute;
         top: 3.5px;
@@ -558,7 +583,7 @@
     if (!(ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0 || ua.indexOf('Android') > 0 || ua.indexOf('Mobile') > 0)) {
 
         const start = document.querySelector('#startbtn')
-        const start_menu = document.querySelector('.start_menu')
+        const start_menu = document.querySelector('#start_menu')
 
         const nameText = document.querySelector('.name');
         const msg = document.querySelector('.test_name');
@@ -721,6 +746,7 @@
             prompt.style.display = "none";
             setTimeout(function () {
                 nexser.style.display = "block";
+                sound()
                 setTimeout(function () {
                     desktop.style.display = "block";
                 }, 1000);
@@ -752,6 +778,12 @@
             close_button.addEventListener('click', function () {
                 const closebutton = close_button.closest('.child_windows');
                 closebutton.classList.add('active');
+            });
+        })
+        document.querySelectorAll('.minimization_button').forEach(function (minimizationbutton) {
+            minimizationbutton.addEventListener('click', function () {
+                const minimization_button = minimizationbutton.closest('.child_windows');
+                minimization_button.classList.add('active');
             });
         })
         document.querySelectorAll('.bigscreen_button').forEach(function (bigscreen_button) {
@@ -818,7 +850,6 @@
                 minscreenbutton.classList.remove('big');
             });
         })
-
 
         document.querySelectorAll('.drag_button').forEach(function (drag) {
             drag.addEventListener('click', function () {
