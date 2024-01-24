@@ -203,15 +203,17 @@
                             </ul>
                         </div>
                     </div>
-                    <div id="start_menu" class="start_menu border">
-                        <ul>
-                            <li class="title">nexser</li><br>
-                            <li class="test_button">main</li>
-                            <li class="test_button2">program_manager</li>
-                            <li class="test_button3">control_panel</li>
-                            <li class="test_button4">color</li>
-                            <li onclick="prompt_data_clear()">nexser finish</li>
-                        </ul>
+                    <div id="start_menu" class="parent_start_menu">
+                        <div class="child_start_menu border">
+                            <ul>
+                                <li class="title">nexser</li><br>
+                                <li class="test_button">main</li>
+                                <li class="test_button2">program_manager</li>
+                                <li class="test_button3">control_panel</li>
+                                <li class="test_button4">color</li>
+                                <li onclick="prompt_data_clear()">nexser finish</li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
 
@@ -343,7 +345,7 @@
         border-top: solid 2px black;
         position: absolute;
         bottom: 0;
-        z-index: 0;
+        z-index: 999999;
     }
 
     #taskbar .start_button {
@@ -360,15 +362,19 @@
     }
 
     /* start_menu */
-    .start_menu {
+    .parent_start_menu {
         display: none;
-        width: 10%;
+    }
+
+    .child_start_menu {
+        display: block;
         background: #999999;
         position: absolute;
         bottom: 40px;
+        z-index: 999998;
     }
 
-    .start_menu .title {
+    .child_start_menu .title {
         background-color: #333333;
         position: absolute;
         color: white;
@@ -579,11 +585,11 @@
     }
 </style>
 <script text="javascript">
-    //var ua = navigator.userAgent;
-    //if (!(ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0 || ua.indexOf('Android') > 0 || ua.indexOf('Mobile') > 0)) {
+    var ua = navigator.userAgent;
+    if (!(ua.indexOf('iPhone') > 0 || ua.indexOf('iPad') > 0 || ua.indexOf('Android') > 0 || ua.indexOf('Mobile') > 0)) {
 
         const start = document.querySelector('#startbtn')
-        const start_menu = document.querySelector('#start_menu')
+        const parent_start_menu = document.querySelector('#start_menu')
 
         const nameText = document.querySelector('.name');
         const msg = document.querySelector('.test_name');
@@ -953,8 +959,8 @@
         var largestZIndex = 0;
         var defaultView = document.defaultView;
         var getLargestZIndex = function () {
-            var func = function (tagname) {
-                var elems = document.getElementsByTagName(tagname), len = elems.length;
+            var func = function (queryselectorname) {
+                var elems = document.querySelectorAll(queryselectorname), len = elems.length;
                 for (var i = 0; i < len; i++) {
                     var elem = elems[i];
                     var zIndex = elem.style.zIndex;
@@ -971,7 +977,7 @@
             return largestZIndex;
         };
         setInterval(() => {
-            z_index.textContent = (getLargestZIndex('div', 'p'));
+            z_index.textContent = (getLargestZIndex('.child_windows'));
         }, 100);
 
         // ↑setinterval　大事な役割
@@ -1022,9 +1028,9 @@
             }
         }
 
-    //} else {
-        //document.querySelector(".prompt_error_text").textContent = 'この端末は対応していません!';
-    //}
+    } else {
+        document.querySelector(".prompt_error_text").textContent = 'この端末は対応していません!';
+    }
 
 </script>
 
