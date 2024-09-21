@@ -124,7 +124,7 @@
 
         <!-- statmenu -->
 
-        <div class="start_menu border">
+        <div class="start_menu border invisible">
             <a class="white closebutton hover2" onclick="startmenu_close()">✕</a>
             <span class="white username" id="useridtext">pass none</span><br><br><br>
             <div class="startmenu_white border">
@@ -144,12 +144,12 @@
                     onclick="screen_close(),allwindow_close(),playsound2(),finish_mes()">Systemの終了</a>
             </div>
             <!-- programmenu -->
-            <div class="program_menu border">
+            <div class="program_menu border invisible">
                 <a class="white menubtn hover" onclick="appmenu_open()">アクセサリ</a>
                 <a class="white menubtn hover" onclick="commandmenu_open(),startmenu_close()">コマンド</a><br>
                 <a class="white closebutton hover2" onclick="programmenu_close()">✕</a>
                 <!-- appmenu -->
-                <div class="app_menu border">
+                <div class="app_menu border invisible">
                     <a class="white menubtn hover" onclick="stopwatch_open(),startmenu_close()">stopwatch</a>
                     <a class="white menubtn hover" onclick="paint_open(),startmenu_close()">ペイント</a>
                     <a class="white menubtn hover" onclick="memo_open(),startmenu_close()">メモ帳</a>
@@ -406,7 +406,7 @@
             <div class="drag8 shape medium_window border invisible">
                 <span class="menu_bluebar">&emsp;マイコンピュータ</span>
                 <span class="medium_window_white"></span>
-                <div class="files1 hover3" ondblclick="controlpanel_open()">
+                <div class="files1 hover3" ondblclick="controlpanel_open(),z_index_plus()">
                     <a class="file_text">コントロールパネル</a>
                     <a class="file_icon"></a>
                 </div>
@@ -556,7 +556,7 @@
                     <a class="file_text">カレンダー</a>
                     <a class="file_icon"></a>
                 </div>
-                <div class="files10 hover3"ondblclick="server_open()">
+                <div class="files10 hover3" ondblclick="server_open()">
                     <a class="file_text">スクリーンセーバー</a>
                     <a class="file_icon"></a>
                 </div>
@@ -693,7 +693,7 @@
                             <p>battery capacity&emsp;<span id="dischargingTime"></span>[s]</p>
                             <p>charging(true/false):&emsp;<span id="charging"></span></p>
                             <p>Time to complete charging:&emsp;<span id="chargingTime"></span>[s]</p>
-                            <p>system version 1.0.0</p>
+                            <p>system version 1.1</p>
                             <p>pass:&emsp;<span id="passkey">IDが登録されていません。</span></p>
                             <p class="memory"></p>
                         </div>
@@ -935,7 +935,7 @@
             <p class="bold Credit_text">&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;WindowSystem ver1.1</p>
         </div>
 
-        <!-- underbar -->
+        <!-- taskbar -->
         <div class="underbar invisible" id="taskbar">
             <a class="blacktext bold start_button hover3" onclick="startmenu_open()"></a>
             <div class="start_logo">
@@ -980,7 +980,7 @@
                 <a class="soft hover3 button-item" draggable="true" onclick="stopwatch_open()">&nbsp;stopwatch&nbsp;</a>
             </div>
 
-            <!-- under taskbar -->
+            <!-- toolbar -->
             <div class="taskbar2">
                 <a class="blacktext bar_button" onclick="backcolormenu_open()">C</a>
                 <a class="blacktext bar_button" onclick="weathermenu_open()">WE</a>
@@ -989,9 +989,9 @@
                 <a class="blacktext bar_button" onclick="server_open()">SC</a>
                 <a class="blacktext bar_button" onclick="calendar_open()">CA</a>
             </div>
-            <!-- /under taskbar -->
+            <!-- /toolbar -->
         </div>
-        <!-- /underbar -->
+        <!-- /taskbar -->
     </div>
 
     <script src="WindowSystem.js"></script>

@@ -24,6 +24,10 @@ body {
     background: radial-gradient(ellipse at 1000px 500px, whitesmoke, #00CCCC, #008080);
 }
 
+body::-webkit-scrollbar {
+    display: none;
+}
+
 .winNT.block {
     display: block;
     background: linear-gradient(120deg, black, whitesmoke, skyblue, steelblue);
@@ -893,19 +897,17 @@ a {
 }
 
 .start_button {
-    background: linear-gradient(45deg, white 1%, teal 50%, #003399);
+    background: linear-gradient(45deg, white, 10%, #444444);
     opacity: 0.9;
     width: 55px;
     height: 38px;
     border: solid 1px gray;
-    border-radius: 10px;
     position: absolute;
     top: -1px;
     left: 0px;
 }
 
 .start_menu {
-    opacity: 0.95;
     display: none;
     background: linear-gradient(0deg, #222222, #666666);
     width: 250px;
@@ -1316,15 +1318,17 @@ span.timer2 {
     position: absolute;
     box-shadow: 4px 4px 5px #333333;
 }
+
 .window_icon2 {
     width: 60px;
     height: 40px;
-    background: linear-gradient(210deg,white, blue);
+    background: linear-gradient(210deg, white, blue);
     position: absolute;
     right: 40px;
     top: 10px;
     box-shadow: 4px 4px 5px #333333;
 }
+
 .window_icon3 {
     width: 70px;
     height: 50px;
@@ -1334,6 +1338,7 @@ span.timer2 {
     right: 30px;
     box-shadow: 4px 4px 5px #333333;
 }
+
 .window_icon4 {
     width: 60px;
     height: 40px;
@@ -1345,7 +1350,6 @@ span.timer2 {
 }
 
 .program_menu {
-    opacity: 0.95;
     display: none;
     background: linear-gradient(0deg, #222222, #666666);
     width: 120px;
@@ -1404,7 +1408,6 @@ span.timer2 {
 }
 
 .app_menu {
-    opacity: 0.95;
     display: none;
     background: linear-gradient(0deg, #222222, #666666);
     width: 120px;
@@ -1582,38 +1585,42 @@ textarea {
     position: absolute;
     top: 5px;
     right: -15px;
+    pointer-events: none;
 }
 
 .window_logo1 {
     width: 18px;
     height: 10px;
-    background: linear-gradient(210deg, deepskyblue, blue);
+    background: white;
     position: absolute;
     box-shadow: 1px 1px 3px #333333;
     right: 60px;
 }
+
 .window_logo2 {
     width: 15px;
     height: 8px;
-    background: linear-gradient(210deg,white, blue);
+    background: white;
     position: absolute;
     right: 42px;
     top: 2px;
     box-shadow: 1px 1px 3px #333333;
 }
+
 .window_logo3 {
     width: 18px;
     height: 10px;
-    background: linear-gradient(210deg, skyblue, blue);
+    background: white;
     position: absolute;
     top: 13px;
     right: 39px;
     box-shadow: 1px 1px 3px #333333;
 }
+
 .window_logo4 {
     width: 15px;
     height: 8px;
-    background: linear-gradient(210deg, deepskyblue, white);
+    background: white;
     position: absolute;
     right: 60px;
     top: 13px;
@@ -1828,7 +1835,7 @@ textarea {
     display: none;
 }
 
-.calendar_window {
+.calendar_menu {
     background: linear-gradient(0deg, #222222, #666666);
     width: 600px;
     height: 450px;

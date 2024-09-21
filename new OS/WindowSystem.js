@@ -189,7 +189,7 @@ function idload() {
     // ログアウト
     function server() {
         server_open();
-        console.log("5分間放置されていたため、スクリーンセーバーが起動しました！");
+        console.log("5分間放置されていたため、スクリーンセーバーが起動しました!");
     }
 
     setTimer();
@@ -205,6 +205,7 @@ const screen_open = document.querySelector(".Windows95_group");
 const content = document.querySelector(".content");
 const start_menu = document.querySelector(".start_menu");
 const taskbar = document.querySelector(".taskbar");
+const taskbar_color = document.getElementById('taskbar');
 const taskbar2 = document.querySelector(".taskbar2");
 const program_menu = document.querySelector(".program_menu");
 const app_menu = document.querySelector(".app_menu");
@@ -668,133 +669,135 @@ function windowsNT_r() {
     star.style.display = "none";
 }
 
+const body_backcolor = document.getElementById("backcolor");
+
 function backcolor_black() {
-    document.getElementById("backcolor").style.background = "black";
+    body_backcolor.style.background = "black";
 }
 function backcolor_white() {
-    document.getElementById("backcolor").style.background = "white";
+    body_backcolor.style.background = "white";
 }
 function backcolor_gray() {
-    document.getElementById("backcolor").style.background = "gray";
+    body_backcolor.style.background = "gray";
 }
 function backcolor_silver() {
-    document.getElementById("backcolor").style.background = "silver";
+    body_backcolor.style.background = "silver";
 }
 function backcolor_darkblue() {
-    document.getElementById("backcolor").style.background = "darkblue";
+    body_backcolor.style.background = "darkblue";
 }
 function backcolor_lightskyblue() {
-    document.getElementById("backcolor").style.background = "#87cefa";
+    body_backcolor.style.background = "#87cefa";
 }
 function backcolor_red() {
-    document.getElementById("backcolor").style.background = "red";
+    body_backcolor.style.background = "red";
 }
 function backcolor_orange() {
-    document.getElementById("backcolor").style.background = "orange";
+    body_backcolor.style.background = "orange";
 }
 function backcolor_yellow() {
-    document.getElementById("backcolor").style.background = "yellow";
+    body_backcolor.style.background = "yellow";
 }
 function backcolor_green() {
-    document.getElementById("backcolor").style.background = "green";
+    body_backcolor.style.background = "green";
 }
 function backcolor_lime() {
-    document.getElementById("backcolor").style.background = "lime";
+    body_backcolor.style.background = "lime";
 }
 function backcolor_purple() {
-    document.getElementById("backcolor").style.background = "purple";
+    body_backcolor.style.background = "purple";
 }
 function backcolor_redpurple() {
-    document.getElementById("backcolor").style.background = "#c450a0";
+    body_backcolor.style.background = "#c450a0";
 }
 function backcolor_bluepurple() {
-    document.getElementById("backcolor").style.background = "#704cbc";
+    body_backcolor.style.background = "#704cbc";
 }
 function backcolor_brown() {
-    document.getElementById("backcolor").style.background = "brown";
+    body_backcolor.style.background = "brown";
 }
 function backcolor_pink() {
-    document.getElementById("backcolor").style.background = "pink";
+    body_backcolor.style.background = "pink";
 }
 function backcolor_skincolor() {
-    document.getElementById("backcolor").style.background = "#fedcbd";
+    body_backcolor.style.background = "#fedcbd";
 }
 function backcolor_reset() {
-    document.getElementById("backcolor").style.background = "";
+    body_backcolor.style.background = "";
 }
 
 
 function taskcolor_black() {
-    document.getElementById("taskbar").style.background = "black";
-    document.getElementById("taskbar").style.borderColor = "black";
+    taskbar_color.style.background = "black";
+    taskbar_color.style.borderColor = "black";
 }
 function taskcolor_white() {
-    document.getElementById("taskbar").style.background = "white";
-    document.getElementById("taskbar").style.borderColor = "white";
+    taskbar_color.style.background = "white";
+    taskbar_color.style.borderColor = "white";
 }
 function taskcolor_gray() {
-    document.getElementById("taskbar").style.background = "gray";
-    document.getElementById("taskbar").style.borderColor = "gray";
+    taskbar_color.style.background = "gray";
+    taskbar_color.style.borderColor = "gray";
 }
 function taskcolor_silver() {
-    document.getElementById("taskbar").style.background = "silver";
-    document.getElementById("taskbar").style.borderColor = "silver";
+    taskbar_color.style.background = "silver";
+    taskbar_color.style.borderColor = "silver";
 }
 function taskcolor_darkblue() {
-    document.getElementById("taskbar").style.background = "darkblue";
-    document.getElementById("taskbar").style.borderColor = "darkblue";
+    taskbar_color.style.background = "darkblue";
+    taskbar_color.style.borderColor = "darkblue";
 }
 function taskcolor_lightskyblue() {
-    document.getElementById("taskbar").style.background = "#87cefa";
-    document.getElementById("taskbar").style.borderColor = "#87cefa";
+    taskbar_color.style.background = "#87cefa";
+    taskbar_color.style.borderColor = "#87cefa";
 }
 function taskcolor_red() {
-    document.getElementById("taskbar").style.background = "red";
-    document.getElementById("taskbar").style.borderColor = "red";
+    taskbar_color.style.background = "red";
+    taskbar_color.style.borderColor = "red";
 }
 function taskcolor_orange() {
-    document.getElementById("taskbar").style.background = "orange";
-    document.getElementById("taskbar").style.borderColor = "orange";
+    taskbar_color.style.background = "orange";
+    taskbar_color.style.borderColor = "orange";
 }
 function taskcolor_yellow() {
-    document.getElementById("taskbar").style.background = "yellow";
-    document.getElementById("taskbar").style.borderColor = "yellow";
+    taskbar_color.style.background = "yellow";
+    taskbar_color.style.borderColor = "yellow";
 }
 function taskcolor_green() {
-    document.getElementById("taskbar").style.background = "green";
-    document.getElementById("taskbar").style.borderColor = "green";
+    taskbar_color.style.background = "green";
+    taskbar_color.style.borderColor = "green";
 }
 function taskcolor_lime() {
-    document.getElementById("taskbar").style.background = "lime";
-    document.getElementById("taskbar").style.borderColor = "lime";
+    taskbar_color.style.background = "lime";
+    taskbar_color.style.borderColor = "lime";
 }
 function taskcolor_purple() {
-    document.getElementById("taskbar").style.background = "purple";
-    document.getElementById("taskbar").style.borderColor = "purple";
+    taskbar_color.style.background = "purple";
+    taskbar_color.style.borderColor = "purple";
 }
 function taskcolor_redpurple() {
-    document.getElementById("taskbar").style.background = "#c450a0";
-    document.getElementById("taskbar").style.borderColor = "#c450a0";
+    taskbar_color.style.background = "#c450a0";
+    taskbar_color.style.borderColor = "#c450a0";
 }
 function taskcolor_bluepurple() {
-    document.getElementById("taskbar").style.background = "#704cbc";
-    document.getElementById("taskbar").style.borderColor = "#704cbc";
+    taskbar_color.style.background = "#704cbc";
+    taskbar_color.style.borderColor = "#704cbc";
 }
 function taskcolor_brown() {
-    document.getElementById("taskbar").style.background = "brown";
-    document.getElementById("taskbar").style.borderColor = "brown";
+    taskbar_color.style.background = "brown";
+    taskbar_color.style.borderColor = "brown";
 }
 function taskcolor_pink() {
-    document.getElementById("taskbar").style.background = "pink";
-    document.getElementById("taskbar").style.borderColor = "pink";
+    taskbar_color.style.background = "pink";
+    taskbar_color.style.borderColor = "pink";
 }
 function taskcolor_skincolor() {
-    document.getElementById("taskbar").style.background = "#fedcbd";
-    document.getElementById("taskbar").style.borderColor = "#fedcbd";
+    taskbar_color.style.background = "#fedcbd";
+    taskbar_color.style.borderColor = "#fedcbd";
 }
 function taskcolor_reset() {
-    document.getElementById("taskbar").style.background = "";
-    document.getElementById("taskbar").style.borderColor = "";
+    taskbar_color.style.background = "";
+    taskbar_color.style.borderColor = "";
 }
 
 function taskbar_top() {
@@ -1363,12 +1366,18 @@ function draggable(target) {
     };
 }
 
+
 let count = 0;
 // 図形にクリックイベント登録＆z-indexを表示
 let eleShape = document.getElementsByClassName("shape");
 for (var i = 0; i < eleShape.length; i++) {
     // クリックイベント登録
     eleShape[i].addEventListener("mousedown", moveFront, event);
+    // 図形にz-indexを表示
+}
+for (var i = 0; i < count.length; i++) {
+    // クリックイベント登録
+    count[i].addEventListener("load", moveFront2, event);
     // 図形にz-indexを表示
 }
 // クリックされた要素のz-indexに、クリックされた回数を設定する
@@ -1378,6 +1387,14 @@ function moveFront(e) {
     // z-indexに図形のクリック数を設定（最前面に表示される）
     e.target.style.zIndex = count;
     // 図形にz-indexを表示
+}
+function moveFront2(e) {
+    // 図形のクリック数をカウントアップ
+    eleShape++;
+    // z-indexに図形のクリック数を設定（最前面に表示される）
+    count.target.style.zIndex = count;
+    // 図形にz-indexを表示
+    alert("test");
 }
 
 
