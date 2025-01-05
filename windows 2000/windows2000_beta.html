@@ -256,6 +256,8 @@
                 <input type="button" class="blacktext border memo_button_load hover" value="読込" onclick=load();></input>
                 <input type="button" id="cleartextbtn" class="blacktext border memo_button_clear hover"
                     value="クリア"></input>
+                <input type="button" class="blacktext border memo_button_save2 hover" value="nexserへ転送"
+                    onclick=data_nexser()></input>
             </p>
             <button class="closebutton blacktext border hover2" onclick="task_content4_close(),memo_close()">X</button>
             <button class="blacktext taskbutton border hover" onclick="task_content4_open(),memo_close()">一</button>
@@ -332,12 +334,12 @@
                 <button class="blacktext border large" style="position: absolute; top: 70px; left: 55px;"
                     onclick="clock_off()">off</button>
                 <div class="taskbar_colors">
-                <button class="backcolor_button backbutton_red"onclick="taskbar_red()"></button>
-                <button class="backcolor_button backbutton_black" onclick="taskbar_black()"></button>
-                <button class="backcolor_button backbutton_green" onclick="taskbar_green()"></button>
-                <button class="backcolor_button backbutton_yellow" onclick="taskbar_yellow()"></button>
-                <button class="backcolor_button backbutton_blue" onclick="taskbar_blue()"></button>
-                <a class="backcolor_button backbutton hover" onclick="taskbar_colorreset()">reset</a>
+                    <button class="backcolor_button backbutton_red" onclick="taskbar_red()"></button>
+                    <button class="backcolor_button backbutton_black" onclick="taskbar_black()"></button>
+                    <button class="backcolor_button backbutton_green" onclick="taskbar_green()"></button>
+                    <button class="backcolor_button backbutton_yellow" onclick="taskbar_yellow()"></button>
+                    <button class="backcolor_button backbutton_blue" onclick="taskbar_blue()"></button>
+                    <a class="backcolor_button backbutton hover" onclick="taskbar_colorreset()">reset</a>
                 </div>
             </div>
         </div>
@@ -2255,6 +2257,14 @@
             left: 50px;
         }
 
+        .memo_button_save2 {
+            background: darkgray;
+            border-radius: 0;
+            position: absolute;
+            top: 30px;
+            right: 25px;
+        }
+
         .memo_button_load {
             background: darkgray;
             border-radius: 0;
@@ -3054,6 +3064,12 @@
         function save() {
             let MemoData = document.form1.Memo.value;
             localStorage.setItem('MemoData', MemoData);
+        }
+
+        function data_nexser() {
+            let MemoData_export = document.form1.Memo.value;
+            localStorage.setItem('MemoData_export', MemoData_export);
+            alert("nexserへメモ帳の内容を出力しました!")
         }
 
         document.getElementById('cleartextbtn').addEventListener('click', function () {
