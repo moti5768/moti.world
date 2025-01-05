@@ -7,26 +7,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" type="text/css" href="tetris.css">
     <script type="text/javascript" src="tetris.js"></script>
-    <title>windows2000</title>
+    <title>windows2000_beta</title>
 </head>
 
 <body id="backcolor">
     <div class="screen">
         <span class="screencolor"></span>
         <p class="screentext bold">Windows2000</p>
-        <p class="screensubtext bold">test&nbsp;0.1.4&copy;</p>
+        <p class="screensubtext bold">test&nbsp;0.1.4 beta&copy;</p>
         <button class="screenbutton bold border" onclick="screen_start(),sound()">スタート</button>
     </div>
 
     <div class="screen_start">
         <span class="screencolor2"></span>
         <div class="start_window border">
-            <span class="menu_bluebar">windows2000 startup</span>
+            <span class="menu_bluebar">windows2000 beta startup</span>
             <div class="start_window_white">
                 <p class="blacktext" id="user"></p>
             </div>
             <span class="xx-small" style="color: lime; position: absolute; bottom: 0px; z-index: 99999;">version 0.1.4
-                <span class="blacktext">&emsp;&emsp;Windows2000を起動しています...</span></span>
+                beta<span class="blacktext">&emsp;&emsp;Windows2000を起動しています...</span></span>
         </div>
     </div>
 
@@ -61,7 +61,7 @@
         <div class="title">
             <div class="titleline"></div>
             <p class="bold white">Windows2000&emsp;&emsp;&emsp;</p>
-            <p class="bold white medium subtitle">test&nbsp;0.1.4&copy;</p>
+            <p class="bold white medium subtitle">test&nbsp;0.1.4 beta&copy;</p>
         </div>
 
         <div class="start_menu border">
@@ -256,6 +256,8 @@
                 <input type="button" class="blacktext border memo_button_load hover" value="読込" onclick=load();></input>
                 <input type="button" id="cleartextbtn" class="blacktext border memo_button_clear hover"
                     value="クリア"></input>
+                <input type="button" class="blacktext border memo_button_save2 hover" value="nexserへ転送"
+                    onclick=data_nexser()></input>
             </p>
             <button class="closebutton blacktext border hover2" onclick="task_content4_close(),memo_close()">X</button>
             <button class="blacktext taskbutton border hover" onclick="task_content4_open(),memo_close()">一</button>
@@ -325,11 +327,11 @@
                 <span class="menu_bluebar">&nbsp;タスクバーのプロパティ</span>
                 <span class="controlpanel_white border"></span>
                 <button class="blacktext closebutton border hover2" onclick="taskbar_property_close()">X</button>
-                <a style="position: absolute; top: 40px; left: 10px; pointer-events: none;">clock</a>
-                <a style="position: absolute; top: 70px; left: 10px; pointer-events: none;">clock</a>
-                <button class="blacktext border large hover" style="position: absolute; top: 40px; left: 55px;"
+                <a style="position: absolute; top: 40px; left: 10px;">clock</a>
+                <a style="position: absolute; top: 70px; left: 10px;">clock</a>
+                <button class="blacktext border large" style="position: absolute; top: 40px; left: 55px;"
                     onclick="clock_on()">on</button>
-                <button class="blacktext border large hover" style="position: absolute; top: 70px; left: 55px;"
+                <button class="blacktext border large" style="position: absolute; top: 70px; left: 55px;"
                     onclick="clock_off()">off</button>
                 <div class="taskbar_colors">
                     <button class="backcolor_button backbutton_red" onclick="taskbar_red()"></button>
@@ -904,8 +906,8 @@
         }
 
         .taskbar_colors {
-            position: absolute;
-            top: 100px;
+            position: relative;
+            top: 60px;
             left: 10px;
         }
 
@@ -2255,6 +2257,14 @@
             left: 50px;
         }
 
+        .memo_button_save2 {
+            background: darkgray;
+            border-radius: 0;
+            position: absolute;
+            top: 30px;
+            right: 25px;
+        }
+
         .memo_button_load {
             background: darkgray;
             border-radius: 0;
@@ -3054,6 +3064,12 @@
         function save() {
             let MemoData = document.form1.Memo.value;
             localStorage.setItem('MemoData', MemoData);
+        }
+
+        function data_nexser() {
+            let MemoData_export = document.form1.Memo.value;
+            localStorage.setItem('MemoData_export', MemoData_export);
+            alert("nexserへメモ帳の内容を出力しました!")
         }
 
         document.getElementById('cleartextbtn').addEventListener('click', function () {
