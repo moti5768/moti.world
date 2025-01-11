@@ -8,6 +8,8 @@
     <title>Roji-s ERO!!!Edition</title>
 </head>
 
+<script src="https://www.youtube.com/iframe_api"></script>
+
 <body id="backcolor">
     <div class="screen">
         <span class="screencolor"></span>
@@ -75,8 +77,9 @@
 
         <div class="iframe1 border">
             <span class="menu_bluebar">ロジの相棒</span>
-            <iframe width="560" height="315" loading="lazy" src="https://www.youtube.com/embed/7cgc0Jl46xY"
-                title="YouTube video player" frameborder="0"
+            <iframe width="560" height="315" loading="lazy" id="youtube"
+                src="https://www.youtube.com/embed/7cgc0Jl46xY?enablejsapi=1" title="YouTube video player"
+                frameborder="0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowfullscreen></iframe>
             <button class="closebutton border hover2" onclick="iframe1_close()">X</button>
@@ -2240,10 +2243,22 @@
             command_menu.style.display = "block";
         }
 
+        var player;
+        function onYouTubeIframeAPIReady() {
+            player = new YT.Player('youtube', {
+                events: {
+                    'onReady': onPlayerReady
+                }
+            });
+        }
+        function onPlayerReady(event) {
+            player.stopVideo();
+        }
 
         function iframe1_close() {
             const iframe1 = document.querySelector(".iframe1");
             iframe1.style.display = "none";
+            onYouTubeIframeAPIReady()
         }
         function iframe1_open() {
             const iframe1 = document.querySelector(".iframe1");
