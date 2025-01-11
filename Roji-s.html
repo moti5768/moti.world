@@ -2243,17 +2243,7 @@
             command_menu.style.display = "block";
         }
 
-        var player;
-        function onYouTubeIframeAPIReady() {
-            player = new YT.Player('youtube', {
-                events: {
-                    'onReady': onPlayerReady
-                }
-            });
-        }
-        function onPlayerReady(event) {
-            player.stopVideo();
-        }
+        var player; function onYouTubeIframeAPIReady() { if (!player) { player = new YT.Player('youtube', { events: { 'onReady': onPlayerReady } }); } else { stopVideo(); } } function onPlayerReady(event) { stopVideo(); } function stopVideo() { if (player && player.stopVideo) { setTimeout(() => { player.stopVideo(); }, 500); } }
 
         function iframe1_close() {
             const iframe1 = document.querySelector(".iframe1");
