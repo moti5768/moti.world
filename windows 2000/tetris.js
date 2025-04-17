@@ -42,72 +42,72 @@ class tetris {
         let blocks = [
             {
                 shape: [[[-1, 0], [0, 0], [1, 0], [2, 0]],
-                        [[0, -1], [0, 0], [0, 1], [0, 2]],
-                        [[-1, 0], [0, 0], [1, 0], [2, 0]],
-                        [[0, -1], [0, 0], [0, 1], [0, 2]]],
+                [[0, -1], [0, 0], [0, 1], [0, 2]],
+                [[-1, 0], [0, 0], [1, 0], [2, 0]],
+                [[0, -1], [0, 0], [0, 1], [0, 2]]],
                 color: "rgb(0, 255, 255)",
                 highlight: "rgb(255, 255, 255)",
                 shadow: "rgb(0, 128, 128)"
             },
             {
                 shape: [[[0, 0], [1, 0], [0, 1], [1, 1]],
-                        [[0, 0], [1, 0], [0, 1], [1, 1]],
-                        [[0, 0], [1, 0], [0, 1], [1, 1]],
-                        [[0, 0], [1, 0], [0, 1], [1, 1]]],
+                [[0, 0], [1, 0], [0, 1], [1, 1]],
+                [[0, 0], [1, 0], [0, 1], [1, 1]],
+                [[0, 0], [1, 0], [0, 1], [1, 1]]],
                 color: "rgb(255, 255, 0)",
                 highlight: "rgb(255, 255, 255)",
                 shadow: "rgb(128, 128, 0)"
             },
             {
                 shape: [[[0, 0], [1, 0], [-1, 1], [0, 1]],
-                        [[-1, -1], [-1, 0], [0, 0], [0, 1]],
-                        [[0, 0], [1, 0], [-1, 1], [0, 1]],
-                        [[-1, -1], [-1, 0], [0, 0], [0, 1]]],
+                [[-1, -1], [-1, 0], [0, 0], [0, 1]],
+                [[0, 0], [1, 0], [-1, 1], [0, 1]],
+                [[-1, -1], [-1, 0], [0, 0], [0, 1]]],
                 color: "rgb(0, 255, 0)",
                 highlight: "rgb(255, 255, 255)",
                 shadow: "rgb(0, 128, 0)"
             },
             {
                 shape: [[[-1, 0], [0, 0], [0, 1], [1, 1]],
-                        [[0, -1], [-1, 0], [0, 0], [-1, 1]],
-                        [[-1, 0], [0, 0], [0, 1], [1, 1]],
-                        [[0, -1], [-1, 0], [0, 0], [-1, 1]]],
+                [[0, -1], [-1, 0], [0, 0], [-1, 1]],
+                [[-1, 0], [0, 0], [0, 1], [1, 1]],
+                [[0, -1], [-1, 0], [0, 0], [-1, 1]]],
                 color: "rgb(255, 0, 0)",
                 highlight: "rgb(255, 255, 255)",
                 shadow: "rgb(128, 0, 0)"
             },
             {
                 shape: [[[-1, -1], [-1, 0], [0, 0], [1, 0]],
-                        [[0, -1], [1, -1], [0, 0], [0, 1]],
-                        [[-1, 0], [0, 0], [1, 0], [1, 1]],
-                        [[0, -1], [0, 0], [-1, 1], [0, 1]]],
+                [[0, -1], [1, -1], [0, 0], [0, 1]],
+                [[-1, 0], [0, 0], [1, 0], [1, 1]],
+                [[0, -1], [0, 0], [-1, 1], [0, 1]]],
                 color: "rgb(0, 0, 255)",
                 highlight: "rgb(255, 255, 255)",
                 shadow: "rgb(0, 0, 128)"
             },
             {
                 shape: [[[1, -1], [-1, 0], [0, 0], [1, 0]],
-                        [[0, -1], [0, 0], [0, 1], [1, 1]],
-                        [[-1, 0], [0, 0], [1, 0], [-1, 1]],
-                        [[-1, -1], [0, -1], [0, 0], [0, 1]]],
+                [[0, -1], [0, 0], [0, 1], [1, 1]],
+                [[-1, 0], [0, 0], [1, 0], [-1, 1]],
+                [[-1, -1], [0, -1], [0, 0], [0, 1]]],
                 color: "rgb(255, 165, 0)",
                 highlight: "rgb(255, 255, 255)",
                 shadow: "rgb(128, 82, 0)"
             },
             {
                 shape: [[[0, -1], [-1, 0], [0, 0], [1, 0]],
-                        [[0, -1], [0, 0], [1, 0], [0, 1]],
-                        [[-1, 0], [0, 0], [1, 0], [0, 1]],
-                        [[0, -1], [-1, 0], [0, 0], [0, 1]]],
+                [[0, -1], [0, 0], [1, 0], [0, 1]],
+                [[-1, 0], [0, 0], [1, 0], [0, 1]],
+                [[0, -1], [-1, 0], [0, 0], [0, 1]]],
                 color: "rgb(255, 0, 255)",
                 highlight: "rgb(255, 255, 255)",
                 shadow: "rgb(128, 0, 128)"
             },
             {
                 shape: [[[0, 0], [0, 0], [0, 0], [0, 0]],
-                        [[0, 1], [-1, 0], [-1, 1], [0, 1]],
-                        [[-1, 1], [-1, 0], [0, 0], [0, 1]],
-                        [[0, 0], [0, 0], [0, 1], [0, -1]]],
+                [[0, 1], [-1, 0], [-1, 1], [0, 1]],
+                [[-1, 1], [-1, 0], [0, 0], [0, 1]],
+                [[0, 0], [0, 0], [0, 1], [0, -1]]],
                 color: "rgb(100, 100, 100)",
                 highlight: "rgb(255, 255, 255)",
                 shadow: "rgb(128, 128, 128)"
@@ -121,10 +121,10 @@ class tetris {
         let block = this.blocks[type];
         for (let i = 0; i < block.shape[angle].length; i++) {
             this.drawCell(context,
-                     x + (block.shape[angle][i][0] * this.cellSize),
-                     y + (block.shape[angle][i][1] * this.cellSize),
-                     this.cellSize,
-                     type);
+                x + (block.shape[angle][i][0] * this.cellSize),
+                y + (block.shape[angle][i][1] * this.cellSize),
+                this.cellSize,
+                type);
         }
     }
 
@@ -150,6 +150,8 @@ class tetris {
     }
 
     startGame() {
+        clearTimeout(this.timerID);
+        this.timerID = null;  // 再利用のためリセット
         let virtualStage = new Array(this.stageWidth);
         for (let i = 0; i < this.stageWidth; i++) {
             virtualStage[i] = new Array(this.stageHeight).fill(null);
@@ -161,6 +163,8 @@ class tetris {
     }
 
     startGame2() {
+        clearTimeout(this.timerID);
+        this.timerID = null;  // 再利用のためリセット
         let virtualStage = new Array(this.stageWidth);
         for (let i = 0; i < this.stageWidth; i++) {
             virtualStage[i] = new Array(this.stageHeight).fill(null);
@@ -172,6 +176,8 @@ class tetris {
     }
 
     startGame3() {
+        clearTimeout(this.timerID);
+        this.timerID = null;  // 再利用のためリセット
         let virtualStage = new Array(this.stageWidth);
         for (let i = 0; i < this.stageWidth; i++) {
             virtualStage[i] = new Array(this.stageHeight).fill(null);
@@ -183,6 +189,8 @@ class tetris {
     }
 
     startGame4() {
+        clearTimeout(this.timerID);
+        this.timerID = null;  // 再利用のためリセット
         let virtualStage = new Array(this.stageWidth);
         for (let i = 0; i < this.stageWidth; i++) {
             virtualStage[i] = new Array(this.stageHeight).fill(null);
@@ -191,6 +199,19 @@ class tetris {
         this.currentBlock = null;
         this.nextBlock = this.getRandomBlock();
         this.mainLoop4();
+    }
+
+    startGame5() {
+        clearTimeout(this.timerID);
+        this.timerID = null;  // 再利用のためリセット
+        let virtualStage = new Array(this.stageWidth);
+        for (let i = 0; i < this.stageWidth; i++) {
+            virtualStage[i] = new Array(this.stageHeight).fill(null);
+        }
+        this.virtualStage = virtualStage;
+        this.currentBlock = null;
+        this.nextBlock = this.getRandomBlock();
+        this.mainLoop5();
     }
 
     mainLoop() {
@@ -207,7 +228,7 @@ class tetris {
                 this.stageTopPadding + this.blockY * this.cellSize,
                 this.currentBlock, this.blockAngle, this.stageCanvas);
         }
-        setTimeout(this.mainLoop.bind(this), 800);
+        this.timerID = setTimeout(this.mainLoop.bind(this), 800);
     }
 
     mainLoop2() {
@@ -224,7 +245,7 @@ class tetris {
                 this.stageTopPadding + this.blockY * this.cellSize,
                 this.currentBlock, this.blockAngle, this.stageCanvas);
         }
-        setTimeout(this.mainLoop2.bind(this), 500);
+        this.timerID = setTimeout(this.mainLoop2.bind(this), 500);
     }
 
     mainLoop3() {
@@ -241,7 +262,7 @@ class tetris {
                 this.stageTopPadding + this.blockY * this.cellSize,
                 this.currentBlock, this.blockAngle, this.stageCanvas);
         }
-        setTimeout(this.mainLoop3.bind(this), 250);
+        this.timerID = setTimeout(this.mainLoop3.bind(this), 250);
     }
 
     mainLoop4() {
@@ -258,7 +279,24 @@ class tetris {
                 this.stageTopPadding + this.blockY * this.cellSize,
                 this.currentBlock, this.blockAngle, this.stageCanvas);
         }
-        setTimeout(this.mainLoop4.bind(this), 100);
+        this.timerID = setTimeout(this.mainLoop4.bind(this), 100);
+    }
+
+    mainLoop5() {
+        if (this.currentBlock == null) {
+            if (!this.createNewBlock()) {
+                return;
+            }
+        } else {
+            this.fallBlock();
+        }
+        this.drawStage();
+        if (this.currentBlock != null) {
+            this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
+                this.stageTopPadding + this.blockY * this.cellSize,
+                this.currentBlock, this.blockAngle, this.stageCanvas);
+        }
+        this.timerID = setTimeout(this.mainLoop5.bind(this), 50);
     }
 
     createNewBlock() {
@@ -283,7 +321,7 @@ class tetris {
     }
 
     getRandomBlock() {
-        return  Math.floor(Math.random() * 8);
+        return Math.floor(Math.random() * 8);
     }
 
     fallBlock() {
@@ -320,7 +358,7 @@ class tetris {
                 this.virtualStage[cellX][cellY] = type;
             }
         }
-        for (let y = this.stageHeight - 1; y >= 0; ) {
+        for (let y = this.stageHeight - 1; y >= 0;) {
             let filled = true;
             for (let x = 0; x < this.stageWidth; x++) {
                 if (this.virtualStage[x][y] == null) {
@@ -337,7 +375,7 @@ class tetris {
                 for (let x = 0; x < this.stageWidth; x++) {
                     this.virtualStage[x][0] = null;
                 }
-            let linesElem = document.getElementById("lines");
+                let linesElem = document.getElementById("lines");
                 this.deletedLines++;
                 linesElem.innerText = "" + this.deletedLines;
                 let linesElem2 = document.getElementById("lines2");
@@ -401,11 +439,11 @@ class tetris {
     }
 
     refreshStage() {
-      this.clear(this.stageCanvas);
-      this.drawStage();
-      this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
-                this.stageTopPadding + this.blockY * this.cellSize,
-                this.currentBlock, this.blockAngle, this.stageCanvas);
+        this.clear(this.stageCanvas);
+        this.drawStage();
+        this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
+            this.stageTopPadding + this.blockY * this.cellSize,
+            this.currentBlock, this.blockAngle, this.stageCanvas);
     }
 
     clear(canvas) {
