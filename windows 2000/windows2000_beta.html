@@ -16,6 +16,9 @@
         <p class="screentext bold">Windows2000</p>
         <p class="screensubtext bold">test&nbsp;0.1.5 beta&copy;</p>
         <button class="screenbutton bold border" onclick="screen_start(),sound()">スタート</button>
+        <p class="border large"
+            style="background-color: silver; position: absolute; bottom: 50px; left: 50px; z-index: 99999; pointer-events: none;">
+            起動・終了音:&emsp;<span class="sound_driver_text">OFF</span></p>
     </div>
 
     <div class="screen_start">
@@ -253,9 +256,11 @@
             </form>
             <div
                 style="background-color: #c0c0c0; height: 26px; width: 100%; position: absolute; top: 26px; padding-top: 5px;">
-                <input type="button" class="blacktext border memo_button_save hover" value="保存" onclick=save();></input>
-                <input type="button" class="blacktext border memo_button_load hover" value="読込" onclick=load();></input>
-                <input type="button" id="cleartextbtn" class="blacktext border memo_button_clear hover"
+                <input type="button" class="blacktext border memo_button_save hover medium" value="保存"
+                    onclick=save();></input>
+                <input type="button" class="blacktext border memo_button_load hover medium" value="読込"
+                    onclick=load();></input>
+                <input type="button" id="cleartextbtn" class="blacktext border memo_button_clear hover medium"
                     value="クリア"></input>
                 <input type="button" class="blacktext border memo_button_save2 hover" value="nexserへ転送"
                     onclick=data_nexser()></input>
@@ -319,6 +324,13 @@
                     onclick="task_content2_close(),soundmenu_close()"></button>
                 <button class="blacktext taskbutton border hover" onclick="task_conent2_open(),soundmenu_close()"
                     style="display: none;">一</button>
+
+                <div style="position: absolute; bottom: 10px; left: 10px;">
+                    <p>起動音 終了音</p>
+                    <button class="border" onclick="sdriver_on()">ON</button>
+                    <button class="border" onclick="sdriver_off()">OFF</button>
+                </div>
+
             </div>
         </div>
 
@@ -878,7 +890,7 @@
         .taskbar {
             display: block;
             background-color: #C3C7CB;
-            width: 170px;
+            width: 175px;
             height: 35px;
             position: absolute;
             right: 1px;
@@ -1425,23 +1437,31 @@
             width: 60px;
             height: 45px;
             position: absolute;
-            border-bottom: solid 2px black;
-            border-right: solid 2px black;
+            vertical-align: middle;
+            line-height: 1;
+            border: 0.1em solid;
+            border-color: whitesmoke black black whitesmoke;
+            border-radius: 0 0.1em 0.1em 0.1em;
+            background-image: radial-gradient(#FFFFBB 1px, #CCCC66 1px);
+            background-size: 3px 3px;
+            box-sizing: content-box;
+            box-shadow: 3px 3px dimgray;
         }
 
         .icon:before {
             content: "";
-            background: khaki;
+            background-image: radial-gradient(#FFFFBB 1px, #CCCC66 1px);
+            background-size: 3px 3px;
+            box-sizing: content-box;
             width: 45px;
             height: 48px;
             position: absolute;
             bottom: 0px;
-            box-shadow: 1px 1px 2px black;
         }
 
         .icon:after {
             content: "";
-            background: white;
+            background: whitesmoke;
             width: 10px;
             height: 40px;
             position: absolute;
@@ -2898,6 +2918,7 @@
         const backcolor = document.getElementById("backcolor");
 
         function screen_close() {
+            localStorage.removeItem('screen_active')
             let screen_close = document.getElementsByClassName('screen_close');
             screen_close[0].classList.add('active');
             backcolor.style.backgroundColor = "black";
@@ -2907,24 +2928,28 @@
                 let screen_close = document.getElementsByClassName('screen_close');
                 screen_close[0].classList.remove('active');
             }, 4000);
-            closeTabAfterDelay(4500);
         }
 
         function sound() {
-            const sound = new Audio("https://github.com/moti5768/moti.world/raw/main/windows%202000/IMG_7324.mp3");
-            setTimeout(
-                function () {
-                    sound.play();
-                },
-                1000);
+            if (localStorage.getItem('driver_sound')) {
+                const sound = new Audio("https://github.com/moti5768/moti.world/raw/main/windows%202000/IMG_7324.mp3");
+                setTimeout(
+                    function () {
+                        sound.play();
+                    },
+                    1000);
+            }
         }
 
         function sound2() {
-            const sound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/windows%202000/IMG_7325.mp3");
-            sound2.play();
+            if (localStorage.getItem('driver_sound')) {
+                const sound2 = new Audio("https://github.com/moti5768/moti.world/raw/main/windows%202000/IMG_7325.mp3");
+                sound2.play();
+            }
         }
 
         function screen_start() {
+            localStorage.setItem('screen_active', true)
             let user = document.querySelector(".user");
             user.style.display = "block";
             backcolor.style.backgroundColor = "black";
@@ -2946,6 +2971,23 @@
 
             }, 2000);
         };
+
+        if (!localStorage.getItem('screen_active')) {
+            document.querySelector('.screen').classList.add('active');
+            document.querySelector('.Windows95_group').style.display = "none"
+        }
+        if (localStorage.getItem('driver_sound')) {
+            document.querySelector('.sound_driver_text').textContent = "ON";
+        } else {
+            document.querySelector('.sound_driver_text').textContent = "OFF";
+        }
+
+        function sdriver_on() {
+            localStorage.setItem('driver_sound', true);
+        }
+        function sdriver_off() {
+            localStorage.removeItem('driver_sound');
+        }
 
         window.addEventListener('load', function () {
             if (!sessionStorage.getItem('disp_popup')) {
@@ -3560,7 +3602,6 @@
                 screen_close();
                 allwindow_close();
                 sound2();
-                closeTabAfterDelay(4500);
             } else if (mail_form.mail.value === "cpu.bench") {
                 document.getElementsByClassName("textcommand_area")[0].value = '';
                 cpubench();
@@ -3579,12 +3620,6 @@
             } else {
                 alert('コマンドが正しくありません！');
             }
-        }
-
-        function closeTabAfterDelay(delay) {
-            setTimeout(function () {
-                window.close();
-            }, delay);
         }
 
         function command_help() {
