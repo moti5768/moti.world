@@ -68,14 +68,17 @@
         <div class="start_menu border">
             <span class="menu_bluebar2 white"
                 style="writing-mode: vertical-rl; transform: rotate(180deg);">Windows2000</span>
-            <button class="blacktext closebutton border hover2" onclick="startmenu_close()"></button>
-            <button class="blacktext button2 border bold hover" onclick="debug_open()">debug</button>
-            <button class="blacktext button2 border bold hover"
-                onclick="programmenu_open(),appmenu_close(),gamemenu_close(),settingmenu_close()">プログラム</button>
-            <button class="blacktext button2 border bold hover"
-                onclick="settingmenu_open(),programmenu_close(),appmenu_close(),gamemenu_close()">設定</button>
-            <button class="blacktext border bold button2 hover"
-                onclick="screen_close(),allwindow_close(),sound2()">ログオフ</button>
+
+            <div style="position: absolute; top: -25px;">
+                <button class="blacktext button2 border bold hover" onclick="debug_open()">debug</button>
+                <button class="blacktext button2 border bold hover"
+                    onclick="programmenu_open(),appmenu_close(),gamemenu_close(),settingmenu_close()">プログラム</button>
+                <button class="blacktext button2 border bold hover"
+                    onclick="settingmenu_open(),programmenu_close(),appmenu_close(),gamemenu_close()">設定</button>
+                <button class="blacktext border bold button2 hover"
+                    onclick="screen_close(),allwindow_close(),sound2()">ログオフ</button>
+            </div>
+
 
             <div class="program_menu border">
                 <span class="menu_bluebar">プログラム</span>
@@ -229,11 +232,13 @@
             <div class="itiran border shape">
                 <span class="menu_bluebar">一覧</span>
                 <button class="closebutton border hover2" onclick="itiran_close()"></button>
-                <a class="button hover" style="position: absolute; top: 30px;" onclick="mycomputer_open()">マイコン</a>
-                <a class="button hover" style="position: absolute; top: 70px;" onclick="controlpanel_open()">コント</a>
-                <a class="button hover" style="position: absolute; top: 110px;" onclick="bom_open()">マイン</a>
-                <a class="button hover" style="position: absolute; top: 150px;" onclick="tetris_open()">テトリス</a>
-                <a class="button hover" style="position: absolute; top: 190px;" onclick="testalert()">？？？</a>
+                <a class="button hover small" style="position: absolute; top: 30px;"
+                    onclick="mycomputer_open()">マイコンピュータ</a>
+                <a class="button hover small" style="position: absolute; top: 70px;"
+                    onclick="controlpanel_open()">コントロール</a>
+                <a class="button hover small" style="position: absolute; top: 110px;" onclick="bom_open()">マインスイーパー</a>
+                <a class="button hover small" style="position: absolute; top: 150px;" onclick="tetris_open()">テトリス</a>
+                <a class="button hover small" style="position: absolute; top: 190px;" onclick="testalert()">？？？</a>
             </div>
         </div>
 
@@ -262,7 +267,7 @@
                     onclick=load();></input>
                 <input type="button" id="cleartextbtn" class="blacktext border memo_button_clear hover medium"
                     value="クリア"></input>
-                <input type="button" class="blacktext border memo_button_save2 hover" value="nexserへ転送"
+                <input type="button" class="blacktext border memo_button_save2 medium hover" value="nexserへ転送"
                     onclick=data_nexser()></input>
             </div>
 
@@ -326,9 +331,9 @@
                     style="display: none;">一</button>
 
                 <div style="position: absolute; bottom: 10px; left: 10px;">
-                    <p>起動音 終了音</p>
-                    <button class="border" onclick="sdriver_on()">ON</button>
-                    <button class="border" onclick="sdriver_off()">OFF</button>
+                    <p>起動音・終了音を鳴らす:&emsp;</p>
+                    <button class="btn_border large hover" style="width: 50px;" onclick="sdriver_on()">ON</button>
+                    <button class="btn_border large hover" style="width: 50px;" onclick="sdriver_off()">OFF</button>
                 </div>
 
             </div>
@@ -386,7 +391,7 @@
 
         <div class="underbar">
             <a class="blacktext bottom bold start_button border hover"
-                onclick="startmenu_open(),popupwindow_close()">&emsp;&nbsp;start</a>
+                onclick="start(),popupwindow_close()">&emsp;&nbsp;start</a>
             <span class="start_logo"></span>
 
             <div class="online_bar border">
@@ -569,12 +574,12 @@
             <div class="shape mycomputer_window border invisible">
                 <span class="menu_bluebar">debug</span>
                 <button class="blacktext closebutton border hover2" onclick="debug_close()"></button>
-                <div class="debug_screen small" style="background: black; color: lime; height: 100%;"><br><br>
-                    <p class="small">NAME: windows2000<br>
+                <div class="debug_screen small"
+                    style="background-color: black; color: lime; height: 100%; padding-left: 10px;"><br><br>
+                    <p class="small">NAME: Windows2000<br>
                         BASE: Windows95 homeEdition1.0</p>
                     <p>system: version 0.1.5</p>
                 </div>
-
             </div>
         </div>
 
@@ -952,17 +957,11 @@
             position: absolute;
             right: 4px;
             bottom: 11px;
-            border: solid 1px black;
+            border: solid 1.5px black;
         }
 
         .online_icon.online {
             background: deepskyblue;
-            width: 20px;
-            height: 20px;
-            position: absolute;
-            right: 4px;
-            bottom: 11px;
-            border: solid 1px black;
         }
 
         .taskbutton {
@@ -1263,7 +1262,7 @@
             display: none;
             background: #c0c0c0;
             width: 140px;
-            height: 135px;
+            height: 110px;
             position: absolute;
             bottom: 42.5px;
             left: 1px;
@@ -1836,6 +1835,13 @@
             height: 30px;
             position: absolute;
             bottom: 3px;
+            background-color: #C3C7CB;
+            border: 1.8px solid #808080;
+            border-color: #fff #808080 #808080 #fff;
+            box-shadow: 0.5px 0.5px black;
+        }
+
+        .btn_border {
             background-color: #C3C7CB;
             border: 1.8px solid #808080;
             border-color: #fff #808080 #808080 #fff;
@@ -2452,29 +2458,27 @@
             font-size: 3rem;
             text-align: center;
             padding: 1rem;
-            border-radius: 1rem;
-            box-shadow: 0 0 20px black;
-            margin: .5rem;
+            border-radius: 2.5px;
+            box-shadow: 0 0 5px black;
+            margin: 0.5rem;
         }
 
         #buttons {
             position: relative;
             top: 100px;
-            border: solid 2px blue;
             font-size: 3rem;
             text-align: center;
-            box-shadow: 0px 0px 10px black;
         }
 
         #start,
         #stop,
         #reset {
-            background: linear-gradient(0deg, silver, whitesmoke, white);
-            border: solid 2px gray;
             width: 20%;
             font-size: 30px;
-            border-radius: 5px;
-            box-shadow: 0 0 5px black;
+            background-color: #C3C7CB;
+            border: 1.8px solid #808080;
+            border-color: #fff #808080 #808080 #fff;
+            box-shadow: 0.5px 0.5px black;
         }
 
         .taskbar_property {
@@ -2843,35 +2847,14 @@
 
 
             #times {
-                position: relative;
-                top: 50px;
-                background: whitesmoke;
-                color: dimgray;
                 font-size: 30px;
-                text-align: center;
-                padding: 1rem;
-                border-radius: 1rem;
-                box-shadow: 0 0 20px black;
-                margin: .5rem;
-            }
-
-            #buttons {
-                position: relative;
-                top: 100px;
-                border: solid 2px blue;
-                text-align: center;
-                box-shadow: 0px 0px 10px black;
             }
 
             #start,
             #stop,
             #reset {
-                background: linear-gradient(0deg, silver, whitesmoke, white);
-                border: solid 2px gray;
                 width: 25%;
                 font-size: 22.5px;
-                border-radius: 5px;
-                box-shadow: 0 0 5px black;
             }
 
         }
@@ -2890,30 +2873,18 @@
             + 'HEIGHT: ' + screen.height + '' + 'BIT: ' + screen.colorDepth + '</p>');
 
         setInterval(() => {
-            if (window.navigator.onLine) {
-                const online = document.getElementsByClassName('online_icon');
-                online[0].classList.add('online');
-                console.log("online");
-            } else {
-                const online = document.getElementsByClassName('online_icon');
-                online[0].classList.remove('online');
-                console.log("offline");
-            }
+            const icon = document.querySelector('.online_icon');
+            if (!icon) return;
+            const isOnline = navigator.onLine;
+            icon.classList.toggle('online', isOnline);
+            console.log(isOnline ? "online" : "offline");
         }, 500);
-
 
         window.addEventListener('load', (event) => {
             const screen_open = document.querySelector(".Windows95_group");
             screen_open.style.display = "block";
             console.log('ページが完全に読み込まれました');
         });
-
-        if (window.performance) {
-            if (window.performance.navigation.type === 1) {
-                const screen_open = document.querySelector(".Windows95_group");
-                screen_open.style.display = "block";
-            }
-        }
 
         const backcolor = document.getElementById("backcolor");
 
@@ -2984,9 +2955,11 @@
 
         function sdriver_on() {
             localStorage.setItem('driver_sound', true);
+            document.querySelector('.sound_driver_text').textContent = "ON";
         }
         function sdriver_off() {
             localStorage.removeItem('driver_sound');
+            document.querySelector('.sound_driver_text').textContent = "OFF";
         }
 
         window.addEventListener('load', function () {
@@ -3272,8 +3245,9 @@
             gamemenu.style.display = "none";
         }
 
+        const start_menu = document.querySelector(".start_menu");
+
         function startmenu_close() {
-            const start_menu = document.querySelector(".start_menu");
             start_menu.style.display = "none";
             const taskbar = document.querySelector(".taskbar");
             taskbar.style.display = "block";
@@ -3285,7 +3259,6 @@
             setting_menu.style.display = "none";
         }
         function startmenu_open() {
-            const start_menu = document.querySelector(".start_menu");
             start_menu.style.display = "block";
             const taskbar = document.querySelector(".taskbar");
             taskbar.style.display = "none";
@@ -3293,6 +3266,14 @@
             backcolor_menu.style.display = "none";
             const css_menu = document.querySelector(".css_menu");
             css_menu.style.display = "none";
+        }
+
+        function start() {
+            if (start_menu.style.display == "block") {
+                startmenu_close()
+            } else {
+                startmenu_open()
+            }
         }
 
         function popupwindow_open() {
