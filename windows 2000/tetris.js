@@ -1,3 +1,4 @@
+let tetris_loop = false;
 class tetris {
     constructor() {
         this.stageWidth = 10;
@@ -150,6 +151,7 @@ class tetris {
     }
 
     startGame() {
+        tetris_loop = false;
         clearTimeout(this.timerID);
         this.timerID = null;  // 再利用のためリセット
         let virtualStage = new Array(this.stageWidth);
@@ -163,6 +165,7 @@ class tetris {
     }
 
     startGame2() {
+        tetris_loop = false;
         clearTimeout(this.timerID);
         this.timerID = null;  // 再利用のためリセット
         let virtualStage = new Array(this.stageWidth);
@@ -176,6 +179,7 @@ class tetris {
     }
 
     startGame3() {
+        tetris_loop = false;
         clearTimeout(this.timerID);
         this.timerID = null;  // 再利用のためリセット
         let virtualStage = new Array(this.stageWidth);
@@ -189,6 +193,7 @@ class tetris {
     }
 
     startGame4() {
+        tetris_loop = false;
         clearTimeout(this.timerID);
         this.timerID = null;  // 再利用のためリセット
         let virtualStage = new Array(this.stageWidth);
@@ -202,6 +207,7 @@ class tetris {
     }
 
     startGame5() {
+        tetris_loop = false;
         clearTimeout(this.timerID);
         this.timerID = null;  // 再利用のためリセット
         let virtualStage = new Array(this.stageWidth);
@@ -215,86 +221,96 @@ class tetris {
     }
 
     mainLoop() {
-        if (this.currentBlock == null) {
-            if (!this.createNewBlock()) {
-                return;
+        if (tetris_loop == false) {
+            if (this.currentBlock == null) {
+                if (!this.createNewBlock()) {
+                    return;
+                }
+            } else {
+                this.fallBlock();
             }
-        } else {
-            this.fallBlock();
-        }
-        this.drawStage();
-        if (this.currentBlock != null) {
-            this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
-                this.stageTopPadding + this.blockY * this.cellSize,
-                this.currentBlock, this.blockAngle, this.stageCanvas);
-        }
-        this.timerID = setTimeout(this.mainLoop.bind(this), 800);
+            this.drawStage();
+            if (this.currentBlock != null) {
+                this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
+                    this.stageTopPadding + this.blockY * this.cellSize,
+                    this.currentBlock, this.blockAngle, this.stageCanvas);
+            }
+
+        } this.timerID = setTimeout(this.mainLoop.bind(this), 800);
     }
 
     mainLoop2() {
-        if (this.currentBlock == null) {
-            if (!this.createNewBlock()) {
-                return;
+        if (tetris_loop == false) {
+            if (this.currentBlock == null) {
+                if (!this.createNewBlock()) {
+                    return;
+                }
+            } else {
+                this.fallBlock();
             }
-        } else {
-            this.fallBlock();
-        }
-        this.drawStage();
-        if (this.currentBlock != null) {
-            this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
-                this.stageTopPadding + this.blockY * this.cellSize,
-                this.currentBlock, this.blockAngle, this.stageCanvas);
+            this.drawStage();
+            if (this.currentBlock != null) {
+                this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
+                    this.stageTopPadding + this.blockY * this.cellSize,
+                    this.currentBlock, this.blockAngle, this.stageCanvas);
+            }
         }
         this.timerID = setTimeout(this.mainLoop2.bind(this), 500);
     }
 
     mainLoop3() {
-        if (this.currentBlock == null) {
-            if (!this.createNewBlock()) {
-                return;
+        if (tetris_loop == false) {
+            if (this.currentBlock == null) {
+                if (!this.createNewBlock()) {
+                    return;
+                }
+            } else {
+                this.fallBlock();
             }
-        } else {
-            this.fallBlock();
-        }
-        this.drawStage();
-        if (this.currentBlock != null) {
-            this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
-                this.stageTopPadding + this.blockY * this.cellSize,
-                this.currentBlock, this.blockAngle, this.stageCanvas);
+            this.drawStage();
+            if (this.currentBlock != null) {
+                this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
+                    this.stageTopPadding + this.blockY * this.cellSize,
+                    this.currentBlock, this.blockAngle, this.stageCanvas);
+            }
         }
         this.timerID = setTimeout(this.mainLoop3.bind(this), 250);
     }
 
     mainLoop4() {
-        if (this.currentBlock == null) {
-            if (!this.createNewBlock()) {
-                return;
+        if (tetris_loop == false) {
+            if (this.currentBlock == null) {
+                if (!this.createNewBlock()) {
+                    return;
+                }
+            } else {
+                this.fallBlock();
             }
-        } else {
-            this.fallBlock();
-        }
-        this.drawStage();
-        if (this.currentBlock != null) {
-            this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
-                this.stageTopPadding + this.blockY * this.cellSize,
-                this.currentBlock, this.blockAngle, this.stageCanvas);
+            this.drawStage();
+            if (this.currentBlock != null) {
+                this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
+                    this.stageTopPadding + this.blockY * this.cellSize,
+                    this.currentBlock, this.blockAngle, this.stageCanvas);
+            }
         }
         this.timerID = setTimeout(this.mainLoop4.bind(this), 100);
     }
 
     mainLoop5() {
-        if (this.currentBlock == null) {
-            if (!this.createNewBlock()) {
-                return;
+        if (tetris_loop == false) {
+            if (this.currentBlock == null) {
+                if (!this.createNewBlock()) {
+                    return;
+                }
+            } else {
+                this.fallBlock();
             }
-        } else {
-            this.fallBlock();
-        }
-        this.drawStage();
-        if (this.currentBlock != null) {
-            this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
-                this.stageTopPadding + this.blockY * this.cellSize,
-                this.currentBlock, this.blockAngle, this.stageCanvas);
+            this.drawStage();
+            if (this.currentBlock != null) {
+                this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
+                    this.stageTopPadding + this.blockY * this.cellSize,
+                    this.currentBlock, this.blockAngle, this.stageCanvas);
+            }
         }
         this.timerID = setTimeout(this.mainLoop5.bind(this), 50);
     }
@@ -470,4 +486,18 @@ class tetris {
         this.deletedLines2 = 100;
     }
 
+}
+
+
+
+tetris = new tetris();
+
+function tetris_stop() {
+    if (tetris_loop == false) {
+        tetris_loop = true;
+        console.log("1")
+    } else {
+        tetris_loop = false;
+        console.log("2")
+    }
 }
