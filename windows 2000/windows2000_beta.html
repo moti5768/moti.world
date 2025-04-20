@@ -471,17 +471,6 @@
                             <p>Next&emsp;&nbsp;ver 0.2.3</p>
                             <canvas id="next" class="line" width="130px" height="150px" style="background-color:black;">
                             </canvas>
-                            <div class="tetlines">
-                                <span class="tetline"></span>
-                                <span class="tetline2"></span>
-                                <span class="tetline3"></span>
-                                <span class="tetline4"></span>
-                                <span class="tetline5"></span>
-                                <span class="tetline6"></span>
-                                <span class="tetline7"></span>
-                                <span class="tetline8"></span>
-                                <span class="tetline9"></span>
-                            </div>
                             <p class="small">スコア:<span id="lines">0</span></p>
                             <p class="small">最高スコア(試験的):<span id="lines2">0</span></p>
                             <p><span id="message"></span></p>
@@ -498,15 +487,11 @@
                             </table>
                         </span>
                     </span>
-                    <a class="button hover small" onclick="tetlines_2()"
-                        style="position: absolute; bottom: -35px; left: 0px;">線の非表示</a>
-                    <a class="button hover small" onclick="tetlines_1()"
-                        style="position: absolute; bottom: -35px; left: 75px;">線の表示</a>
                     <a class="button hover small"
-                        style="width: 90px; position: absolute; bottom: -35px; right: 95px; display: block;"
+                        style="width: 90px; position: absolute; bottom: -35px; left: 90px; display: block;"
                         onclick="tetris_stop()">一時停止/再開</a>
                     <a class="button hover small difficulty_button" onclick="tetrismenu1_open()"
-                        style="width: 80px; position: absolute; bottom: -35px; right: 5px; display: block;">難易度の選択</a>
+                        style="width: 80px; position: absolute; bottom: -35px; left: 2.5px; display: block;">難易度の選択</a>
 
                 </div>
                 <button class="blacktext closebutton border hover2" onclick="tetris_close()"></button>
@@ -3314,17 +3299,6 @@
             const mycomputer = document.querySelector(".mycomputer");
             mycomputer.style.display = "none";
         }
-
-        function tetlines_1() {
-            const tetlines = document.querySelector(".tetlines");
-            tetlines.style.display = "block";
-        }
-        function tetlines_2() {
-            const tetlines = document.querySelector(".tetlines");
-            tetlines.style.display = "none";
-        }
-
-
 
         function backcolormenu_close() {
             const backcolor_menu = document.querySelector(".backcolor_menu");
