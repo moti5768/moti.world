@@ -160,6 +160,24 @@ class tetris {
         context.stroke();
     }
 
+    drawStageGrid() {
+        let context = this.stageCanvas.getContext("2d");
+        let cols = this.stageWidth;
+        let rows = this.stageCanvas.height / this.cellSize;
+        context.beginPath();
+        for (let i = 0; i <= cols; i++) {
+            context.moveTo(i * this.cellSize, 0);
+            context.lineTo(i * this.cellSize, this.stageCanvas.height);
+        }
+        for (let j = 0; j <= rows; j++) {
+            context.moveTo(0, j * this.cellSize);
+            context.lineTo(this.stageCanvas.width, j * this.cellSize);
+        }
+        context.strokeStyle = "whitesmoke";
+        context.lineWidth = 1;
+        context.stroke();
+    }
+
     startGame() {
         tetris_loop = false;
         clearTimeout(this.timerID);
@@ -415,7 +433,7 @@ class tetris {
 
     drawStage() {
         this.clear(this.stageCanvas);
-
+        this.drawStageGrid();
         let context = this.stageCanvas.getContext("2d");
         for (let x = 0; x < this.virtualStage.length; x++) {
             for (let y = 0; y < this.virtualStage[x].length; y++) {
