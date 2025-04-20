@@ -14,14 +14,16 @@ class tetris {
         this.deletedLines = 0;
 
         window.onkeydown = (e) => {
-            if (e.keyCode === 37) {
-                this.moveLeft();
-            } else if (e.keyCode === 38) {
-                this.rotate();
-            } else if (e.keyCode === 39) {
-                this.moveRight();
-            } else if (e.keyCode === 40) {
-                this.fall();
+            if (tetris_loop == false) {
+                if (e.keyCode === 37) {
+                    this.moveLeft();
+                } else if (e.keyCode === 38) {
+                    this.rotate();
+                } else if (e.keyCode === 39) {
+                    this.moveRight();
+                } else if (e.keyCode === 40) {
+                    this.fall();
+                }
             }
         }
 
