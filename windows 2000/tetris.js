@@ -26,16 +26,24 @@ class tetris {
         }
 
         document.getElementById("tetris-move-left-button").onmousedown = (e) => {
-            this.moveLeft();
+            if (tetris_loop == false) {
+                this.moveLeft();
+            }
         }
         document.getElementById("tetris-rotate-button").onmousedown = (e) => {
-            this.rotate();
+            if (tetris_loop == false) {
+                this.rotate();
+            }
         }
         document.getElementById("tetris-move-right-button").onmousedown = (e) => {
-            this.moveRight();
+            if (tetris_loop == false) {
+                this.moveRight();
+            }
         }
         document.getElementById("tetris-fall-button").onmousedown = (e) => {
-            this.fall();
+            if (tetris_loop == false) {
+                this.fall();
+            }
         }
     }
 
