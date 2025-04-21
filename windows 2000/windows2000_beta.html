@@ -471,11 +471,14 @@
                             <p>Next</p>
                             <canvas id="next" class="line" width="110px" height="80px" style="background-color:black;">
                             </canvas>
+                            
                             <p class="small">獲得スコア:&nbsp;<span id="lines">0</span>&emsp;<span
                                     class="tetstop_text"></span></p>
                             <p class="small">最高スコア(試験的):&nbsp;<span id="lines2">0</span></p>
 
                             <p><span id="message"></span></p>
+                            <canvas id="hold" width="110px" height="80px"></canvas>
+                            <p>HOLD</p>
                             <div class="tetris-panel-container-padding"></div>
                             <table class="tetris-button-panel tetbtn">
                                 <tr class="tetbutton">
@@ -485,6 +488,9 @@
                                     <td id="tetris-move-left-button" class="tetris-button tetbtn large">←</td>
                                     <td id="tetris-fall-button" class="tetris-button tetbtn large">↓</td>
                                     <td id="tetris-move-right-button" class="tetris-button tetbtn large">→</td>
+                                </tr>
+                                <tr class="tetbutton">
+                                    <td id="tetris-hold-button" class="tetris-button tetbtn large">HOLD</td>
                                 </tr>
                             </table>
                         </span>
