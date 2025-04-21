@@ -22,6 +22,7 @@ html {
     position: relative;
     left: 5px;
     border: solid 0.5px dimgray;
+    width: 60%;
 }
 
 .stage {
@@ -70,6 +71,7 @@ html {
 
 .tetris-panel-container {
     display: flex;
+    width: 100%;
     padding-left: 10px;
     padding-right: 10px;
     flex-direction: column;
@@ -88,9 +90,9 @@ html {
 
 .tetris-button-panel.tetbtn {
     border-style: none;
-    width: 140%;
+    width: 100%;
     position: relative;
-    left: -10px;
+    left: 0px;
 }
 
 .tetris-button-panel.tetbtn.active {
@@ -101,20 +103,20 @@ html {
 }
 
 .tetris-button.tetbtn {
-    height: 70px;
+    height: 65px;
     text-align: center;
     background: linear-gradient(0deg, #222222, #555555);
     border: solid 1px dimgray;
 }
 
 .tetris-button.tetbtn2 {
-    height: 70px;
+    height: 65px;
     text-align: center;
     background: linear-gradient(0deg, #222222, #555555);
     border: solid 1px dimgray;
     position: relative;
-    left: 60px;
-    bottom: 5px;
+    left: 50px;
+    bottom: 2.5px;
 }
 
 .tetris-button.tetbtn2.active {
