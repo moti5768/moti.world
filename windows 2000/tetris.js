@@ -196,7 +196,7 @@ class tetris {
 
         let context = canvas.getContext("2d");
         context.strokeStyle = "rgba(255, 255, 255, 1)";
-        context.lineWidth = 1;
+        context.lineWidth = 2.5;
 
         for (let i = 0; i < this.blocks[type].shape[angle].length; i++) {
             let cellX = x + this.blocks[type].shape[angle][i][0];
@@ -261,7 +261,7 @@ class tetris {
             context.moveTo(0, j * this.cellSize);
             context.lineTo(this.stageCanvas.width, j * this.cellSize);
         }
-        context.strokeStyle = "rgba(255, 255, 255, 0.4)";
+        context.strokeStyle = "rgba(255, 255, 255, 0.5)";
         context.lineWidth = 1;
         context.stroke();
     }
