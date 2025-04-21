@@ -4,7 +4,7 @@ html {
 
 .tetris_menu1 {
     display: block;
-    height: 125%;
+    height: 130%;
     background-color: dimgray;
     border: 3px solid #c0c0c0;
     box-shadow: 1.8px 1.8px #333333, -1.8px -1.8px whitesmoke;
@@ -12,7 +12,7 @@ html {
 
 .tetris_menu2 {
     display: none;
-    height: 125%;
+    height: 130%;
     background-color: dimgray;
     border: 3px solid #c0c0c0;
     box-shadow: 1.8px 1.8px #333333, -1.8px -1.8px whitesmoke;
@@ -22,8 +22,6 @@ html {
     position: relative;
     left: 5px;
     border: solid 0.5px dimgray;
-    width: 80%;
-    height: 40%;
 }
 
 .stage {
@@ -49,7 +47,7 @@ html {
     display: none;
     background: white;
     position: absolute;
-    top: 100px;
+    top: 50px;
     left: 0px;
     height: 390px;
     width: 360px;
@@ -90,7 +88,7 @@ html {
 }
 
 .tetris-button-panel.tetbtn {
-    margin-top: 90px;
+    padding-top: 90px;
     border-style: none;
     width: 100%;
     position: relative;
