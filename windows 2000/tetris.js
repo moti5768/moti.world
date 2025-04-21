@@ -360,7 +360,7 @@ class tetris {
 
     drawNextBlock() {
         this.clear(this.nextCanvas);
-        this.drawBlock(this.cellSize * 2, this.cellSize, this.nextBlock,
+        this.drawBlock(this.cellSize * 1.25, this.cellSize, this.nextBlock,
             0, this.nextCanvas);
         if (localStorage.getItem('tetris_score')) {
             let linesElem2 = document.getElementById("lines2");
@@ -523,13 +523,14 @@ class tetris {
 }
 
 
-
 tetris = new tetris();
 
 function tetris_stop() {
     if (tetris_loop == false) {
         tetris_loop = true;
+        document.querySelector('.tetstop_text').textContent = "停止中"
     } else {
         tetris_loop = false;
+        document.querySelector('.tetstop_text').textContent = ""
     }
 }
