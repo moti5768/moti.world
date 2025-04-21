@@ -263,8 +263,8 @@ class tetris {
                     this.stageTopPadding + this.blockY * this.cellSize,
                     this.currentBlock, this.blockAngle, this.stageCanvas);
             }
-
-        } this.timerID = setTimeout(this.mainLoop.bind(this), 800);
+        }
+        this.timerID = setTimeout(this.mainLoop.bind(this), 800);
     }
 
     mainLoop2() {
@@ -362,6 +362,10 @@ class tetris {
         this.clear(this.nextCanvas);
         this.drawBlock(this.cellSize * 2, this.cellSize, this.nextBlock,
             0, this.nextCanvas);
+        if (localStorage.getItem('tetris_score')) {
+            let linesElem2 = document.getElementById("lines2");
+            linesElem2.innerText = localStorage.getItem('tetris_score');
+        }
     }
 
     getRandomBlock() {
@@ -423,8 +427,10 @@ class tetris {
                 this.deletedLines++;
                 linesElem.innerText = "" + this.deletedLines;
                 let linesElem2 = document.getElementById("lines2");
-                this.deletedLines2++;
-                linesElem2.innerText = "" + this.deletedLines;
+                if (localStorage.getItem('tetris_score') < document.getElementById("lines").innerText) {
+                    localStorage.setItem('tetris_score', this.deletedLines);
+                    linesElem2.innerText = linesElem.textContent;
+                }
             } else {
                 y--;
             }
@@ -523,9 +529,7 @@ tetris = new tetris();
 function tetris_stop() {
     if (tetris_loop == false) {
         tetris_loop = true;
-        console.log("1")
     } else {
         tetris_loop = false;
-        console.log("2")
     }
 }
