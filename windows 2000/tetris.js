@@ -461,10 +461,6 @@ class tetris {
         this.clear(this.nextCanvas);
         this.drawBlock(this.cellSize * 1.2, this.cellSize, this.nextBlock,
             0, this.nextCanvas);
-        if (localStorage.getItem('tetris_score')) {
-            let linesElem2 = document.getElementById("lines2");
-            linesElem2.innerText = localStorage.getItem('tetris_score');
-        }
     }
 
     getRandomBlock() {
@@ -522,14 +518,21 @@ class tetris {
                 for (let x = 0; x < this.stageWidth; x++) {
                     this.virtualStage[x][0] = null;
                 }
+
                 let linesElem = document.getElementById("lines");
                 this.deletedLines++;
                 linesElem.innerText = "" + this.deletedLines;
+
                 let linesElem2 = document.getElementById("lines2");
-                if (localStorage.getItem('tetris_score') < document.getElementById("lines").innerText) {
+
+                let storedHighScore = localStorage.getItem('tetris_score');
+
+                // ストレージにスコアが無い場合、または現在のスコアの方が大きい場合
+                if (storedHighScore === null || this.deletedLines > parseInt(storedHighScore)) {
                     localStorage.setItem('tetris_score', this.deletedLines);
                     linesElem2.innerText = linesElem.textContent;
                 }
+
             } else {
                 y--;
             }
