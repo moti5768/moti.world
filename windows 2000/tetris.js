@@ -13,6 +13,15 @@ class tetris {
         this.blocks = this.createBlocks();
         this.deletedLines = 0;
 
+
+
+        this.holdBlock = null;
+        this.holdUsed = false;
+        this.holdCanvas = document.getElementById("hold");  // キャンバス要素をHTMLに追加する必要があります
+
+
+
+
         window.onkeydown = (e) => {
             if (tetris_loop == false) {
                 if (e.keyCode === 37) {
@@ -23,6 +32,8 @@ class tetris {
                     this.moveRight();
                 } else if (e.keyCode === 40) {
                     this.fall();
+                } else if (e.keyCode === 67) {  // "C"キーをホールドに割り当て
+                    this.hold();
                 }
             }
         }
@@ -47,6 +58,13 @@ class tetris {
                 this.fall();
             }
         }
+        document.getElementById("tetris-hold-button").onmousedown = (e) => {
+            if (tetris_loop == false) {
+                this.hold();
+            }
+        }
+
+
     }
 
     createBlocks() {
@@ -127,6 +145,76 @@ class tetris {
         return blocks;
     }
 
+
+
+
+
+
+
+    hold() {
+        if (this.holdUsed) return; // すでにホールドを使ったらスキップ
+
+        this.clear(this.stageCanvas);
+
+        if (this.holdBlock == null) {
+            // 初めてホールドする場合
+            this.holdBlock = this.currentBlock;
+            this.createNewBlock(); // 新しいブロックを出す
+        } else {
+            // すでにホールドしているブロックと交換
+            let temp = this.currentBlock;
+            this.currentBlock = this.holdBlock;
+            this.holdBlock = temp;
+            this.blockX = Math.floor(this.stageWidth / 2 - 2);
+            this.blockY = 0;
+            this.blockAngle = 0;
+        }
+
+        this.holdUsed = true; // このターンでは再度使えないように
+        this.refreshStage();
+        this.drawHoldBlock();
+    }
+
+    drawHoldBlock() {
+        this.clear(this.holdCanvas);
+        if (this.holdBlock != null) {
+            this.drawBlock(this.cellSize * 1.25, this.cellSize, this.holdBlock,
+                0, this.holdCanvas);
+        }
+    }
+
+
+
+
+
+
+    drawGhostBlock(x, y, type, angle, canvas) {
+        let ghostY = y;
+        while (this.checkBlockMove(x, ghostY + 1, type, angle)) {
+            ghostY++;
+        }
+
+        let context = canvas.getContext("2d");
+        context.strokeStyle = "rgba(255, 255, 255, 1)";
+        context.lineWidth = 1;
+
+        for (let i = 0; i < this.blocks[type].shape[angle].length; i++) {
+            let cellX = x + this.blocks[type].shape[angle][i][0];
+            let cellY = ghostY + this.blocks[type].shape[angle][i][1];
+
+            let drawX = this.stageLeftPadding + cellX * this.cellSize + 0.5;
+            let drawY = this.stageTopPadding + cellY * this.cellSize + 0.5;
+            let size = this.cellSize - 1;
+
+            context.strokeRect(drawX, drawY, size, size);
+        }
+    }
+
+
+
+
+
+
     drawBlock(x, y, type, angle, canvas) {
         let context = canvas.getContext("2d");
         let block = this.blocks[type];
@@ -173,7 +261,7 @@ class tetris {
             context.moveTo(0, j * this.cellSize);
             context.lineTo(this.stageCanvas.width, j * this.cellSize);
         }
-        context.strokeStyle = "whitesmoke";
+        context.strokeStyle = "rgba(255, 255, 255, 0.4)";
         context.lineWidth = 1;
         context.stroke();
     }
@@ -190,6 +278,7 @@ class tetris {
         this.currentBlock = null;
         this.nextBlock = this.getRandomBlock();
         this.mainLoop();
+        this.clearHoldBlock();
     }
 
     startGame2() {
@@ -204,6 +293,7 @@ class tetris {
         this.currentBlock = null;
         this.nextBlock = this.getRandomBlock();
         this.mainLoop2();
+        this.clearHoldBlock();
     }
 
     startGame3() {
@@ -218,6 +308,7 @@ class tetris {
         this.currentBlock = null;
         this.nextBlock = this.getRandomBlock();
         this.mainLoop3();
+        this.clearHoldBlock();
     }
 
     startGame4() {
@@ -232,6 +323,7 @@ class tetris {
         this.currentBlock = null;
         this.nextBlock = this.getRandomBlock();
         this.mainLoop4();
+        this.clearHoldBlock();
     }
 
     startGame5() {
@@ -246,6 +338,7 @@ class tetris {
         this.currentBlock = null;
         this.nextBlock = this.getRandomBlock();
         this.mainLoop5();
+        this.clearHoldBlock();
     }
 
     mainLoop() {
@@ -259,6 +352,7 @@ class tetris {
             }
             this.drawStage();
             if (this.currentBlock != null) {
+                this.drawGhostBlock(this.blockX, this.blockY, this.currentBlock, this.blockAngle, this.stageCanvas);
                 this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
                     this.stageTopPadding + this.blockY * this.cellSize,
                     this.currentBlock, this.blockAngle, this.stageCanvas);
@@ -278,6 +372,7 @@ class tetris {
             }
             this.drawStage();
             if (this.currentBlock != null) {
+                this.drawGhostBlock(this.blockX, this.blockY, this.currentBlock, this.blockAngle, this.stageCanvas);
                 this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
                     this.stageTopPadding + this.blockY * this.cellSize,
                     this.currentBlock, this.blockAngle, this.stageCanvas);
@@ -297,6 +392,7 @@ class tetris {
             }
             this.drawStage();
             if (this.currentBlock != null) {
+                this.drawGhostBlock(this.blockX, this.blockY, this.currentBlock, this.blockAngle, this.stageCanvas);
                 this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
                     this.stageTopPadding + this.blockY * this.cellSize,
                     this.currentBlock, this.blockAngle, this.stageCanvas);
@@ -316,6 +412,7 @@ class tetris {
             }
             this.drawStage();
             if (this.currentBlock != null) {
+                this.drawGhostBlock(this.blockX, this.blockY, this.currentBlock, this.blockAngle, this.stageCanvas);
                 this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
                     this.stageTopPadding + this.blockY * this.cellSize,
                     this.currentBlock, this.blockAngle, this.stageCanvas);
@@ -335,6 +432,7 @@ class tetris {
             }
             this.drawStage();
             if (this.currentBlock != null) {
+                this.drawGhostBlock(this.blockX, this.blockY, this.currentBlock, this.blockAngle, this.stageCanvas);
                 this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
                     this.stageTopPadding + this.blockY * this.cellSize,
                     this.currentBlock, this.blockAngle, this.stageCanvas);
@@ -350,6 +448,7 @@ class tetris {
         this.blockY = 0;
         this.blockAngle = 0;
         this.drawNextBlock();
+        this.holdUsed = false;  // ←この行を createNewBlock() の return true の前に追加
         if (!this.checkBlockMove(this.blockX, this.blockY, this.currentBlock, this.blockAngle)) {
             let messageElem = document.getElementById("message");
             messageElem.innerText = "GAME OVER";
@@ -360,7 +459,7 @@ class tetris {
 
     drawNextBlock() {
         this.clear(this.nextCanvas);
-        this.drawBlock(this.cellSize * 1.25, this.cellSize, this.nextBlock,
+        this.drawBlock(this.cellSize * 1.2, this.cellSize, this.nextBlock,
             0, this.nextCanvas);
         if (localStorage.getItem('tetris_score')) {
             let linesElem2 = document.getElementById("lines2");
@@ -491,10 +590,17 @@ class tetris {
     refreshStage() {
         this.clear(this.stageCanvas);
         this.drawStage();
+        this.drawGhostBlock(this.blockX, this.blockY, this.currentBlock, this.blockAngle, this.stageCanvas);
         this.drawBlock(this.stageLeftPadding + this.blockX * this.cellSize,
             this.stageTopPadding + this.blockY * this.cellSize,
             this.currentBlock, this.blockAngle, this.stageCanvas);
     }
+
+    clearHoldBlock() {
+        this.holdBlock = null;
+        this.clear(this.holdCanvas);
+    }
+
 
     clear(canvas) {
         let context = canvas.getContext("2d");
