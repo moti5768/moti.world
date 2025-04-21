@@ -471,7 +471,7 @@
                             <p>Next</p>
                             <canvas id="next" class="line" width="110px" height="80px" style="background-color:black;">
                             </canvas>
-                            
+
                             <p class="small">獲得スコア:&nbsp;<span id="lines">0</span>&emsp;<span
                                     class="tetstop_text"></span></p>
                             <p class="small">最高スコア(試験的):&nbsp;<span id="lines2">0</span></p>
@@ -3448,6 +3448,10 @@
         function tetris_open() {
             const tetris = document.querySelector(".tetris");
             tetris.style.display = "block";
+            if (localStorage.getItem('tetris_score')) {
+                let linesElem2 = document.getElementById("lines2");
+                linesElem2.innerText = localStorage.getItem('tetris_score');
+            }
         }
         function tetris_close() {
             const tetris = document.querySelector(".tetris");
