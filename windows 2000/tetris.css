@@ -4,7 +4,7 @@ html {
 
 .tetris_menu1 {
     display: block;
-    height: 130%;
+    height: 140%;
     background-color: dimgray;
     border: 3px solid #c0c0c0;
     box-shadow: 1.8px 1.8px #333333, -1.8px -1.8px whitesmoke;
@@ -12,13 +12,19 @@ html {
 
 .tetris_menu2 {
     display: none;
-    height: 130%;
+    height: 140%;
     background-color: dimgray;
     border: 3px solid #c0c0c0;
     box-shadow: 1.8px 1.8px #333333, -1.8px -1.8px whitesmoke;
 }
 
 #next {
+    position: relative;
+    left: 5px;
+    border: solid 0.5px dimgray;
+}
+
+#hold {
     position: relative;
     left: 5px;
     border: solid 0.5px dimgray;
@@ -47,7 +53,7 @@ html {
     display: none;
     background: white;
     position: absolute;
-    top: 50px;
+    top: 40px;
     left: 0px;
     height: 390px;
     width: 360px;
@@ -88,7 +94,7 @@ html {
 }
 
 .tetris-button-panel.tetbtn {
-    padding-top: 90px;
+    padding-top: 30px;
     border-style: none;
     width: 100%;
     position: relative;
@@ -121,6 +127,16 @@ html {
 
 .tetris-button.tetbtn2.active {
     left: 50px;
+}
+
+#tetris-hold-button {
+    display: block;
+    position: absolute;
+    width: 90px;
+    height: 40px;
+    left: -150px;
+    bottom: 5px;
+    justify-content: center;
 }
 
 #canvas.line {
