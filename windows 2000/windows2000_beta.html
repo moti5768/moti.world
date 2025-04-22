@@ -482,13 +482,15 @@
                             <div class="tetris-panel-container-padding"></div>
                             <table class="tetris-button-panel tetbtn">
                                 <tr class="tetbutton">
-                                    <td id="tetris-hold-button" class="tetris-button tetbtn2">HOLD</td>
-                                    <td id="tetris-rotate-button" class="tetris-button tetbtn2 large">↻</td>
+                                    <td id="tetris-hold-button" class="tetris-button bold tetbtn2">HOLD</td>
+                                    <td id="tetris-rotate-button" class="tetris-button bold tetbtn2 large">↻</td>
+                                    <td id="tetris-fall-button2" class="tetris-button bold tetbtn large">↓<span
+                                            style="position: absolute; top: 20px; right: 12.5px;">__</span></td>
                                 </tr>
                                 <tr class="tetbutton">
-                                    <td id="tetris-move-left-button" class="tetris-button tetbtn large">←</td>
-                                    <td id="tetris-fall-button" class="tetris-button tetbtn large">↓</td>
-                                    <td id="tetris-move-right-button" class="tetris-button tetbtn large">→</td>
+                                    <td id="tetris-move-left-button" class="tetris-button bold tetbtn large">←</td>
+                                    <td id="tetris-fall-button" class="tetris-button bold tetbtn large">↓</td>
+                                    <td id="tetris-move-right-button" class="tetris-button bold tetbtn large">→</td>
                                 </tr>
                             </table>
                         </span>
@@ -3901,6 +3903,16 @@
                 e.preventDefault();
             }
         }, { passive: false });
+
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function (event) {
+            const now = new Date().getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault(); // ダブルタップによるズームを防止
+            }
+            lastTouchEnd = now;
+        }, false);
+
 
     </script>
 </body>
