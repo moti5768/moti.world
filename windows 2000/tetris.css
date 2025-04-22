@@ -152,6 +152,19 @@ html {
     left: 0px;
 }
 
+#tetris-fall-button2 {
+    font-size: small;
+    text-align: center;
+    padding-top: 15px;
+    display: inline-block;
+    height: 40px;
+    width: 40px;
+    position: absolute;
+    bottom: 75px;
+    margin-left: 5px;
+    justify-content: center;
+}
+
 #canvas.line {
     width: 1px;
     height: 100%;
