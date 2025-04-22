@@ -14,12 +14,9 @@ class tetris {
         this.deletedLines = 0;
 
 
-
         this.holdBlock = null;
         this.holdUsed = false;
         this.holdCanvas = document.getElementById("hold");  // キャンバス要素をHTMLに追加する必要があります
-
-
 
 
         window.onkeydown = (e) => {
@@ -38,31 +35,50 @@ class tetris {
             }
         }
 
-        document.getElementById("tetris-move-left-button").onmousedown = (e) => {
-            if (tetris_loop == false) {
-                this.moveLeft();
-            }
+        // マウスとタッチの両方のイベントに対して連続実行を行うヘルパー関数
+        function addContinuousHandler(buttonId, action, intervalTime) {
+            const button = document.getElementById(buttonId);
+            let intervalId;
+
+            const startAction = (e) => {
+                if (e.type === "touchstart") {
+                    // タッチ操作の場合、後続の mouse イベントを防ぐために preventDefault を呼び出す
+                    e.preventDefault();
+                }
+                if (!tetris_loop) {
+                    // ボタン押下直後に一回実行
+                    action();
+                    // intervalTime ごとに実行
+                    intervalId = setInterval(() => {
+                        if (!tetris_loop) {
+                            action();
+                        }
+                    }, intervalTime);
+                }
+            };
+
+            const stopAction = (_) => {
+                clearInterval(intervalId);
+            };
+
+            // マウスイベントのバインド
+            button.addEventListener("mousedown", startAction);
+            button.addEventListener("mouseup", stopAction);
+            button.addEventListener("mouseleave", stopAction);
+
+            // タッチイベントのバインド
+            button.addEventListener("touchstart", startAction);
+            button.addEventListener("touchend", stopAction);
+            button.addEventListener("touchcancel", stopAction);
         }
-        document.getElementById("tetris-rotate-button").onmousedown = (e) => {
-            if (tetris_loop == false) {
-                this.rotate();
-            }
-        }
-        document.getElementById("tetris-move-right-button").onmousedown = (e) => {
-            if (tetris_loop == false) {
-                this.moveRight();
-            }
-        }
-        document.getElementById("tetris-fall-button").onmousedown = (e) => {
-            if (tetris_loop == false) {
-                this.fall();
-            }
-        }
-        document.getElementById("tetris-hold-button").onmousedown = (e) => {
-            if (tetris_loop == false) {
-                this.hold();
-            }
-        }
+
+        // 各ボタンに対して、連続実行のハンドラーを追加
+        addContinuousHandler("tetris-move-left-button", () => { this.moveLeft(); }, 150);
+        addContinuousHandler("tetris-rotate-button", () => { this.rotate(); }, 150);
+        addContinuousHandler("tetris-move-right-button", () => { this.moveRight(); }, 150);
+        addContinuousHandler("tetris-fall-button", () => { this.fall(); }, 150);
+        addContinuousHandler("tetris-fall-button2", () => { this.fall2(); }, 150);
+        addContinuousHandler("tetris-hold-button", () => { this.hold(); }, 150);
 
 
     }
@@ -584,6 +600,13 @@ class tetris {
     }
 
     fall() {
+        if (this.checkBlockMove(this.blockX, this.blockY + 1, this.currentBlock, this.blockAngle)) {
+            this.blockY++;
+            this.refreshStage();
+        }
+    }
+
+    fall2() {
         while (this.checkBlockMove(this.blockX, this.blockY + 1, this.currentBlock, this.blockAngle)) {
             this.blockY++;
             this.refreshStage();
