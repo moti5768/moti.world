@@ -18,6 +18,8 @@ class tetris {
         this.holdUsed = false;
         this.holdCanvas = document.getElementById("hold");  // キャンバス要素をHTMLに追加する必要があります
 
+        this.lastBlock = null; // 最後に出たブロックを覚えておく変数
+
 
         window.onkeydown = (e) => {
             if (tetris_loop == false) {
@@ -480,7 +482,20 @@ class tetris {
     }
 
     getRandomBlock() {
-        return Math.floor(Math.random() * 8);
+        let newBlock;
+
+        // 最初の1回目は何でもOK
+        if (this.lastBlock === null) {
+            newBlock = Math.floor(Math.random() * 8);
+        } else {
+            // 2回目以降は、前回と同じ数値が出ないように再抽選
+            do {
+                newBlock = Math.floor(Math.random() * 8);
+            } while (newBlock === this.lastBlock);
+        }
+
+        this.lastBlock = newBlock; // 今回出た数字を記録
+        return newBlock;
     }
 
     fallBlock() {
