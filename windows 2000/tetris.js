@@ -33,6 +33,8 @@ class tetris {
                     this.fall();
                 } else if (e.keyCode === 67) {  // "C"キーをホールドに割り当て
                     this.hold();
+                } else if (e.keyCode === 13) {  // "C"キーをホールドに割り当て
+                    this.fall2();
                 }
             }
         }
