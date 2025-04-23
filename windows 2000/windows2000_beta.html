@@ -448,19 +448,29 @@
             <span class="menu_bluebar">テトリス(改)</span>
 
             <div class="tetris_menu1">
-                <p class="white x-large" style="position: absolute; top: 30px;">難易度選択</p>
-                <button class="blacktext closebutton border hover2" onclick="tetris_close()"></button>
-                <button class="blacktext start_button2 border hover" style="background-color: yellow;"
-                    onclick="tetris.startGame(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;イージー&nbsp;</button>
-                <button class="blacktext start_button2 border hover" style="background-color: yellowgreen;"
-                    onclick="tetris.startGame2(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;ノーマル&nbsp;</button>
-                <button class="blacktext start_button2 border hover" style="background-color: red;"
-                    onclick="tetris.startGame3(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;ハード&nbsp;</button>
-                <button class="white start_button2 border hover" style="background-color: purple;"
-                    onclick="tetris.startGame4(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;エクストラ&nbsp;</button>
-                <button class="white start_button2 border hover" style="background-color: green;"
-                    onclick="tetris.startGame4(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;鬼畜&nbsp;</button>
-                <p class="medium border2" style="background: whitesmoke; margin-top: 80px; color: red;">
+                <div style="display: flex;">
+                    <div style="flex-direction: column; height: 100%;">
+                        <p class="white x-large" style="position: absolute; top: 30px;">難易度選択</p>
+                        <button class="blacktext closebutton border hover2" onclick="tetris_close()"></button>
+                        <button class="blacktext start_button2 border hover" style="background-color: yellow;"
+                            onclick="tetris.startGame(),mereset(),tetris_linereset(),tetrismenu2_open()">
+                            &nbsp;イージー&nbsp;</button>
+                        <button class="blacktext start_button2 border hover" style="background-color: yellowgreen;"
+                            onclick="tetris.startGame2(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;ノーマル&nbsp;</button>
+                        <button class="white start_button2 border hover" style="background-color: red;"
+                            onclick="tetris.startGame3(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;ハード&nbsp;</button>
+                        <button class="white start_button2 border hover" style="background-color: purple;"
+                            onclick="tetris.startGame4(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;エクストラ&nbsp;</button>
+                        <button class="white start_button2 border hover" style="background-color: green;"
+                            onclick="tetris.startGame4(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;鬼畜&nbsp;</button>
+                    </div>
+                    <p class="large" style="position: absolute; top: 50px; right: 125px;">速度:</p>
+                    <p class="medium border2"
+                        style="height: 200px; background: whitesmoke; width: 500px; margin-top: 80px;">
+                        この機能は後に追加...
+                    </p>
+                </div>
+                <p class="medium border2" style="display: block; background: whitesmoke; margin-top: 80px; color: red;">
                     ※注意<br>ブラウザーの履歴を削除した場合、保存されているデータが消える可能性があります。
                 </p>
             </div>
