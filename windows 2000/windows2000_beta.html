@@ -452,22 +452,27 @@
                     <div style="flex-direction: column; height: 100%;">
                         <p class="white x-large" style="position: absolute; top: 30px;">難易度選択</p>
                         <button class="blacktext closebutton border hover2" onclick="tetris_close()"></button>
-                        <button class="blacktext start_button2 border hover" style="background-color: yellow;"
-                            onclick="tetris.startGame(),mereset(),tetris_linereset(),tetrismenu2_open()">
+                        <button class="blacktext start_button2 border hover tetdiffi_btn"
+                            style="background-color: yellow;"
+                            onclick="tetris.startGame(),mereset(),tetris_linereset(),tetrismenu2_open()" value="ゆっくり">
                             &nbsp;イージー&nbsp;</button>
-                        <button class="blacktext start_button2 border hover" style="background-color: yellowgreen;"
-                            onclick="tetris.startGame2(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;ノーマル&nbsp;</button>
-                        <button class="white start_button2 border hover" style="background-color: red;"
-                            onclick="tetris.startGame3(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;ハード&nbsp;</button>
-                        <button class="white start_button2 border hover" style="background-color: purple;"
-                            onclick="tetris.startGame4(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;エクストラ&nbsp;</button>
-                        <button class="white start_button2 border hover" style="background-color: green;"
-                            onclick="tetris.startGame4(),mereset(),tetris_linereset(),tetrismenu2_open()">&nbsp;鬼畜&nbsp;</button>
+                        <button class="blacktext start_button2 border hover tetdiffi_btn"
+                            style="background-color: yellowgreen;"
+                            onclick="tetris.startGame2(),mereset(),tetris_linereset(),tetrismenu2_open()"
+                            value="普通">&nbsp;ノーマル&nbsp;</button>
+                        <button class="white start_button2 border hover tetdiffi_btn" style="background-color: red;"
+                            onclick="tetris.startGame3(),mereset(),tetris_linereset(),tetrismenu2_open()"
+                            value="速い">&nbsp;ハード&nbsp;</button>
+                        <button class="white start_button2 border hover tetdiffi_btn" style="background-color: purple;"
+                            onclick="tetris.startGame4(),mereset(),tetris_linereset(),tetrismenu2_open()"
+                            value="めちゃ速い">&nbsp;エクストラ&nbsp;</button>
+                        <button class="white start_button2 border hover tetdiffi_btn" style="background-color: green;"
+                            onclick="tetris.startGame4(),mereset(),tetris_linereset(),tetrismenu2_open()"
+                            value="鬼畜">&nbsp;鬼畜&nbsp;</button>
                     </div>
                     <p class="large" style="position: absolute; top: 50px; right: 125px;">速度:</p>
-                    <p class="medium border2"
-                        style="height: 200px; background: whitesmoke; width: 500px; margin-top: 80px;">
-                        この機能は後に追加...
+                    <p class="medium border2 x-large sokudo_text"
+                        style="height: 40px; background: whitesmoke; width: 500px; margin-top: 80px;">
                     </p>
                 </div>
                 <p class="medium border2" style="display: block; background: whitesmoke; margin-top: 80px; color: red;">
@@ -3925,6 +3930,18 @@
             }
             lastTouchEnd = now;
         }, false);
+
+
+
+
+        document.querySelectorAll('.tetdiffi_btn').forEach((s) => {
+            ['mouseover', 'touchstart'].forEach((event) => {
+                s.addEventListener(event, () => {
+                    document.querySelector('.sokudo_text').textContent = s.value;
+                });
+            });
+        });
+
 
 
     </script>
