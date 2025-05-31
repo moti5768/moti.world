@@ -1,4 +1,8 @@
-import * as THREE from '/moti.world/minecraft%20for%20browser/build/three.module.js';
+// Three.js のモジュール版を使うなら
+import * as THREE from 'https://moti5768.github.io/moti.world/minecraft%20for%20browser/build/three.module.js';
+
+// 追加でOrbitControlsなどを使いたい場合は、自前で用意 or CDNを使う
+
 import { BufferGeometryUtils } from './jsm/utils/BufferGeometryUtils.js';
 "use strict";
 
