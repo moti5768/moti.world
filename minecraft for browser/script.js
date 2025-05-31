@@ -1,7 +1,7 @@
 // github上のパス
-// import * as THREE from 'https://moti5768.github.io/moti.world/minecraft%20for%20browser/build/three.module.js';
+import * as THREE from 'https://moti5768.github.io/moti.world/minecraft%20for%20browser/build/three.module.js';
 
-import * as THREE from './build/three.module.js';
+// import * as THREE from './build/three.module.js';
 import { BufferGeometryUtils } from './jsm/utils/BufferGeometryUtils.js';
 "use strict";
 
