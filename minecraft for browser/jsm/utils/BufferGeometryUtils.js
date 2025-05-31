@@ -8,7 +8,8 @@ import {
 	TriangleStripDrawMode,
 	TrianglesDrawMode,
 	Vector3
-} from '../../../build/three.module.js';
+} from 'https://moti5768.github.io/moti.world/minecraft%20for%20browser/build/three.module.js';
+
 
 class BufferGeometryUtils {
 
