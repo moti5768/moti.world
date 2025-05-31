@@ -1,0 +1,230 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #333;
+}
+
+canvas {
+    display: block;
+}
+
+/* FPS表示 */
+#fpsCounter {
+    position: fixed;
+    top: 0;
+    left: 0;
+    background: rgba(0, 0, 0, 0.5);
+    color: #0f0;
+    padding: 2.5px;
+    font-family: monospace;
+}
+
+#fpsCounter>* {
+    margin: 2px;
+    display: inline-block;
+}
+
+#crosshair {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: 20px;
+    /* サイズは好みに合わせて調整 */
+    height: 20px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    /* ユーザー操作をブロックしない */
+    z-index: 100;
+    /* 常に前面表示 */
+    mix-blend-mode: difference;
+    /* 背景色と差分表示して色を反転 */
+}
+
+/* 横線 */
+#crosshair:before,
+#crosshair:after {
+    content: '';
+    position: absolute;
+    background: white;
+    /* 白色にしておくと差分で反転効果が得られます */
+}
+
+/* 垂直線 */
+#crosshair:before {
+    left: 50%;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    transform: translateX(-50%);
+}
+
+/* 水平線 */
+#crosshair:after {
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    transform: translateY(-50%);
+}
+
+
+/* ----- Touch Controls Panel ----- */
+/* 左側コンテナ：画面左下 */
+#left-controls {
+    position: fixed;
+    bottom: 80px;
+    /* 他の UI 要素と重ならないように調整 */
+    left: 20px;
+    width: 150px;
+    height: 150px;
+    z-index: 2;
+}
+
+/* dpad エリア：相対配置をベースに各ボタンを配置 */
+#touch-dpad {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+/* dpad 方向ボタンの基本設定 */
+.dpad-btn {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.6);
+    border: none;
+    width: 50px;
+    height: 50px;
+    font-size: 24px;
+    color: #fff;
+    border-radius: 5px;
+    user-select: none;
+}
+
+/* 各方向ボタンの配置 */
+#dpad-up {
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+#dpad-down {
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+#dpad-left {
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+#dpad-right {
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+/* スニークボタンの設定：中央に正確に配置 */
+#btn-sneak {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.7);
+    border: none;
+    width: 60px;
+    /* 幅と高さを固定 */
+    height: 60px;
+    padding: 0;
+    /* 余計なパディングがないように */
+    display: flex;
+    /* 中身のアイコンを中央寄せ */
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    user-select: none;
+}
+
+/* 右側コンテナ：画面右下 */
+#right-controls {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    z-index: 1100;
+}
+
+/* ジャンプボタン（右側）の基本スタイル */
+.touch-action-btn {
+    background: rgba(0, 0, 0, 0.7);
+    border: none;
+    padding: 5px;
+    border-radius: 5px;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#btn-jump {
+    width: 60px;
+    height: 60px;
+}
+
+
+/* ホットバーのスタイル */
+/* ホットバーのコンテナ */
+#hotbar {
+    position: fixed;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1;
+    background-color: gray;
+    padding: 5px;
+    border: solid 2px black;
+}
+
+/* 各ホットバーアイテム */
+.hotbar-item {
+    width: 60px;
+    height: 60px;
+    margin: 0 5px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid transparent;
+    border-radius: 0px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+/* 選択中のアイテム */
+.hotbar-item.active {
+    outline: solid 2px white;
+}
+
+
+
+/* 例: style.css に記述 */
+#screenOverlayHtml {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    background-size: 100% 100%;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-color: #000;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+.overzindex * {
+    z-index: 999999;
+}
