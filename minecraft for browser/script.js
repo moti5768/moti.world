@@ -1,5 +1,10 @@
 // github上のパス
+// ✅ 完全URL（もっとも確実）
 import * as THREE from 'https://moti5768.github.io/moti.world/minecraft%20for%20browser/build/three.module.js';
+
+// または、GitHub Pages用の絶対パス（ドメインのルートから指定）
+import * as THREE from '/moti.world/minecraft%20for%20browser/build/three.module.js';
+
 
 // import * as THREE from './build/three.module.js';
 import { BufferGeometryUtils } from './jsm/utils/BufferGeometryUtils.js';
