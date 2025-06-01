@@ -2,6 +2,11 @@ body {
     margin: 0;
     overflow: hidden;
     background-color: #333;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
 }
 
 canvas {
@@ -72,9 +77,9 @@ canvas {
 /* 左側コンテナ：画面左下 */
 #left-controls {
     position: fixed;
-    bottom: 80px;
+    bottom: 120px;
     /* 他の UI 要素と重ならないように調整 */
-    left: 20px;
+    left: 40px;
     width: 150px;
     height: 150px;
     z-index: 2;
@@ -92,8 +97,8 @@ canvas {
     position: absolute;
     background: rgba(0, 0, 0, 0.6);
     border: none;
-    width: 50px;
-    height: 50px;
+    width: 70px;
+    height: 70px;
     font-size: 24px;
     color: #fff;
     border-radius: 5px;
@@ -102,25 +107,25 @@ canvas {
 
 /* 各方向ボタンの配置 */
 #dpad-up {
-    top: 0;
-    left: 50%;
+    top: -30px;
+    left: 60%;
     transform: translateX(-50%);
 }
 
 #dpad-down {
-    bottom: 0;
-    left: 50%;
+    bottom: -30px;
+    left: 60%;
     transform: translateX(-50%);
 }
 
 #dpad-left {
-    left: 0;
+    left: -15px;
     top: 50%;
     transform: translateY(-50%);
 }
 
 #dpad-right {
-    right: 0;
+    right: -45px;
     top: 50%;
     transform: translateY(-50%);
 }
@@ -129,13 +134,13 @@ canvas {
 #btn-sneak {
     position: absolute;
     top: 50%;
-    left: 50%;
+    left: 60%;
     transform: translate(-50%, -50%);
     background: rgba(0, 0, 0, 0.7);
     border: none;
-    width: 60px;
+    width: 70px;
     /* 幅と高さを固定 */
-    height: 60px;
+    height: 70px;
     padding: 0;
     /* 余計なパディングがないように */
     display: flex;
@@ -149,8 +154,8 @@ canvas {
 /* 右側コンテナ：画面右下 */
 #right-controls {
     position: fixed;
-    bottom: 80px;
-    right: 20px;
+    bottom: 120px;
+    right: 40px;
     z-index: 1100;
 }
 
@@ -167,8 +172,8 @@ canvas {
 }
 
 #btn-jump {
-    width: 60px;
-    height: 60px;
+    width: 70px;
+    height: 70px;
 }
 
 
