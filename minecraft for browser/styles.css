@@ -77,7 +77,7 @@ canvas {
 /* 左側コンテナ：画面左下 */
 #left-controls {
     position: fixed;
-    bottom: 120px;
+    bottom: 115px;
     /* 他の UI 要素と重ならないように調整 */
     left: 40px;
     width: 150px;
@@ -154,7 +154,7 @@ canvas {
 /* 右側コンテナ：画面右下 */
 #right-controls {
     position: fixed;
-    bottom: 120px;
+    bottom: 115px;
     right: 40px;
     z-index: 1100;
 }
