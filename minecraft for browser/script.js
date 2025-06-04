@@ -2416,10 +2416,10 @@ const blockInfoElem = document.getElementById("blockInfo");
 // Raycaster で全てのチャンク Mesh（通常 Mesh および InstancedMesh）を検出し、
 // 交差結果から対象ブロックのセル座標・中心位置を計算し、アウトラインの位置・スケールを更新します。
 function updateBlockSelection() {
-    if (document.pointerLockElement !== renderer.domElement) {
-        selectionOutlineMesh.visible = false;
-        return;
-    }
+    // if (document.pointerLockElement !== renderer.domElement) {
+    //     selectionOutlineMesh.visible = false;
+    //     return;
+    // }
 
     // グローバル Raycaster を再利用（画面中央から）
     globalRaycaster.setFromCamera(globalCenterVec, camera);
