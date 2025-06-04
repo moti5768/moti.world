@@ -2039,96 +2039,20 @@ function processPendingChunkUpdatesBatch(batchSize = 2) {
     }
 }
 
-// それぞれのボタン用のインターバルIDを保持するオブジェクトを定義
-const interactIntervalIds = {
-    left: null,
-    right: null,
-    touch: null,
-};
-
-function startInteraction(action, key) {
-    if (interactIntervalIds[key] !== null) {
-        clearInterval(interactIntervalIds[key]);
-    }
-    interactWithBlock(action);
-    interactIntervalIds[key] = setInterval(() => {
-        interactWithBlock(action);
-    }, 150);
-}
-
-function stopInteraction(key) {
-    if (interactIntervalIds[key] !== null) {
-        clearInterval(interactIntervalIds[key]);
-        interactIntervalIds[key] = null;
-    }
-}
-
-// ----- マウス操作 -----
-renderer.domElement.addEventListener("mousedown", (event) => {
-    if (document.pointerLockElement !== renderer.domElement) return;
-
-    let action = null;
-    let buttonKey = null;
-    if (event.button === 0) {        // 左クリック：破壊
-        action = "destroy";
-        buttonKey = "left";
-    } else if (event.button === 2) { // 右クリック：設置
-        action = "place";
-        buttonKey = "right";
-    }
-
-    if (action && buttonKey) {
-        startInteraction(action, buttonKey);
-    }
-}, false);
-
-document.addEventListener("mouseup", (event) => {
-    if (event.button === 0) {
-        stopInteraction("left");
-    } else if (event.button === 2) {
-        stopInteraction("right");
-    }
-}, false);
-
-renderer.domElement.addEventListener("contextmenu", (e) => {
-    e.preventDefault();
-}, false);
-
-// ----- ポインタロック -----
-renderer.domElement.addEventListener("click", () => {
-    // タッチ環境ではポインタロックしない
-    if (!("ontouchstart" in window)) {
-        renderer.domElement.requestPointerLock();
-    }
-});
-
-document.addEventListener("pointerlockchange", () => {
-    console.log(document.pointerLockElement === renderer.domElement ? "Pointer Locked" : "Pointer Unlocked");
-});
-
-// ----- マウス移動による視点操作 -----
-document.addEventListener("mousemove", (event) => {
-    if (document.pointerLockElement === renderer.domElement) {
-        yaw -= event.movementX * mouseSensitivity;
-        pitch -= event.movementY * mouseSensitivity;
-        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-    }
-});
-
-// ----- タッチ操作で視点回転と破壊・設置 -----
 let lastTouchX = null, lastTouchY = null;
 let touchHoldTimeout = null;
 let isLongPress = false;
+let isTouchMoving = false; // ← 追加：視点移動中フラグ
 
 renderer.domElement.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) return; // 1本指のみ対応
+    if (e.touches.length !== 1) return;
 
     isLongPress = false;
+    isTouchMoving = false;  // タッチ開始時は移動なしフラグにリセット
 
     lastTouchX = e.touches[0].clientX;
     lastTouchY = e.touches[0].clientY;
 
-    // 500ms経過したら長押しと判定して破壊の繰り返し開始
     touchHoldTimeout = setTimeout(() => {
         isLongPress = true;
         startInteraction("destroy", "touch");
@@ -2141,6 +2065,12 @@ renderer.domElement.addEventListener("touchmove", (e) => {
     const touch = e.touches[0];
     const deltaX = touch.clientX - lastTouchX;
     const deltaY = touch.clientY - lastTouchY;
+
+    // 一定以上の移動量で視点移動とみなす（例：5px）
+    if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+        isTouchMoving = true;
+    }
+
     lastTouchX = touch.clientX;
     lastTouchY = touch.clientY;
 
@@ -2155,16 +2085,22 @@ renderer.domElement.addEventListener("touchmove", (e) => {
 renderer.domElement.addEventListener("touchend", (e) => {
     clearTimeout(touchHoldTimeout);
 
-    if (isLongPress) {
-        // 長押し中断なので破壊の繰り返しを停止
-        stopInteraction("touch");
+    if (!isTouchMoving) {
+        if (isLongPress) {
+            stopInteraction("touch");
+        } else {
+            interactWithBlock("place");
+        }
     } else {
-        // 短いタップなので設置を1回だけ実行
-        interactWithBlock("place");
+        // 視点移動中はブロック操作しない
+        if (isLongPress) {
+            stopInteraction("touch");
+        }
     }
 
     lastTouchX = lastTouchY = null;
 }, false);
+
 
 const keys = {};
 document.addEventListener("keydown", (e) => {
