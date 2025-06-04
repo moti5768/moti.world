@@ -121,7 +121,7 @@ let voxelModifications = {};  // 例: { "5_10_3": 1, … }
 
 // まずキャッシュ変数を宣言・初期化する
 
-const MAX_CACHE_SIZE = 10000; // おすすめのキャッシュサイズ
+const MAX_CACHE_SIZE = 15000; // おすすめのキャッシュサイズ
 const terrainHeightCache = new Map();
 // 定数も同様にグローバル領域に外だししておきます
 const BASE_SCALE = 0.005;
@@ -1537,171 +1537,111 @@ function getCachedFaceGeometry(faceKey) {
  * instancing 用、かつ隣接ブロック判定時に「自分と隣接ブロックが両方透明なら内部面は描画しない」
  * という条件も入れるため、currentBlock（現在のブロックタイプ）を渡します。
  */
-function isVisibleBlock(wx, wy, wz, currentBlock, visCache, getNeighbor) {
-    const key = `${wx}_${wy}_${wz}`;
-    if (key in visCache) return visCache[key];
-
-    const isCurrentTransparent = isTransparentBlock(currentBlock);
-    const currentIsSolid = !isCurrentTransparent;
-
-    for (let i = 0; i < faceKeys.length; i++) {
-        const normal = faceData[faceKeys[i]].normal;
-        const neighbor = getNeighbor(wx, wy, wz, normal);
-
-        // 隣が空（空気 or 空）または「透明な別のブロック」なら可視
-        if (
-            neighbor === BLOCK_TYPES.SKY ||
-            neighbor === 0 ||
-            (isTransparentBlock(neighbor) && (currentIsSolid || neighbor !== currentBlock))
-        ) {
-            return (visCache[key] = true);
-        }
-    }
-
-    return (visCache[key] = false);
-}
-
-
+// 軽量・簡潔化した generateChunkMeshMultiTexture
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
-    if (![CHUNK_SIZE, CHUNK_HEIGHT, BEDROCK_LEVEL].every(Number.isFinite))
-        throw new Error("CHUNK_SIZE, CHUNK_HEIGHT, BEDROCK_LEVELが未定義");
-
     const baseX = cx * CHUNK_SIZE, baseZ = cz * CHUNK_SIZE;
     const idx = (x, y, z) => x + CHUNK_SIZE * (y + CHUNK_HEIGHT * z);
-
-    // voxelData はワールド・改変済みの状態を取得する関数を統一的に使う想定
     const voxelData = new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE);
-    const modMap = voxelModifications instanceof Map ? voxelModifications : new Map(Object.entries(voxelModifications || {}));
 
-    for (let z = 0; z < CHUNK_SIZE; z++) {
-        for (let y = 0; y < CHUNK_HEIGHT; y++) {
+    const modMap = voxelModifications instanceof Map ? voxelModifications : new Map(Object.entries(voxelModifications || {}));
+    for (let z = 0; z < CHUNK_SIZE; z++)
+        for (let y = 0; y < CHUNK_HEIGHT; y++)
             for (let x = 0; x < CHUNK_SIZE; x++) {
                 const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
                 const key = `${wx}_${wy}_${wz}`;
                 voxelData[idx(x, y, z)] = modMap.get(key) ?? getVoxelAtWorld(wx, wy, wz);
             }
-        }
-    }
 
     const container = new THREE.Object3D();
-
-    const transparentCache = new Map();
-    const isTransparent = id =>
-        transparentCache.has(id) ? transparentCache.get(id) : transparentCache.set(id, getBlockConfiguration(id)?.transparent ?? false).get(id);
-
-    const getNeighbor = (wx, wy, wz, [dx, dy, dz]) => {
-        const nx = wx + dx, ny = wy + dy, nz = wz + dz;
-        const inBounds =
-            nx >= baseX && nx < baseX + CHUNK_SIZE &&
-            ny >= BEDROCK_LEVEL && ny < BEDROCK_LEVEL + CHUNK_HEIGHT &&
-            nz >= baseZ && nz < baseZ + CHUNK_SIZE;
-        const nKey = `${nx}_${ny}_${nz}`;
-        return inBounds ? voxelData[idx(nx - baseX, ny - BEDROCK_LEVEL, nz - baseZ)] : modMap.get(nKey) ?? getVoxelAtWorld(nx, ny, nz);
+    const get = (x, y, z) => {
+        const inChunk = x >= 0 && x < CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT && z >= 0 && z < CHUNK_SIZE;
+        if (inChunk) return voxelData[idx(x, y, z)];
+        const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
+        const key = `${wx}_${wy}_${wz}`;
+        return modMap.get(key) ?? getVoxelAtWorld(wx, wy, wz);
     };
 
     if (useInstancing) {
-        // Instancing 用マップ
-        const instMap = {};
-        const dummy = new THREE.Object3D();
-
-        for (let z = 0; z < CHUNK_SIZE; z++) {
-            for (let y = 0; y < CHUNK_HEIGHT; y++) {
+        const instMap = {}, dummy = new THREE.Object3D();
+        for (let z = 0; z < CHUNK_SIZE; z++)
+            for (let y = 0; y < CHUNK_HEIGHT; y++)
                 for (let x = 0; x < CHUNK_SIZE; x++) {
-                    const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
                     const type = voxelData[idx(x, y, z)];
                     if (!type || type === BLOCK_TYPES.SKY) continue;
                     const cfg = getBlockConfiguration(type);
-                    if (!cfg) continue;
+                    if (!cfg || cfg.customGeometry || ["stairs", "slab", "cross", "water"].includes(cfg.geometryType)) continue;
 
-                    // カスタムジオメトリはInstancing非対応と仮定
-                    if (cfg.customGeometry) continue;
-
-                    if (["stairs", "slab", "cross", "water"].includes(cfg.geometryType)) continue;
-
-                    // 近隣が見えるか（透過判定含む）
-                    if (!isVisibleBlock(wx, wy, wz, type, {}, n => getNeighbor(wx, wy, wz, n))) continue;
-
-                    (instMap[type] ??= []).push([wx + 0.5, wy + 0.5, wz + 0.5]);
+                    const isTransparent = cfg.transparent ?? false;
+                    let visible = false;
+                    for (const { normal: [dx, dy, dz] } of Object.values(faceData)) {
+                        const neighbor = get(x + dx, y + dy, z + dz);
+                        const nCfg = getBlockConfiguration(neighbor);
+                        const nTransparent = nCfg?.transparent ?? false;
+                        const nCustom = !!nCfg?.customGeometry;
+                        if (!neighbor || neighbor === BLOCK_TYPES.SKY ||
+                            (nTransparent && (!isTransparent || neighbor !== type)) ||
+                            (nCustom && !cfg.customGeometry)) {
+                            visible = true; break;
+                        }
+                    }
+                    if (!visible) continue;
+                    (instMap[type] ??= []).push([baseX + x + 0.5, BEDROCK_LEVEL + y + 0.5, baseZ + z + 0.5]);
                 }
-            }
-        }
-
-        for (const [type, positions] of Object.entries(instMap)) {
-            const mats = getBlockMaterials(Number(type));
+        for (const [type, list] of Object.entries(instMap)) {
+            const mats = getBlockMaterials(+type);
             if (!mats?.length) continue;
-            const instMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mats[0].clone(), positions.length);
-            positions.forEach(([x, y, z], i) => {
-                dummy.position.set(x, y, z);
-                dummy.updateMatrix();
-                instMesh.setMatrixAt(i, dummy.matrix);
+            const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mats[0].clone(), list.length);
+            list.forEach(([x, y, z], i) => {
+                dummy.position.set(x, y, z); dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix);
             });
-            Object.assign(instMesh, { castShadow: true, receiveShadow: true, frustumCulled: true });
-            container.add(instMesh);
+            Object.assign(inst, { castShadow: true, receiveShadow: true, frustumCulled: true });
+            container.add(inst);
         }
     } else {
-        // フルブロック＆カスタムジオメトリ混在処理
-
-        // faceGeoms[type][matIndex] = [geometry, ...]
         const faceGeoms = {};
-
-        for (let z = 0; z < CHUNK_SIZE; z++) {
-            for (let y = 0; y < CHUNK_HEIGHT; y++) {
+        for (let z = 0; z < CHUNK_SIZE; z++)
+            for (let y = 0; y < CHUNK_HEIGHT; y++)
                 for (let x = 0; x < CHUNK_SIZE; x++) {
-                    const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
                     const type = voxelData[idx(x, y, z)];
                     if (!type || type === BLOCK_TYPES.SKY) continue;
-
                     const cfg = getBlockConfiguration(type);
                     if (!cfg) continue;
-
+                    const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
                     if (cfg.customGeometry) {
-                        // カスタムジオメトリは専用生成関数を呼び、他のジオメトリ生成はスキップ
                         const mesh = createCustomBlockMesh(type, new THREE.Vector3(wx, wy, wz));
                         if (mesh) container.add(mesh);
                         continue;
                     }
-
-                    // フルブロックジオメトリ
                     if (["stairs", "slab", "cross"].includes(cfg.geometryType)) continue;
-
-                    for (const [face, { normal }] of Object.entries(faceData)) {
-                        const neighbor = getNeighbor(wx, wy, wz, normal);
-                        const isVisible =
-                            !neighbor || neighbor === BLOCK_TYPES.SKY ||
-                            (isTransparent(neighbor) && (!isTransparent(type) || neighbor !== type));
-                        if (!isVisible) continue;
+                    for (const [face, { normal: [dx, dy, dz] }] of Object.entries(faceData)) {
+                        const neighbor = get(x + dx, y + dy, z + dz);
+                        const nCfg = getBlockConfiguration(neighbor);
+                        const visible = !neighbor || neighbor === BLOCK_TYPES.SKY ||
+                            ((nCfg?.transparent ?? false) && (!(cfg.transparent ?? false) || neighbor !== type)) ||
+                            (!!nCfg?.customGeometry && !cfg.customGeometry);
+                        if (!visible) continue;
 
                         const geom = getCachedFaceGeometry(face).clone().applyMatrix4(new THREE.Matrix4().makeTranslation(wx, wy, wz));
                         const colors = face === "py"
                             ? ["LL", "LR", "UR", "UL"].flatMap(c => Array(3).fill(computeTopShadowFactorForCorner(wx, wy, wz, c)))
                             : Array(12).fill(1);
                         geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
-
                         const matIdx = faceToMaterialIndex[face];
-                        faceGeoms[type] ??= {};
-                        faceGeoms[type][matIdx] ??= [];
-                        faceGeoms[type][matIdx].push(geom);
+                        (faceGeoms[type] ??= {})[matIdx] ??= []; faceGeoms[type][matIdx].push(geom);
                     }
                 }
-            }
-        }
-
-        for (const [type, groups] of Object.entries(faceGeoms)) {
-            const subGeoms = Object.values(groups).map(mergeBufferGeometries);
+        for (const [type, group] of Object.entries(faceGeoms)) {
+            const subGeoms = Object.values(group).map(mergeBufferGeometries);
             const finalGeom = mergeBufferGeometries(subGeoms);
             finalGeom.clearGroups();
             let offset = 0;
-            Object.keys(groups).forEach((matKey, i) => {
+            Object.keys(group).forEach((matIdx, i) => {
                 const count = subGeoms[i].index.count;
-                finalGeom.addGroup(offset, count, Number(matKey));
+                finalGeom.addGroup(offset, count, +matIdx);
                 offset += count;
             });
             finalGeom.computeBoundingSphere();
-
-            const mats = getBlockMaterials(Number(type))?.map(m => Object.assign(m.clone(), {
-                vertexColors: THREE.VertexColors,
-                side: THREE.FrontSide
-            }));
+            const mats = getBlockMaterials(+type)?.map(m => Object.assign(m.clone(), { vertexColors: THREE.VertexColors, side: THREE.FrontSide }));
             const mesh = new THREE.Mesh(finalGeom, mats);
             Object.assign(mesh, { castShadow: true, receiveShadow: true, frustumCulled: true });
             container.add(mesh);
@@ -1711,39 +1651,75 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 }
 
 // カスタムジオメトリ生成専用関数（例）
-function createCustomBlockMesh(type, position) {
-    const cfg = getBlockConfiguration(type);
-    if (!cfg || !cfg.customGeometry) return null;
-
-    const geometry = cfg.customGeometry.clone();
-    const materials = getBlockMaterials(type) || [new THREE.MeshStandardMaterial({ color: 0xffffff })];
-
-    materials.forEach(m => {
-        m.vertexColors = THREE.VertexColors;
-        m.transparent = false;  // 明示的に透明を切る
-        m.opacity = 1.0;
-        m.depthWrite = true;
-        m.depthTest = true;
-    });
-
-    const mesh = new THREE.Mesh(geometry, materials.length === 1 ? materials[0] : materials);
+const materialCache = new Map();
+const collisionCache = new Map();
+function createCustomBlockMesh(type, position, rotation) {
+    const config = getBlockConfiguration(type);
+    if (!config) {
+        console.error("Unknown block type:", type);
+        return null;
+    }
+    // geometry取得
+    let geometry;
+    if (config.geometryType) {
+        if (!geometryCache.has(type)) {
+            geometryCache.set(type, getBlockGeometry(config.geometryType, config));
+        }
+        geometry = geometryCache.get(type);
+    } else if (config.customGeometry) {
+        geometry = typeof config.customGeometry.clone === 'function'
+            ? config.customGeometry.clone()
+            : config.customGeometry;
+    } else {
+        console.warn(`No geometry for block type: ${type}`);
+        return null;
+    }
+    // material取得
+    let materials = materialCache.get(type);
+    if (!materials) {
+        materials = getBlockMaterials(type);
+        materialCache.set(type, materials);
+    }
+    const useMultiMaterial = Array.isArray(materials) && materials.length > 1 && geometry.groups?.length > 0;
+    const meshGeometry = config.geometryType ? geometry : geometry.clone();
+    const meshMaterial = useMultiMaterial ? materials : materials[0];
+    const mesh = new THREE.Mesh(meshGeometry, meshMaterial);
     mesh.position.copy(position);
+    if (rotation) mesh.rotation.copy(rotation);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = true;
-
-    // 破壊判定やインタラクションに使うならuserDataに情報を入れる
-    mesh.userData.isCustomBlock = true;
-    mesh.userData.blockType = type;
-
+    // 衝突キャッシュ取得
+    let collisionBoxes = collisionCache.get(type);
+    if (!collisionBoxes) {
+        if (typeof config.customCollision === "function") {
+            collisionBoxes = config.customCollision(new THREE.Vector3(0, 0, 0));
+        } else if (config.collision) {
+            const height = config.geometryType === "slab" ? 0.5 : 1;
+            collisionBoxes = [
+                new THREE.Box3(
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(1, height, 1)
+                )
+            ];
+        } else {
+            collisionBoxes = [];
+        }
+        collisionCache.set(type, collisionBoxes);
+    }
+    const worldCollisionBoxes = collisionBoxes.map(box => {
+        const translated = box.clone();
+        translated.min.add(position);
+        translated.max.add(position);
+        return translated;
+    });
+    mesh.userData = {
+        isCustomBlock: !!config.customGeometry,
+        blockType: type,
+        collisionBoxes: worldCollisionBoxes
+    };
+    mesh.updateMatrixWorld();
     return mesh;
-}
-
-
-
-
-function isTransparentBlock(blockId) {
-    return getBlockConfiguration(blockId)?.transparent ?? false;
 }
 
 /**
@@ -1942,17 +1918,12 @@ function updateAffectedChunks(blockPos) {
  * @returns {boolean} 交差している場合 true、そうでなければ false
  */
 function blockIntersectsPlayer(blockPos, playerAABB, tolerance = 0.001) {
-    // ブロックは 1x1x1 のサイズとする
-    const blockAABB = {
-        min: new THREE.Vector3(blockPos.x, blockPos.y, blockPos.z),
-        max: new THREE.Vector3(blockPos.x + 1, blockPos.y + 1, blockPos.z + 1)
-    };
-
-    // 以下、各軸で AABB の間にわずかな隙間（tolerance）があれば交差していないと見なす
-    if (blockAABB.max.x <= playerAABB.min.x + tolerance || blockAABB.min.x >= playerAABB.max.x - tolerance) return false;
-    if (blockAABB.max.y <= playerAABB.min.y + tolerance || blockAABB.min.y >= playerAABB.max.y - tolerance) return false;
-    if (blockAABB.max.z <= playerAABB.min.z + tolerance || blockAABB.min.z >= playerAABB.max.z - tolerance) return false;
-    return true;
+    const min = blockPos, max = blockPos.clone().addScalar(1);
+    return !(
+        max.x <= playerAABB.min.x + tolerance || min.x >= playerAABB.max.x - tolerance ||
+        max.y <= playerAABB.min.y + tolerance || min.y >= playerAABB.max.y - tolerance ||
+        max.z <= playerAABB.min.z + tolerance || min.z >= playerAABB.max.z - tolerance
+    );
 }
 
 // --- interactWithBlock 関数 ---
@@ -1962,169 +1933,87 @@ function blockIntersectsPlayer(blockPos, playerAABB, tolerance = 0.001) {
 const placedCustomBlocks = {};
 const raycaster = new THREE.Raycaster();
 
-/**
- * ブロックへの操作（"destroy" または "place"）を行う関数（改良版）
- */
 function interactWithBlock(action) {
-    // レイキャスターの初期化
-
     raycaster.near = 0.01;
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
 
     const objects = [...Object.values(loadedChunks), ...Object.values(placedCustomBlocks)];
     let intersects = [];
     for (const obj of objects) {
-        if (obj.isInstancedMesh) {
-            obj.raycast(raycaster, intersects);
-        } else {
-            intersects.push(...raycaster.intersectObject(obj, true));
-        }
+        obj.isInstancedMesh ? obj.raycast(raycaster, intersects) : intersects.push(...raycaster.intersectObject(obj, true));
     }
     intersects.sort((a, b) => a.distance - b.distance);
 
-    // 交差情報取得（破壊の場合は、交差がなければプレイヤー頭部あたりを代用）
     let intersect = intersects[0];
     if (!intersect && action === "destroy") {
         const headY = player.position.y + getCurrentPlayerHeight() * 0.85;
-        intersect = {
-            point: new THREE.Vector3(
-                Math.floor(player.position.x),
-                Math.floor(headY),
-                Math.floor(player.position.z)
-            ),
-            face: { normal: new THREE.Vector3(0, 0, 0) }
-        };
+        intersect = { point: new THREE.Vector3(Math.floor(player.position.x), Math.floor(headY), Math.floor(player.position.z)), face: { normal: new THREE.Vector3() } };
     }
-    if (!intersect) {
-        console.warn("設置対象のブロックが取得できませんでした。");
-        return;
-    }
+    if (!intersect) return console.warn("設置対象のブロックが取得できませんでした。");
 
-    // 設置の場合、通常は face.normal によるオフセット（+0.5）をかけるが…
-    const factor = (action === "destroy" ? -0.5 : 0.5);
-    // 候補A: 通常のオフセットを用いたセル座標
-    let candidateA = new THREE.Vector3(
-        Math.floor(intersect.point.x + intersect.face.normal.x * factor),
-        Math.floor(intersect.point.y + intersect.face.normal.y * factor),
-        Math.floor(intersect.point.z + intersect.face.normal.z * factor)
-    );
-    // 候補B: クリック位置から、face.normal の逆方向に僅かにずらしてから Math.floor
+    const factor = action === "destroy" ? -0.5 : 0.5;
     const epsilon = 0.01;
-    let candidateB = new THREE.Vector3(
-        Math.floor(intersect.point.x - intersect.face.normal.x * epsilon),
-        Math.floor(intersect.point.y - intersect.face.normal.y * epsilon),
-        Math.floor(intersect.point.z - intersect.face.normal.z * epsilon)
-    );
+    const p = intersect.point, n = intersect.face.normal;
+    const candidateA = new THREE.Vector3(Math.floor(p.x + n.x * factor), Math.floor(p.y + n.y * factor), Math.floor(p.z + n.z * factor));
+    const candidateB = new THREE.Vector3(Math.floor(p.x - n.x * epsilon), Math.floor(p.y - n.y * epsilon), Math.floor(p.z - n.z * epsilon));
 
-    // まず、生のセル座標候補B で水ブロックがあるか調べる
     const rawKey = `${candidateB.x}_${candidateB.y}_${candidateB.z}`;
-    let rawVoxel = rawKey in voxelModifications
-        ? voxelModifications[rawKey]
-        : getVoxelAtWorld(candidateB.x, candidateB.y, candidateB.z, globalTerrainCache, true);
+    let rawVoxel = voxelModifications[rawKey] ?? getVoxelAtWorld(candidateB.x, candidateB.y, candidateB.z, globalTerrainCache, true);
     let rawConfig = getBlockConfiguration(rawVoxel);
 
-    // 候補B が水ブロックならそちらを採用、そうでなければ候補A を使う
-    let candidateBlockPos = (rawConfig && rawConfig.geometryType === "water") ? candidateB : candidateA;
+    let candidateBlockPos = rawConfig?.geometryType === "water" ? candidateB : candidateA;
     const key = `${candidateBlockPos.x}_${candidateBlockPos.y}_${candidateBlockPos.z}`;
+    let finalVoxel = voxelModifications[key] ?? getVoxelAtWorld(candidateBlockPos.x, candidateBlockPos.y, candidateBlockPos.z, globalTerrainCache, true);
+    const config = action === "place" ? getBlockConfiguration(activeBlockType) : getBlockConfiguration(finalVoxel);
 
-    // セル状態取得（voxelModifications 優先）
-    let finalVoxel = key in voxelModifications
-        ? voxelModifications[key]
-        : getVoxelAtWorld(candidateBlockPos.x, candidateBlockPos.y, candidateBlockPos.z, globalTerrainCache, true);
-
-    // 設置の場合は、activeBlockType から新規ブロックの設定を取得
-    const config = action === "place"
-        ? getBlockConfiguration(activeBlockType)
-        : getBlockConfiguration(finalVoxel);
-
-    // 状態チェック
     if (action === "destroy") {
-        if (finalVoxel === BLOCK_TYPES.SKY) {
-            console.warn("該当セルは空気のため破壊できません。");
-            return;
-        }
-    }
-    if (action === "place") {
+        if (finalVoxel === BLOCK_TYPES.SKY) return console.warn("該当セルは空気のため破壊できません。");
+    } else if (action === "place") {
         if (finalVoxel !== BLOCK_TYPES.SKY) {
             const currentConfig = getBlockConfiguration(finalVoxel);
-            // もし既存ブロックが水ブロックなら、削除して空気に戻す
-            if (currentConfig && currentConfig.geometryType === "water") {
-                if (placedCustomBlocks[key]) {
-                    scene.remove(placedCustomBlocks[key]);
-                    delete placedCustomBlocks[key];
-                }
+            if (currentConfig?.geometryType === "water") {
+                if (placedCustomBlocks[key]) { scene.remove(placedCustomBlocks[key]); delete placedCustomBlocks[key]; }
                 voxelModifications[key] = BLOCK_TYPES.SKY;
                 finalVoxel = BLOCK_TYPES.SKY;
-            } else {
-                console.warn("このセルには既にブロックが配置されています。");
-                return;
-            }
+            } else return console.warn("このセルには既にブロックが配置されています。");
         }
     }
 
-    // ブロック中心の計算（slab の場合は y + 0.25 に補正）
-    const blockCenter = (config && config.geometryType === "slab")
+    const blockCenter = config?.geometryType === "slab"
         ? new THREE.Vector3(candidateBlockPos.x + 0.5, candidateBlockPos.y + 0.25, candidateBlockPos.z + 0.5)
         : new THREE.Vector3(candidateBlockPos.x + 0.5, candidateBlockPos.y + 0.5, candidateBlockPos.z + 0.5);
 
-    if (player.position.distanceTo(blockCenter) > BLOCK_INTERACT_RANGE) {
-        console.warn(`${action === "destroy" ? "破壊" : "設置"}対象が範囲外です。`);
-        return;
-    }
+    if (player.position.distanceTo(blockCenter) > BLOCK_INTERACT_RANGE) return console.warn(`${action === "destroy" ? "破壊" : "設置"}対象が範囲外です。`);
 
-    // 破壊または設置の処理
     if (action === "destroy") {
         createMinecraftBreakParticles(blockCenter, finalVoxel, 1.0);
-        if (config && (config.geometryType === "slab" ||
-            config.geometryType === "stairs" ||
-            config.geometryType === "cross" ||
-            config.geometryType === "water")) {
-            if (placedCustomBlocks[key]) {
-                scene.remove(placedCustomBlocks[key]);
-                delete placedCustomBlocks[key];
-            }
+        if (config && ["slab", "stairs", "cross", "water"].includes(config.geometryType)) {
+            if (placedCustomBlocks[key]) { scene.remove(placedCustomBlocks[key]); delete placedCustomBlocks[key]; }
         }
         voxelModifications[key] = BLOCK_TYPES.SKY;
         console.log("破壊完了：", candidateBlockPos);
-    } else if (action === "place") {
-        if (config && config.collision) {
-            const playerAABB = getPlayerAABB();
-            if (blockIntersectsPlayer(candidateBlockPos, playerAABB, 0.05)) {
-                console.warn("プレイヤーの領域に近すぎるため、設置できません。");
-                return;
-            }
+    } else {
+        if (config?.collision) {
+            if (blockIntersectsPlayer(candidateBlockPos, getPlayerAABB(), 0.05)) return console.warn("プレイヤーの領域に近すぎるため、設置できません。");
         }
-        if (candidateBlockPos.y >= BEDROCK_LEVEL + CHUNK_HEIGHT) {
-            console.warn("高さ制限により、設置できません。");
-            return;
-        }
+        if (candidateBlockPos.y >= BEDROCK_LEVEL + CHUNK_HEIGHT) return console.warn("高さ制限により、設置できません。");
         voxelModifications[key] = activeBlockType;
         console.log("設置完了：", candidateBlockPos, "タイプ：", activeBlockType);
-        if (config && (config.geometryType === "stairs" ||
-            config.geometryType === "slab" ||
-            config.geometryType === "cross" ||
-            config.geometryType === "water")) {
+        if (config && ["stairs", "slab", "cross", "water"].includes(config.geometryType)) {
             const placedMesh = createBlockMesh(activeBlockType, candidateBlockPos);
             placedMesh.updateMatrixWorld(true);
             if (config.customCollision) {
-                placedMesh.userData.collisionBoxes = config.customCollision(new THREE.Vector3(0, 0, 0))
-                    .map(lb => {
-                        const wb = lb.clone();
-                        wb.min.add(candidateBlockPos);
-                        wb.max.add(candidateBlockPos);
-                        return wb;
-                    });
+                placedMesh.userData.collisionBoxes = config.customCollision(new THREE.Vector3())
+                    .map(lb => lb.clone().min.add(candidateBlockPos) && lb.clone().max.add(candidateBlockPos));
             }
             scene.add(placedMesh);
             placedCustomBlocks[key] = placedMesh;
         }
     }
 
-    // チャンク更新
     const chunkX = Math.floor(candidateBlockPos.x / CHUNK_SIZE);
     const chunkZ = Math.floor(candidateBlockPos.z / CHUNK_SIZE);
     markColumnModified(`${chunkX}_${chunkZ}`, candidateBlockPos.x, candidateBlockPos.z, candidateBlockPos.y);
-    //updateAffectedChunks を呼び出して、内部で隣接チャンクもデバウンス更新要求する
     updateAffectedChunks(candidateBlockPos);
     console.log("操作完了 (" + action + ") at: ", candidateBlockPos);
 }
