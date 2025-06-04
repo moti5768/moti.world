@@ -2043,8 +2043,27 @@ function processPendingChunkUpdatesBatch(batchSize = 2) {
 const interactIntervalIds = {
     left: null,
     right: null,
+    touch: null,
 };
 
+function startInteraction(action, key) {
+    if (interactIntervalIds[key] !== null) {
+        clearInterval(interactIntervalIds[key]);
+    }
+    interactWithBlock(action);
+    interactIntervalIds[key] = setInterval(() => {
+        interactWithBlock(action);
+    }, 150);
+}
+
+function stopInteraction(key) {
+    if (interactIntervalIds[key] !== null) {
+        clearInterval(interactIntervalIds[key]);
+        interactIntervalIds[key] = null;
+    }
+}
+
+// ----- マウス操作 -----
 renderer.domElement.addEventListener("mousedown", (event) => {
     if (document.pointerLockElement !== renderer.domElement) return;
 
@@ -2053,32 +2072,21 @@ renderer.domElement.addEventListener("mousedown", (event) => {
     if (event.button === 0) {        // 左クリック：破壊
         action = "destroy";
         buttonKey = "left";
-    } else if (event.button === 2) {   // 右クリック：設置
+    } else if (event.button === 2) { // 右クリック：設置
         action = "place";
         buttonKey = "right";
     }
 
     if (action && buttonKey) {
-        // 既存のインターバルがあれば念のためクリアしておく
-        if (interactIntervalIds[buttonKey] !== null) {
-            clearInterval(interactIntervalIds[buttonKey]);
-        }
-        interactWithBlock(action);
-        // 指定したインターバルをセット
-        interactIntervalIds[buttonKey] = setInterval(() => {
-            interactWithBlock(action);
-        }, 150);
+        startInteraction(action, buttonKey);
     }
 }, false);
 
-// mouseup イベントでは、どのボタンが離されたかを確認して個別にクリアする
 document.addEventListener("mouseup", (event) => {
-    if (event.button === 0 && interactIntervalIds.left !== null) {
-        clearInterval(interactIntervalIds.left);
-        interactIntervalIds.left = null;
-    } else if (event.button === 2 && interactIntervalIds.right !== null) {
-        clearInterval(interactIntervalIds.right);
-        interactIntervalIds.right = null;
+    if (event.button === 0) {
+        stopInteraction("left");
+    } else if (event.button === 2) {
+        stopInteraction("right");
     }
 }, false);
 
@@ -2086,17 +2094,19 @@ renderer.domElement.addEventListener("contextmenu", (e) => {
     e.preventDefault();
 }, false);
 
-/* ======================================================
-   【入力イベント設定】
-   ====================================================== */
+// ----- ポインタロック -----
 renderer.domElement.addEventListener("click", () => {
-    renderer.domElement.requestPointerLock();
+    // タッチ環境ではポインタロックしない
+    if (!("ontouchstart" in window)) {
+        renderer.domElement.requestPointerLock();
+    }
 });
 
 document.addEventListener("pointerlockchange", () => {
     console.log(document.pointerLockElement === renderer.domElement ? "Pointer Locked" : "Pointer Unlocked");
 });
 
+// ----- マウス移動による視点操作 -----
 document.addEventListener("mousemove", (event) => {
     if (document.pointerLockElement === renderer.domElement) {
         yaw -= event.movementX * mouseSensitivity;
@@ -2105,33 +2115,55 @@ document.addEventListener("mousemove", (event) => {
     }
 });
 
+// ----- タッチ操作で視点回転と破壊・設置 -----
 let lastTouchX = null, lastTouchY = null;
+let touchHoldTimeout = null;
+let isLongPress = false;
+
 renderer.domElement.addEventListener("touchstart", (e) => {
-    if (e.touches.length === 1) {
-        lastTouchX = e.touches[0].clientX;
-        lastTouchY = e.touches[0].clientY;
-    }
+    if (e.touches.length !== 1) return; // 1本指のみ対応
+
+    isLongPress = false;
+
+    lastTouchX = e.touches[0].clientX;
+    lastTouchY = e.touches[0].clientY;
+
+    // 500ms経過したら長押しと判定して破壊の繰り返し開始
+    touchHoldTimeout = setTimeout(() => {
+        isLongPress = true;
+        startInteraction("destroy", "touch");
+    }, 500);
 }, false);
 
 renderer.domElement.addEventListener("touchmove", (e) => {
-    if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        const deltaX = touch.clientX - lastTouchX;
-        const deltaY = touch.clientY - lastTouchY;
-        lastTouchX = touch.clientX;
-        lastTouchY = touch.clientY;
-        const touchSensitivity = 0.005;
-        yaw -= deltaX * touchSensitivity;
-        pitch -= deltaY * touchSensitivity;
-        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-    }
+    if (e.touches.length !== 1) return;
+
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - lastTouchX;
+    const deltaY = touch.clientY - lastTouchY;
+    lastTouchX = touch.clientX;
+    lastTouchY = touch.clientY;
+
+    const touchSensitivity = 0.005;
+    yaw -= deltaX * touchSensitivity;
+    pitch -= deltaY * touchSensitivity;
+    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+
     e.preventDefault();
 }, false);
 
 renderer.domElement.addEventListener("touchend", (e) => {
-    if (e.touches.length === 0) {
-        lastTouchX = lastTouchY = null;
+    clearTimeout(touchHoldTimeout);
+
+    if (isLongPress) {
+        // 長押し中断なので破壊の繰り返しを停止
+        stopInteraction("touch");
+    } else {
+        // 短いタップなので設置を1回だけ実行
+        interactWithBlock("place");
     }
+
+    lastTouchX = lastTouchY = null;
 }, false);
 
 const keys = {};
@@ -2179,23 +2211,6 @@ document.addEventListener("keydown", (e) => {
         }
     }
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 const createCanvas = size => {
