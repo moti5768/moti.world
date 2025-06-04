@@ -2344,20 +2344,16 @@ for (let i = 0; i < slotCount; i++) {
     item.setAttribute("data-blocktype", blockConfig ? blockConfig.id : "");
     if (blockConfig) {
         const previewCanvas = createHotbarItemPreview(blockConfig, 64);
-        previewCanvas.style.width = "64px";
-        previewCanvas.style.height = "64px";
+        previewCanvas.style.width = "55px";
+        previewCanvas.style.height = "55px";
         item.appendChild(previewCanvas);
-    } else {
-        item.style.background = "rgba(0, 0, 0, 0.5";
     }
     hotbarEl.appendChild(item);
 }
 
-
 // グローバルスコープにホットバー選択用のインデックスを定義（初期値は 0）
 let activeBlockType = 1;
 let activeHotbarIndex = 0;
-
 // ホットバーアイテムクリック時
 document.querySelectorAll("#hotbar .hotbar-item").forEach((item, index) => {
     item.addEventListener("click", () => {
