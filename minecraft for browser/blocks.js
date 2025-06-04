@@ -157,17 +157,9 @@ for (const key in BLOCK_CONFIG) {
     BLOCK_TYPES[key] = BLOCK_CONFIG[key].id;
 }
 
-// ----- 利点 -----
-// ・各ブロック設定は createBlockConfig() を通すことで、共通のプロパティが自動挿入されるため、
-//   細かい設定が必要な場合には、個々のカスタム設定だけを書けばよくなります。
-// ・たとえば、「硬さ」や「ドロップ」などもデフォルト項目に含めているので、後から詳細に拡張可能です。
-// ・さらに、geometryType による条件分岐をメイン処理側で行うと、今後新しいジオメトリを追加する際も、
-//   BLOCK_CONFIG 側で geometryType や customCollision を定義するだけで済むため、コードの保守性が向上します。
-
-
 // テクスチャローダーとキャッシュ
 const textureLoader = new THREE.TextureLoader();
-const textureCache = {};
+const textureCache = Object.create(null); // より高速なプレーンオブジェクト
 
 // キャッシュ付きでテクスチャをロードする関数
 function loadTexture(path) {
@@ -187,58 +179,66 @@ function loadTexture(path) {
     return textureCache[path];
 }
 
-// BLOCK_CONFIG の設定情報から、テクスチャ付きマテリアル群を生成する関数
+const materialCache = new Map();
+
+function cachedLoadTexture(path) {
+    if (!path) return null;
+    if (textureCache[path]) return textureCache[path];
+    const tex = loadTexture(path);
+    textureCache[path] = tex;
+    return tex;
+}
+
 function createMaterialsFromBlockConfig(blockConfig) {
     const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
 
-    // stairs と slab は不透明にしたいのでそれらはまとめる
-    const isStairsOrSlab = blockConfig.geometryType === "stairs" || blockConfig.geometryType === "slab";
-    // cross は独自に設定する
-    const isCross = blockConfig.geometryType === "cross";
-    // water は独自に設定する
-    const isWater = blockConfig.geometryType === "water";
+    // キャッシュキーの生成を最適化（文字列化のオーバーヘッド削減）
+    const textureKeys = blockConfig.textures.all
+        ? `all:${blockConfig.textures.all}`
+        : FACE_ORDER.map(face => blockConfig.textures[face] || blockConfig.textures.side || "none").join(",");
 
-    // stairs/slab, cross は opacity を 1 にする
-    const finalOpacity = (isStairsOrSlab || isCross) ? 1.0 : (blockConfig.transparent ? 0.7 : 1.0);
+    const cacheKey = `${blockConfig.geometryType}|${blockConfig.transparent}|${textureKeys}`;
+    if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
 
-    // stairs/slab は不透明に、cross は透明にしたい場合は true
-    const finalTransparent = isStairsOrSlab ? false : (isCross ? true : blockConfig.transparent);
+    const { geometryType, transparent } = blockConfig;
+    const isStairsOrSlab = geometryType === "stairs" || geometryType === "slab";
+    const isCross = geometryType === "cross";
+    const isWater = geometryType === "water";
 
-    // cross の場合だけは両面描画、その他は FrontSide（ガラスブロックなどは FrontSide を維持）
+    const finalOpacity = (isStairsOrSlab || isCross) ? 1.0 : (transparent ? 0.7 : 1.0);
+    const finalTransparent = isStairsOrSlab ? false : (isCross ? true : transparent);
     const sideSetting = isCross ? THREE.DoubleSide : THREE.FrontSide;
-
-    // 特殊ジオメトリ（stairs/slab, cross, water）の場合は頂点カラーを無効にする
     const useVertexColors = !isStairsOrSlab && !isCross && !isWater;
 
-    // 「all」キーで一括指定されていれば、全面同じテクスチャを適用
-    if (blockConfig.textures.all) {
-        const tex = loadTexture(blockConfig.textures.all);
-        return FACE_ORDER.map(() => new THREE.MeshLambertMaterial({
+    const makeMaterial = (texPath) => {
+        const tex = cachedLoadTexture(texPath);
+        return new THREE.MeshLambertMaterial({
             map: tex,
             transparent: finalTransparent,
             opacity: finalOpacity,
             vertexColors: useVertexColors ? THREE.VertexColors : false,
-            side: sideSetting
-        }));
+            side: sideSetting,
+        });
+    };
+
+    let materials;
+
+    if (blockConfig.textures.all) {
+        const mat = makeMaterial(blockConfig.textures.all);
+        materials = FACE_ORDER.map(() => mat);
     } else {
-        return FACE_ORDER.map(face => {
-            let texPath = blockConfig.textures[face];
-            if (!texPath && blockConfig.textures.side) {
-                texPath = blockConfig.textures.side;
-            }
+        materials = FACE_ORDER.map(face => {
+            const texPath = blockConfig.textures[face] || blockConfig.textures.side;
             if (!texPath) {
                 console.warn(`Texture not set for face "${face}".`);
                 return new THREE.MeshLambertMaterial({ color: 0xff00ff });
             }
-            return new THREE.MeshLambertMaterial({
-                map: loadTexture(texPath),
-                transparent: finalTransparent,
-                opacity: finalOpacity,
-                vertexColors: useVertexColors ? THREE.VertexColors : false,
-                side: sideSetting
-            });
+            return makeMaterial(texPath);
         });
     }
+
+    materialCache.set(cacheKey, materials);
+    return materials;
 }
 
 
@@ -381,15 +381,16 @@ function getBlockGeometry(type, config) {
  * @param {THREE.Euler} [rotation] - 任意の回転
  * @returns {THREE.Mesh|null} - 生成されたブロックメッシュ。設定が見つからない場合は null
  */
+// 例: createBlockMesh 内のジオメトリ・マテリアルのclone回避案
 function createBlockMesh(blockType, pos, rotation) {
     const config = getBlockConfiguration(blockType);
     if (!config) {
         console.error("Unknown block type:", blockType);
         return null;
     }
-    // config を第二引数として渡すことで、カスタムジオメトリにも対応
+    // ジオメトリはclone必要。マテリアルは共有する場合
     const geometry = getBlockGeometry(config.geometryType, config);
-    const materials = getBlockMaterials(blockType); // 複数素材の場合は配列が返る前提
+    const materials = getBlockMaterials(blockType);
     let mesh;
     if (materials.length > 1 && geometry.groups && geometry.groups.length > 0) {
         mesh = new THREE.Mesh(geometry, materials);
@@ -402,10 +403,13 @@ function createBlockMesh(blockType, pos, rotation) {
     if (rotation) {
         mesh.rotation.copy(rotation);
     }
-    // カスタム衝突判定が定義されている場合はローカル座標ボックスをワールド座標に変換
+
+    // 衝突ボックスはポジションだけ変更、配列を作りすぎない
     if (typeof config.customCollision === "function") {
-        const localBoxes = config.customCollision(new THREE.Vector3(0, 0, 0));
-        mesh.userData.collisionBoxes = localBoxes.map(box => {
+        if (!mesh.userData.localCollisionBoxes) {
+            mesh.userData.localCollisionBoxes = config.customCollision(new THREE.Vector3(0, 0, 0));
+        }
+        mesh.userData.collisionBoxes = mesh.userData.localCollisionBoxes.map(box => {
             const worldBox = box.clone();
             worldBox.min.add(pos);
             worldBox.max.add(pos);
