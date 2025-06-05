@@ -109,13 +109,9 @@ function fractalNoise2D(x, y, octaves = 4, persistence = 0.5) {
 const noiseValue = fractalNoise2D(12.34, 56.78);
 console.log("Fractal Noise Value:", noiseValue);
 
-
-
 /* ======================================================
    【定数・グローバル変数】
    ====================================================== */
-
-
 // ユーザーによるブロック変更情報（実装依存）
 let voxelModifications = {};  // 例: { "5_10_3": 1, … }
 
@@ -1047,61 +1043,23 @@ function updateOnGround() {
 
 // 各面の定義：法線と面を構成する 4 つの頂点を定義
 const faceData = {
-    pz: {
-        normal: [0, 0, 1],
-        vertices: [
-            [0, 0, 1],
-            [1, 0, 1],
-            [1, 1, 1],
-            [0, 1, 1]
-        ]
-    },
-    nz: {
-        normal: [0, 0, -1],
-        vertices: [
-            [1, 0, 0],
-            [0, 0, 0],
-            [0, 1, 0],
-            [1, 1, 0]
-        ]
-    },
-    px: {
-        normal: [1, 0, 0],
-        vertices: [
-            [1, 0, 1],
-            [1, 0, 0],
-            [1, 1, 0],
-            [1, 1, 1]
-        ]
-    },
-    nx: {
-        normal: [-1, 0, 0],
-        vertices: [
-            [0, 0, 0],
-            [0, 0, 1],
-            [0, 1, 1],
-            [0, 1, 0]
-        ]
-    },
-    py: {
-        normal: [0, 1, 0],
-        vertices: [
-            [0, 1, 1],
-            [1, 1, 1],
-            [1, 1, 0],
-            [0, 1, 0]
-        ]
-    },
-    ny: {
-        normal: [0, -1, 0],
-        vertices: [
-            [0, 0, 0],
-            [1, 0, 0],
-            [1, 0, 1],
-            [0, 0, 1]
-        ]
-    }
+    px: { normal: [1, 0, 0], bit: 0, vertices: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]] },
+    nx: { normal: [-1, 0, 0], bit: 1, vertices: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] },
+    py: { normal: [0, 1, 0], bit: 2, vertices: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] },
+    ny: { normal: [0, -1, 0], bit: 3, vertices: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] },
+    pz: { normal: [0, 0, 1], bit: 4, vertices: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] },
+    nz: { normal: [0, 0, -1], bit: 5, vertices: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] }
 };
+
+// neighbors 配列の順番は faceData bit 順に対応
+const neighbors = [
+    { dx: 1, dy: 0, dz: 0 },  // px
+    { dx: -1, dy: 0, dz: 0 }, // nx
+    { dx: 0, dy: 1, dz: 0 },  // py
+    { dx: 0, dy: -1, dz: 0 }, // ny
+    { dx: 0, dy: 0, dz: 1 },  // pz
+    { dx: 0, dy: 0, dz: -1 }  // nz
+];
 
 const faceToMaterialIndex = {
     "px": 0,  // 右面（BoxGeometry の順番：右, 左, 上, 下, 前, 後）
@@ -1112,48 +1070,22 @@ const faceToMaterialIndex = {
     "nz": 5   // 後面
 };
 
-/**
- * computeTopShadowFactorForCorner
- * 
- * 対象ブロックの上段 (wy+1) にある隣接ブロックの有無により、
- * 影の濃さ（0.0～1.0; 値が低いほど暗い）を返します。
- *
- * @param {number} wx - 対象ブロックのワールドX座標
- * @param {number} wy - 対象ブロックのワールドY座標
- * @param {number} wz - 対象ブロックのワールドZ座標
- * @param {string} corner - "LL", "LR", "UR", "UL"
- * @returns {number} 影の濃さ (0.0～1.0)
- */
+const TOP_SHADOW_OFFSETS = {
+    LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1]
+};
+const blockConfigCache = new Map();
 function computeTopShadowFactorForCorner(wx, wy, wz, corner) {
-    const offsets = {
-        LL: [-1, 0, 1],  // 西 + 南
-        LR: [1, 0, 1],   // 東 + 南
-        UR: [1, 0, -1],  // 東 + 北
-        UL: [-1, 0, -1]  // 西 + 北
-    };
-
-    const d = offsets[corner];
-    if (!d) return 1.0;
-
+    const [dx, dz] = TOP_SHADOW_OFFSETS[corner] || [];
+    if (dx === undefined) return 1.0;
     const y = wy + 1;
     let count = 0;
-
-    const blockIds = [
-        getVoxelAtWorld(wx + d[0], y, wz),
-        getVoxelAtWorld(wx, y, wz + d[2])
-    ];
-
-    for (let i = 0; i < 2; i++) {
-        const blockId = blockIds[i];
-        if (typeof blockId === "number" && blockId !== BLOCK_TYPES.SKY) {
-            const config = getBlockConfiguration(blockId);
-            if (!(config && config.transparent)) {
-                count++;
-                if (count === 2) return 0.4; // 早期 return
-            }
-        }
+    for (const [ox, oz] of [[dx, 0], [0, dz]]) {
+        const blockId = getVoxelAtWorld(wx + ox, y, wz + oz);
+        if (typeof blockId !== "number" || blockId === BLOCK_TYPES.SKY) continue;
+        let config = blockConfigCache.get(blockId);
+        if (!config) blockConfigCache.set(blockId, config = getBlockConfiguration(blockId));
+        if (!config?.transparent && ++count === 2) return 0.4;
     }
-
     return count === 1 ? 0.7 : 1.0;
 }
 
@@ -1533,16 +1465,29 @@ function getCachedFaceGeometry(faceKey) {
     return faceGeomCache[faceKey] ||= createFaceGeometry(faceData[faceKey]);
 }
 
-/*
- * instancing 用、かつ隣接ブロック判定時に「自分と隣接ブロックが両方透明なら内部面は描画しない」
- * という条件も入れるため、currentBlock（現在のブロックタイプ）を渡します。
- */
-// 軽量・簡潔化した generateChunkMeshMultiTexture
+// 可視判定用のビットマスク生成関数
+function computeVisibilityMask(getN, curType, curTransp, curCustom) {
+    let mask = 0;
+    for (let i = 0, len = neighbors.length; i < len; i++) {
+        const t = getN(i);
+        if (!t || t === BLOCK_TYPES.SKY) { mask |= 1 << i; continue; }
+        const c = getBlockConfiguration(t);
+        if (!c) continue;
+        const { transparent: nt, customGeometry: nc } = c;
+        if ((nt && (!curTransp || t !== curType)) || (nc && !curCustom)) {
+            mask |= 1 << i;
+        }
+    }
+    return mask;
+}
+const computeBottomShadowFactor = (x, y, z) => {
+    const c = getBlockConfiguration(getVoxelAtWorld(x, y - 1, z));
+    return c && !c.transparent ? 0.5 : 1;
+};
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     const baseX = cx * CHUNK_SIZE, baseZ = cz * CHUNK_SIZE;
     const idx = (x, y, z) => x + CHUNK_SIZE * (y + CHUNK_HEIGHT * z);
     const voxelData = new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE);
-
     const modMap = voxelModifications instanceof Map ? voxelModifications : new Map(Object.entries(voxelModifications || {}));
     for (let z = 0; z < CHUNK_SIZE; z++)
         for (let y = 0; y < CHUNK_HEIGHT; y++)
@@ -1551,7 +1496,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 const key = `${wx}_${wy}_${wz}`;
                 voxelData[idx(x, y, z)] = modMap.get(key) ?? getVoxelAtWorld(wx, wy, wz);
             }
-
     const container = new THREE.Object3D();
     const get = (x, y, z) => {
         const inChunk = x >= 0 && x < CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT && z >= 0 && z < CHUNK_SIZE;
@@ -1560,7 +1504,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         const key = `${wx}_${wy}_${wz}`;
         return modMap.get(key) ?? getVoxelAtWorld(wx, wy, wz);
     };
-
     if (useInstancing) {
         const instMap = {}, dummy = new THREE.Object3D();
         for (let z = 0; z < CHUNK_SIZE; z++)
@@ -1570,21 +1513,13 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                     if (!type || type === BLOCK_TYPES.SKY) continue;
                     const cfg = getBlockConfiguration(type);
                     if (!cfg || cfg.customGeometry || ["stairs", "slab", "cross", "water"].includes(cfg.geometryType)) continue;
-
                     const isTransparent = cfg.transparent ?? false;
-                    let visible = false;
-                    for (const { normal: [dx, dy, dz] } of Object.values(faceData)) {
-                        const neighbor = get(x + dx, y + dy, z + dz);
-                        const nCfg = getBlockConfiguration(neighbor);
-                        const nTransparent = nCfg?.transparent ?? false;
-                        const nCustom = !!nCfg?.customGeometry;
-                        if (!neighbor || neighbor === BLOCK_TYPES.SKY ||
-                            (nTransparent && (!isTransparent || neighbor !== type)) ||
-                            (nCustom && !cfg.customGeometry)) {
-                            visible = true; break;
-                        }
-                    }
-                    if (!visible) continue;
+                    const getNeighborType = (i) => {
+                        const n = neighbors[i];
+                        return get(x + n.dx, y + n.dy, z + n.dz);
+                    };
+                    const visMask = computeVisibilityMask(getNeighborType, type, isTransparent, cfg.customGeometry);
+                    if (visMask === 0) continue;
                     (instMap[type] ??= []).push([baseX + x + 0.5, BEDROCK_LEVEL + y + 0.5, baseZ + z + 0.5]);
                 }
         for (const [type, list] of Object.entries(instMap)) {
@@ -1592,7 +1527,9 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             if (!mats?.length) continue;
             const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mats[0].clone(), list.length);
             list.forEach(([x, y, z], i) => {
-                dummy.position.set(x, y, z); dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix);
+                dummy.position.set(x, y, z);
+                dummy.updateMatrix();
+                inst.setMatrixAt(i, dummy.matrix);
             });
             Object.assign(inst, { castShadow: true, receiveShadow: true, frustumCulled: true });
             container.add(inst);
@@ -1613,21 +1550,30 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                         continue;
                     }
                     if (["stairs", "slab", "cross"].includes(cfg.geometryType)) continue;
-                    for (const [face, { normal: [dx, dy, dz] }] of Object.entries(faceData)) {
-                        const neighbor = get(x + dx, y + dy, z + dz);
-                        const nCfg = getBlockConfiguration(neighbor);
-                        const visible = !neighbor || neighbor === BLOCK_TYPES.SKY ||
-                            ((nCfg?.transparent ?? false) && (!(cfg.transparent ?? false) || neighbor !== type)) ||
-                            (!!nCfg?.customGeometry && !cfg.customGeometry);
-                        if (!visible) continue;
-
+                    const isTransparent = cfg.transparent ?? false;
+                    const getNeighborType = (i) => {
+                        const n = neighbors[i];
+                        return get(x + n.dx, y + n.dy, z + n.dz);
+                    };
+                    const visMask = computeVisibilityMask(getNeighborType, type, isTransparent, cfg.customGeometry);
+                    if (visMask === 0) continue;
+                    for (const [face, data] of Object.entries(faceData)) {
+                        if (((visMask >> data.bit) & 1) === 0) continue;
                         const geom = getCachedFaceGeometry(face).clone().applyMatrix4(new THREE.Matrix4().makeTranslation(wx, wy, wz));
-                        const colors = face === "py"
-                            ? ["LL", "LR", "UR", "UL"].flatMap(c => Array(3).fill(computeTopShadowFactorForCorner(wx, wy, wz, c)))
-                            : Array(12).fill(1);
+                        // 色設定
+                        let colors;
+                        if (face === "py") {
+                            colors = ["LL", "LR", "UR", "UL"].flatMap(c => Array(3).fill(computeTopShadowFactorForCorner(wx, wy, wz, c)));
+                        } else if (face === "ny") {
+                            const bottomFactor = computeBottomShadowFactor(wx, wy, wz);
+                            colors = Array(12).fill(bottomFactor);
+                        } else {
+                            colors = Array(12).fill(1);
+                        }
                         geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
                         const matIdx = faceToMaterialIndex[face];
-                        (faceGeoms[type] ??= {})[matIdx] ??= []; faceGeoms[type][matIdx].push(geom);
+                        (faceGeoms[type] ??= {})[matIdx] ??= [];
+                        faceGeoms[type][matIdx].push(geom);
                     }
                 }
         for (const [type, group] of Object.entries(faceGeoms)) {
@@ -1641,7 +1587,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 offset += count;
             });
             finalGeom.computeBoundingSphere();
-            const mats = getBlockMaterials(+type)?.map(m => Object.assign(m.clone(), { vertexColors: THREE.VertexColors, side: THREE.FrontSide }));
+            const mats = getBlockMaterials(+type)?.map(m => Object.assign(m.clone(), { vertexColors: true, side: THREE.FrontSide }));
             const mesh = new THREE.Mesh(finalGeom, mats);
             Object.assign(mesh, { castShadow: true, receiveShadow: true, frustumCulled: true });
             container.add(mesh);
