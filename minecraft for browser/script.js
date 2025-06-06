@@ -592,71 +592,47 @@ function getTerrainHeight(worldX, worldZ, startY) {
     return result;
 }
 
-// =======================
-// グローバル変数などの定義
-// =======================
 const globalTerrainCache = new Map();
-const BEDROCK_LEVEL = 0; // これを 0 にすると、y = 0 を最低地点とする
-// キャッシュ：ブロックIDごとの collision 結果
 const blockCollisionCache = new Map();
-// 簡易数値ハッシュ：32bit 整数キーの代替（低衝突なハッシュ）
-function voxelKeyHash(x, y, z) {
-    return ((x & 0x3FF) << 20) | ((y & 0x3FF) << 10) | (z & 0x3FF);
-}
-function terrainKeyHash(x, z) {
-    return ((x & 0xFFFF) << 16) | (z & 0xFFFF);
-}
-// voxelModifications は従来通り string キーである必要があるので fallback
 const voxelKeyFor = (x, y, z) => `${x}_${y}_${z}`;
-/**
- * 指定座標のブロック種（ブロックID）を返す関数
- * @param {number} x - ワールドの X 座標
- * @param {number} y - ワールドの Y 座標
- * @param {number} z - ワールドの Z 座標
- * @param {Map} terrainCache - 地形キャッシュ（省略時は globalTerrainCache）
- * @param {object} [options] - オプションオブジェクト。例: { raw: true }
- * @returns {number} ブロック種 (ブロックID)
- */
+const voxelKeyHash = (x, y, z) => ((x & 0x3FF) << 20) | ((y & 0x3FF) << 10) | (z & 0x3FF);
+const terrainKeyHash = (x, z) => ((x & 0xFFFF) << 16) | (z & 0xFFFF);
+const BEDROCK_LEVEL = 0;
+
 function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, { raw = false } = {}) {
     if (![x, y, z].every(Number.isFinite)) throw new TypeError("worldX, y, worldZ must be valid numbers.");
     if (y < 0) return BLOCK_TYPES.SKY;
+
     const { SKY, WATER, GRASS, DIRT, STONE, BEDROCK } = BLOCK_TYPES;
     const modKey = voxelKeyFor(x, y, z);
+
     if (Object.prototype.hasOwnProperty.call(voxelModifications, modKey)) {
         const id = voxelModifications[modKey];
         if (!raw) {
             let cached = blockCollisionCache.get(id);
-            if (cached === undefined) {
-                cached = !!getBlockConfigById(id)?.collision;
-                blockCollisionCache.set(id, cached);
-            }
+            if (cached === undefined) cached = !!getBlockConfigById(id)?.collision, blockCollisionCache.set(id, cached);
             if (!cached) return SKY;
         }
         return id;
     }
+
     const tKey = terrainKeyHash(x, z);
     let h = terrainCache.get(tKey);
     if (h === undefined) terrainCache.set(tKey, h = getTerrainHeight(x, z));
-    let block;
-    if (y > h) block = SKY;
-    else if (y === h) block = GRASS;
-    else if (y >= h - 2) block = DIRT;
-    else if (y > BEDROCK_LEVEL) block = STONE;
-    else block = BEDROCK;
+
+    let block =
+        y > h ? SKY :
+            y === h ? GRASS :
+                y >= h - 2 ? DIRT :
+                    y > BEDROCK_LEVEL ? STONE : BEDROCK;
+
     return (block === SKY && y >= 30 && y <= 45) ? WATER : block;
 }
 
-/**
- * 補助関数: ブロックIDから BLOCK_CONFIG を取得する
- */
-const BLOCK_CONFIG_BY_ID = new Map();
-for (const key in BLOCK_CONFIG) {
-    const conf = BLOCK_CONFIG[key];
-    BLOCK_CONFIG_BY_ID.set(conf.id, conf);
-}
+const BLOCK_CONFIG_BY_ID = new Map(Object.values(BLOCK_CONFIG).map(c => [c.id, c]));
 
 function getBlockConfigById(id) {
-    return BLOCK_CONFIG_BY_ID.get(id) ?? null;
+    return BLOCK_CONFIG_BY_ID.get(id) || null;
 }
 
 /**
@@ -1070,24 +1046,49 @@ const faceToMaterialIndex = {
     "nz": 5   // 後面
 };
 
-const TOP_SHADOW_OFFSETS = {
-    LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1]
-};
+const TOP_SHADOW_OFFSETS = { LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1] };
 const blockConfigCache = new Map();
-function computeTopShadowFactorForCorner(wx, wy, wz, corner) {
-    const [dx, dz] = TOP_SHADOW_OFFSETS[corner] || [];
-    if (dx === undefined) return 1.0;
-    const y = wy + 1;
-    let count = 0;
-    for (const [ox, oz] of [[dx, 0], [0, dz]]) {
-        const blockId = getVoxelAtWorld(wx + ox, y, wz + oz);
-        if (typeof blockId !== "number" || blockId === BLOCK_TYPES.SKY) continue;
-        let config = blockConfigCache.get(blockId);
-        if (!config) blockConfigCache.set(blockId, config = getBlockConfiguration(blockId));
-        if (!config?.transparent && ++count === 2) return 0.4;
+const subterraneanAreaCache = new Map();
+
+const getConfig = id => {
+    if (!blockConfigCache.has(id)) blockConfigCache.set(id, getBlockConfiguration(id));
+    return blockConfigCache.get(id);
+};
+
+const subterraneanKeyHash = (wx, wy, wz) => `${wx}_${wy}_${wz}`;
+
+function isInSubterraneanArea(wx, wy, wz) {
+    const key = subterraneanKeyHash(wx, wy, wz);
+    if (subterraneanAreaCache.has(key)) return subterraneanAreaCache.get(key);
+
+    const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
+    for (let y = wy + 1; y < maxY; y++) {
+        const id = getVoxelAtWorld(wx, y, wz);
+        if (typeof id === "number" && id !== BLOCK_TYPES.SKY && !getConfig(id).transparent) {
+            return subterraneanAreaCache.set(key, true), true;
+        }
     }
-    return count === 1 ? 0.7 : 1.0;
+    return subterraneanAreaCache.set(key, false), false;
 }
+
+function computeTopShadowFactorForCorner(wx, wy, wz, corner) {
+    const offset = TOP_SHADOW_OFFSETS[corner];
+    if (!offset) return 1;
+    const [dx, dz] = offset;
+    const y = wy + 1;
+    const checkOpaque = (x, z) => {
+        const id = getVoxelAtWorld(x, y, z);
+        return typeof id === "number" && id !== BLOCK_TYPES.SKY && !getConfig(id).transparent;
+    };
+    const opaque1 = checkOpaque(wx + dx, wz);
+    const opaque2 = checkOpaque(wx, wz + dz);
+    if (opaque1 && opaque2 || isInSubterraneanArea(wx, wy, wz)) return 0.4;
+    if (opaque1 || opaque2) return 0.7;
+    return 1;
+}
+
+const clearCaches = () => subterraneanAreaCache.clear();
+
 
 // ========= ヘルパー関数 =========
 
@@ -1139,6 +1140,7 @@ function refreshChunkAt(cx, cz) {
     setOpacityRecursive(newChunk, 1);
     scene.add(newChunk);
     loadedChunks[key] = newChunk;
+    clearCaches();
 }
 
 // ここでは、チャンク座標 (cx, cz) を (cx + OFFSET) と (cz + OFFSET) で正数化し、
@@ -1480,15 +1482,12 @@ function computeVisibilityMask(getN, curType, curTransp, curCustom) {
     }
     return mask;
 }
-const computeBottomShadowFactor = (x, y, z) => {
-    const c = getBlockConfiguration(getVoxelAtWorld(x, y - 1, z));
-    return c && !c.transparent ? 0.5 : 1;
-};
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     const baseX = cx * CHUNK_SIZE, baseZ = cz * CHUNK_SIZE;
     const idx = (x, y, z) => x + CHUNK_SIZE * (y + CHUNK_HEIGHT * z);
     const voxelData = new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE);
     const modMap = voxelModifications instanceof Map ? voxelModifications : new Map(Object.entries(voxelModifications || {}));
+
     for (let z = 0; z < CHUNK_SIZE; z++)
         for (let y = 0; y < CHUNK_HEIGHT; y++)
             for (let x = 0; x < CHUNK_SIZE; x++) {
@@ -1496,14 +1495,38 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 const key = `${wx}_${wy}_${wz}`;
                 voxelData[idx(x, y, z)] = modMap.get(key) ?? getVoxelAtWorld(wx, wy, wz);
             }
+
     const container = new THREE.Object3D();
-    const get = (x, y, z) => {
-        const inChunk = x >= 0 && x < CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT && z >= 0 && z < CHUNK_SIZE;
-        if (inChunk) return voxelData[idx(x, y, z)];
+
+    const get = (x, y, z) =>
+        (x >= 0 && x < CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT && z >= 0 && z < CHUNK_SIZE)
+            ? voxelData[idx(x, y, z)]
+            : modMap.get(`${baseX + x}_${BEDROCK_LEVEL + y}_${baseZ + z}`) ?? getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z);
+
+    const SIDE_OPPOSITE_FACE = { px: "nx", nx: "px", pz: "nz", nz: "pz" };
+    const CEILING_CHECK_OFFSETS = { px: [1, 1, 0], nx: [-1, 1, 0], pz: [0, 1, 1], nz: [0, 1, -1] };
+
+    const blockConfigCache = new Map();
+    const getBlockConfigCached = id => blockConfigCache.has(id) ? blockConfigCache.get(id) : blockConfigCache.set(id, getBlockConfiguration(id)).get(id);
+    const isFaceOpaque = (id, cfg) => typeof id === "number" && id !== BLOCK_TYPES.SKY && cfg && !cfg.transparent;
+
+    const computeBottomShadowFactor = (wx, wy, wz) =>
+        isInSubterraneanArea(wx, wy, wz) ? 0.4 : (() => {
+            const belowId = getVoxelAtWorld(wx, wy - 1, wz);
+            return isFaceOpaque(belowId, getBlockConfigCached(belowId)) ? 0.55 : 0.45;
+        })();
+
+    function computeSideShadowFactor(x, y, z, face) {
+        if (!(face in SIDE_OPPOSITE_FACE)) return 1;
         const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
-        const key = `${wx}_${wy}_${wz}`;
-        return modMap.get(key) ?? getVoxelAtWorld(wx, wy, wz);
-    };
+        const [dx, dy, dz] = CEILING_CHECK_OFFSETS[face];
+        for (let checkY = wy + 1; checkY < BEDROCK_LEVEL + CHUNK_HEIGHT; checkY++) {
+            const id = getVoxelAtWorld(wx + dx, checkY, wz + dz);
+            if (isFaceOpaque(id, getBlockConfigCached(id))) return 0.4;
+        }
+        return 1;
+    }
+
     if (useInstancing) {
         const instMap = {}, dummy = new THREE.Object3D();
         for (let z = 0; z < CHUNK_SIZE; z++)
@@ -1560,7 +1583,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                     for (const [face, data] of Object.entries(faceData)) {
                         if (((visMask >> data.bit) & 1) === 0) continue;
                         const geom = getCachedFaceGeometry(face).clone().applyMatrix4(new THREE.Matrix4().makeTranslation(wx, wy, wz));
-                        // 色設定
                         let colors;
                         if (face === "py") {
                             colors = ["LL", "LR", "UR", "UL"].flatMap(c => Array(3).fill(computeTopShadowFactorForCorner(wx, wy, wz, c)));
@@ -1568,7 +1590,10 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                             const bottomFactor = computeBottomShadowFactor(wx, wy, wz);
                             colors = Array(12).fill(bottomFactor);
                         } else {
-                            colors = Array(12).fill(1);
+                            // 側面の色付けの部分（省略形）
+                            const sideFactor = computeSideShadowFactor(x, y, z, face);
+                            colors = Array(12).fill(sideFactor);
+
                         }
                         geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
                         const matIdx = faceToMaterialIndex[face];
@@ -1595,6 +1620,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     }
     return container;
 }
+
 
 // カスタムジオメトリ生成専用関数（例）
 const materialCache = new Map();
