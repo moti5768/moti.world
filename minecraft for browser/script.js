@@ -1322,30 +1322,23 @@ function generateNextChunk() {
  * @returns {THREE.BufferGeometry | null}
  */
 function mergeBufferGeometries(geometries, options = { computeNormals: true }) {
-    if (!geometries || geometries.length === 0) return null;
+    if (!geometries?.length) return null;
     if (geometries.length === 1) return geometries[0];
 
     let totalVertexCount = 0;
-    let totalAttributes = {
-        position: 0,
-        normal: 0,
-        uv: 0,
-        color: 0,
-        index: 0
-    };
+    const totalAttributes = { position: 0, normal: 0, uv: 0, color: 0, index: 0 };
     let useUint32 = false;
 
+    // 1回ループで計測（ループ変数外で最小化）
     for (const g of geometries) {
         const posAttr = g.getAttribute("position");
         const count = posAttr.count;
         totalVertexCount += count;
-
         totalAttributes.position += posAttr.array.length;
         totalAttributes.normal += g.getAttribute("normal")?.array.length || 0;
         totalAttributes.uv += g.getAttribute("uv")?.array.length || 0;
         totalAttributes.color += g.getAttribute("color")?.array.length || 0;
         totalAttributes.index += g.index ? g.index.count : count;
-
         if (totalVertexCount > 65535) useUint32 = true;
     }
 
@@ -1356,68 +1349,73 @@ function mergeBufferGeometries(geometries, options = { computeNormals: true }) {
         normal: totalAttributes.normal ? new Float32Array(totalAttributes.normal) : null,
         uv: totalAttributes.uv ? new Float32Array(totalAttributes.uv) : null,
         color: totalAttributes.color ? new Float32Array(totalAttributes.color) : null,
-        index: new IndexArrayType(totalAttributes.index)
+        index: new IndexArrayType(totalAttributes.index),
     };
 
-    let offset = {
-        position: 0, normal: 0, uv: 0, color: 0, index: 0, vertex: 0
-    };
-
+    let posOffset = 0, normOffset = 0, uvOffset = 0, colorOffset = 0, idxOffset = 0, vertexOffset = 0;
     const mergedGroups = [];
 
     for (const g of geometries) {
         const posAttr = g.getAttribute("position");
         const count = posAttr.count;
-        arrays.position.set(posAttr.array, offset.position);
-        offset.position += posAttr.array.length;
 
-        const normAttr = g.getAttribute("normal");
-        if (arrays.normal && normAttr) {
-            arrays.normal.set(normAttr.array, offset.normal);
-            offset.normal += normAttr.array.length;
-        }
+        arrays.position.set(posAttr.array, posOffset);
+        posOffset += posAttr.array.length;
 
-        const uvAttr = g.getAttribute("uv");
-        if (arrays.uv && uvAttr) {
-            arrays.uv.set(uvAttr.array, offset.uv);
-            offset.uv += uvAttr.array.length;
-        }
-
-        const colAttr = g.getAttribute("color");
-        if (arrays.color && colAttr) {
-            arrays.color.set(colAttr.array, offset.color);
-            offset.color += colAttr.array.length;
-        }
-
-        if (g.index) {
-            const ia = g.index.array;
-            for (let j = 0; j < ia.length; j++) {
-                arrays.index[offset.index++] = ia[j] + offset.vertex;
+        if (arrays.normal) {
+            const normAttr = g.getAttribute("normal");
+            if (normAttr) {
+                arrays.normal.set(normAttr.array, normOffset);
+                normOffset += normAttr.array.length;
             }
+        }
+
+        if (arrays.uv) {
+            const uvAttr = g.getAttribute("uv");
+            if (uvAttr) {
+                arrays.uv.set(uvAttr.array, uvOffset);
+                uvOffset += uvAttr.array.length;
+            }
+        }
+
+        if (arrays.color) {
+            const colAttr = g.getAttribute("color");
+            if (colAttr) {
+                arrays.color.set(colAttr.array, colorOffset);
+                colorOffset += colAttr.array.length;
+            }
+        }
+
+        const ia = g.index ? g.index.array : null;
+        if (ia) {
+            // 一括でインデックスを計算してセット
+            for (let i = 0; i < ia.length; i++) {
+                arrays.index[idxOffset + i] = ia[i] + vertexOffset;
+            }
+            idxOffset += ia.length;
         } else {
-            for (let j = 0; j < count; j++) {
-                arrays.index[offset.index++] = j + offset.vertex;
+            for (let i = 0; i < count; i++) {
+                arrays.index[idxOffset++] = i + vertexOffset;
             }
         }
 
-        if (g.groups && g.groups.length > 0) {
+        // グループは絶対インデックスをセット。offset.indexはidxOffsetなので、調整簡略化。
+        if (g.groups?.length) {
             for (const group of g.groups) {
                 mergedGroups.push({
-                    start: group.start + offset.index - (g.index?.count || count),
+                    start: group.start + idxOffset - (g.index?.count ?? count),
                     count: group.count,
                     materialIndex: group.materialIndex
                 });
             }
         } else {
-            // デフォルトグループ追加（全体をカバー）
             mergedGroups.push({
-                start: offset.index - (g.index?.count || count),
-                count: g.index?.count || count,
-                materialIndex: 0
+                start: idxOffset - (g.index?.count ?? count),
+                count: g.index?.count ?? count,
+                materialIndex: 0,
             });
         }
-
-        offset.vertex += count;
+        vertexOffset += count;
     }
 
     const merged = new THREE.BufferGeometry();
@@ -1427,13 +1425,8 @@ function mergeBufferGeometries(geometries, options = { computeNormals: true }) {
     if (arrays.color) merged.setAttribute("color", new THREE.BufferAttribute(arrays.color, 3));
     merged.setIndex(new THREE.BufferAttribute(arrays.index, 1));
 
-    for (const group of mergedGroups) {
-        merged.addGroup(group.start, group.count, group.materialIndex);
-    }
-
-    if (options.computeNormals && !arrays.normal) {
-        merged.computeVertexNormals();
-    }
+    mergedGroups.forEach(g => merged.addGroup(g.start, g.count, g.materialIndex));
+    if (options.computeNormals && !arrays.normal) merged.computeVertexNormals();
 
     return merged;
 }
@@ -1442,7 +1435,6 @@ function mergeBufferGeometries(geometries, options = { computeNormals: true }) {
 // ---------------------------------------------------------------------------
 // getCachedFaceGeometry: faceKey に対応するクワッドジオメトリをキャッシュして返す
 // ---------------------------------------------------------------------------
-const faceGeomCache = {};
 const defaultUVs = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
 const defaultIndices = new Uint16Array([0, 1, 2, 0, 2, 3]);
 
@@ -1450,7 +1442,6 @@ function createFaceGeometry(data) {
     const positions = new Float32Array(data.vertices.flat());
     const normals = new Float32Array(12);
     for (let i = 0; i < 4; i++) normals.set(data.normal, i * 3);
-
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geom.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
@@ -1459,12 +1450,19 @@ function createFaceGeometry(data) {
     return geom;
 }
 
+const geometryCache = new Map();
+function getCachedGeometry(key, createFunc) {
+    if (!geometryCache.has(key)) {
+        geometryCache.set(key, createFunc());
+    }
+    return geometryCache.get(key);
+}
 function getCachedFaceGeometry(faceKey) {
     if (!faceData[faceKey]) {
         console.warn(`Invalid faceKey: ${faceKey}`);
         return null;
     }
-    return faceGeomCache[faceKey] ||= createFaceGeometry(faceData[faceKey]);
+    return getCachedGeometry(`face_${faceKey}`, () => createFaceGeometry(faceData[faceKey]));
 }
 
 // 可視判定用のビットマスク生成関数
@@ -1485,50 +1483,47 @@ function computeVisibilityMask(getN, curType, curTransp, curCustom) {
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     const baseX = cx * CHUNK_SIZE, baseZ = cz * CHUNK_SIZE;
     const idx = (x, y, z) => x + CHUNK_SIZE * (y + CHUNK_HEIGHT * z);
-    const voxelData = new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE);
     const modMap = voxelModifications instanceof Map ? voxelModifications : new Map(Object.entries(voxelModifications || {}));
+    const voxelData = new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE);
 
+    // ボクセルデータ取得
     for (let z = 0; z < CHUNK_SIZE; z++)
         for (let y = 0; y < CHUNK_HEIGHT; y++)
             for (let x = 0; x < CHUNK_SIZE; x++) {
                 const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
-                const key = `${wx}_${wy}_${wz}`;
-                voxelData[idx(x, y, z)] = modMap.get(key) ?? getVoxelAtWorld(wx, wy, wz);
+                voxelData[idx(x, y, z)] = modMap.get(`${wx}_${wy}_${wz}`) ?? getVoxelAtWorld(wx, wy, wz);
             }
 
     const container = new THREE.Object3D();
-
     const get = (x, y, z) =>
         (x >= 0 && x < CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT && z >= 0 && z < CHUNK_SIZE)
             ? voxelData[idx(x, y, z)]
             : modMap.get(`${baseX + x}_${BEDROCK_LEVEL + y}_${baseZ + z}`) ?? getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z);
 
-    const SIDE_OPPOSITE_FACE = { px: "nx", nx: "px", pz: "nz", nz: "pz" };
-    const CEILING_CHECK_OFFSETS = { px: [1, 1, 0], nx: [-1, 1, 0], pz: [0, 1, 1], nz: [0, 1, -1] };
-
     const blockConfigCache = new Map();
     const getBlockConfigCached = id => blockConfigCache.has(id) ? blockConfigCache.get(id) : blockConfigCache.set(id, getBlockConfiguration(id)).get(id);
-    const isFaceOpaque = (id, cfg) => typeof id === "number" && id !== BLOCK_TYPES.SKY && cfg && !cfg.transparent;
+    const isFaceOpaque = (id, cfg) => id && id !== BLOCK_TYPES.SKY && cfg && !cfg.transparent;
 
     const computeBottomShadowFactor = (wx, wy, wz) =>
-        isInSubterraneanArea(wx, wy, wz) ? 0.4 : (() => {
-            const belowId = getVoxelAtWorld(wx, wy - 1, wz);
-            return isFaceOpaque(belowId, getBlockConfigCached(belowId)) ? 0.55 : 0.45;
-        })();
+        isInSubterraneanArea(wx, wy, wz)
+            ? 0.4
+            : isFaceOpaque(getVoxelAtWorld(wx, wy - 1, wz), getBlockConfigCached(getVoxelAtWorld(wx, wy - 1, wz))) ? 0.55 : 0.45;
 
-    function computeSideShadowFactor(x, y, z, face) {
+    const SIDE_OPPOSITE_FACE = { px: "nx", nx: "px", pz: "nz", nz: "pz" };
+    const CEILING_CHECK_OFFSETS = { px: [1, 1, 0], nx: [-1, 1, 0], pz: [0, 1, 1], nz: [0, 1, -1] };
+    const computeSideShadowFactor = (x, y, z, face) => {
         if (!(face in SIDE_OPPOSITE_FACE)) return 1;
         const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
         const [dx, dy, dz] = CEILING_CHECK_OFFSETS[face];
         for (let checkY = wy + 1; checkY < BEDROCK_LEVEL + CHUNK_HEIGHT; checkY++) {
-            const id = getVoxelAtWorld(wx + dx, checkY, wz + dz);
-            if (isFaceOpaque(id, getBlockConfigCached(id))) return 0.4;
+            if (isFaceOpaque(getVoxelAtWorld(wx + dx, checkY, wz + dz), getBlockConfigCached(getVoxelAtWorld(wx + dx, checkY, wz + dz)))) return 0.4;
         }
         return 1;
-    }
+    };
 
     if (useInstancing) {
-        const instMap = {}, dummy = new THREE.Object3D();
+        const instMap = {};
+        const dummy = new THREE.Object3D();
         for (let z = 0; z < CHUNK_SIZE; z++)
             for (let y = 0; y < CHUNK_HEIGHT; y++)
                 for (let x = 0; x < CHUNK_SIZE; x++) {
@@ -1537,12 +1532,8 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                     const cfg = getBlockConfiguration(type);
                     if (!cfg || cfg.customGeometry || ["stairs", "slab", "cross", "water"].includes(cfg.geometryType)) continue;
                     const isTransparent = cfg.transparent ?? false;
-                    const getNeighborType = (i) => {
-                        const n = neighbors[i];
-                        return get(x + n.dx, y + n.dy, z + n.dz);
-                    };
-                    const visMask = computeVisibilityMask(getNeighborType, type, isTransparent, cfg.customGeometry);
-                    if (visMask === 0) continue;
+                    const visMask = computeVisibilityMask(i => get(x + neighbors[i].dx, y + neighbors[i].dy, z + neighbors[i].dz), type, isTransparent, cfg.customGeometry);
+                    if (!visMask) continue;
                     (instMap[type] ??= []).push([baseX + x + 0.5, BEDROCK_LEVEL + y + 0.5, baseZ + z + 0.5]);
                 }
         for (const [type, list] of Object.entries(instMap)) {
@@ -1567,40 +1558,30 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                     const cfg = getBlockConfiguration(type);
                     if (!cfg) continue;
                     const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
-                    if (cfg.customGeometry) {
+
+                    if (cfg.customGeometry || ["stairs", "slab", "cross"].includes(cfg.geometryType)) {
                         const mesh = createCustomBlockMesh(type, new THREE.Vector3(wx, wy, wz));
                         if (mesh) container.add(mesh);
                         continue;
                     }
-                    if (["stairs", "slab", "cross"].includes(cfg.geometryType)) continue;
-                    const isTransparent = cfg.transparent ?? false;
-                    const getNeighborType = (i) => {
-                        const n = neighbors[i];
-                        return get(x + n.dx, y + n.dy, z + n.dz);
-                    };
-                    const visMask = computeVisibilityMask(getNeighborType, type, isTransparent, cfg.customGeometry);
-                    if (visMask === 0) continue;
-                    for (const [face, data] of Object.entries(faceData)) {
-                        if (((visMask >> data.bit) & 1) === 0) continue;
-                        const geom = getCachedFaceGeometry(face).clone().applyMatrix4(new THREE.Matrix4().makeTranslation(wx, wy, wz));
-                        let colors;
-                        if (face === "py") {
-                            colors = ["LL", "LR", "UR", "UL"].flatMap(c => Array(3).fill(computeTopShadowFactorForCorner(wx, wy, wz, c)));
-                        } else if (face === "ny") {
-                            const bottomFactor = computeBottomShadowFactor(wx, wy, wz);
-                            colors = Array(12).fill(bottomFactor);
-                        } else {
-                            // 側面の色付けの部分（省略形）
-                            const sideFactor = computeSideShadowFactor(x, y, z, face);
-                            colors = Array(12).fill(sideFactor);
 
-                        }
+                    const isTransparent = cfg.transparent ?? false;
+                    const visMask = computeVisibilityMask(i => get(x + neighbors[i].dx, y + neighbors[i].dy, z + neighbors[i].dz), type, isTransparent, cfg.customGeometry);
+                    if (!visMask) continue;
+
+                    for (const [face, data] of Object.entries(faceData)) {
+                        if (!((visMask >> data.bit) & 1)) continue;
+                        const geom = getCachedFaceGeometry(face).clone().applyMatrix4(new THREE.Matrix4().makeTranslation(wx, wy, wz));
+                        const colors = face === "py" ?
+                            ["LL", "LR", "UR", "UL"].flatMap(c => Array(3).fill(computeTopShadowFactorForCorner(wx, wy, wz, c))) :
+                            face === "ny" ? Array(12).fill(computeBottomShadowFactor(wx, wy, wz)) :
+                                Array(12).fill(computeSideShadowFactor(x, y, z, face));
                         geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
-                        const matIdx = faceToMaterialIndex[face];
-                        (faceGeoms[type] ??= {})[matIdx] ??= [];
-                        faceGeoms[type][matIdx].push(geom);
+                        (faceGeoms[type] ??= {})[faceToMaterialIndex[face]] ??= [];
+                        faceGeoms[type][faceToMaterialIndex[face]].push(geom);
                     }
                 }
+
         for (const [type, group] of Object.entries(faceGeoms)) {
             const subGeoms = Object.values(group).map(mergeBufferGeometries);
             const finalGeom = mergeBufferGeometries(subGeoms);
@@ -1621,8 +1602,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     return container;
 }
 
-
-// カスタムジオメトリ生成専用関数（例）
 const materialCache = new Map();
 const collisionCache = new Map();
 function createCustomBlockMesh(type, position, rotation) {
@@ -1631,22 +1610,18 @@ function createCustomBlockMesh(type, position, rotation) {
         console.error("Unknown block type:", type);
         return null;
     }
-    // geometry取得
+    // geometry取得（キャッシュ利用）
     let geometry;
     if (config.geometryType) {
-        if (!geometryCache.has(type)) {
-            geometryCache.set(type, getBlockGeometry(config.geometryType, config));
-        }
+        if (!geometryCache.has(type)) geometryCache.set(type, getBlockGeometry(config.geometryType, config));
         geometry = geometryCache.get(type);
     } else if (config.customGeometry) {
-        geometry = typeof config.customGeometry.clone === 'function'
-            ? config.customGeometry.clone()
-            : config.customGeometry;
+        geometry = config.customGeometry.clone?.() ?? config.customGeometry;
     } else {
         console.warn(`No geometry for block type: ${type}`);
         return null;
     }
-    // material取得
+    // material取得（キャッシュ利用）
     let materials = materialCache.get(type);
     if (!materials) {
         materials = getBlockMaterials(type);
@@ -1658,37 +1633,18 @@ function createCustomBlockMesh(type, position, rotation) {
     const mesh = new THREE.Mesh(meshGeometry, meshMaterial);
     mesh.position.copy(position);
     if (rotation) mesh.rotation.copy(rotation);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.frustumCulled = true;
-    // 衝突キャッシュ取得
-    let collisionBoxes = collisionCache.get(type);
-    if (!collisionBoxes) {
-        if (typeof config.customCollision === "function") {
-            collisionBoxes = config.customCollision(new THREE.Vector3(0, 0, 0));
-        } else if (config.collision) {
-            const height = config.geometryType === "slab" ? 0.5 : 1;
-            collisionBoxes = [
-                new THREE.Box3(
-                    new THREE.Vector3(0, 0, 0),
-                    new THREE.Vector3(1, height, 1)
-                )
-            ];
-        } else {
-            collisionBoxes = [];
-        }
-        collisionCache.set(type, collisionBoxes);
+    mesh.castShadow = mesh.receiveShadow = mesh.frustumCulled = true;
+    // 衝突ボックスキャッシュ＆変換
+    if (!collisionCache.has(type)) {
+        const boxes = typeof config.customCollision === "function"
+            ? config.customCollision(new THREE.Vector3())
+            : (config.collision ? [new THREE.Box3(new THREE.Vector3(), new THREE.Vector3(1, config.geometryType === "slab" ? 0.5 : 1, 1))] : []);
+        collisionCache.set(type, boxes);
     }
-    const worldCollisionBoxes = collisionBoxes.map(box => {
-        const translated = box.clone();
-        translated.min.add(position);
-        translated.max.add(position);
-        return translated;
-    });
     mesh.userData = {
         isCustomBlock: !!config.customGeometry,
         blockType: type,
-        collisionBoxes: worldCollisionBoxes
+        collisionBoxes: collisionCache.get(type).map(box => box.clone().translate(position))
     };
     mesh.updateMatrixWorld();
     return mesh;
@@ -2567,7 +2523,6 @@ function updateHeadBlockInfo() {
 // グローバルなパーティクルプールとアクティブグループの管理
 const particlePool = [];
 const activeParticleGroups = [];
-const geometryCache = new Map();
 const GRAVITY = 9.8 * 0.8;
 
 const getCachedParticleGeometry = (i, j, grid, particleSize) => {
