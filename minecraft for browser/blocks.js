@@ -16,28 +16,21 @@ function createBox(x1, y1, z1, x2, y2, z2) {
 }
 
 // 次に、ブロックの種類ごとに当たり判定（カスタム衝突領域）を返す関数を用意
+const CUSTOM_COLLISION_CACHE = {
+    stairs: [
+        createBox(0, 0, 0, 1, 0.5, 1),
+        createBox(0.5, 0.5, 0, 1, 1, 1),
+    ],
+    slab: [
+        createBox(0, 0, 0, 1, 0.5, 1),
+    ],
+    cross: [
+        createBox(0.25, 0, 0.25, 0.75, 1, 0.75),
+    ],
+};
+
 function getCustomCollision(type) {
-    switch (type) {
-        case 'stairs':
-            // 階段の場合は、下段と上段の当たり判定を返す
-            return [
-                createBox(0, 0, 0, 1, 0.5, 1),
-                createBox(0.5, 0.5, 0, 1, 1, 1),
-            ];
-        case 'slab':
-            // 半ブロックの場合の当たり判定
-            return [
-                createBox(0, 0, 0, 1, 0.5, 1),
-            ];
-        case 'cross':
-            // crossジオメトリ用：花や植物は実際の見た目よりも小さめの衝突領域を用意するのが一般的です。
-            // ここでは、ブロックの中央(0.25～0.75)をカバーする当たり判定として定義しています。
-            return [
-                createBox(0.25, 0, 0.25, 0.75, 1, 0.75)
-            ];
-        default:
-            return [];
-    }
+    return CUSTOM_COLLISION_CACHE[type] || [];
 }
 
 
@@ -184,7 +177,14 @@ const materialCache = new Map();
 function cachedLoadTexture(path) {
     if (!path) return null;
     if (textureCache[path]) return textureCache[path];
-    const tex = loadTexture(path);
+    const tex = textureLoader.load(
+        path,
+        () => { tex.needsUpdate = true; },
+        undefined,
+        err => console.error("Texture load error:", err)
+    );
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestMipmapNearestFilter;
     textureCache[path] = tex;
     return tex;
 }
@@ -302,8 +302,8 @@ function adjustSideUVs(geom) {
 function getBlockGeometry(type, config) {
     // カスタムジオメトリが指定されている場合はそちらを優先
     if (config && config.customGeometry) {
-        if (cachedCustomGeometries[config.id]) {
-            return cachedCustomGeometries[config.id].clone();
+        if (cachedBlockGeometries[type]) {
+            return cachedBlockGeometries[type]; // cloneしないでそのまま返す
         }
         let customGeom =
             typeof config.customGeometry === "function"
@@ -388,7 +388,6 @@ function createBlockMesh(blockType, pos, rotation) {
         console.error("Unknown block type:", blockType);
         return null;
     }
-    // ジオメトリはclone必要。マテリアルは共有する場合
     const geometry = getBlockGeometry(config.geometryType, config);
     const materials = getBlockMaterials(blockType);
     let mesh;
@@ -404,21 +403,24 @@ function createBlockMesh(blockType, pos, rotation) {
         mesh.rotation.copy(rotation);
     }
 
-    // 衝突ボックスはポジションだけ変更、配列を作りすぎない
+    // ここに書くのがベスト
     if (typeof config.customCollision === "function") {
         if (!mesh.userData.localCollisionBoxes) {
-            mesh.userData.localCollisionBoxes = config.customCollision(new THREE.Vector3(0, 0, 0));
+            mesh.userData.localCollisionBoxes = config.customCollision();
         }
-        mesh.userData.collisionBoxes = mesh.userData.localCollisionBoxes.map(box => {
-            const worldBox = box.clone();
-            worldBox.min.add(pos);
-            worldBox.max.add(pos);
-            return worldBox;
+        if (!mesh.userData.collisionBoxes) {
+            mesh.userData.collisionBoxes = mesh.userData.localCollisionBoxes.map(box => box.clone());
+        }
+        mesh.userData.collisionBoxes.forEach((box, i) => {
+            box.min.copy(mesh.userData.localCollisionBoxes[i].min).add(pos);
+            box.max.copy(mesh.userData.localCollisionBoxes[i].max).add(pos);
         });
     }
+
     mesh.updateMatrixWorld();
     return mesh;
 }
+
 
 /**
  * 指定ブロックの当たり判定用 Box3 配列を返す関数  

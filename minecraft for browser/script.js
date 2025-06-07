@@ -543,69 +543,52 @@ const MAX_SEARCH_DEPTH = 32;  // startY指定時の最大下方向探索深さ
 function getTerrainHeight(worldX, worldZ, startY) {
     if (startY !== undefined) {
         let y = Math.floor(startY);
-        const floorX = Math.floor(worldX);
-        const floorZ = Math.floor(worldZ);
+        const floorX = y === worldX ? y : Math.floor(worldX);
+        const floorZ = y === worldZ ? y : Math.floor(worldZ);
 
-        // 探索範囲の下限設定（最低0）
         const minY = Math.max(0, y - MAX_SEARCH_DEPTH);
 
-        // y=startY から minY まで下方向に走査し、
-        // 空気でない最初のブロックを探す
         for (; y >= minY; y--) {
-            if (getVoxelAtWorld(floorX, y, floorZ) !== 0) {
+            if (getVoxelAtWorld(floorX, y, floorZ) !== BLOCK_TYPES.SKY) {
                 return y + 1;
             }
         }
-
-        // 見つからなければ最低値として -Infinity を返す
         return -Infinity;
     }
 
-    // startY指定なし（通常のキャッシュ利用）
-
-    const key = `${Math.floor(worldX)}_${Math.floor(worldZ)}`;
+    const xInt = Math.floor(worldX);
+    const zInt = Math.floor(worldZ);
+    const key = `${xInt}_${zInt}`;
 
     if (terrainHeightCache.has(key)) {
-        // LRU更新なしで高速化
         return terrainHeightCache.get(key);
     }
 
-    // ノイズ計算
-    const bx = worldX * BASE_SCALE;
-    const bz = worldZ * BASE_SCALE;
-    const baseNoise = fractalNoise2D(bx, bz, 4, 0.5);
-
-    const dx = worldX * DETAIL_SCALE;
-    const dz = worldZ * DETAIL_SCALE;
-    const detailNoise = fractalNoise2D(dx, dz, 2, 0.5);
+    const baseNoise = fractalNoise2D(worldX * BASE_SCALE, worldZ * BASE_SCALE, 4, 0.5);
+    const detailNoise = fractalNoise2D(worldX * DETAIL_SCALE, worldZ * DETAIL_SCALE, 2, 0.5);
 
     const height = BASE_HEIGHT + baseNoise * MOUNTAIN_AMPLITUDE + detailNoise * DETAIL_AMPLITUDE;
-    const result = Math.floor(height);
+    const result = height | 0;  // Math.floorより速い整数化(bitwise OR 0)
 
-    // キャッシュサイズ制御
     if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
-        const oldestKey = terrainHeightCache.keys().next().value;
-        terrainHeightCache.delete(oldestKey);
+        terrainHeightCache.delete(terrainHeightCache.keys().next().value);
     }
-
     terrainHeightCache.set(key, result);
+
     return result;
 }
 
 const globalTerrainCache = new Map();
 const blockCollisionCache = new Map();
 const voxelKeyFor = (x, y, z) => `${x}_${y}_${z}`;
-const voxelKeyHash = (x, y, z) => ((x & 0x3FF) << 20) | ((y & 0x3FF) << 10) | (z & 0x3FF);
 const terrainKeyHash = (x, z) => ((x & 0xFFFF) << 16) | (z & 0xFFFF);
 const BEDROCK_LEVEL = 0;
 
 function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, { raw = false } = {}) {
     if (![x, y, z].every(Number.isFinite)) throw new TypeError("worldX, y, worldZ must be valid numbers.");
     if (y < 0) return BLOCK_TYPES.SKY;
-
     const { SKY, WATER, GRASS, DIRT, STONE, BEDROCK } = BLOCK_TYPES;
     const modKey = voxelKeyFor(x, y, z);
-
     if (Object.prototype.hasOwnProperty.call(voxelModifications, modKey)) {
         const id = voxelModifications[modKey];
         if (!raw) {
@@ -615,22 +598,17 @@ function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, { raw = fal
         }
         return id;
     }
-
     const tKey = terrainKeyHash(x, z);
     let h = terrainCache.get(tKey);
     if (h === undefined) terrainCache.set(tKey, h = getTerrainHeight(x, z));
-
     let block =
         y > h ? SKY :
             y === h ? GRASS :
                 y >= h - 2 ? DIRT :
                     y > BEDROCK_LEVEL ? STONE : BEDROCK;
-
     return (block === SKY && y >= 30 && y <= 45) ? WATER : block;
 }
-
 const BLOCK_CONFIG_BY_ID = new Map(Object.values(BLOCK_CONFIG).map(c => [c.id, c]));
-
 function getBlockConfigById(id) {
     return BLOCK_CONFIG_BY_ID.get(id) || null;
 }
@@ -798,12 +776,6 @@ function resolveVerticalCollision(origY, candidateY, newX, newZ) {
     }
     return safeY;
 }
-
-
-
-
-
-
 
 /**
  * プレイヤーの脱出処理（アンストック処理）
@@ -1008,10 +980,6 @@ function updateOnGround() {
     player.onGround = checkAABBCollision(testAABB);
 }
 
-/* ======================================================
-   【チャンク生成】
-   ====================================================== */
-
 // 各面の定義：法線と面を構成する 4 つの頂点を定義
 /* ======================================================
    【チャンク生成】
@@ -1089,54 +1057,40 @@ function computeTopShadowFactorForCorner(wx, wy, wz, corner) {
 
 const clearCaches = () => subterraneanAreaCache.clear();
 
-
 // ========= ヘルパー関数 =========
 
 // (voxelModifications はユーザーによるブロック変更情報のオブジェクト)
 // ※ 既存の getVoxelAtWorld, getTerrainHeight, voxelModifications, faceData, addFace などはそのまま利用する前提です。
 
 // ユーザー変更があった列をマークする（ブロックの設置／破壊時に適切に呼ぶ）
-const columnModifications = {}; // キー： "wx_wz"、値： { maxModifiedY, blocks: [...] }
+const columnModifications = {}; // キー: "wx_wz", 値: { maxModifiedY, blocks: [] }
 
-function markColumnModified(chunkKey, wx, wz, modY) {
-    // chunkKey はここでは利用しない（グローバルな columnModifications で管理）
-    const colKey = wx + "_" + wz;
-    if (!columnModifications[colKey]) {
-        columnModifications[colKey] = { maxModifiedY: modY, blocks: [] };
-    } else {
-        if (modY > columnModifications[colKey].maxModifiedY) {
-            columnModifications[colKey].maxModifiedY = modY;
-        }
-        // 必要に応じて blocks リストにも追加
-    }
+function markColumnModified(wx, wz, modY) {
+    const key = `${wx}_${wz}`;
+    const col = columnModifications[key] ??= { maxModifiedY: modY, blocks: [] };
+    col.maxModifiedY = Math.max(col.maxModifiedY, modY);
+    // 必要なら col.blocks.push(...) を追加
 }
 
 function disposeMesh(mesh) {
-    mesh.traverse(child => {
-        if (child.isMesh) {
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) {
-                if (Array.isArray(child.material)) {
-                    child.material.forEach(mat => mat.dispose());
-                } else {
-                    child.material.dispose();
-                }
-            }
+    mesh.traverse(obj => {
+        if (obj.isMesh) {
+            obj.geometry?.dispose();
+            (Array.isArray(obj.material) ? obj.material : [obj.material])
+                .forEach(mat => mat?.dispose());
         }
     });
 }
 
 function refreshChunkAt(cx, cz) {
     const key = `${cx}_${cz}`;
-    if (!(key in loadedChunks)) return;
-    console.info("チャンク再生成（フル更新）:", key);
     const oldChunk = loadedChunks[key];
+    if (!oldChunk) return;
+    console.info("チャンク再生成（全更新）:", key);
     disposeMesh(oldChunk);
     scene.remove(oldChunk);
-    // もしオブジェクトプールが利用できるなら、再利用可能なチャンクを探す
-    // ここでは直接生成する例
     const newChunk = generateChunkMeshMultiTexture(cx, cz);
-    newChunk.userData.fadedIn = true; // 即座に表示
+    newChunk.userData.fadedIn = true;
     setOpacityRecursive(newChunk, 1);
     scene.add(newChunk);
     loadedChunks[key] = newChunk;
@@ -1146,7 +1100,7 @@ function refreshChunkAt(cx, cz) {
 // ここでは、チャンク座標 (cx, cz) を (cx + OFFSET) と (cz + OFFSET) で正数化し、
 // それらを 32bit 分ずつシフトして 64bit (BigInt) にエンコードします。
 // ※ ビッグワールド向けに、OFFSET を 2^31 (約21億) に設定（必要なら調整）
-const BIGINT_OFFSET = 2n ** 31n;  // 2^31
+const BIGINT_OFFSET = 2n ** 31n;
 
 /**
  * チャンクキーを BigInt にエンコードする関数
@@ -1155,7 +1109,7 @@ const BIGINT_OFFSET = 2n ** 31n;  // 2^31
  * @returns {bigint} エンコード済みのキー
  */
 function encodeChunkKey(cx, cz) {
-    return ((BigInt(cx) + BIGINT_OFFSET) << 32n) | ((BigInt(cz) + BIGINT_OFFSET) & 0xffffffffn);
+    return (BigInt(cx) + BIGINT_OFFSET) << 32n | ((BigInt(cz) + BIGINT_OFFSET) & 0xffffffffn);
 }
 
 /**
@@ -1164,9 +1118,10 @@ function encodeChunkKey(cx, cz) {
  * @returns {[number, number]} [cx, cz] の配列
  */
 function decodeChunkKey(key) {
-    const cx = Number((key >> 32n) - BIGINT_OFFSET);
-    const cz = Number((key & 0xffffffffn) - BIGINT_OFFSET);
-    return [cx, cz];
+    return [
+        Number((key >> 32n) - BIGINT_OFFSET),
+        Number((key & 0xffffffffn) - BIGINT_OFFSET)
+    ];
 }
 
 // ───────────────────────────────
@@ -1190,26 +1145,21 @@ function requestChunkUpdate(cx, cz) {
  * 保留中のチャンク更新要求を処理する関数
  * 集められたキーをデコードして、各チャンクに対して refreshChunkAt を呼び出す
  */
+let chunkUpdateTimer = null;
 function processPendingChunkUpdates() {
     for (const key of pendingChunkUpdates) {
         const [cx, cz] = decodeChunkKey(key);
-        refreshChunkAt(cx, cz);  // ← ここはチャンクの再更新処理（各自実装）
+        refreshChunkAt(cx, cz);
     }
     pendingChunkUpdates.clear();
 }
-
-const scheduleChunkUpdate = (() => {
-    let timeoutId = null;
-    return function () {
-        if (timeoutId !== null) {
-            clearTimeout(timeoutId);
-        }
-        timeoutId = setTimeout(() => {
-            processPendingChunkUpdates();
-            timeoutId = null;
-        }, 200);
-    };
-})();
+function scheduleChunkUpdate() {
+    clearTimeout(chunkUpdateTimer);
+    chunkUpdateTimer = setTimeout(() => {
+        processPendingChunkUpdates();
+        chunkUpdateTimer = null;
+    }, 200);
+}
 
 /* ======================================================
    【チャンクの管理】
@@ -1218,13 +1168,6 @@ const scheduleChunkUpdate = (() => {
 const loadedChunks = {}; // 現在シーンに配置中のチャンク（キーは "cx_cz"）
 const chunkPool = [];    // 使い回し可能なチャンクメッシュのプール
 const chunkQueue = [];   // 新規チャンク生成用のキュー
-
-// 共有用の基本マテリアル。MeshLambertMaterial は影も正しく扱える
-const sharedMaterial = new THREE.MeshLambertMaterial({
-    color: 0x00aa00,
-    transparent: true,
-    opacity: 0  // 初期は見えない状態
-});
 
 /**
  * フェードインアニメーション（opacity 0→1）を Mesh に適用する関数
@@ -1294,22 +1237,13 @@ function generateNextChunk() {
     if (!chunkInfo) return;
     const { cx, cz } = chunkInfo;
     const key = `${cx}_${cz}`;
-    if (key in loadedChunks) {
-        // 既に生成済みの場合は何もしない
-        return;
-    }
-    // 新規チャンクの生成
-    const chunkMesh = generateChunkMeshMultiTexture(cx, cz);
-    // 追加: 生成直後にすべてのマテリアルの透明度を 0 に設定
-    setOpacityRecursive(chunkMesh, 0);
-    // 新規生成したチャンクは初期状態で透明（フェードイン前）とする
-    chunkMesh.userData.fadedIn = false;
-    scene.add(chunkMesh);
-    loadedChunks[key] = chunkMesh;
-    // フェードインを実行して 0→1 にアニメーションさせる
-    fadeInMesh(chunkMesh, 500, () => {
-        chunkMesh.userData.fadedIn = true;
-    });
+    if (loadedChunks[key]) return; // すでに存在
+    const mesh = generateChunkMeshMultiTexture(cx, cz);
+    mesh.userData.fadedIn = false;
+    setOpacityRecursive(mesh, 0);
+    scene.add(mesh);
+    loadedChunks[key] = mesh;
+    fadeInMesh(mesh, 500, () => mesh.userData.fadedIn = true);
 }
 
 // ---------------------------------------------------------------------------
@@ -1495,28 +1429,26 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             }
 
     const container = new THREE.Object3D();
-    const get = (x, y, z) =>
-        (x >= 0 && x < CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT && z >= 0 && z < CHUNK_SIZE)
-            ? voxelData[idx(x, y, z)]
-            : modMap.get(`${baseX + x}_${BEDROCK_LEVEL + y}_${baseZ + z}`) ?? getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z);
 
     const blockConfigCache = new Map();
-    const getBlockConfigCached = id => blockConfigCache.has(id) ? blockConfigCache.get(id) : blockConfigCache.set(id, getBlockConfiguration(id)).get(id);
-    const isFaceOpaque = (id, cfg) => id && id !== BLOCK_TYPES.SKY && cfg && !cfg.transparent;
-
+    const getBlockConfigCached = id => {
+        let cfg = blockConfigCache.get(id);
+        if (!cfg) blockConfigCache.set(id, cfg = getBlockConfiguration(id));
+        return cfg;
+    };
+    const get = (x, y, z) => (x | 0) < 0 || x >= CHUNK_SIZE || y < 0 || y >= CHUNK_HEIGHT || z < 0 || z >= CHUNK_SIZE
+        ? modMap.get(`${baseX + x}_${BEDROCK_LEVEL + y}_${baseZ + z}`) ?? getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z)
+        : voxelData[idx(x, y, z)];
+    const isFaceOpaque = (id, cfg = getBlockConfigCached(id)) => id && id !== BLOCK_TYPES.SKY && cfg && !cfg.transparent;
     const computeBottomShadowFactor = (wx, wy, wz) =>
-        isInSubterraneanArea(wx, wy, wz)
-            ? 0.4
-            : isFaceOpaque(getVoxelAtWorld(wx, wy - 1, wz), getBlockConfigCached(getVoxelAtWorld(wx, wy - 1, wz))) ? 0.55 : 0.45;
-
-    const SIDE_OPPOSITE_FACE = { px: "nx", nx: "px", pz: "nz", nz: "pz" };
+        isInSubterraneanArea(wx, wy, wz) ? 0.4 : isFaceOpaque(getVoxelAtWorld(wx, wy - 1, wz)) ? 0.55 : 0.45;
     const CEILING_CHECK_OFFSETS = { px: [1, 1, 0], nx: [-1, 1, 0], pz: [0, 1, 1], nz: [0, 1, -1] };
     const computeSideShadowFactor = (x, y, z, face) => {
-        if (!(face in SIDE_OPPOSITE_FACE)) return 1;
-        const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
-        const [dx, dy, dz] = CEILING_CHECK_OFFSETS[face];
-        for (let checkY = wy + 1; checkY < BEDROCK_LEVEL + CHUNK_HEIGHT; checkY++) {
-            if (isFaceOpaque(getVoxelAtWorld(wx + dx, checkY, wz + dz), getBlockConfigCached(getVoxelAtWorld(wx + dx, checkY, wz + dz)))) return 0.4;
+        const o = CEILING_CHECK_OFFSETS[face];
+        if (!o) return 1;
+        let [wx, wy, wz] = [baseX + x + o[0], BEDROCK_LEVEL + y + o[1], baseZ + z + o[2]];
+        for (; wy < BEDROCK_LEVEL + CHUNK_HEIGHT; wy++) {
+            if (isFaceOpaque(getVoxelAtWorld(wx, wy, wz))) return 0.4;
         }
         return 1;
     };
@@ -1744,7 +1676,6 @@ function updateChunks() {
    【ブロックの破壊・設置機能】（長押し、範囲指定、プレイヤー領域禁止）
    ====================================================== */
 const BLOCK_INTERACT_RANGE = 6;
-let interactIntervalId = null;
 /**
  * 座標からチャンク座標を求めるユーティリティ関数
  * 非負の場合はビット演算で高速に、負の場合は Math.floor を利用
@@ -1764,22 +1695,14 @@ let updateTimeout = null;
  * @param {number} cz - チャンクのZ座標
  */
 function requestDebouncedChunkUpdate(cx, cz) {
-    // BigInt 型のキーを作成
-    const key = encodeChunkKey(cx, cz);
-    pendingChunkUpdates.add(key);
+    pendingChunkUpdates.add(encodeChunkKey(cx, cz));
+    if (updateTimeout) return;
 
-    // 既にタイマーが動作中なら再スケジュールは不要
-    if (updateTimeout !== null) {
-        return;
-    }
-
-    // 約16ms後（1フレーム分）に蓄積された全ての更新要求を一括処理
     updateTimeout = setTimeout(() => {
-        pendingChunkUpdates.forEach(chunkKey => {
-            // BigInt キーをデコードしてチャンク座標を取得
-            const [x, z] = decodeChunkKey(chunkKey);
+        for (const key of pendingChunkUpdates) {
+            const [x, z] = decodeChunkKey(key);
             requestChunkUpdate(x, z);
-        });
+        }
         pendingChunkUpdates.clear();
         scheduleChunkUpdate();
         updateTimeout = null;
@@ -1794,44 +1717,27 @@ function requestDebouncedChunkUpdate(cx, cz) {
  * @param {{x: number, y: number, z: number}} blockPos - 操作対象のブロックワールド座標
  */
 function updateAffectedChunks(blockPos) {
-    // ブロック座標からチャンク座標を算出する
     const cx = getChunkCoord(blockPos.x);
     const cz = getChunkCoord(blockPos.z);
 
-    // 自分のチャンクは必ず更新要求
-    requestDebouncedChunkUpdate(cx, cz);
+    requestDebouncedChunkUpdate(cx, cz); // 自分のチャンク
 
-    // ローカルなセル座標（チャンク内の位置）を算出
-    // CHUNK_SIZE が 2 の冪である前提で、ビットAND を使います
     const localX = blockPos.x & (CHUNK_SIZE - 1);
     const localZ = blockPos.z & (CHUNK_SIZE - 1);
 
-    // 境界に達している場合は、隣接チャンクへの更新要求を出す
-    if (localX === 0) {
-        requestDebouncedChunkUpdate(cx - 1, cz);
-    }
-    if (localX === CHUNK_SIZE - 1) {
-        requestDebouncedChunkUpdate(cx + 1, cz);
-    }
-    if (localZ === 0) {
-        requestDebouncedChunkUpdate(cx, cz - 1);
-    }
-    if (localZ === CHUNK_SIZE - 1) {
-        requestDebouncedChunkUpdate(cx, cz + 1);
-    }
+    const dxList = localX === 0 ? [-1] : localX === CHUNK_SIZE - 1 ? [1] : [];
+    const dzList = localZ === 0 ? [-1] : localZ === CHUNK_SIZE - 1 ? [1] : [];
 
-    // 斜め（対角）の場合も更新要求を追加
-    if (localX === 0 && localZ === 0) {
-        requestDebouncedChunkUpdate(cx - 1, cz - 1);
+    for (const dx of dxList) {
+        requestDebouncedChunkUpdate(cx + dx, cz);
     }
-    if (localX === 0 && localZ === CHUNK_SIZE - 1) {
-        requestDebouncedChunkUpdate(cx - 1, cz + 1);
+    for (const dz of dzList) {
+        requestDebouncedChunkUpdate(cx, cz + dz);
     }
-    if (localX === CHUNK_SIZE - 1 && localZ === 0) {
-        requestDebouncedChunkUpdate(cx + 1, cz - 1);
-    }
-    if (localX === CHUNK_SIZE - 1 && localZ === CHUNK_SIZE - 1) {
-        requestDebouncedChunkUpdate(cx + 1, cz + 1);
+    for (const dx of dxList) {
+        for (const dz of dzList) {
+            requestDebouncedChunkUpdate(cx + dx, cz + dz);
+        }
     }
 }
 
@@ -2151,133 +2057,107 @@ document.addEventListener("keydown", (e) => {
     }
 });
 
-
-const createCanvas = size => {
-    const c = document.createElement("canvas");
-    c.width = size; c.height = size;
-    return c;
-};
-
-const loadImage = src =>
-    new Promise((resolve, reject) => {
+const createCanvas = size => Object.assign(document.createElement("canvas"), { width: size, height: size });
+const imageCache = new Map();
+const loadImage = src => {
+    if (imageCache.has(src)) return Promise.resolve(imageCache.get(src));
+    return new Promise((resolve, reject) => {
         const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = err => reject(err);
+        img.onload = () => {
+            imageCache.set(src, img);
+            resolve(img);
+        };
+        img.onerror = reject;
         img.src = src;
     });
-
-const createHotbarItemPreview = (blockConfig, size = 64) => {
-    const config = getBlockConfiguration(blockConfig.id);
-    return config.previewType === "2D" ? create2DPreview(config, size) : create3DPreview(config, size);
 };
-
 const create2DPreview = ({ id, textures = {}, previewOptions = {} }, size) => {
     const canvas = createCanvas(size);
     canvas.style.imageRendering = "pixelated";
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
     const src = textures.all || textures.side || textures.top;
-    if (!src) {
-        console.warn(`テクスチャがありません block: ${id}`);
-        return canvas;
-    }
-    loadImage(src)
-        .then(img => {
-            const { x: offsetX = 0, y: offsetY = 0 } = previewOptions.offset || {};
-            ctx.save(); ctx.translate(offsetX, offsetY);
-            ctx.drawImage(img, 0, 0, size, size);
-            ctx.restore();
-        })
-        .catch(err => console.error(`画像読み込み失敗 block: ${id}`, err));
+    if (!src) return console.warn(`テクスチャがありません block: ${id}`), canvas;
+    loadImage(src).then(img => {
+        const { x = 0, y = 0 } = previewOptions.offset || {};
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.drawImage(img, 0, 0, size, size);
+        ctx.restore();
+    }).catch(err => console.error(`画像読み込み失敗 block: ${id}`, err));
     return canvas;
 };
-
 const create3DPreview = ({ id, previewOptions = {}, geometryType }, size) => {
-    const canvas = createCanvas(size),
-        aspect = 1, d = 2;
+    const canvas = createCanvas(size);
+    const aspect = 1, d = 2;
     const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 0.1, 100);
-    camera.position.set(2, 2, 2); camera.lookAt(0, 0, 0);
+    camera.position.set(2, 2, 2);
+    camera.lookAt(0, 0, 0);
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    renderer.setSize(size, size); renderer.setClearColor(0x000000, 0);
+    renderer.setSize(size, size);
+    renderer.setClearColor(0x000000, 0);
     const scene = new THREE.Scene();
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     const light = new THREE.DirectionalLight(0xffffff, 0.8);
-    light.position.set(5, 5, 5); scene.add(light);
-    const mesh = createBlockMesh(id, new THREE.Vector3(0, 0, 0));
-    if (!mesh) { console.error(`メッシュ生成失敗 id: ${id}`); return canvas; }
+    light.position.set(5, 5, 5);
+    scene.add(light);
+    const mesh = createBlockMesh(id, new THREE.Vector3());
+    if (!mesh) return console.error(`メッシュ生成失敗 id: ${id}`), canvas;
     scene.add(mesh);
     const center = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
     mesh.position.sub(center);
-    if (previewOptions.offset) {
-        const { x = 0, y = 0, z = 0 } = previewOptions.offset;
-        mesh.position.add(new THREE.Vector3(x, y, z));
-    }
+    if (previewOptions.offset) mesh.position.add(new THREE.Vector3(...["x", "y", "z"].map(k => previewOptions.offset[k] || 0)));
     const { rotation = { x: 30, y: 45, z: 0 }, scale = 0 } = previewOptions;
-    mesh.rotation.set(
-        THREE.MathUtils.degToRad(rotation.x),
-        THREE.MathUtils.degToRad(rotation.y),
-        THREE.MathUtils.degToRad(rotation.z)
-    );
+    mesh.rotation.set(...["x", "y", "z"].map(k => THREE.MathUtils.degToRad(rotation[k])));
     mesh.scale.setScalar(scale);
     if (geometryType === "stairs") {
         mesh.scale.x *= -1;
-        const newCenter = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
-        mesh.position.sub(newCenter);
+        mesh.position.sub(new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()));
     }
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    if (geometryType === "cube")
-        mats.forEach(mat => { if (mat.vertexColors) { mat.vertexColors = false; mat.needsUpdate = true; } });
+    if (geometryType === "cube") mats.forEach(m => { if (m.vertexColors) (m.vertexColors = false, m.needsUpdate = true); });
     mats.forEach(mat => {
         if (mat.map) {
             Object.assign(mat.map, {
                 magFilter: THREE.NearestFilter,
                 minFilter: THREE.NearestMipmapNearestFilter,
-                needsUpdate: true
+                needsUpdate: true,
             });
-            if (!mat.map.image)
-                mat.map.addEventListener("update", () => renderer.render(scene, camera));
+            if (!mat.map.image) mat.map.addEventListener("update", () => renderer.render(scene, camera));
         }
     });
     renderer.render(scene, camera);
-    if (mats.some(mat => mat.map && !mat.map.image)) {
+    if (mats.some(m => m.map && !m.map.image)) {
         const start = performance.now();
-        const animate = () => {
+        (function animate() {
             renderer.render(scene, camera);
             if (performance.now() - start < 1000) requestAnimationFrame(animate);
-        };
-        requestAnimationFrame(animate);
+        })();
     }
     return canvas;
 };
-
-// 例として、ホットバーに表示するブロックの順序や種類の配列を定義します。
-// 必要に応じて、この配列の内容を変更してください。
-// ホットバーに表示するブロック順序（ブロック名は BLOCK_CONFIG のキーと揃える）
-const blockOrder = [
-    "GRASS", "DIRT", "STONE", "PLANKS", "BEDROCK",
-    "GLASS", "STONE_STAIRS", "STONE_SLAB", "WATER"
-];
-const slotCount = 9;  // 固定スロット数
+const createHotbarItemPreview = blockConfig => {
+    const config = getBlockConfiguration(blockConfig.id);
+    return config.previewType === "2D"
+        ? create2DPreview(config, 64)
+        : create3DPreview(config, 64);
+};
+const blockOrder = ["GRASS", "DIRT", "STONE", "PLANKS", "BEDROCK", "GLASS", "STONE_STAIRS", "STONE_SLAB", "WATER"];
 const hotbarEl = document.getElementById("hotbar");
 hotbarEl.innerHTML = "";
-for (let i = 0; i < slotCount; i++) {
+blockOrder.forEach((name, i) => {
     const item = document.createElement("div");
     item.classList.add("hotbar-item");
-    // 例として最初のスロットに active クラスを追加
     if (i === 0) item.classList.add("active");
-    const blockName = blockOrder[i];
-    // BLOCK_CONFIG から情報を取得。blockName が undefined または BLOCK_CONFIG に無ければ blockConfig は undefined。
-    const blockConfig = blockName ? BLOCK_CONFIG[blockName] : undefined;
-    // データ属性にブロックIDを設定。該当する項目がなければ空文字
-    item.setAttribute("data-blocktype", blockConfig ? blockConfig.id : "");
+    const blockConfig = BLOCK_CONFIG[name];
+    item.dataset.blocktype = blockConfig?.id || "";
     if (blockConfig) {
-        const previewCanvas = createHotbarItemPreview(blockConfig, 64);
-        previewCanvas.style.width = "55px";
-        previewCanvas.style.height = "55px";
+        const previewCanvas = createHotbarItemPreview(blockConfig);
+        previewCanvas.style.width = previewCanvas.style.height = "55px";
         item.appendChild(previewCanvas);
     }
     hotbarEl.appendChild(item);
-}
+});
 
 // グローバルスコープにホットバー選択用のインデックスを定義（初期値は 0）
 let activeBlockType = 1;
@@ -2519,21 +2399,20 @@ function updateHeadBlockInfo() {
     }
 }
 
-
 // グローバルなパーティクルプールとアクティブグループの管理
 const particlePool = [];
 const activeParticleGroups = [];
 const GRAVITY = 9.8 * 0.8;
 
-const getCachedParticleGeometry = (i, j, grid, particleSize) => {
-    const key = `${grid}_${i}_${j}_${particleSize}`;
+const getCachedParticleGeometry = (i, j, grid, size) => {
+    const key = `${grid}_${i}_${j}_${size}`;
     if (geometryCache.has(key)) return geometryCache.get(key);
 
-    const geo = new THREE.PlaneGeometry(particleSize, particleSize);
-    geo.center();
-    const [uMin, vMin] = [i / grid, j / grid];
-    const [uMax, vMax] = [(i + 1) / grid, (j + 1) / grid];
-    geo.attributes.uv.array.set([uMin, vMin, uMax, vMin, uMax, vMax, uMin, vMax]);
+    const geo = new THREE.PlaneGeometry(size, size).center();
+    const uv = geo.attributes.uv.array;
+    const [u0, v0] = [i / grid, j / grid];
+    const [u1, v1] = [(i + 1) / grid, (j + 1) / grid];
+    uv.set([u0, v0, u1, v0, u1, v1, u0, v1]);
     geo.attributes.uv.needsUpdate = true;
     geo.__cached = true;
     geometryCache.set(key, geo);
@@ -2541,64 +2420,55 @@ const getCachedParticleGeometry = (i, j, grid, particleSize) => {
 };
 
 const getPooledParticle = () => {
-    if (particlePool.length) {
-        const p = particlePool.pop();
+    const p = particlePool.pop();
+    if (p) {
         p.visible = true;
         return p;
     }
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.__cached = false;
-    return new THREE.Mesh(
-        geo,
-        new THREE.MeshLambertMaterial({
-            transparent: true,
-            opacity: 1,
-            side: THREE.DoubleSide,
-        })
-    );
+    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+        transparent: true,
+        opacity: 1,
+        side: THREE.DoubleSide,
+    }));
 };
 
 const releasePooledParticle = p => {
     p.userData = {};
     p.visible = false;
-    if (p.parent) p.parent.remove(p);
+    p.parent?.remove(p);
     if (p.geometry && !p.geometry.__cached) p.geometry.dispose();
     particlePool.push(p);
 };
 
 const createMinecraftBreakParticles = (pos, blockType, lifetime = 3.0) => {
-    const grid = 4,
-        base = 1 / grid,
-        particleSize = base * 0.5;
-    const group = new THREE.Group();
-    activeParticleGroups.push(group);
+    const grid = 4, size = 0.5 / grid, group = new THREE.Group();
     const texture = getBlockMaterials(blockType)?.[0]?.map || null;
-    const tempOffset = new THREE.Vector3(); // 再利用用 temporary vector
-    for (let i = 0; i < grid; i++) {
-        for (let j = 0; j < grid; j++) {
+    const offset = new THREE.Vector3();
+    activeParticleGroups.push(group);
+
+    for (let i = 0; i < grid; i++)
+        for (let j = 0; j < grid; j++)
             for (let k = 0; k < grid; k++) {
-                const particle = getPooledParticle();
-                particle.material.map = texture;
-                particle.material.needsUpdate = true;
-                particle.geometry = getCachedParticleGeometry(i, j, grid, particleSize);
-                tempOffset.set(
-                    (i + 0.5) / grid - 0.5 + (Math.random() - 0.5) * 0.05,
+                const p = getPooledParticle();
+                p.material.map = texture;
+                p.material.needsUpdate = true;
+                p.geometry = getCachedParticleGeometry(i, j, grid, size);
+                offset.set((i + 0.5) / grid - 0.5 + (Math.random() - 0.5) * 0.05,
                     (j + 0.5) / grid - 0.5 + (Math.random() - 0.5) * 0.05,
-                    (k + 0.5) / grid - 0.5 + (Math.random() - 0.5) * 0.05
-                );
-                // particle.position は、座標 pos (clone する必要がある場合のみ)
-                particle.position.copy(pos).add(tempOffset);
-                particle.userData = {
-                    origin: pos.clone(), // 位置は一度 clone して保持
+                    (k + 0.5) / grid - 0.5 + (Math.random() - 0.5) * 0.05);
+                p.position.copy(pos).add(offset);
+                p.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+                p.userData = {
+                    origin: pos.clone(),
                     velocity: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5),
                     lifetime: 0.2 + Math.random() * (lifetime - 0.2),
                     elapsed: 0
                 };
-                particle.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-                group.add(particle);
+                group.add(p);
             }
-        }
-    }
+
     scene.add(group);
     console.log(`Created particles: ${group.children.length}`);
     return group;
@@ -2608,25 +2478,28 @@ const updateBlockParticles = delta => {
     for (let gi = activeParticleGroups.length - 1; gi >= 0; gi--) {
         const group = activeParticleGroups[gi];
         group.updateMatrixWorld();
+
         for (let pi = group.children.length - 1; pi >= 0; pi--) {
-            const particle = group.children[pi],
-                ud = particle.userData;
+            const p = group.children[pi], ud = p.userData;
             ud.elapsed += delta;
-            particle.position.addScaledVector(ud.velocity, delta);
+            p.position.addScaledVector(ud.velocity, delta);
             ud.velocity.y -= GRAVITY * delta;
-            const landY = getTerrainHeight(ud.origin.x, ud.origin.z, particle.position.y);
-            if (landY !== -Infinity && particle.position.y < landY) {
-                particle.position.y = landY;
+
+            const landY = getTerrainHeight(ud.origin.x, ud.origin.z, p.position.y);
+            if (landY !== -Infinity && p.position.y < landY) {
+                p.position.y = landY;
                 ud.velocity.y = 0;
                 ud.velocity.x *= 0.9;
                 ud.velocity.z *= 0.9;
             }
-            particle.lookAt(camera.position);
+            p.lookAt(camera.position);
+
             if (ud.elapsed >= ud.lifetime) {
-                releasePooledParticle(particle);
-                group.remove(particle);
+                releasePooledParticle(p);
+                group.remove(p);
             }
         }
+
         if (group.children.length === 0) {
             scene.remove(group);
             activeParticleGroups.splice(gi, 1);
@@ -2712,13 +2585,10 @@ function updateUnderwaterPhysics(delta) {
 
 const clock = new THREE.Clock();
 let wasUnderwater = false;
-
 function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
-
     updateBlockParticles(delta);
-
     // FPS更新（1秒毎）
     frameCount++;
     const now = performance.now();
@@ -2733,38 +2603,28 @@ function animate() {
         frameCount = 0;
         lastFpsTime = now;
     }
-
     if (!flightMode && keys[" "] && player.onGround && !wasUnderwater) jumpRequest = true;
-
     camera.rotation.set(pitch, yaw, 0);
-
     const underwater = isPlayerEntireBodyInWater();
     if (flightMode) updateFlightPhysics(delta);
     else if (underwater) updateUnderwaterPhysics(delta);
     else updateNormalPhysics(delta);
     wasUnderwater = underwater;
-
     resolvePlayerCollision();
     updateOnGround();
     updateChunks();
     processPendingChunkUpdates();
-
     const camOffset = flightMode ? getCurrentPlayerHeight() - 0.15 : getCurrentPlayerHeight();
     camera.position.copy(player.position).add(new THREE.Vector3(0, camOffset, 0));
-
     updateBlockSelection();
     updateBlockInfo();
     updateHeadBlockInfo();
-
     updateCloudGrid(scene, camera.position);
     updateCloudTiles(delta);
     updateCloudOpacity(camera.position);
     updateScreenOverlay();
     cloudTiles.forEach(tile => adjustCloudLayerDepth(tile, camera));
-
     if (pendingChunkUpdates.size) processPendingChunkUpdatesBatch(2);
-
     renderer.render(scene, camera);
 }
-
 animate();
