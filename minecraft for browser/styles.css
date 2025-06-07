@@ -211,6 +211,39 @@ canvas {
     outline: solid 2px white;
 }
 
+#inventory-container {
+    display: none;
+}
+
+#inventory-container span {
+    font-size: x-large;
+    color: white;
+}
+
+#inventory {
+    width: max-content;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.4);
+    padding: 5px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    z-index: 100;
+}
+
+.inventory-item {
+    border: 1px solid white;
+    cursor: pointer;
+}
+
+
+
+
+
+
 
 
 /* 例: style.css に記述 */

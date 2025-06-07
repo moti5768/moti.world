@@ -1939,15 +1939,6 @@ document.addEventListener("pointerlockchange", () => {
     console.log(document.pointerLockElement === renderer.domElement ? "Pointer Locked" : "Pointer Unlocked");
 });
 
-// ----- マウス移動による視点操作 -----
-document.addEventListener("mousemove", (event) => {
-    if (document.pointerLockElement === renderer.domElement) {
-        yaw -= event.movementX * mouseSensitivity;
-        pitch -= event.movementY * mouseSensitivity;
-        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-    }
-});
-
 // ----- タッチ操作で視点回転＋短タップ設置・長押し破壊 -----
 let lastTouchX = null, lastTouchY = null;
 let touchHoldTimeout = null;
@@ -2057,137 +2048,318 @@ document.addEventListener("keydown", (e) => {
     }
 });
 
-const createCanvas = size => Object.assign(document.createElement("canvas"), { width: size, height: size });
+// --- 選択管理 ---
+let activeBlockType = 1;
+let selectedHotbarIndex = 0;
+
+// --- 画像キャッシュ＆読み込み ---
 const imageCache = new Map();
-const loadImage = src => {
-    if (imageCache.has(src)) return Promise.resolve(imageCache.get(src));
-    return new Promise((resolve, reject) => {
+const loadImage = src => imageCache.has(src)
+    ? Promise.resolve(imageCache.get(src))
+    : new Promise((res, rej) => {
         const img = new Image();
-        img.onload = () => {
-            imageCache.set(src, img);
-            resolve(img);
-        };
-        img.onerror = reject;
+        img.onload = () => (imageCache.set(src, img), res(img));
+        img.onerror = rej;
         img.src = src;
     });
-};
+
+// --- Canvas作成 ---
+const createCanvas = size => Object.assign(document.createElement("canvas"), { width: size, height: size });
+
+// --- 2Dプレビュー ---
 const create2DPreview = ({ id, textures = {}, previewOptions = {} }, size) => {
     const canvas = createCanvas(size);
     canvas.style.imageRendering = "pixelated";
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
     const src = textures.all || textures.side || textures.top;
-    if (!src) return console.warn(`テクスチャがありません block: ${id}`), canvas;
+    if (!src) return (console.warn(`テクスチャなし block: ${id}`), canvas);
     loadImage(src).then(img => {
         const { x = 0, y = 0 } = previewOptions.offset || {};
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.drawImage(img, 0, 0, size, size);
-        ctx.restore();
-    }).catch(err => console.error(`画像読み込み失敗 block: ${id}`, err));
+        ctx.drawImage(img, x, y, size, size);
+    }).catch(e => console.error(`画像読み込み失敗 block: ${id}`, e));
     return canvas;
 };
-const create3DPreview = ({ id, previewOptions = {}, geometryType }, size) => {
-    const canvas = createCanvas(size);
-    const aspect = 1, d = 2;
-    const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 0.1, 100);
-    camera.position.set(2, 2, 2);
-    camera.lookAt(0, 0, 0);
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    renderer.setSize(size, size);
-    renderer.setClearColor(0x000000, 0);
-    const scene = new THREE.Scene();
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const light = new THREE.DirectionalLight(0xffffff, 0.8);
-    light.position.set(5, 5, 5);
-    scene.add(light);
+
+// --- 3Dプレビュー ---
+// 1つだけ用意する共有の3Dレンダラー＆シーン＆カメラ（非表示canvas）
+// サイズは適宜調整可。描画時にセットするので問題なし。
+const shared3DCanvas = createCanvas(64);
+shared3DCanvas.style.display = "none";
+document.body.appendChild(shared3DCanvas);
+
+const sharedRenderer = new THREE.WebGLRenderer({ canvas: shared3DCanvas, alpha: true, antialias: true });
+sharedRenderer.setSize(64, 64);
+sharedRenderer.setClearColor(0x000000, 0);
+
+const sharedScene = new THREE.Scene();
+sharedScene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const light = new THREE.DirectionalLight(0xffffff, 0.8);
+light.position.set(5, 5, 5);
+sharedScene.add(light);
+
+const sharedCamera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
+sharedCamera.position.set(2, 2, 2);
+sharedCamera.lookAt(0, 0, 0);
+
+// 3Dプレビュー作成（レンダラーは共有、戻り値は描画結果をコピーした2D canvas）
+// 対象箇所: create3DPreview関数
+// 変更点: テクスチャが完全に読み込まれてから描画を行うようにする
+
+// create3DPreview関数内の改善案
+const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) => {
+    const previewCanvas = createCanvas(size);
+    previewCanvas.style.imageRendering = "pixelated";
+    sharedRenderer.setSize(size, size);
+    // メッシュ生成
     const mesh = createBlockMesh(id, new THREE.Vector3());
-    if (!mesh) return console.error(`メッシュ生成失敗 id: ${id}`), canvas;
-    scene.add(mesh);
-    const center = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3());
+    if (!mesh) {
+        console.error(`メッシュ生成失敗 id: ${id}`);
+        return previewCanvas;
+    }
+    // カスタムジオメトリは法線計算
+    if (mesh.geometry && typeof mesh.geometry.computeVertexNormals === "function") {
+        mesh.geometry.computeVertexNormals();
+    }
+    // マテリアルをライト対応の MeshLambertMaterial に置き換え（透明も考慮）
+    const originalMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const newMaterials = originalMaterials.map(m => {
+        return new THREE.MeshLambertMaterial({
+            map: m.map || null,
+            side: THREE.FrontSide,
+            transparent: m.transparent || false,
+            opacity: m.opacity !== undefined ? m.opacity : 1,
+        });
+    });
+    mesh.material = Array.isArray(mesh.material) ? newMaterials : newMaterials[0];
+
+    // 使用される全てのテクスチャを抽出して読み込みを待つ
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const loadPromises = materials
+        .map(m => m.map)
+        .filter(map => map && !(map.image && map.image.complete))
+        .map(map => new Promise(resolve => {
+            const checkLoaded = () => {
+                if (map.image && map.image.complete) resolve();
+                else setTimeout(checkLoaded, 10);
+            };
+            checkLoaded();
+        }));
+    await Promise.all(loadPromises);
+
+    // テクスチャフィルター設定
+    materials.forEach(m => {
+        if (m.map) {
+            m.map.magFilter = THREE.NearestFilter;
+            m.map.minFilter = THREE.NearestMipmapNearestFilter;
+            m.map.generateMipmaps = true;
+            m.map.needsUpdate = true;
+        }
+    });
+
+    // ライト位置の調整（強めに光が当たるように）
+    light.position.set(10, 10, 10);
+    light.intensity = 0.8;
+
+    // カメラ調整（念のため）
+    sharedCamera.position.set(2, 2, 2);
+    sharedCamera.lookAt(0, 0, 0);
+    sharedCamera.updateProjectionMatrix();
+
+    // 古いメッシュを除去
+    while (sharedScene.children.length > 2) {
+        const old = sharedScene.children[2];
+        sharedScene.remove(old);
+        if (old.geometry) old.geometry.dispose();
+        if (old.material) {
+            const disposeMaterial = m => {
+                if (m.map) m.map.dispose();
+                m.dispose();
+            };
+            Array.isArray(old.material) ? old.material.forEach(disposeMaterial) : disposeMaterial(old.material);
+        }
+    }
+
+    sharedScene.add(mesh);
+
+    // 中心合わせ・位置調整
+    const box = new THREE.Box3().setFromObject(mesh);
+    const center = box.getCenter(new THREE.Vector3());
     mesh.position.sub(center);
-    if (previewOptions.offset) mesh.position.add(new THREE.Vector3(...["x", "y", "z"].map(k => previewOptions.offset[k] || 0)));
-    const { rotation = { x: 30, y: 45, z: 0 }, scale = 0 } = previewOptions;
-    mesh.rotation.set(...["x", "y", "z"].map(k => THREE.MathUtils.degToRad(rotation[k])));
-    mesh.scale.setScalar(scale);
+    if (previewOptions.offset) {
+        mesh.position.add(new THREE.Vector3(
+            previewOptions.offset.x || 0,
+            previewOptions.offset.y || 0,
+            previewOptions.offset.z || 0
+        ));
+    }
+
+    // 回転設定
+    const rot = previewOptions.rotation || { x: 30, y: 45, z: 0 };
+    mesh.rotation.set(
+        THREE.MathUtils.degToRad(rot.x),
+        THREE.MathUtils.degToRad(rot.y),
+        THREE.MathUtils.degToRad(rot.z)
+    );
+
+    // スケール設定
+    mesh.scale.setScalar(previewOptions.scale || 1);
+
     if (geometryType === "stairs") {
         mesh.scale.x *= -1;
         mesh.position.sub(new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()));
     }
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    if (geometryType === "cube") mats.forEach(m => { if (m.vertexColors) (m.vertexColors = false, m.needsUpdate = true); });
-    mats.forEach(mat => {
-        if (mat.map) {
-            Object.assign(mat.map, {
-                magFilter: THREE.NearestFilter,
-                minFilter: THREE.NearestMipmapNearestFilter,
-                needsUpdate: true,
-            });
-            if (!mat.map.image) mat.map.addEventListener("update", () => renderer.render(scene, camera));
-        }
+
+    // レンダリング
+    sharedRenderer.render(sharedScene, sharedCamera);
+
+    const ctx = previewCanvas.getContext("2d");
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(shared3DCanvas, 0, 0, size, size);
+
+    // メッシュ削除
+    sharedScene.remove(mesh);
+    if (mesh.geometry) mesh.geometry.dispose();
+    materials.forEach(m => {
+        if (m.map) m.map.dispose();
+        m.dispose();
     });
-    renderer.render(scene, camera);
-    if (mats.some(m => m.map && !m.map.image)) {
-        const start = performance.now();
-        (function animate() {
-            renderer.render(scene, camera);
-            if (performance.now() - start < 1000) requestAnimationFrame(animate);
-        })();
-    }
-    return canvas;
+    return previewCanvas;
 };
-const createHotbarItemPreview = blockConfig => {
+
+// --- プレビュー選択 ---
+const createInventoryItemPreview = async blockConfig => {
+    const config = getBlockConfiguration(blockConfig.id);
+    return config.previewType === "2D"
+        ? create2DPreview(config, 40)
+        : await create3DPreview(config, 40);
+};
+const createHotbarItemPreview = async blockConfig => {
     const config = getBlockConfiguration(blockConfig.id);
     return config.previewType === "2D"
         ? create2DPreview(config, 64)
-        : create3DPreview(config, 64);
+        : await create3DPreview(config, 64);
 };
-const blockOrder = ["GRASS", "DIRT", "STONE", "PLANKS", "BEDROCK", "GLASS", "STONE_STAIRS", "STONE_SLAB", "WATER"];
+
+window.addEventListener("DOMContentLoaded", async () => {
+    const inventoryEl = document.getElementById("inventory");
+    inventoryEl.innerHTML = `<span>select block</span>`;
+
+    for (const blockConfig of Object.values(BLOCK_CONFIG)) {
+        const item = document.createElement("div");
+        item.className = "inventory-item";
+        item.dataset.blocktype = blockConfig?.id || "";
+
+        const preview = await createInventoryItemPreview(blockConfig);
+        preview.style.width = preview.style.height = "40px";
+        item.appendChild(preview);
+
+        item.addEventListener("click", async () => {
+            document.querySelectorAll(".inventory-item.active").forEach(el => el.classList.remove("active"));
+            item.classList.add("active");
+
+            activeBlockType = Number(blockConfig.id);
+
+            const hotbarItems = document.querySelectorAll(".hotbar-item");
+            const hotbarSlot = hotbarItems[selectedHotbarIndex];
+            hotbarSlot.innerHTML = "";
+            hotbarSlot.dataset.blocktype = blockConfig.id;
+
+            const hotbarPreview = await createHotbarItemPreview(blockConfig);
+            hotbarPreview.style.width = hotbarPreview.style.height = "55px";
+            hotbarSlot.appendChild(hotbarPreview);
+
+            console.log("Inventory block set to hotbar slot", selectedHotbarIndex, activeBlockType);
+        });
+
+        inventoryEl.appendChild(item);
+    }
+});
+
+// --- ホットバー初期化 ---
 const hotbarEl = document.getElementById("hotbar");
 hotbarEl.innerHTML = "";
-blockOrder.forEach((name, i) => {
+for (let i = 0; i < 9; i++) {
     const item = document.createElement("div");
-    item.classList.add("hotbar-item");
+    item.className = "hotbar-item";
     if (i === 0) item.classList.add("active");
-    const blockConfig = BLOCK_CONFIG[name];
-    item.dataset.blocktype = blockConfig?.id || "";
-    if (blockConfig) {
-        const previewCanvas = createHotbarItemPreview(blockConfig);
-        previewCanvas.style.width = previewCanvas.style.height = "55px";
-        item.appendChild(previewCanvas);
-    }
-    hotbarEl.appendChild(item);
-});
+    item.dataset.blocktype = "";
 
-// グローバルスコープにホットバー選択用のインデックスを定義（初期値は 0）
-let activeBlockType = 1;
-let activeHotbarIndex = 0;
-// ホットバーアイテムクリック時
-document.querySelectorAll("#hotbar .hotbar-item").forEach((item, index) => {
     item.addEventListener("click", () => {
-        document.querySelectorAll("#hotbar .hotbar-item").forEach(el => el.classList.remove("active"));
+        document.querySelectorAll(".hotbar-item.active").forEach(el => el.classList.remove("active"));
         item.classList.add("active");
-        activeHotbarIndex = index;
-        activeBlockType = Number(item.getAttribute("data-blocktype"));
-        console.log("Active block type set to:", activeBlockType);
+
+        selectedHotbarIndex = i;
+        activeBlockType = Number(item.dataset.blocktype || 0);
+        console.log("Hotbar slot selected:", selectedHotbarIndex, activeBlockType);
     });
-});
 
-// マウスホイールイベントリスナーを追加
-const hotbarItems = document.querySelectorAll(".hotbar-item");
-document.addEventListener("wheel", (event) => {
-    if (!hotbarItems.length) return;
-    if (event.deltaY > 0) {
-        activeHotbarIndex = (activeHotbarIndex + 1) % hotbarItems.length;
-    } else if (event.deltaY < 0) {
-        activeHotbarIndex = (activeHotbarIndex - 1 + hotbarItems.length) % hotbarItems.length;
+    hotbarEl.appendChild(item);
+}
+
+// --- ホットバー選択更新 ---
+function updateHotbarSelection() {
+    const hotbarItems = document.querySelectorAll(".hotbar-item");
+    hotbarItems.forEach(el => el.classList.remove("active"));
+    const selected = hotbarItems[selectedHotbarIndex];
+    if (!selected) return;
+    selected.classList.add("active");
+    activeBlockType = Number(selected.dataset.blocktype || 0);
+    console.log("Hotbar slot selected (updated):", selectedHotbarIndex, activeBlockType);
+}
+
+// --- ホイール・数字キーでホットバー切替 ---
+window.addEventListener("wheel", e => {
+    selectedHotbarIndex = (selectedHotbarIndex + (e.deltaY > 0 ? 1 : 8)) % 9;
+    updateHotbarSelection();
+});
+window.addEventListener("keydown", e => {
+    if (/^[1-9]$/.test(e.key)) {
+        selectedHotbarIndex = Number(e.key) - 1;
+        updateHotbarSelection();
     }
-    hotbarItems.forEach(item => item.classList.remove("active"));
-    hotbarItems[activeHotbarIndex].classList.add("active");
-    activeBlockType = Number(hotbarItems[activeHotbarIndex].getAttribute("data-blocktype"));
-    console.log("Active block type switched to:", activeBlockType);
 });
 
+// --- インベントリ表示制御 ---
+const inventoryContainer = document.getElementById("inventory-container");
+inventoryContainer.style.display = "none";
+
+// --- ポインターロック管理 ---
+let pointerLocked = false;
+document.addEventListener("pointerlockchange", () => {
+    pointerLocked = (document.pointerLockElement === renderer.domElement);
+    pointerLocked
+        ? window.addEventListener("mousemove", onMouseMove)
+        : window.removeEventListener("mousemove", onMouseMove);
+});
+
+// --- マウス移動処理 ---
+function onMouseMove(e) {
+    if (!pointerLocked || inventoryContainer.style.display !== "none") return;
+    yaw -= e.movementX * mouseSensitivity;
+    pitch = Math.min(Math.max(pitch - e.movementY * mouseSensitivity, -Math.PI / 2), Math.PI / 2);
+}
+
+// --- クリックでポインターロック要求 ---
+renderer.domElement.addEventListener("click", () => {
+    if (!pointerLocked && inventoryContainer.style.display === "none") {
+        renderer.domElement.requestPointerLock();
+    }
+});
+
+// --- Eキーでインベントリ表示切替 ---
+window.addEventListener("keydown", e => {
+    if (e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        if (inventoryContainer.style.display === "block") {
+            inventoryContainer.style.display = "none";
+            renderer.domElement.requestPointerLock();
+        } else {
+            inventoryContainer.style.display = "block";
+            if (pointerLocked) document.exitPointerLock();
+        }
+    }
+});
 
 document.addEventListener("keyup", (e) => {
     keys[e.key.toLowerCase()] = false;
@@ -2198,7 +2370,6 @@ document.addEventListener("keyup", (e) => {
         sneakActive = false;
     }
 });
-
 
 // ----- 選択アウトライン用オブジェクト -----
 // （1×1×1 の BoxGeometry に基づいた単純なエッジ表示）

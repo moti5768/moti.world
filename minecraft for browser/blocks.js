@@ -86,16 +86,24 @@ const BLOCK_CONFIG = {
         id: 3,
         textures: { all: "textures/stone.png" }
     }),
-    PLANKS: createBlockConfig({
+    COBBLE_STONE: createBlockConfig({
         id: 4,
+        textures: { all: "textures/cobblestone.png" }
+    }),
+    PLANKS: createBlockConfig({
+        id: 5,
         textures: { all: "textures/planks.png" }
     }),
+    BRICK: createBlockConfig({
+        id: 6,
+        textures: { all: "textures/brick.png" }
+    }),
     BEDROCK: createBlockConfig({
-        id: 5,
+        id: 7,
         textures: { all: "textures/bedrock.png" }
     }),
     STONE_STAIRS: createBlockConfig({
-        id: 6,
+        id: 8,
         textures: {
             top: "textures/stone.png",
             bottom: "textures/stone.png",
@@ -108,7 +116,7 @@ const BLOCK_CONFIG = {
         hardness: 2.0
     }),
     STONE_SLAB: createBlockConfig({
-        id: 7,
+        id: 9,
         textures: { all: "textures/stone.png" },
         geometryType: "slab",
         transparent: true,
@@ -117,13 +125,13 @@ const BLOCK_CONFIG = {
         hardness: 1.5
     }),
     GLASS: createBlockConfig({
-        id: 8,
+        id: 10,
         textures: { all: "textures/glass.png" },
         transparent: true,
         screenFill: false
     }),
     FLOWER: createBlockConfig({
-        id: 9,
+        id: 11,
         textures: { all: "textures/flower.png" },
         collision: false,
         geometryType: "cross",
@@ -133,7 +141,7 @@ const BLOCK_CONFIG = {
         previewType: "2D"
     }),
     WATER: createBlockConfig({
-        id: 10,
+        id: 12,
         textures: { all: "textures/water.png" },
         collision: false,
         transparent: true,
@@ -191,56 +199,62 @@ function cachedLoadTexture(path) {
 
 function createMaterialsFromBlockConfig(blockConfig) {
     const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
+    const { geometryType, transparent, textures } = blockConfig;
 
-    // キャッシュキーの生成を最適化（文字列化のオーバーヘッド削減）
-    const textureKeys = blockConfig.textures.all
-        ? `all:${blockConfig.textures.all}`
-        : FACE_ORDER.map(face => blockConfig.textures[face] || blockConfig.textures.side || "none").join(",");
+    // キャッシュキー簡素化
+    const textureKey = textures.all
+        ? `all:${textures.all}`
+        : FACE_ORDER.map(f => textures[f] || textures.side || "none").join(",");
 
-    const cacheKey = `${blockConfig.geometryType}|${blockConfig.transparent}|${textureKeys}`;
+    const cacheKey = `${geometryType}|${transparent}|${textureKey}`;
     if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
 
-    const { geometryType, transparent } = blockConfig;
     const isStairsOrSlab = geometryType === "stairs" || geometryType === "slab";
     const isCross = geometryType === "cross";
     const isWater = geometryType === "water";
 
-    const finalOpacity = (isStairsOrSlab || isCross) ? 1.0 : (transparent ? 0.7 : 1.0);
-    const finalTransparent = isStairsOrSlab ? false : (isCross ? true : transparent);
-    const sideSetting = isCross ? THREE.DoubleSide : THREE.FrontSide;
-    const useVertexColors = !isStairsOrSlab && !isCross && !isWater;
+    const opacity = (isStairsOrSlab || isCross) ? 1 : (transparent ? 0.7 : 1);
+    const isTransparent = isStairsOrSlab ? false : (isCross ? true : transparent);
+    const side = isCross ? THREE.DoubleSide : THREE.FrontSide;
+    const vertexColors = (!isStairsOrSlab && !isCross && !isWater) ? THREE.VertexColors : false;
 
-    const makeMaterial = (texPath) => {
+    // 既に読み込み済みのテクスチャマテリアルをキャッシュ
+    const materialCacheByTexture = new Map();
+
+    function getMaterial(texPath) {
+        if (!texPath || texPath === "none") {
+            // 警告は一度だけにする
+            if (!getMaterial.warned) {
+                console.warn("Texture not set or invalid path detected.");
+                getMaterial.warned = true;
+            }
+            return new THREE.MeshLambertMaterial({ color: 0xff00ff });
+        }
+        if (materialCacheByTexture.has(texPath)) return materialCacheByTexture.get(texPath);
+
         const tex = cachedLoadTexture(texPath);
-        return new THREE.MeshLambertMaterial({
+        const mat = new THREE.MeshLambertMaterial({
             map: tex,
-            transparent: finalTransparent,
-            opacity: finalOpacity,
-            vertexColors: useVertexColors ? THREE.VertexColors : false,
-            side: sideSetting,
+            transparent: isTransparent,
+            opacity,
+            vertexColors,
+            side,
         });
-    };
+        materialCacheByTexture.set(texPath, mat);
+        return mat;
+    }
 
     let materials;
-
-    if (blockConfig.textures.all) {
-        const mat = makeMaterial(blockConfig.textures.all);
+    if (textures.all) {
+        const mat = getMaterial(textures.all);
         materials = FACE_ORDER.map(() => mat);
     } else {
-        materials = FACE_ORDER.map(face => {
-            const texPath = blockConfig.textures[face] || blockConfig.textures.side;
-            if (!texPath) {
-                console.warn(`Texture not set for face "${face}".`);
-                return new THREE.MeshLambertMaterial({ color: 0xff00ff });
-            }
-            return makeMaterial(texPath);
-        });
+        materials = FACE_ORDER.map(face => getMaterial(textures[face] || textures.side));
     }
 
     materialCache.set(cacheKey, materials);
     return materials;
 }
-
 
 // マテリアルのキャッシュ（ブロックIDごと）
 const BLOCK_MATERIALS_CACHE = {};
