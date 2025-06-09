@@ -23,79 +23,38 @@ const OFFSET = -1;
 // pseudoRandom の結果キャッシュ（Map）
 const pseudoRandomCache = new Map();
 let cloudTiles = new Map(); // "gridX,gridZ" キーごとに各雲タイルを保持
-/**
- * 数値ハッシュを生成する関数（x,y整数用）
- * 文字列キーより高速でメモリ効率良い
- */
+
 function hashXY(x, y) {
-    // 32bit符号付き整数の範囲内でハッシュ生成
     return ((x & 0xffff) << 16) | (y & 0xffff);
 }
 
-/**
- * 2D座標に基づく擬似乱数を返す関数
- * 結果は -1 ～ 1 の範囲
- */
 const pseudoRandom = (x, y) => {
     if (typeof x !== "number" || typeof y !== "number") {
         throw new TypeError("x と y は数値でなければなりません");
     }
-    // 座標を整数化（floor）
-    const ix = Math.floor(x);
-    const iy = Math.floor(y);
+    const ix = Math.floor(x), iy = Math.floor(y);
     const key = hashXY(ix, iy);
-    if (pseudoRandomCache.has(key)) {
-        return pseudoRandomCache.get(key);
-    }
-    // 元の計算式を維持
+    if (pseudoRandomCache.has(key)) return pseudoRandomCache.get(key);
     const n = ix + iy * PRIME_MULTIPLIER;
     const s = Math.sin(n) * SIN_MULTIPLIER;
-    const result = (s - Math.floor(s)) * SCALE + OFFSET;
+    const result = (s % 1) * SCALE + OFFSET; // s - floor(s) を s % 1 に変更
     pseudoRandomCache.set(key, result);
     return result;
 };
 
-// クインティック補間関数
 const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
-
-// 線形補間
 const lerp = (a, b, t) => a + t * (b - a);
 
-// スムーズな2Dノイズ
 const smoothNoise2D = (x, y) => {
-    const x0 = Math.floor(x);
-    const y0 = Math.floor(y);
-    const x1 = x0 + 1;
-    const y1 = y0 + 1;
-
-    const n00 = pseudoRandom(x0, y0);
-    const n10 = pseudoRandom(x1, y0);
-    const n01 = pseudoRandom(x0, y1);
-    const n11 = pseudoRandom(x1, y1);
-
-    const u = fade(x - x0);
-    const v = fade(y - y0);
-
-    const nx0 = lerp(n00, n10, u);
-    const nx1 = lerp(n01, n11, u);
-
-    return lerp(nx0, nx1, v);
+    const x0 = Math.floor(x), y0 = Math.floor(y);
+    const u = fade(x - x0), v = fade(y - y0);
+    const n00 = pseudoRandom(x0, y0), n10 = pseudoRandom(x0 + 1, y0);
+    const n01 = pseudoRandom(x0, y0 + 1), n11 = pseudoRandom(x0 + 1, y0 + 1);
+    return lerp(lerp(n00, n10, u), lerp(n01, n11, u), v);
 };
 
-/**
- * フラクタルノイズ
- *
- * @param {number} x 入力X
- * @param {number} y 入力Y
- * @param {number} octaves オクターブ数（デフォルト4）
- * @param {number} persistence 振幅減衰（デフォルト0.5）
- * @returns {number} ノイズ値 (-1〜1)
- */
 function fractalNoise2D(x, y, octaves = 4, persistence = 0.5) {
-    let total = 0,
-        frequency = 1,
-        amplitude = 1,
-        maxValue = 0;
+    let total = 0, frequency = 1, amplitude = 1, maxValue = 0;
     for (let i = 0; i < octaves; i++) {
         total += smoothNoise2D(x * frequency, y * frequency) * amplitude;
         maxValue += amplitude;
@@ -108,6 +67,7 @@ function fractalNoise2D(x, y, octaves = 4, persistence = 0.5) {
 // 使用例
 const noiseValue = fractalNoise2D(12.34, 56.78);
 console.log("Fractal Noise Value:", noiseValue);
+
 
 /* ======================================================
    【定数・グローバル変数】
@@ -407,83 +367,30 @@ scene.add(directionalLight);
 /* ======================================================
    【プレイヤーAABB・衝突判定関連】
    ====================================================== */
-function getPlayerAABB() {
+function getPlayerAABB(pos = player.position) {
     const half = PLAYER_RADIUS - COLLISION_MARGIN;
     const height = getCurrentPlayerHeight();
-    return {
-        min: new THREE.Vector3(player.position.x - half, player.position.y, player.position.z - half),
-        max: new THREE.Vector3(player.position.x + half, player.position.y + height, player.position.z + half)
-    };
+    const min = new THREE.Vector3(pos.x - half, pos.y, pos.z - half);
+    const max = new THREE.Vector3(pos.x + half, pos.y + height, pos.z + half);
+    return new THREE.Box3(min, max);
 }
 
 function getPlayerAABBAt(pos) {
     const half = PLAYER_RADIUS - COLLISION_MARGIN;
     const height = getCurrentPlayerHeight();
-    return {
-        min: new THREE.Vector3(pos.x - half, pos.y, pos.z - half),
-        max: new THREE.Vector3(pos.x + half, pos.y + height, pos.z + half)
-    };
+    return new THREE.Box3(
+        new THREE.Vector3(pos.x - half, pos.y, pos.z - half),
+        new THREE.Vector3(pos.x + half, pos.y + height, pos.z + half)
+    );
 }
 
 function checkAABBCollision(aabb, velocity, dt) {
-    // aabb が THREE.Box3 でない場合は変換
     if (!(aabb instanceof THREE.Box3)) {
         aabb = new THREE.Box3(aabb.min, aabb.max);
     }
 
-    // --- 静的判定（velocity, dt が未指定の場合） ---
-    if (velocity === undefined || dt === undefined) {
-        const startX = Math.floor(aabb.min.x + COLLISION_MARGIN);
-        const endX = Math.ceil(aabb.max.x - COLLISION_MARGIN);
-        const startY = Math.floor(aabb.min.y + COLLISION_MARGIN);
-        const endY = Math.ceil(aabb.max.y - COLLISION_MARGIN);
-        const startZ = Math.floor(aabb.min.z + COLLISION_MARGIN);
-        const endZ = Math.ceil(aabb.max.z - COLLISION_MARGIN);
-
-        for (let x = startX; x < endX; x++) {
-            for (let y = startY; y < endY; y++) {
-                for (let z = startZ; z < endZ; z++) {
-                    const voxelVal = getVoxelAtWorld(x, y, z);
-                    const config = getBlockConfiguration(voxelVal);
-                    // 衝突対象外ならスキップ
-                    if (config && config.collision === false) { continue; }
-
-                    if (voxelVal !== BLOCK_TYPES.SKY) {
-                        let staticBoxes = [];
-                        if (config && typeof config.customCollision === 'function') {
-                            // customCollision は局所座標（0～1）でボックスを返すと仮定
-                            let localBoxes = config.customCollision(new THREE.Vector3(0, 0, 0));
-                            // セルの位置 (x,y,z) をオフセットとして加算
-                            staticBoxes = localBoxes.map(box => {
-                                const boxWorld = box.clone();
-                                boxWorld.min.add(new THREE.Vector3(x, y, z));
-                                boxWorld.max.add(new THREE.Vector3(x, y, z));
-                                return boxWorld;
-                            });
-                        } else {
-                            // 普通の 1x1x1 の AABB
-                            staticBoxes.push(new THREE.Box3(
-                                new THREE.Vector3(x, y, z),
-                                new THREE.Vector3(x + 1, y + 1, z + 1)
-                            ));
-                        }
-
-                        // 各衝突ボックスとの交差判定
-                        for (const box of staticBoxes) {
-                            if (aabb.intersectsBox(box)) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    // --- 動的な連続衝突判定の場合 ---
-    let movingBox = aabb;  // aabb を動く Box と見なす
-    let earliestCollision = { collision: false, time: dt, normal: new THREE.Vector3(0, 0, 0) };
+    const isDynamic = velocity !== undefined && dt !== undefined;
+    const result = isDynamic ? { collision: false, time: dt, normal: new THREE.Vector3() } : false;
 
     const startX = Math.floor(aabb.min.x + COLLISION_MARGIN);
     const endX = Math.ceil(aabb.max.x - COLLISION_MARGIN);
@@ -492,66 +399,65 @@ function checkAABBCollision(aabb, velocity, dt) {
     const startZ = Math.floor(aabb.min.z + COLLISION_MARGIN);
     const endZ = Math.ceil(aabb.max.z - COLLISION_MARGIN);
 
+    const tempBox = new THREE.Box3();
+    const configCache = new Map();
+
     for (let x = startX; x < endX; x++) {
         for (let y = startY; y < endY; y++) {
             for (let z = startZ; z < endZ; z++) {
-                const voxelVal = getVoxelAtWorld(x, y, z);
-                const config = getBlockConfiguration(voxelVal);
-                if (config && config.collision === false) continue;
+                const voxelId = getVoxelAtWorld(x, y, z);
+                if (voxelId === BLOCK_TYPES.SKY) continue;
 
-                if (voxelVal !== BLOCK_TYPES.SKY) {
-                    let staticBoxes = [];
-                    if (config && typeof config.customCollision === 'function') {
-                        let localBoxes = config.customCollision(new THREE.Vector3(0, 0, 0));
-                        staticBoxes = localBoxes.map(box => {
-                            const boxWorld = box.clone();
-                            boxWorld.min.add(new THREE.Vector3(x, y, z));
-                            boxWorld.max.add(new THREE.Vector3(x, y, z));
-                            return boxWorld;
-                        });
-                    } else {
-                        staticBoxes.push(new THREE.Box3(
-                            new THREE.Vector3(x, y, z),
-                            new THREE.Vector3(x + 1, y + 1, z + 1)
-                        ));
+                if (!configCache.has(voxelId)) {
+                    configCache.set(voxelId, getBlockConfiguration(voxelId));
+                }
+                const config = configCache.get(voxelId);
+                if (config?.collision === false) continue;
+
+                const boxes = [];
+                if (typeof config?.customCollision === 'function') {
+                    let localBoxes = config.customCollision(new THREE.Vector3());
+                    for (const b of localBoxes) {
+                        boxes.push(tempBox.copy(b).translate(new THREE.Vector3(x, y, z)).clone());
                     }
+                } else {
+                    boxes.push(tempBox.set(
+                        new THREE.Vector3(x, y, z),
+                        new THREE.Vector3(x + 1, y + 1, z + 1)
+                    ).clone());
+                }
 
-                    // 各ボックスとの連続衝突判定（sweptAABB を利用）
-                    for (const staticBox of staticBoxes) {
-                        const result = sweptAABB(movingBox, velocity, dt, staticBox);
-                        if (result.collision && result.time < earliestCollision.time) {
-                            earliestCollision = result;
-                            if (earliestCollision.time < 1e-6) {
-                                return earliestCollision;
-                            }
+                for (const box of boxes) {
+                    if (isDynamic) {
+                        const r = sweptAABB(aabb, velocity, dt, box);
+                        if (r.collision && r.time < result.time) {
+                            Object.assign(result, r);
+                            if (r.time < 1e-6) return result;
                         }
+                    } else {
+                        if (aabb.intersectsBox(box)) return true;
                     }
                 }
             }
         }
     }
-    return earliestCollision;
+
+    return result;
 }
-
-
 
 /* ======================================================
    【地形生成】（フラクタルノイズ＋ユーザー変更反映）
    ====================================================== */
-const MAX_SEARCH_DEPTH = 32;  // startY指定時の最大下方向探索深さ
+const MAX_SEARCH_DEPTH = 32;
 
 function getTerrainHeight(worldX, worldZ, startY) {
     if (startY !== undefined) {
         let y = Math.floor(startY);
-        const floorX = y === worldX ? y : Math.floor(worldX);
-        const floorZ = y === worldZ ? y : Math.floor(worldZ);
-
+        const xInt = Math.floor(worldX);
+        const zInt = Math.floor(worldZ);
         const minY = Math.max(0, y - MAX_SEARCH_DEPTH);
-
         for (; y >= minY; y--) {
-            if (getVoxelAtWorld(floorX, y, floorZ) !== BLOCK_TYPES.SKY) {
-                return y + 1;
-            }
+            if (getVoxelAtWorld(xInt, y, zInt) !== BLOCK_TYPES.SKY) return y + 1;
         }
         return -Infinity;
     }
@@ -560,15 +466,13 @@ function getTerrainHeight(worldX, worldZ, startY) {
     const zInt = Math.floor(worldZ);
     const key = `${xInt}_${zInt}`;
 
-    if (terrainHeightCache.has(key)) {
-        return terrainHeightCache.get(key);
-    }
+    if (terrainHeightCache.has(key)) return terrainHeightCache.get(key);
 
     const baseNoise = fractalNoise2D(worldX * BASE_SCALE, worldZ * BASE_SCALE, 4, 0.5);
     const detailNoise = fractalNoise2D(worldX * DETAIL_SCALE, worldZ * DETAIL_SCALE, 2, 0.5);
 
     const height = BASE_HEIGHT + baseNoise * MOUNTAIN_AMPLITUDE + detailNoise * DETAIL_AMPLITUDE;
-    const result = height | 0;  // Math.floorより速い整数化(bitwise OR 0)
+    const result = height | 0;
 
     if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
         terrainHeightCache.delete(terrainHeightCache.keys().next().value);
@@ -578,39 +482,56 @@ function getTerrainHeight(worldX, worldZ, startY) {
     return result;
 }
 
+
 const globalTerrainCache = new Map();
 const blockCollisionCache = new Map();
 const voxelKeyFor = (x, y, z) => `${x}_${y}_${z}`;
 const terrainKeyHash = (x, z) => ((x & 0xFFFF) << 16) | (z & 0xFFFF);
 const BEDROCK_LEVEL = 0;
+const BLOCK_CONFIG_BY_ID = new Map(Object.values(BLOCK_CONFIG).map(c => [c.id, c]));
 
+function getBlockConfigById(id) {
+    return BLOCK_CONFIG_BY_ID.get(id) || null;
+}
+
+const { SKY, WATER, GRASS, DIRT, STONE, BEDROCK } = BLOCK_TYPES;
 function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, { raw = false } = {}) {
-    if (![x, y, z].every(Number.isFinite)) throw new TypeError("worldX, y, worldZ must be valid numbers.");
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+        throw new TypeError("worldX, y, worldZ must be valid numbers.");
+    }
     if (y < 0) return BLOCK_TYPES.SKY;
-    const { SKY, WATER, GRASS, DIRT, STONE, BEDROCK } = BLOCK_TYPES;
     const modKey = voxelKeyFor(x, y, z);
-    if (Object.prototype.hasOwnProperty.call(voxelModifications, modKey)) {
+    // --- モディファイされたブロックの確認と衝突判定キャッシュ ---
+    const hasMod = Object.prototype.hasOwnProperty.call(voxelModifications, modKey);
+    if (hasMod) {
         const id = voxelModifications[modKey];
         if (!raw) {
-            let cached = blockCollisionCache.get(id);
-            if (cached === undefined) cached = !!getBlockConfigById(id)?.collision, blockCollisionCache.set(id, cached);
-            if (!cached) return SKY;
+            let collides = blockCollisionCache.get(id);
+            if (collides === undefined) {
+                collides = !!getBlockConfigById(id)?.collision;
+                blockCollisionCache.set(id, collides);
+            }
+            if (!collides) return SKY;
         }
         return id;
     }
+    // --- 地形キャッシュによる高さ取得 ---
     const tKey = terrainKeyHash(x, z);
     let h = terrainCache.get(tKey);
-    if (h === undefined) terrainCache.set(tKey, h = getTerrainHeight(x, z));
-    let block =
-        y > h ? SKY :
-            y === h ? GRASS :
-                y >= h - 2 ? DIRT :
-                    y > BEDROCK_LEVEL ? STONE : BEDROCK;
-    return (block === SKY && y >= 30 && y <= 45) ? WATER : block;
-}
-const BLOCK_CONFIG_BY_ID = new Map(Object.values(BLOCK_CONFIG).map(c => [c.id, c]));
-function getBlockConfigById(id) {
-    return BLOCK_CONFIG_BY_ID.get(id) || null;
+    if (h === undefined) {
+        h = getTerrainHeight(x, z);
+        terrainCache.set(tKey, h);
+    }
+    // --- 高さに基づくブロック種別決定 ---
+    if (y > h) {
+        return (y >= 30 && y <= 45) ? WATER : SKY;
+    } else if (y === h) {
+        return h <= 44 ? DIRT : GRASS; // ← 水ブロック以下の高さなら DIRT にする
+    } else if (y >= h - 2) {
+        return DIRT;
+    } else {
+        return y > BEDROCK_LEVEL ? STONE : BEDROCK;
+    }
 }
 
 /**
@@ -626,31 +547,24 @@ function getBlockConfigById(id) {
  */
 function getPreciseHeadBlockType(headPos) {
     const offsets = [
-        new THREE.Vector3(0, 0, 0),    // 中心
-        new THREE.Vector3(0.2, 0, 0),  // 右
-        new THREE.Vector3(-0.2, 0, 0), // 左
-        new THREE.Vector3(0, 0, 0.2),  // 前
-        new THREE.Vector3(0, 0, -0.2), // 後ろ
-        new THREE.Vector3(0, 0.1, 0),  // わずかに上
-        new THREE.Vector3(0, -0.1, 0)  // わずかに下
+        [0, 0, 0], [0.2, 0, 0], [-0.2, 0, 0],
+        [0, 0, 0.2], [0, 0, -0.2], [0, 0.1, 0], [0, -0.1, 0]
     ];
-
     const counts = {};
-    offsets.forEach(offset => {
-        const samplePos = headPos.clone().add(offset);
-        const bx = Math.floor(samplePos.x);
-        const by = Math.floor(samplePos.y);
-        const bz = Math.floor(samplePos.z);
-        const sampleID = getVoxelAtWorld(bx, by, bz, globalTerrainCache, true);
-        counts[sampleID] = (counts[sampleID] || 0) + 1;
-    });
-
-    let chosenID = BLOCK_TYPES.SKY;
-    let maxCount = 0;
+    for (let i = 0; i < offsets.length; i++) {
+        const o = offsets[i];
+        const bx = Math.floor(headPos.x + o[0]);
+        const by = Math.floor(headPos.y + o[1]);
+        const bz = Math.floor(headPos.z + o[2]);
+        const id = getVoxelAtWorld(bx, by, bz, globalTerrainCache, { raw: true });
+        counts[id] = (counts[id] || 0) + 1;
+    }
+    let chosenID = BLOCK_TYPES.SKY, maxCount = 0;
     for (const id in counts) {
-        if (counts[id] > maxCount) {
-            maxCount = counts[id];
-            chosenID = parseInt(id);
+        const c = counts[id];
+        if (c > maxCount) {
+            maxCount = c;
+            chosenID = +id;
         }
     }
     return chosenID;
@@ -662,23 +576,17 @@ function getPreciseHeadBlockType(headPos) {
  * ここでは、getPreciseHeadBlockType() を利用してサンプル点から頭部ブロックIDを決定します。
  */
 function updateScreenOverlay() {
-    const currentHeight = getCurrentPlayerHeight();
-    const headY = player.position.y + currentHeight * 0.85;
+    const headY = player.position.y + getCurrentPlayerHeight() * 0.85;
     const headPos = new THREE.Vector3(player.position.x, headY, player.position.z);
 
     const voxelID = getPreciseHeadBlockType(headPos);
     const config = getBlockConfiguration(voxelID);
     const el = document.getElementById("screenOverlayHtml");
 
-    // テクスチャ優先度：top → all
-    const texturePath = config?.screenFill
-        ? (config.textures.top || config.textures.all)
-        : "";
+    const texturePath = config?.screenFill && (config.textures.top || config.textures.all);
 
     if (texturePath) {
-        // ここで「本当に水か」をチェック
-        const isWater = voxelID === BLOCK_TYPES.WATER;
-        el.style.opacity = isWater ? "0.8" : "1";
+        el.style.opacity = voxelID === BLOCK_TYPES.WATER ? "0.8" : "1";
         el.style.backgroundImage = `url(${texturePath})`;
         el.style.display = "block";
     } else {
@@ -783,113 +691,96 @@ function resolveVerticalCollision(origY, candidateY, newX, newZ) {
  * 複数の方向を試して最小の移動量でプレイヤーを重なり状態から解放します。
  */
 function resolvePlayerCollision() {
-    // まず通常の軸別衝突解決を実施
     axisSeparatedCollisionResolve(dt);
-    // 更新後のプレイヤーAABBを取得
-    const aabb = getPlayerAABB();
-    if (!checkAABBCollision(aabb)) {
-        // 衝突が解決されていれば終了
-        return;
-    }
-    // プレイヤーがまだブロック内に埋まっている状態
-    // 複数方向（水平360度＋上下）に対して最小の移動量を見つける
-    let bestDisplacement = null;
-    let minMagnitude = Infinity;
 
-    // 水平方向は円周上で試す（ここでは16方向）
+    const aabb = getPlayerAABB();
+    if (!checkAABBCollision(aabb)) return;
+
     const directions = [];
-    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
+    for (let i = 0; i < 16; i++) {
+        const angle = i * Math.PI / 8;
         directions.push(new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)));
     }
-    // 加えて垂直方向も追加する
-    directions.push(new THREE.Vector3(0, 1, 0));
-    directions.push(new THREE.Vector3(0, -1, 0));
+    directions.push(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0));
 
-    // 各方向について、バイナリサーチを行い最小の逃げ量を求める
+    let bestDir = null;
+    let bestDist = Infinity;
+    const tempVec = new THREE.Vector3();
+
     for (const dir of directions) {
-        // 探索区間（0～1.0程度の移動量）
         let low = 0, high = 1.0;
-        let foundDisplacement = null;
-        // 最大10回のループで近似
+        let foundDist = null;
         for (let i = 0; i < 10; i++) {
             const mid = (low + high) / 2;
-            const testPos = player.position.clone().addScaledVector(dir, mid);
-            const testAABB = getPlayerAABBAt(testPos);
-            if (checkAABBCollision(testAABB)) {
-                // まだ衝突している → より大きな移動が必要
+            tempVec.copy(player.position).addScaledVector(dir, mid);
+            if (checkAABBCollision(getPlayerAABBAt(tempVec))) {
                 low = mid;
             } else {
-                // 衝突が解消するなら、高さを下げて最小値を探す
-                foundDisplacement = mid;
+                foundDist = mid;
                 high = mid;
             }
         }
-        // 更新した移動量が小さなほうが理想
-        if (foundDisplacement !== null && foundDisplacement < minMagnitude) {
-            minMagnitude = foundDisplacement;
-            bestDisplacement = dir.clone().multiplyScalar(foundDisplacement);
+        if (foundDist !== null && foundDist < bestDist) {
+            bestDist = foundDist;
+            bestDir = dir;
         }
     }
 
-    // 脱出できる方向が見つかった場合、その分だけプレイヤーを移動する
-    if (bestDisplacement !== null) {
-        player.position.add(bestDisplacement);
+    if (bestDir) {
+        player.position.addScaledVector(bestDir, bestDist);
     } else {
-        // 万が一方向が見つからなければ、念のため上方に少し移動（フォールバック）
         player.position.y += 0.1;
     }
 }
 
 function axisSeparatedCollisionResolve(dt) {
-    const origPos = player.position.clone();
-    let newPos = origPos.clone();
+    const orig = player.position;
+    const vel = player.velocity;
+    const newPos = orig.clone();
 
-    // X 軸移動
-    let candidateX = origPos.x + player.velocity.x * dt;
-    let posCandidateX = new THREE.Vector3(candidateX, origPos.y, origPos.z);
-    if (!checkAABBCollision(getPlayerAABBAt(posCandidateX))) {
-        newPos.x = candidateX;
-    }
-    // Z 軸移動
-    let candidateZ = origPos.z + player.velocity.z * dt;
-    let posCandidateZ = new THREE.Vector3(newPos.x, origPos.y, candidateZ);
-    if (!checkAABBCollision(getPlayerAABBAt(posCandidateZ))) {
-        newPos.z = candidateZ;
+    // X軸移動
+    const x = orig.x + vel.x * dt;
+    if (!checkAABBCollision(getPlayerAABBAt(new THREE.Vector3(x, orig.y, orig.z)))) {
+        newPos.x = x;
     }
 
-    // スニーク中の場合、境界近くの支持（足元のブロック）のチェック
+    // Z軸移動
+    const z = orig.z + vel.z * dt;
+    if (!checkAABBCollision(getPlayerAABBAt(new THREE.Vector3(newPos.x, orig.y, z)))) {
+        newPos.z = z;
+    }
+
+    // スニーク境界支持チェック（XZ別々）
     if (sneakActive && player.onGround) {
-        const currentCellX = Math.floor(origPos.x);
-        const currentCellZ = Math.floor(origPos.z);
-        let safeX = (getVoxelAtWorld(Math.floor(newPos.x), Math.floor(origPos.y - 0.1), currentCellZ) !== 0);
-        let safeZ = (getVoxelAtWorld(currentCellX, Math.floor(origPos.y - 0.1), Math.floor(newPos.z)) !== 0);
-        if (!safeX && Math.floor(newPos.x) !== currentCellX) {
-            if (player.velocity.x > 0) { newPos.x = currentCellX + 0.999; }
-            else if (player.velocity.x < 0) { newPos.x = currentCellX + 0.001; }
+        const yBelow = Math.floor(orig.y - 0.1);
+        const cellX = Math.floor(orig.x), cellZ = Math.floor(orig.z);
+
+        const xChanged = Math.floor(newPos.x) !== cellX;
+        const zChanged = Math.floor(newPos.z) !== cellZ;
+
+        if (xChanged && getVoxelAtWorld(Math.floor(newPos.x), yBelow, cellZ) === 0) {
+            newPos.x = player.velocity.x > 0 ? cellX + 0.999 : cellX + 0.001;
         }
-        if (!safeZ && Math.floor(newPos.z) !== currentCellZ) {
-            if (player.velocity.z > 0) { newPos.z = currentCellZ + 0.999; }
-            else if (player.velocity.z < 0) { newPos.z = currentCellZ + 0.001; }
+        if (zChanged && getVoxelAtWorld(cellX, yBelow, Math.floor(newPos.z)) === 0) {
+            newPos.z = player.velocity.z > 0 ? cellZ + 0.999 : cellZ + 0.001;
         }
     }
 
-    // Y 軸移動（改善部分：バイナリサーチで安全な位置を算出）
-    let candidateY = origPos.y + player.velocity.y * dt;
-    let posCandidateY = new THREE.Vector3(newPos.x, candidateY, newPos.z);
-    if (sneakActive && !flightMode && player.onGround && player.velocity.y < 0) {
-        candidateY = origPos.y;
-        player.velocity.y = 0;
-    } else {
-        if (checkAABBCollision(getPlayerAABBAt(posCandidateY))) {
-            // 衝突が発生している場合、バイナリサーチで安全な Y 座標に補正
-            candidateY = resolveVerticalCollision(origPos.y, candidateY, newPos.x, newPos.z);
-            player.velocity.y = 0;
-        }
+    // Y軸移動（飛行でなく下向きの場合はカット）
+    let y = orig.y + vel.y * dt;
+    const posY = new THREE.Vector3(newPos.x, y, newPos.z);
+
+    if (sneakActive && !flightMode && player.onGround && vel.y < 0) {
+        y = orig.y;
+        vel.y = 0;
+    } else if (checkAABBCollision(getPlayerAABBAt(posY))) {
+        y = resolveVerticalCollision(orig.y, y, newPos.x, newPos.z);
+        vel.y = 0;
     }
-    newPos.y = candidateY;
+
+    newPos.y = y;
     player.position.copy(newPos);
 }
-
 
 /* ======================================================
    【物理更新：通常モード用】（重力・ジャンプ・水平慣性）
@@ -1017,42 +908,50 @@ const faceToMaterialIndex = {
 const TOP_SHADOW_OFFSETS = { LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1] };
 const blockConfigCache = new Map();
 const subterraneanAreaCache = new Map();
+const configCache = new Map();
 
 const getConfig = id => {
     if (!blockConfigCache.has(id)) blockConfigCache.set(id, getBlockConfiguration(id));
     return blockConfigCache.get(id);
 };
-
+const getConfigCached = id => {
+    if (!configCache.has(id)) configCache.set(id, getConfig(id));
+    return configCache.get(id);
+};
 const subterraneanKeyHash = (wx, wy, wz) => `${wx}_${wy}_${wz}`;
-
 function isInSubterraneanArea(wx, wy, wz) {
     const key = subterraneanKeyHash(wx, wy, wz);
     if (subterraneanAreaCache.has(key)) return subterraneanAreaCache.get(key);
-
     const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
     for (let y = wy + 1; y < maxY; y++) {
         const id = getVoxelAtWorld(wx, y, wz);
-        if (typeof id === "number" && id !== BLOCK_TYPES.SKY && !getConfig(id).transparent) {
-            return subterraneanAreaCache.set(key, true), true;
+        if (typeof id === "number" && id !== BLOCK_TYPES.SKY) {
+            const cfg = getConfigCached(id);
+            if (cfg && !cfg.transparent) {
+                subterraneanAreaCache.set(key, true);
+                return true;
+            }
         }
     }
-    return subterraneanAreaCache.set(key, false), false;
+    subterraneanAreaCache.set(key, false);
+    return false;
 }
 
 function computeTopShadowFactorForCorner(wx, wy, wz, corner) {
     const offset = TOP_SHADOW_OFFSETS[corner];
     if (!offset) return 1;
-    const [dx, dz] = offset;
     const y = wy + 1;
     const checkOpaque = (x, z) => {
         const id = getVoxelAtWorld(x, y, z);
-        return typeof id === "number" && id !== BLOCK_TYPES.SKY && !getConfig(id).transparent;
+        const cfg = getConfig(id);
+        return typeof id === "number" && id !== BLOCK_TYPES.SKY && !cfg.transparent;
     };
+    const [dx, dz] = offset;
     const opaque1 = checkOpaque(wx + dx, wz);
     const opaque2 = checkOpaque(wx, wz + dz);
-    if (opaque1 && opaque2 || isInSubterraneanArea(wx, wy, wz)) return 0.4;
-    if (opaque1 || opaque2) return 0.7;
-    return 1;
+    return (opaque1 && opaque2) || isInSubterraneanArea(wx, wy, wz) ? 0.4
+        : (opaque1 || opaque2) ? 0.7
+            : 1;
 }
 
 const clearCaches = () => subterraneanAreaCache.clear();
@@ -1251,120 +1150,101 @@ function generateNextChunk() {
 // ---------------------------------------------------------------------------
 /**
  * 複数の BufferGeometry をマージして１つのジオメトリを生成する（マテリアルグループ対応）
+ * パフォーマンス重視、属性構成は最初のジオメトリに準拠
  * @param {THREE.BufferGeometry[]} geometries 
  * @param {object} options - 例: { computeNormals: true }
  * @returns {THREE.BufferGeometry | null}
  */
-function mergeBufferGeometries(geometries, options = { computeNormals: true }) {
+function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
     if (!geometries?.length) return null;
     if (geometries.length === 1) return geometries[0];
 
-    let totalVertexCount = 0;
-    const totalAttributes = { position: 0, normal: 0, uv: 0, color: 0, index: 0 };
-    let useUint32 = false;
+    // 最初のジオメトリから属性の有無を判定
+    const first = geometries[0];
+    const posAttr = first.getAttribute('position');
+    const hasNormal = !!first.getAttribute('normal');
+    const hasUV = !!first.getAttribute('uv');
+    const hasColor = !!first.getAttribute('color');
 
-    // 1回ループで計測（ループ変数外で最小化）
-    for (const g of geometries) {
-        const posAttr = g.getAttribute("position");
-        const count = posAttr.count;
-        totalVertexCount += count;
-        totalAttributes.position += posAttr.array.length;
-        totalAttributes.normal += g.getAttribute("normal")?.array.length || 0;
-        totalAttributes.uv += g.getAttribute("uv")?.array.length || 0;
-        totalAttributes.color += g.getAttribute("color")?.array.length || 0;
-        totalAttributes.index += g.index ? g.index.count : count;
-        if (totalVertexCount > 65535) useUint32 = true;
+    // 総頂点数と総インデックス数を計算
+    let vertexCount = 0, indexCount = 0;
+    for (let i = 0; i < geometries.length; i++) {
+        const g = geometries[i];
+        vertexCount += g.getAttribute('position').count;
+        indexCount += g.index ? g.index.count : g.getAttribute('position').count;
     }
 
-    const IndexArrayType = useUint32 ? Uint32Array : Uint16Array;
+    // 65535超える場合はUint32Arrayを使う
+    const IndexArray = vertexCount > 65535 ? Uint32Array : Uint16Array;
 
-    const arrays = {
-        position: new Float32Array(totalAttributes.position),
-        normal: totalAttributes.normal ? new Float32Array(totalAttributes.normal) : null,
-        uv: totalAttributes.uv ? new Float32Array(totalAttributes.uv) : null,
-        color: totalAttributes.color ? new Float32Array(totalAttributes.color) : null,
-        index: new IndexArrayType(totalAttributes.index),
-    };
+    // それぞれの属性バッファを確保
+    const posArray = new Float32Array(vertexCount * 3);
+    const normArray = hasNormal ? new Float32Array(vertexCount * 3) : null;
+    const uvArray = hasUV ? new Float32Array(vertexCount * 2) : null;
+    const colorArray = hasColor ? new Float32Array(vertexCount * 3) : null;
+    const indexArray = new IndexArray(indexCount);
 
-    let posOffset = 0, normOffset = 0, uvOffset = 0, colorOffset = 0, idxOffset = 0, vertexOffset = 0;
-    const mergedGroups = [];
+    // コピー用のオフセット
+    let posOff = 0, normOff = 0, uvOff = 0, colorOff = 0, idxOff = 0, vertOff = 0;
+    const groups = [];
 
-    for (const g of geometries) {
-        const posAttr = g.getAttribute("position");
-        const count = posAttr.count;
+    // 各ジオメトリを順にコピー
+    for (let i = 0; i < geometries.length; i++) {
+        const g = geometries[i];
+        const p = g.getAttribute('position');
+        const n = hasNormal ? g.getAttribute('normal') : null;
+        const uv = hasUV ? g.getAttribute('uv') : null;
+        const c = hasColor ? g.getAttribute('color') : null;
+        const count = p.count;
 
-        arrays.position.set(posAttr.array, posOffset);
-        posOffset += posAttr.array.length;
+        // 属性配列をコピー
+        posArray.set(p.array, posOff); posOff += p.array.length;
+        if (hasNormal) normArray.set(n?.array || new Float32Array(count * 3), normOff), normOff += count * 3;
+        if (hasUV) uvArray.set(uv?.array || new Float32Array(count * 2), uvOff), uvOff += count * 2;
+        if (hasColor) colorArray.set(c?.array || new Float32Array(count * 3), colorOff), colorOff += count * 3;
 
-        if (arrays.normal) {
-            const normAttr = g.getAttribute("normal");
-            if (normAttr) {
-                arrays.normal.set(normAttr.array, normOffset);
-                normOffset += normAttr.array.length;
-            }
-        }
-
-        if (arrays.uv) {
-            const uvAttr = g.getAttribute("uv");
-            if (uvAttr) {
-                arrays.uv.set(uvAttr.array, uvOffset);
-                uvOffset += uvAttr.array.length;
-            }
-        }
-
-        if (arrays.color) {
-            const colAttr = g.getAttribute("color");
-            if (colAttr) {
-                arrays.color.set(colAttr.array, colorOffset);
-                colorOffset += colAttr.array.length;
-            }
-        }
-
-        const ia = g.index ? g.index.array : null;
-        if (ia) {
-            // 一括でインデックスを計算してセット
-            for (let i = 0; i < ia.length; i++) {
-                arrays.index[idxOffset + i] = ia[i] + vertexOffset;
-            }
-            idxOffset += ia.length;
+        // インデックスをコピー＆オフセット補正
+        const idx = g.index?.array;
+        if (idx) {
+            for (let j = 0; j < idx.length; j++) indexArray[idxOff + j] = idx[j] + vertOff;
+            idxOff += idx.length;
         } else {
-            for (let i = 0; i < count; i++) {
-                arrays.index[idxOffset++] = i + vertexOffset;
-            }
+            for (let j = 0; j < count; j++) indexArray[idxOff++] = j + vertOff;
         }
 
-        // グループは絶対インデックスをセット。offset.indexはidxOffsetなので、調整簡略化。
+        // グループ情報をマージ（startを絶対値化）
+        const base = idxOff - (g.index?.count ?? count);
         if (g.groups?.length) {
-            for (const group of g.groups) {
-                mergedGroups.push({
-                    start: group.start + idxOffset - (g.index?.count ?? count),
-                    count: group.count,
-                    materialIndex: group.materialIndex
-                });
+            for (let j = 0; j < g.groups.length; j++) {
+                const gr = g.groups[j];
+                groups.push({ start: base + gr.start, count: gr.count, materialIndex: gr.materialIndex });
             }
         } else {
-            mergedGroups.push({
-                start: idxOffset - (g.index?.count ?? count),
-                count: g.index?.count ?? count,
-                materialIndex: 0,
-            });
+            groups.push({ start: base, count: g.index?.count ?? count, materialIndex: 0 });
         }
-        vertexOffset += count;
+
+        vertOff += count;
     }
 
+    // マージ後のジオメトリ作成
     const merged = new THREE.BufferGeometry();
-    merged.setAttribute("position", new THREE.BufferAttribute(arrays.position, 3));
-    if (arrays.normal) merged.setAttribute("normal", new THREE.BufferAttribute(arrays.normal, 3));
-    if (arrays.uv) merged.setAttribute("uv", new THREE.BufferAttribute(arrays.uv, 2));
-    if (arrays.color) merged.setAttribute("color", new THREE.BufferAttribute(arrays.color, 3));
-    merged.setIndex(new THREE.BufferAttribute(arrays.index, 1));
+    merged.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+    if (hasNormal) merged.setAttribute('normal', new THREE.BufferAttribute(normArray, 3));
+    if (hasUV) merged.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
+    if (hasColor) merged.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+    merged.setIndex(new THREE.BufferAttribute(indexArray, 1));
 
-    mergedGroups.forEach(g => merged.addGroup(g.start, g.count, g.materialIndex));
-    if (options.computeNormals && !arrays.normal) merged.computeVertexNormals();
+    // グループ設定
+    for (let i = 0; i < groups.length; i++) {
+        const g = groups[i];
+        merged.addGroup(g.start, g.count, g.materialIndex);
+    }
+
+    // 法線計算（必要なら）
+    if (computeNormals && !hasNormal) merged.computeVertexNormals();
 
     return merged;
 }
-
 
 // ---------------------------------------------------------------------------
 // getCachedFaceGeometry: faceKey に対応するクワッドジオメトリをキャッシュして返す
@@ -1399,21 +1279,61 @@ function getCachedFaceGeometry(faceKey) {
     return getCachedGeometry(`face_${faceKey}`, () => createFaceGeometry(faceData[faceKey]));
 }
 
-// 可視判定用のビットマスク生成関数
+// ビットマスクによる可視判定
 function computeVisibilityMask(getN, curType, curTransp, curCustom) {
     let mask = 0;
-    for (let i = 0, len = neighbors.length; i < len; i++) {
+    const len = neighbors.length;
+
+    for (let i = 0; i < len; i++) {
         const t = getN(i);
-        if (!t || t === BLOCK_TYPES.SKY) { mask |= 1 << i; continue; }
+        if (!t || t === BLOCK_TYPES.SKY) {
+            mask |= 1 << i;
+            continue;
+        }
+
         const c = getBlockConfiguration(t);
-        if (!c) continue;
-        const { transparent: nt, customGeometry: nc } = c;
-        if ((nt && (!curTransp || t !== curType)) || (nc && !curCustom)) {
+        if (c && ((c.transparent && (!curTransp || t !== curType)) || (c.customGeometry && !curCustom))) {
             mask |= 1 << i;
         }
     }
+
     return mask;
 }
+
+function getBlockConfigCached(id) {
+    let cfg = blockConfigCache.get(id);
+    if (!cfg) {
+        cfg = getBlockConfiguration(id);
+        blockConfigCache.set(id, cfg);
+    }
+    return cfg;
+}
+
+// 不透明判定
+function isFaceOpaque(id) {
+    if (!id || id === BLOCK_TYPES.SKY) return false;
+    const cfg = getBlockConfigCached(id);
+    return cfg && !cfg.transparent;
+}
+
+// 影関数群
+function computeBottomShadowFactor(wx, wy, wz) {
+    if (isInSubterraneanArea(wx, wy, wz)) return 0.4;
+    return isFaceOpaque(getVoxelAtWorld(wx, wy - 1, wz)) ? 0.55 : 0.45;
+}
+
+const CEILING_CHECK_OFFSETS = { px: [1, 1, 0], nx: [-1, 1, 0], pz: [0, 1, 1], nz: [0, 1, -1] };
+function computeSideShadowFactor(x, y, z, face, baseX, baseZ) {
+    const o = CEILING_CHECK_OFFSETS[face];
+    if (!o) return 1;
+    let [wx, wy, wz] = [baseX + x + o[0], BEDROCK_LEVEL + y + o[1], baseZ + z + o[2]];
+    for (; wy < BEDROCK_LEVEL + CHUNK_HEIGHT; wy++) {
+        if (isFaceOpaque(getVoxelAtWorld(wx, wy, wz))) return 0.4;
+    }
+    return 1;
+}
+
+// メイン関数
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     const baseX = cx * CHUNK_SIZE, baseZ = cz * CHUNK_SIZE;
     const idx = (x, y, z) => x + CHUNK_SIZE * (y + CHUNK_HEIGHT * z);
@@ -1429,29 +1349,9 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             }
 
     const container = new THREE.Object3D();
-
-    const blockConfigCache = new Map();
-    const getBlockConfigCached = id => {
-        let cfg = blockConfigCache.get(id);
-        if (!cfg) blockConfigCache.set(id, cfg = getBlockConfiguration(id));
-        return cfg;
-    };
     const get = (x, y, z) => (x | 0) < 0 || x >= CHUNK_SIZE || y < 0 || y >= CHUNK_HEIGHT || z < 0 || z >= CHUNK_SIZE
         ? modMap.get(`${baseX + x}_${BEDROCK_LEVEL + y}_${baseZ + z}`) ?? getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z)
         : voxelData[idx(x, y, z)];
-    const isFaceOpaque = (id, cfg = getBlockConfigCached(id)) => id && id !== BLOCK_TYPES.SKY && cfg && !cfg.transparent;
-    const computeBottomShadowFactor = (wx, wy, wz) =>
-        isInSubterraneanArea(wx, wy, wz) ? 0.4 : isFaceOpaque(getVoxelAtWorld(wx, wy - 1, wz)) ? 0.55 : 0.45;
-    const CEILING_CHECK_OFFSETS = { px: [1, 1, 0], nx: [-1, 1, 0], pz: [0, 1, 1], nz: [0, 1, -1] };
-    const computeSideShadowFactor = (x, y, z, face) => {
-        const o = CEILING_CHECK_OFFSETS[face];
-        if (!o) return 1;
-        let [wx, wy, wz] = [baseX + x + o[0], BEDROCK_LEVEL + y + o[1], baseZ + z + o[2]];
-        for (; wy < BEDROCK_LEVEL + CHUNK_HEIGHT; wy++) {
-            if (isFaceOpaque(getVoxelAtWorld(wx, wy, wz))) return 0.4;
-        }
-        return 1;
-    };
 
     if (useInstancing) {
         const instMap = {};
@@ -1461,7 +1361,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 for (let x = 0; x < CHUNK_SIZE; x++) {
                     const type = voxelData[idx(x, y, z)];
                     if (!type || type === BLOCK_TYPES.SKY) continue;
-                    const cfg = getBlockConfiguration(type);
+                    const cfg = getBlockConfigCached(type);
                     if (!cfg || cfg.customGeometry || ["stairs", "slab", "cross", "water"].includes(cfg.geometryType)) continue;
                     const isTransparent = cfg.transparent ?? false;
                     const visMask = computeVisibilityMask(i => get(x + neighbors[i].dx, y + neighbors[i].dy, z + neighbors[i].dz), type, isTransparent, cfg.customGeometry);
@@ -1487,7 +1387,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 for (let x = 0; x < CHUNK_SIZE; x++) {
                     const type = voxelData[idx(x, y, z)];
                     if (!type || type === BLOCK_TYPES.SKY) continue;
-                    const cfg = getBlockConfiguration(type);
+                    const cfg = getBlockConfigCached(type);
                     if (!cfg) continue;
                     const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
 
@@ -1507,7 +1407,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                         const colors = face === "py" ?
                             ["LL", "LR", "UR", "UL"].flatMap(c => Array(3).fill(computeTopShadowFactorForCorner(wx, wy, wz, c))) :
                             face === "ny" ? Array(12).fill(computeBottomShadowFactor(wx, wy, wz)) :
-                                Array(12).fill(computeSideShadowFactor(x, y, z, face));
+                                Array(12).fill(computeSideShadowFactor(x, y, z, face, baseX, baseZ));
                         geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
                         (faceGeoms[type] ??= {})[faceToMaterialIndex[face]] ??= [];
                         faceGeoms[type][faceToMaterialIndex[face]].push(geom);
@@ -1531,8 +1431,10 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             container.add(mesh);
         }
     }
+
     return container;
 }
+
 
 const materialCache = new Map();
 const collisionCache = new Map();
@@ -2391,11 +2293,6 @@ const blockInfoElem = document.getElementById("blockInfo");
 // Raycaster で全てのチャンク Mesh（通常 Mesh および InstancedMesh）を検出し、
 // 交差結果から対象ブロックのセル座標・中心位置を計算し、アウトラインの位置・スケールを更新します。
 function updateBlockSelection() {
-    // if (document.pointerLockElement !== renderer.domElement) {
-    //     selectionOutlineMesh.visible = false;
-    //     return;
-    // }
-
     // グローバル Raycaster を再利用（画面中央から）
     globalRaycaster.setFromCamera(globalCenterVec, camera);
 
@@ -2500,73 +2397,61 @@ function updateBlockInfo() {
     globalRaycaster.far = BLOCK_INTERACT_RANGE;
     globalRaycaster.setFromCamera(globalCenterVec, camera);
 
-    const chunkMeshes = Object.values(loadedChunks);
     const intersects = [];
-    for (const mesh of chunkMeshes) {
+    for (const mesh of Object.values(loadedChunks)) {
         if (mesh.isInstancedMesh) {
             mesh.raycast(globalRaycaster, intersects);
         } else {
-            intersects.push(...globalRaycaster.intersectObject(mesh, true));
+            const hits = globalRaycaster.intersectObject(mesh, true);
+            for (let i = 0; i < hits.length; i++) intersects.push(hits[i]);
         }
     }
 
-    if (intersects.length > 0) {
-        const intersect = intersects[0];
-        const faceNormal = intersect.face.normal;
-        const point = intersect.point;
-        // globalTempVec3 を使ってセル座標を計算
-        globalTempVec3.set(
-            Math.floor(point.x - faceNormal.x * 0.5),
-            Math.floor(point.y - faceNormal.y * 0.5),
-            Math.floor(point.z - faceNormal.z * 0.5)
-        );
-        const key = `${globalTempVec3.x}_${globalTempVec3.y}_${globalTempVec3.z}`;
-        let blockValue = voxelModifications[key];
-        if (blockValue === undefined) {
-            blockValue = getVoxelAtWorld(globalTempVec3.x, globalTempVec3.y, globalTempVec3.z);
-        }
-        const blockName = BLOCK_NAMES[blockValue] || "Unknown";
-        const config = getBlockConfiguration(blockValue);
-        const additionalInfo = config ? `Type: ${config.geometryType}` : "";
-        blockInfoElem.innerHTML = `Block: ${blockName} (Value: ${blockValue})<br>${additionalInfo}`;
-        blockInfoElem.style.display = "block";
-    } else {
+    if (!intersects.length) {
         blockInfoElem.style.display = "none";
+        return;
     }
+
+    const { face, point } = intersects[0];
+    globalTempVec3.set(
+        Math.floor(point.x - face.normal.x * 0.5),
+        Math.floor(point.y - face.normal.y * 0.5),
+        Math.floor(point.z - face.normal.z * 0.5)
+    );
+
+    const key = `${globalTempVec3.x}_${globalTempVec3.y}_${globalTempVec3.z}`;
+    let blockValue = voxelModifications[key];
+    if (blockValue === undefined) {
+        blockValue = getVoxelAtWorld(globalTempVec3.x, globalTempVec3.y, globalTempVec3.z);
+    }
+
+    const blockName = BLOCK_NAMES[blockValue] || "Unknown";
+    const config = getBlockConfiguration(blockValue);
+    blockInfoElem.innerHTML = `Block: ${blockName} (Value: ${blockValue})` + (config ? `<br>Type: ${config.geometryType}` : "");
+    blockInfoElem.style.display = "block";
 }
 
 function updateHeadBlockInfo() {
-    // 現在のプレイヤーの高さ取得
     const currentHeight = getCurrentPlayerHeight();
-    // 足元から 85% の高さを頭部とする（この割合は必要に応じて調整）
     const headY = player.position.y + currentHeight * 0.85;
-    const headPos = new THREE.Vector3(
-        player.position.x,
-        headY,
-        player.position.z
-    );
+    const blockPos = [
+        Math.floor(player.position.x),
+        Math.floor(headY),
+        Math.floor(player.position.z),
+    ];
+    const headBlockKey = blockPos.join('_');
 
-    // ブロック座標を整数化して作成 (例："x_y_z")
-    const blockX = Math.floor(headPos.x);
-    const blockY = Math.floor(headPos.y);
-    const blockZ = Math.floor(headPos.z);
-    const headBlockKey = `${blockX}_${blockY}_${blockZ}`;
-
-    // voxelModifications を優先し、なければ getVoxelAtWorld() でブロック値取得
-    // ここで ignoreTerrain を true にすることで、地形判定を無視して頭部ブロックを判定します。
     let blockValue = voxelModifications[headBlockKey];
     if (blockValue === undefined) {
-        blockValue = getVoxelAtWorld(blockX, blockY, blockZ, globalTerrainCache, true);
+        blockValue = getVoxelAtWorld(...blockPos, globalTerrainCache, true);
     }
 
-    // BLOCK_NAMES からブロック名取得。なければ "Unknown"
     const blockName = BLOCK_NAMES[blockValue] || "Unknown";
 
-    // DOM 要素 (id="headBlockInfo") に結果表示
-    const headBlockInfoElem = document.getElementById("headBlockInfo");
-    if (headBlockInfoElem) {
-        headBlockInfoElem.innerHTML = `Head Block: ${blockName} (Value: ${blockValue})`;
-        headBlockInfoElem.style.display = "block";
+    const elem = document.getElementById("headBlockInfo");
+    if (elem) {
+        elem.textContent = `Head Block: ${blockName} (Value: ${blockValue})`;
+        elem.style.display = "block";
     }
 }
 

@@ -16,9 +16,7 @@ function loadCloudTexture(callback) {
     loader.load(
         'textures/clouds.png',
         function (texture) {
-            console.log("Cloud texture loaded successfully with border padding.");
             const image = texture.image;
-            // パディングサイズは 2ピクセル（必要に応じて変更可能）
             const border = 2;
             const paddedWidth = image.width + 2 * border;
             const paddedHeight = image.height + 2 * border;
@@ -26,40 +24,13 @@ function loadCloudTexture(callback) {
             canvas.width = paddedWidth;
             canvas.height = paddedHeight;
             const ctx = canvas.getContext('2d');
-
-            // キャンバスでの描画時に補間をしない（シャープに描画するため）
             ctx.imageSmoothingEnabled = false;
-
-            // 中央に元画像を描く
             ctx.drawImage(image, border, border);
+            ctx.drawImage(image, 0, 0, image.width, 1, border, 0, image.width, 1);
+            ctx.drawImage(image, 0, image.height - 1, image.width, 1, border, image.height + border, image.width, 1);
+            ctx.drawImage(image, 0, 0, 1, image.height, 0, border, 1, image.height);
+            ctx.drawImage(image, image.width - 1, 0, 1, image.height, image.width + border, border, 1, image.height);
 
-            // エッジ部を複製して余白を埋める（上端、下端、左右・四隅）
-            ctx.drawImage(canvas,
-                border, border, image.width, 1,
-                border, 0, image.width, 1);
-            ctx.drawImage(canvas,
-                border, image.height + border - 1, image.width, 1,
-                border, image.height + border, image.width, 1);
-            ctx.drawImage(canvas,
-                border, border, 1, image.height,
-                0, border, 1, image.height);
-            ctx.drawImage(canvas,
-                image.width + border - 1, border, 1, image.height,
-                image.width + border, border, 1, image.height);
-            ctx.drawImage(canvas,
-                border, border, 1, 1,
-                0, 0, 1, 1);
-            ctx.drawImage(canvas,
-                image.width + border - 1, border, 1, 1,
-                image.width + border, 0, 1, 1);
-            ctx.drawImage(canvas,
-                border, image.height + border - 1, 1, 1,
-                0, image.height + border, 1, 1);
-            ctx.drawImage(canvas,
-                image.width + border - 1, image.height + border - 1, 1, 1,
-                image.width + border, image.height + border, 1, 1);
-
-            // 黒ピクセル（背景）を透明に
             const imageData = ctx.getImageData(0, 0, paddedWidth, paddedHeight);
             const data = imageData.data;
             for (let i = 0; i < data.length; i += 4) {
@@ -69,11 +40,9 @@ function loadCloudTexture(callback) {
             }
             ctx.putImageData(imageData, 0, 0);
 
-            // 新規テクスチャ生成
             const newTexture = new THREE.CanvasTexture(canvas);
             newTexture.wrapS = THREE.RepeatWrapping;
             newTexture.wrapT = THREE.RepeatWrapping;
-            // 今回はテクスチャ自体の repeat は 1,1 としておき、UV のスケールで調整します
             newTexture.repeat.set(0.06, 0.06);
             newTexture.magFilter = THREE.NearestFilter;
             newTexture.minFilter = THREE.NearestFilter;
@@ -82,9 +51,7 @@ function loadCloudTexture(callback) {
             newTexture.needsUpdate = true;
 
             cloudTexture = newTexture;
-            if (callback) {
-                callback();
-            }
+            if (callback) callback();
         },
         undefined,
         function (err) {
@@ -120,9 +87,7 @@ function setMinecraftSky(scene) {
  * @returns {number} - スナップ後のUV座標
  */
 function snapUV(worldCoord, uvScale, textureSize) {
-    const pixelPos = worldCoord * uvScale * textureSize;
-    const snappedPixelPos = Math.round(pixelPos);
-    return snappedPixelPos / textureSize;
+    return Math.floor(worldCoord * uvScale * textureSize) / textureSize;
 }
 
 /**
@@ -131,17 +96,14 @@ function snapUV(worldCoord, uvScale, textureSize) {
  */
 function addCloudTile(scene, gridX, gridZ) {
     if (!cloudTexture) return;
-    // タイルサイズのジオメトリ生成
     const geometry = new THREE.PlaneGeometry(tileSize, tileSize);
-    // 2Dの平面を地面に合わせるため X 軸で回転（これによりローカル座標は [x, 0, z] になる）
     geometry.rotateX(-Math.PI / 2);
 
-    // マテリアル定義
     const material = new THREE.MeshBasicMaterial({
         map: cloudTexture,
         transparent: true,
         opacity: 1,
-        alphaTest: 1,  // この値は元画像のエッジのアルファ状況に合わせ調整
+        alphaTest: 1,
         depthWrite: false,
         depthTest: true,
         side: THREE.DoubleSide,
@@ -149,19 +111,17 @@ function addCloudTile(scene, gridX, gridZ) {
     });
 
     const mesh = new THREE.Mesh(geometry, material);
-    // 各タイルは、グリッド座標から決まる一意のワールド位置に配置
     mesh.position.set(
         gridX * tileSize + tileSize / 2,
-        256, // 雲の高さ（固定）
+        256,
         gridZ * tileSize + tileSize / 2
     );
 
-    // ★ここでUVをワールド座標に基づいて再計算し、テクセルグリッドにスナップする★
-    const textureWidth = cloudTexture.image.width; // ここでは正方形テクスチャを想定
+    const textureWidth = cloudTexture.image.width;
     const uvScale = 1 / tileSize;
     const positions = geometry.attributes.position.array;
     const uvs = geometry.attributes.uv.array;
-    for (let i = 0, j = 0; i < positions.length; i += 3, j += 2) {
+    for (let i = 0, j = 0; j < uvs.length; i += 3, j += 2) {
         const worldX = mesh.position.x + positions[i];
         const worldZ = mesh.position.z + positions[i + 2];
         uvs[j] = snapUV(worldX, uvScale, textureWidth);
@@ -198,10 +158,8 @@ function updateCloudGrid(scene, playerPos, delta) {
         }
     }
 
-    // 不要なタイルはシーンから削除
-    for (let key of Array.from(cloudTiles.keys())) {
+    for (const [key, tile] of cloudTiles.entries()) {
         if (!requiredTiles.has(key)) {
-            const tile = cloudTiles.get(key);
             scene.remove(tile);
             tile.geometry.dispose();
             tile.material.dispose();
@@ -216,11 +174,7 @@ function updateCloudGrid(scene, playerPos, delta) {
  */
 function updateCloudTiles(delta) {
     if (!cloudTexture) return;
-    const offsetSpeed = 0.0005;
-    cloudTexture.offset.x += offsetSpeed * delta;
-    if (cloudTexture.offset.x >= 1) {
-        cloudTexture.offset.x -= 1;
-    }
+    cloudTexture.offset.x = (cloudTexture.offset.x + 0.0005 * delta) % 1;
 }
 
 /**
@@ -233,14 +187,12 @@ function updateCloudOpacity(playerPos) {
     cloudTiles.forEach(tile => {
         const distance = tile.position.distanceTo(playerPos);
         let baseOpacity = 1;
-        if (distance <= nearDistance) {
-            baseOpacity = 1;
+        if (distance > nearDistance && distance < farDistance) {
+            baseOpacity = 1 - ((distance - nearDistance) / (farDistance - nearDistance));
         } else if (distance >= farDistance) {
             baseOpacity = 0;
-        } else {
-            baseOpacity = 1 - ((distance - nearDistance) / (farDistance - nearDistance));
         }
-        const fadeFactor = tile.userData.fadeFactor !== undefined ? tile.userData.fadeFactor : 1;
+        const fadeFactor = tile.userData.fadeFactor ?? 1;
         tile.material.opacity = baseOpacity * fadeFactor;
     });
 }

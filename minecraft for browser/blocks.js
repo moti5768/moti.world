@@ -7,7 +7,7 @@ import { BufferGeometryUtils } from './jsm/utils/BufferGeometryUtils.js';
 // ② ブロック定義 (BLOCK_CONFIG) の拡張
 // ================================================
 
-// まずは、Box3 を作成するためのヘルパー関数
+// --- Box3作成ヘルパー ---
 function createBox(x1, y1, z1, x2, y2, z2) {
     return new THREE.Box3(
         new THREE.Vector3(x1, y1, z1),
@@ -15,7 +15,7 @@ function createBox(x1, y1, z1, x2, y2, z2) {
     );
 }
 
-// 次に、ブロックの種類ごとに当たり判定（カスタム衝突領域）を返す関数を用意
+// --- カスタム衝突判定キャッシュ ---
 const CUSTOM_COLLISION_CACHE = {
     stairs: [
         createBox(0, 0, 0, 1, 0.5, 1),
@@ -29,10 +29,10 @@ const CUSTOM_COLLISION_CACHE = {
     ],
 };
 
+// --- カスタム衝突判定取得関数 ---
 function getCustomCollision(type) {
     return CUSTOM_COLLISION_CACHE[type] || [];
 }
-
 
 // ── 共通のデフォルト設定 ──
 const defaultBlockConfig = {
@@ -55,9 +55,9 @@ const defaultBlockConfig = {
 };
 
 // ── ユーティリティ：深いマージ（必要なら） ──
-// ※ここでは単純な Object.assign で十分な場合が多いですが、複雑な構造の場合は deep merge を検討します。
+// ※複雑なネストがなければスプレッド構文で十分です。
 function createBlockConfig(customConfig) {
-    return Object.assign({}, defaultBlockConfig, customConfig);
+    return { ...defaultBlockConfig, ...customConfig };
 }
 
 // ── 個別ブロック設定 ──
@@ -65,7 +65,7 @@ const BLOCK_CONFIG = {
     SKY: createBlockConfig({
         id: 0,
         collision: false,
-        geometryType: "none",    // 描画しない
+        geometryType: "none", // 描画しない
         transparent: false,
         screenFill: false,
         textures: {}
@@ -140,8 +140,18 @@ const BLOCK_CONFIG = {
         screenFill: false,
         previewType: "2D"
     }),
-    WATER: createBlockConfig({
+    TALLGRASS: createBlockConfig({
         id: 12,
+        textures: { all: "textures/tallgrass.png" },
+        collision: false,
+        geometryType: "cross",
+        transparent: true,
+        customCollision: pos => getCustomCollision("cross"),
+        screenFill: false,
+        previewType: "2D"
+    }),
+    WATER: createBlockConfig({
+        id: 13,
         textures: { all: "textures/water.png" },
         collision: false,
         transparent: true,
@@ -152,39 +162,18 @@ const BLOCK_CONFIG = {
 };
 
 // ── 後方互換用エイリアスの自動生成 ──
-// 各ブロックのキーをループして BLOCK_TYPES オブジェクトを生成します
-const BLOCK_TYPES = {};
-for (const key in BLOCK_CONFIG) {
-    BLOCK_TYPES[key] = BLOCK_CONFIG[key].id;
-}
+// Object.entries と Object.fromEntries でシンプルに
+const BLOCK_TYPES = Object.fromEntries(
+    Object.entries(BLOCK_CONFIG).map(([key, cfg]) => [key, cfg.id])
+);
 
-// テクスチャローダーとキャッシュ
 const textureLoader = new THREE.TextureLoader();
-const textureCache = Object.create(null); // より高速なプレーンオブジェクト
-
-// キャッシュ付きでテクスチャをロードする関数
-function loadTexture(path) {
-    if (!textureCache[path]) {
-        const tex = textureLoader.load(
-            path,
-            () => {
-                tex.needsUpdate = true; // ロード完了時に更新
-            },
-            undefined,
-            err => { console.error("Texture load error: ", err); }
-        );
-        tex.magFilter = THREE.NearestFilter;
-        tex.minFilter = THREE.NearestMipmapNearestFilter;
-        textureCache[path] = tex;
-    }
-    return textureCache[path];
-}
-
-const materialCache = new Map();
+const textureCache = Object.create(null);
 
 function cachedLoadTexture(path) {
     if (!path) return null;
     if (textureCache[path]) return textureCache[path];
+
     const tex = textureLoader.load(
         path,
         () => { tex.needsUpdate = true; },
@@ -197,11 +186,12 @@ function cachedLoadTexture(path) {
     return tex;
 }
 
+const materialCache = new Map();
+
 function createMaterialsFromBlockConfig(blockConfig) {
     const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
     const { geometryType, transparent, textures } = blockConfig;
 
-    // キャッシュキー簡素化
     const textureKey = textures.all
         ? `all:${textures.all}`
         : FACE_ORDER.map(f => textures[f] || textures.side || "none").join(",");
@@ -218,39 +208,33 @@ function createMaterialsFromBlockConfig(blockConfig) {
     const side = isCross ? THREE.DoubleSide : THREE.FrontSide;
     const vertexColors = (!isStairsOrSlab && !isCross && !isWater) ? THREE.VertexColors : false;
 
-    // 既に読み込み済みのテクスチャマテリアルをキャッシュ
-    const materialCacheByTexture = new Map();
+    const matCache = {};
 
-    function getMaterial(texPath) {
-        if (!texPath || texPath === "none") {
-            // 警告は一度だけにする
-            if (!getMaterial.warned) {
+    function getMat(tex) {
+        if (!tex || tex === "none") {
+            if (!getMat.warned) {
                 console.warn("Texture not set or invalid path detected.");
-                getMaterial.warned = true;
+                getMat.warned = true;
             }
             return new THREE.MeshLambertMaterial({ color: 0xff00ff });
         }
-        if (materialCacheByTexture.has(texPath)) return materialCacheByTexture.get(texPath);
+        if (matCache[tex]) return matCache[tex];
 
-        const tex = cachedLoadTexture(texPath);
+        const map = cachedLoadTexture(tex);
         const mat = new THREE.MeshLambertMaterial({
-            map: tex,
+            map,
             transparent: isTransparent,
             opacity,
             vertexColors,
             side,
         });
-        materialCacheByTexture.set(texPath, mat);
+        matCache[tex] = mat;
         return mat;
     }
 
-    let materials;
-    if (textures.all) {
-        const mat = getMaterial(textures.all);
-        materials = FACE_ORDER.map(() => mat);
-    } else {
-        materials = FACE_ORDER.map(face => getMaterial(textures[face] || textures.side));
-    }
+    const materials = textures.all
+        ? Array(6).fill(getMat(textures.all))
+        : FACE_ORDER.map(f => getMat(textures[f] || textures.side));
 
     materialCache.set(cacheKey, materials);
     return materials;
@@ -258,16 +242,27 @@ function createMaterialsFromBlockConfig(blockConfig) {
 
 // マテリアルのキャッシュ（ブロックIDごと）
 const BLOCK_MATERIALS_CACHE = {};
+/**
+ * 指定ブロックタイプのマテリアル配列を返す。  
+ * 生成済みならキャッシュから取得し、無駄な再生成を防ぐ。  
+ * @param {number} blockType - ブロック種識別子
+ * @returns {THREE.Material[]} - マテリアルの配列（複数マテリアル対応）
+ */
 function getBlockMaterials(blockType) {
     const bType = Number(blockType);
+    if (BLOCK_MATERIALS_CACHE[bType]) {
+        return BLOCK_MATERIALS_CACHE[bType];
+    }
+
+    // BLOCK_CONFIG は事前定義されているブロック設定の辞書
     for (let key in BLOCK_CONFIG) {
         if (Number(BLOCK_CONFIG[key].id) === bType) {
-            if (!BLOCK_MATERIALS_CACHE[bType]) {
-                BLOCK_MATERIALS_CACHE[bType] = createMaterialsFromBlockConfig(BLOCK_CONFIG[key]);
-            }
-            return BLOCK_MATERIALS_CACHE[bType];
+            const materials = createMaterialsFromBlockConfig(BLOCK_CONFIG[key]);
+            BLOCK_MATERIALS_CACHE[bType] = materials;
+            return materials;
         }
     }
+    // 対応なしの場合は null またはデフォルトマテリアルを返す
     return null;
 }
 
@@ -306,32 +301,31 @@ function adjustSideUVs(geom) {
 }
 
 /**
- * 指定タイプのブロックジオメトリを取得する。  
- * ・config.customGeometry が定義されていれば、そちらを利用（キャッシュも有効）  
- * ・それ以外は既存の type ("cube", "slab", など) に応じた生成処理を行う  
+ * 指定タイプのブロックジオメトリを取得する。
+ * ・カスタムジオメトリは一度だけ生成してキャッシュし、再利用
+ * ・標準ジオメトリは一度だけ生成してキャッシュし、再利用
  * @param {string} type - "cube", "stairs", "slab", "cross" 等
  * @param {object} [config] - ブロック設定。カスタムジオメトリ用の customGeometry プロパティ等を含む
  * @returns {THREE.BufferGeometry}
  */
 function getBlockGeometry(type, config) {
-    // カスタムジオメトリが指定されている場合はそちらを優先
+    // カスタムジオメトリ優先
     if (config && config.customGeometry) {
-        if (cachedBlockGeometries[type]) {
-            return cachedBlockGeometries[type]; // cloneしないでそのまま返す
+        if (!cachedCustomGeometries[config.id]) {
+            let customGeom =
+                typeof config.customGeometry === "function"
+                    ? config.customGeometry()
+                    : config.customGeometry;
+            customGeom.computeBoundingBox();
+            customGeom.computeVertexNormals();
+            cachedCustomGeometries[config.id] = customGeom;
         }
-        let customGeom =
-            typeof config.customGeometry === "function"
-                ? config.customGeometry()
-                : config.customGeometry;
-        customGeom.computeBoundingBox();
-        customGeom.computeVertexNormals();
-        cachedCustomGeometries[config.id] = customGeom;
-        return customGeom.clone();
+        return cachedCustomGeometries[config.id];
     }
 
-    // 標準ジオメトリのキャッシュを確認
+    // 標準ジオメトリをキャッシュ済みならそのまま返す
     if (cachedBlockGeometries[type]) {
-        return cachedBlockGeometries[type].clone();
+        return cachedBlockGeometries[type];
     }
 
     let geom;
@@ -363,12 +357,10 @@ function getBlockGeometry(type, config) {
             const p2 = new THREE.PlaneGeometry(1, 1);
             p2.rotateY(THREE.MathUtils.degToRad(-45));
             geom = BufferGeometryUtils.mergeBufferGeometries([p1, p2], true);
-            // センタリング：バウンディングボックスの中心を原点に移動
             geom.computeBoundingBox();
             const center = new THREE.Vector3();
             geom.boundingBox.getCenter(center);
             geom.translate(-center.x, -center.y, -center.z);
-            // ユニットセルの中心に合わせる
             geom.translate(0.5, 0.5, 0.5);
             break;
         }
@@ -384,18 +376,18 @@ function getBlockGeometry(type, config) {
     }
     geom.computeBoundingBox();
     geom.computeVertexNormals();
+
     cachedBlockGeometries[type] = geom;
-    return geom.clone();
+    return geom;
 }
 
 /**
- * マルチマテリアルに対応したブロックメッシュを生成する関数  
- * @param {number} blockType - ブロック種識別子
- * @param {THREE.Vector3} pos - ブロック設置位置（セルの左下隅）
- * @param {THREE.Euler} [rotation] - 任意の回転
- * @returns {THREE.Mesh|null} - 生成されたブロックメッシュ。設定が見つからない場合は null
+ * マルチマテリアル対応ブロックメッシュ生成
+ * @param {number} blockType
+ * @param {THREE.Vector3} pos
+ * @param {THREE.Euler} [rotation]
+ * @returns {THREE.Mesh|null}
  */
-// 例: createBlockMesh 内のジオメトリ・マテリアルのclone回避案
 function createBlockMesh(blockType, pos, rotation) {
     const config = getBlockConfiguration(blockType);
     if (!config) {
@@ -404,20 +396,27 @@ function createBlockMesh(blockType, pos, rotation) {
     }
     const geometry = getBlockGeometry(config.geometryType, config);
     const materials = getBlockMaterials(blockType);
+    if (!materials) {
+        console.error("No materials found for block type:", blockType);
+        return null;
+    }
+
     let mesh;
-    if (materials.length > 1 && geometry.groups && geometry.groups.length > 0) {
+    if (Array.isArray(materials) && materials.length > 1 && geometry.groups && geometry.groups.length > 0) {
         mesh = new THREE.Mesh(geometry, materials);
     } else {
-        mesh = new THREE.Mesh(geometry, materials[0]);
+        mesh = new THREE.Mesh(geometry, Array.isArray(materials) ? materials[0] : materials);
     }
+
     mesh.position.copy(pos);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+
     if (rotation) {
         mesh.rotation.copy(rotation);
     }
 
-    // ここに書くのがベスト
+    // カスタム衝突判定のBox3をキャッシュから取得・clone＆座標調整
     if (typeof config.customCollision === "function") {
         if (!mesh.userData.localCollisionBoxes) {
             mesh.userData.localCollisionBoxes = config.customCollision();
@@ -478,8 +477,7 @@ if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
         getBlockMaterials,
         createMaterialsFromBlockConfig,
         getBlockConfiguration,
-        getBlockGeometry,
-        loadTexture
+        getBlockGeometry
     };
 } else {
     window.BLOCK_CONFIG = BLOCK_CONFIG;
@@ -489,7 +487,6 @@ if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
     window.createMaterialsFromBlockConfig = createMaterialsFromBlockConfig;
     window.getBlockConfiguration = getBlockConfiguration;
     window.getBlockGeometry = getBlockGeometry;
-    window.loadTexture = loadTexture;
     // 後方互換用
     window.BLOCK_TYPES = BLOCK_TYPES;
 }
