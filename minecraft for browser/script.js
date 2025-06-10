@@ -89,7 +89,7 @@ const DETAIL_AMPLITUDE = 3;         // 細部起伏の振幅
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 256;
 
-const CHUNK_VISIBLE_DISTANCE = 6;
+let CHUNK_VISIBLE_DISTANCE = 6;
 
 const COLLISION_MARGIN = 0.005;
 const PLAYER_RADIUS = 0.3;
@@ -1499,52 +1499,59 @@ function processChunkQueue(deadline = { timeRemaining: () => 0, didTimeout: true
     chunkQueue.length && (window.requestIdleCallback || window.requestAnimationFrame)(processChunkQueue);
 }
 
-// グローバル状態（chunkQueue は const として宣言されている前提）
-let lastChunk = { x: null, z: null },
-    offsets = null;
-function precomputeOffsets() {
-    const size = CHUNK_VISIBLE_DISTANCE * 2 + 1;
-    const offsets = [];
-    for (let i = 0; i < size * size; i++) {
-        const dx = i % size - CHUNK_VISIBLE_DISTANCE;
-        const dz = Math.floor(i / size) - CHUNK_VISIBLE_DISTANCE;
-        offsets.push({ dx, dz, d: dx * dx + dz * dz });
+let lastChunk = { x: null, z: null }, offsets;
+
+const precomputeOffsets = () => {
+    const s = CHUNK_VISIBLE_DISTANCE * 2 + 1, o = [];
+    for (let i = 0; i < s * s; i++) {
+        const dx = i % s - CHUNK_VISIBLE_DISTANCE;
+        const dz = Math.floor(i / s) - CHUNK_VISIBLE_DISTANCE;
+        o.push({ dx, dz, d: dx * dx + dz * dz });
     }
-    return offsets.sort((a, b) => a.d - b.d);
-}
+    return o.sort((a, b) => a.d - b.d);
+};
+
 function updateChunks() {
     const pCx = Math.floor(player.position.x / CHUNK_SIZE);
     const pCz = Math.floor(player.position.z / CHUNK_SIZE);
-    if (lastChunk.x === pCx && lastChunk.z === pCz) return;
-
+    if (lastChunk.x === pCx && lastChunk.z === pCz && offsets) return;
     lastChunk = { x: pCx, z: pCz };
     offsets ||= precomputeOffsets();
 
-    const req = new Set(),
-        queued = new Set(chunkQueue.map(e => `${e.cx}_${e.cz}`)),
-        candidates = offsets.map(({ dx, dz }) => ({ cx: pCx + dx, cz: pCz + dz }));
+    const req = new Set(), queued = new Set(chunkQueue.map(e => `${e.cx}_${e.cz}`));
+    const cands = offsets.map(({ dx, dz }) => ({ cx: pCx + dx, cz: pCz + dz }));
 
-    candidates.forEach(({ cx, cz }) => {
+    for (const { cx, cz } of cands) {
         const key = `${cx}_${cz}`;
         req.add(key);
-        if (!loadedChunks[key] && !queued.has(key)) {
-            chunkQueue.push({ cx, cz });
-            queued.add(key);
-        }
-    });
+        if (!loadedChunks[key] && !queued.has(key)) chunkQueue.push({ cx, cz });
+    }
 
     chunkQueue = chunkQueue.filter(e => req.has(`${e.cx}_${e.cz}`));
-    chunkQueue.sort((a, b) => (a.cx - pCx) ** 2 + (a.cz - pCz) ** 2 - ((b.cx - pCx) ** 2 + (b.cz - pCz) ** 2));
+    chunkQueue.sort((a, b) =>
+        (a.cx - pCx) ** 2 + (a.cz - pCz) ** 2 - ((b.cx - pCx) ** 2 + (b.cz - pCz) ** 2)
+    );
 
-    Object.keys(loadedChunks).forEach(key => {
+    for (const key in loadedChunks)
         if (!req.has(key)) {
             releaseChunkMesh(loadedChunks[key]);
             delete loadedChunks[key];
         }
-    });
 
-    (window.requestIdleCallback || ((cb) => setTimeout(cb, 16)))(() => processChunkQueue({ timeRemaining: () => 16, didTimeout: true }));
+    (window.requestIdleCallback || ((cb) => setTimeout(cb, 16)))(
+        () => processChunkQueue({ timeRemaining: () => 16, didTimeout: true })
+    );
 }
+
+window.updateChunksFromUI = () => {
+    const d = parseInt(document.getElementById("chunkDistance").value, 10);
+    if (isNaN(d) || d < 2 || d > 32) return alert("2～32の範囲で入力してください。");
+    CHUNK_VISIBLE_DISTANCE = d;
+    offsets = null;
+    updateChunks();
+    console.log("距離更新:", d);
+};
+
 
 /* ======================================================
    【ブロックの破壊・設置機能】（長押し、範囲指定、プレイヤー領域禁止）
