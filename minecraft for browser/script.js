@@ -96,7 +96,7 @@ const PLAYER_RADIUS = 0.3;
 const PLAYER_HEIGHT = 1.8;    // 通常時のプレイヤーの身長を1.8ブロックに変更
 const SNEAK_HEIGHT = 1.65;    // スニーク時のプレイヤー身長を1.65ブロックに変更
 
-const JUMP_INITIAL_SPEED = 0.21;
+const JUMP_INITIAL_SPEED = 0.199;
 const UP_DECEL = 0.018;
 const DOWN_ACCEL = 0.007;
 const MAX_FALL_SPEED = -1;
@@ -524,7 +524,7 @@ function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, { raw = fal
     }
     // --- 高さに基づくブロック種別決定 ---
     if (y > h) {
-        return (y >= 30 && y <= 45) ? WATER : SKY;
+        return (y >= 20 && y <= 45) ? WATER : SKY;
     } else if (y === h) {
         return h <= 44 ? DIRT : GRASS; // ← 水ブロック以下の高さなら DIRT にする
     } else if (y >= h - 2) {
@@ -905,57 +905,6 @@ const faceToMaterialIndex = {
     "nz": 5   // 後面
 };
 
-const TOP_SHADOW_OFFSETS = { LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1] };
-const blockConfigCache = new Map();
-const subterraneanAreaCache = new Map();
-const configCache = new Map();
-
-const getConfig = id => {
-    if (!blockConfigCache.has(id)) blockConfigCache.set(id, getBlockConfiguration(id));
-    return blockConfigCache.get(id);
-};
-const getConfigCached = id => {
-    if (!configCache.has(id)) configCache.set(id, getConfig(id));
-    return configCache.get(id);
-};
-const subterraneanKeyHash = (wx, wy, wz) => `${wx}_${wy}_${wz}`;
-function isInSubterraneanArea(wx, wy, wz) {
-    const key = subterraneanKeyHash(wx, wy, wz);
-    if (subterraneanAreaCache.has(key)) return subterraneanAreaCache.get(key);
-    const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
-    for (let y = wy + 1; y < maxY; y++) {
-        const id = getVoxelAtWorld(wx, y, wz);
-        if (typeof id === "number" && id !== BLOCK_TYPES.SKY) {
-            const cfg = getConfigCached(id);
-            if (cfg && !cfg.transparent) {
-                subterraneanAreaCache.set(key, true);
-                return true;
-            }
-        }
-    }
-    subterraneanAreaCache.set(key, false);
-    return false;
-}
-
-function computeTopShadowFactorForCorner(wx, wy, wz, corner) {
-    const offset = TOP_SHADOW_OFFSETS[corner];
-    if (!offset) return 1;
-    const y = wy + 1;
-    const checkOpaque = (x, z) => {
-        const id = getVoxelAtWorld(x, y, z);
-        const cfg = getConfig(id);
-        return typeof id === "number" && id !== BLOCK_TYPES.SKY && !cfg.transparent;
-    };
-    const [dx, dz] = offset;
-    const opaque1 = checkOpaque(wx + dx, wz);
-    const opaque2 = checkOpaque(wx, wz + dz);
-    return (opaque1 && opaque2) || isInSubterraneanArea(wx, wy, wz) ? 0.4
-        : (opaque1 || opaque2) ? 0.7
-            : 1;
-}
-
-const clearCaches = () => subterraneanAreaCache.clear();
-
 // ========= ヘルパー関数 =========
 
 // (voxelModifications はユーザーによるブロック変更情報のオブジェクト)
@@ -1066,7 +1015,7 @@ function scheduleChunkUpdate() {
 // グローバル変数
 const loadedChunks = {}; // 現在シーンに配置中のチャンク（キーは "cx_cz"）
 const chunkPool = [];    // 使い回し可能なチャンクメッシュのプール
-const chunkQueue = [];   // 新規チャンク生成用のキュー
+let chunkQueue = [];   // 新規チャンク生成用のキュー
 
 /**
  * フェードインアニメーション（opacity 0→1）を Mesh に適用する関数
@@ -1124,7 +1073,6 @@ const setOpacityRecursive = (root, opacity) => {
  */
 function releaseChunkMesh(mesh) {
     scene.remove(mesh);
-    // dispose せずに保持することで、再利用可能になる
     chunkPool.push(mesh);
 }
 
@@ -1283,21 +1231,69 @@ function getCachedFaceGeometry(faceKey) {
 function computeVisibilityMask(getN, curType, curTransp, curCustom) {
     let mask = 0;
     const len = neighbors.length;
-
     for (let i = 0; i < len; i++) {
         const t = getN(i);
         if (!t || t === BLOCK_TYPES.SKY) {
             mask |= 1 << i;
             continue;
         }
-
         const c = getBlockConfiguration(t);
         if (c && ((c.transparent && (!curTransp || t !== curType)) || (c.customGeometry && !curCustom))) {
             mask |= 1 << i;
         }
     }
-
     return mask;
+}
+
+
+const TOP_SHADOW_OFFSETS = { LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1] };
+const blockConfigCache = new Map();
+const subterraneanAreaCache = new Map();
+const configCache = new Map();
+const clearCaches = () => subterraneanAreaCache.clear();
+
+const getConfig = id => {
+    if (!blockConfigCache.has(id)) blockConfigCache.set(id, getBlockConfiguration(id));
+    return blockConfigCache.get(id);
+};
+const getConfigCached = id => {
+    if (!configCache.has(id)) configCache.set(id, getConfig(id));
+    return configCache.get(id);
+};
+const subterraneanKeyHash = (wx, wy, wz) => `${wx}_${wy}_${wz}`;
+function isInSubterraneanArea(wx, wy, wz) {
+    const key = subterraneanKeyHash(wx, wy, wz);
+    if (subterraneanAreaCache.has(key)) return subterraneanAreaCache.get(key);
+    const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
+    for (let y = wy + 1; y < maxY; y++) {
+        const id = getVoxelAtWorld(wx, y, wz);
+        if (typeof id === "number" && id !== BLOCK_TYPES.SKY) {
+            const cfg = getConfigCached(id);
+            if (cfg && !cfg.transparent) {
+                subterraneanAreaCache.set(key, true);
+                return true;
+            }
+        }
+    }
+    subterraneanAreaCache.set(key, false);
+    return false;
+}
+
+function computeTopShadowFactorForCorner(wx, wy, wz, corner) {
+    const offset = TOP_SHADOW_OFFSETS[corner];
+    if (!offset) return 1;
+    const y = wy + 1;
+    const checkOpaque = (x, z) => {
+        const id = getVoxelAtWorld(x, y, z);
+        const cfg = getConfig(id);
+        return typeof id === "number" && id !== BLOCK_TYPES.SKY && !cfg.transparent;
+    };
+    const [dx, dz] = offset;
+    const opaque1 = checkOpaque(wx + dx, wz);
+    const opaque2 = checkOpaque(wx, wz + dz);
+    return (opaque1 && opaque2) || isInSubterraneanArea(wx, wy, wz) ? 0.4
+        : (opaque1 || opaque2) ? 0.7
+            : 1;
 }
 
 function getBlockConfigCached(id) {
@@ -1431,10 +1427,8 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             container.add(mesh);
         }
     }
-
     return container;
 }
-
 
 const materialCache = new Map();
 const collisionCache = new Map();
@@ -1489,90 +1483,68 @@ function createCustomBlockMesh(type, position, rotation) {
  * @param {IdleDeadline} [deadline] -
  */
 // チャンク更新キュー（chunkQueue は既存のグローバル変数）
-function processChunkQueue(deadline) {
-    const fallbackDeadline = {
-        timeRemaining: () => 0,
-        didTimeout: true
-    };
-    deadline = deadline && typeof deadline.timeRemaining === 'function' ? deadline : fallbackDeadline;
-
-    const maxTasksPerFrame = 4; // タスク数を調整してスループット向上
+function processChunkQueue(deadline = { timeRemaining: () => 0, didTimeout: true }) {
+    const startFrame = performance.now();
     let tasksProcessed = 0;
-
     while (
-        chunkQueue.length > 0 &&
-        (deadline.timeRemaining() > 1 || deadline.didTimeout) &&
-        tasksProcessed < maxTasksPerFrame
+        chunkQueue.length &&
+        (deadline.timeRemaining?.() > 1 || deadline.didTimeout) &&
+        tasksProcessed < Math.max(2, 16 / (performance.now() - startFrame + 1))
     ) {
         const start = performance.now();
         generateNextChunk();
-        const elapsed = performance.now() - start;
-
-        // 時間を使いすぎたら強制中断して次フレームへ回す
-        if (elapsed > 8 && !deadline.didTimeout) break;
-
+        if (performance.now() - start > 8 && !deadline.didTimeout) break;
         tasksProcessed++;
     }
-
-    if (chunkQueue.length > 0) {
-        const schedule = window.requestIdleCallback || (cb =>
-            setTimeout(() => cb(fallbackDeadline), 16));
-        schedule(processChunkQueue);
-    }
+    chunkQueue.length && (window.requestIdleCallback || window.requestAnimationFrame)(processChunkQueue);
 }
-
 
 // グローバル状態（chunkQueue は const として宣言されている前提）
 let lastChunk = { x: null, z: null },
     offsets = null;
 function precomputeOffsets() {
-    const off = [];
-    for (let dx = -CHUNK_VISIBLE_DISTANCE; dx <= CHUNK_VISIBLE_DISTANCE; dx++) {
-        for (let dz = -CHUNK_VISIBLE_DISTANCE; dz <= CHUNK_VISIBLE_DISTANCE; dz++) {
-            off.push({ dx, dz, d: dx * dx + dz * dz });
-        }
+    const size = CHUNK_VISIBLE_DISTANCE * 2 + 1;
+    const offsets = [];
+    for (let i = 0; i < size * size; i++) {
+        const dx = i % size - CHUNK_VISIBLE_DISTANCE;
+        const dz = Math.floor(i / size) - CHUNK_VISIBLE_DISTANCE;
+        offsets.push({ dx, dz, d: dx * dx + dz * dz });
     }
-    return off.sort((a, b) => a.d - b.d);
+    return offsets.sort((a, b) => a.d - b.d);
 }
 function updateChunks() {
-    const pCx = Math.floor(player.position.x / CHUNK_SIZE),
-        pCz = Math.floor(player.position.z / CHUNK_SIZE);
+    const pCx = Math.floor(player.position.x / CHUNK_SIZE);
+    const pCz = Math.floor(player.position.z / CHUNK_SIZE);
     if (lastChunk.x === pCx && lastChunk.z === pCz) return;
+
     lastChunk = { x: pCx, z: pCz };
-    if (!offsets) offsets = precomputeOffsets();
+    offsets ||= precomputeOffsets();
+
     const req = new Set(),
         queued = new Set(chunkQueue.map(e => `${e.cx}_${e.cz}`)),
-        candidates = [];
-    for (const { dx, dz, d } of offsets) {
-        const cx = pCx + dx,
-            cz = pCz + dz,
-            key = `${cx}_${cz}`;
+        candidates = offsets.map(({ dx, dz }) => ({ cx: pCx + dx, cz: pCz + dz }));
+
+    candidates.forEach(({ cx, cz }) => {
+        const key = `${cx}_${cz}`;
         req.add(key);
         if (!loadedChunks[key] && !queued.has(key)) {
-            candidates.push({ cx, cz, d });
+            chunkQueue.push({ cx, cz });
             queued.add(key);
         }
-    }
-    candidates.forEach(c => chunkQueue.push({ cx: c.cx, cz: c.cz }));
-    // chunkQueue の内容をインプレースで更新（const への再代入はしない）
-    const filteredQueue = chunkQueue.filter(e => req.has(`${e.cx}_${e.cz}`));
-    chunkQueue.splice(0, chunkQueue.length, ...filteredQueue);
-    chunkQueue.sort((a, b) => {
-        const da = (a.cx - pCx) ** 2 + (a.cz - pCz) ** 2,
-            db = (b.cx - pCx) ** 2 + (b.cz - pCz) ** 2;
-        return da - db;
     });
-    for (const key in loadedChunks) {
+
+    chunkQueue = chunkQueue.filter(e => req.has(`${e.cx}_${e.cz}`));
+    chunkQueue.sort((a, b) => (a.cx - pCx) ** 2 + (a.cz - pCz) ** 2 - ((b.cx - pCx) ** 2 + (b.cz - pCz) ** 2));
+
+    Object.keys(loadedChunks).forEach(key => {
         if (!req.has(key)) {
             releaseChunkMesh(loadedChunks[key]);
             delete loadedChunks[key];
         }
-    }
-    (window.requestIdleCallback || ((cb) => setTimeout(cb, 16)))(
-        () => processChunkQueue({ timeRemaining: () => 16, didTimeout: true })
-    );
-}
+    });
 
+    (window.requestIdleCallback || ((cb) => setTimeout(cb, 16)))(() => processChunkQueue({ timeRemaining: () => 16, didTimeout: true }));
+}
 
 /* ======================================================
    【ブロックの破壊・設置機能】（長押し、範囲指定、プレイヤー領域禁止）
@@ -1583,32 +1555,40 @@ const BLOCK_INTERACT_RANGE = 6;
  * 非負の場合はビット演算で高速に、負の場合は Math.floor を利用
  */
 function getChunkCoord(val) {
-    return val >= 0 ? (val >> 4) : Math.floor(val / CHUNK_SIZE);
+    return Math.floor(val / CHUNK_SIZE);  // 負の値も正しく処理
 }
 
 // 更新要求を蓄積するための Set とデバウンス用タイマー
 let updateTimeout = null;
-
 /**
- * デバウンスしてチャンク更新要求を一括処理する関数
- * 同一チャンクへの重複要求を防ぎ、約16ms（1フレーム分）後にまとめて実行します。
- *
+ * デバウンスしつつ、一定数以上の更新要求が溜まったら即座に処理する
  * @param {number} cx - チャンクのX座標
  * @param {number} cz - チャンクのZ座標
  */
 function requestDebouncedChunkUpdate(cx, cz) {
     pendingChunkUpdates.add(encodeChunkKey(cx, cz));
+    // もし更新要求が 8 以上になったら即座に処理
+    if (pendingChunkUpdates.size >= 8) {
+        processChunkUpdates();
+        return;
+    }
     if (updateTimeout) return;
-
     updateTimeout = setTimeout(() => {
-        for (const key of pendingChunkUpdates) {
-            const [x, z] = decodeChunkKey(key);
-            requestChunkUpdate(x, z);
-        }
-        pendingChunkUpdates.clear();
-        scheduleChunkUpdate();
-        updateTimeout = null;
+        processChunkUpdates();
     }, 16);
+}
+
+/**
+ * チャンク更新要求をまとめて処理
+ */
+function processChunkUpdates() {
+    for (const key of pendingChunkUpdates) {
+        const [x, z] = decodeChunkKey(key);
+        requestChunkUpdate(x, z);
+    }
+    pendingChunkUpdates.clear();
+    scheduleChunkUpdate();
+    updateTimeout = null;
 }
 
 /**
@@ -1621,25 +1601,16 @@ function requestDebouncedChunkUpdate(cx, cz) {
 function updateAffectedChunks(blockPos) {
     const cx = getChunkCoord(blockPos.x);
     const cz = getChunkCoord(blockPos.z);
-
     requestDebouncedChunkUpdate(cx, cz); // 自分のチャンク
-
     const localX = blockPos.x & (CHUNK_SIZE - 1);
     const localZ = blockPos.z & (CHUNK_SIZE - 1);
-
-    const dxList = localX === 0 ? [-1] : localX === CHUNK_SIZE - 1 ? [1] : [];
-    const dzList = localZ === 0 ? [-1] : localZ === CHUNK_SIZE - 1 ? [1] : [];
-
-    for (const dx of dxList) {
-        requestDebouncedChunkUpdate(cx + dx, cz);
-    }
-    for (const dz of dzList) {
-        requestDebouncedChunkUpdate(cx, cz + dz);
-    }
-    for (const dx of dxList) {
-        for (const dz of dzList) {
-            requestDebouncedChunkUpdate(cx + dx, cz + dz);
-        }
+    const offsets = [];
+    if (localX === 0) offsets.push([-1, 0]);
+    else if (localX === CHUNK_SIZE - 1) offsets.push([1, 0]);
+    if (localZ === 0) offsets.push([0, -1]);
+    else if (localZ === CHUNK_SIZE - 1) offsets.push([0, 1]);
+    for (const [dx, dz] of offsets) {
+        requestDebouncedChunkUpdate(cx + dx, cz + dz);
     }
 }
 
@@ -1654,11 +1625,9 @@ function updateAffectedChunks(blockPos) {
  * @returns {boolean} 交差している場合 true、そうでなければ false
  */
 function blockIntersectsPlayer(blockPos, playerAABB, tolerance = 0.001) {
-    const min = blockPos, max = blockPos.clone().addScalar(1);
-    return !(
-        max.x <= playerAABB.min.x + tolerance || min.x >= playerAABB.max.x - tolerance ||
-        max.y <= playerAABB.min.y + tolerance || min.y >= playerAABB.max.y - tolerance ||
-        max.z <= playerAABB.min.z + tolerance || min.z >= playerAABB.max.z - tolerance
+    return !['x', 'y', 'z'].some(axis =>
+        blockPos[axis] + 1 <= playerAABB.min[axis] + tolerance ||
+        blockPos[axis] >= playerAABB.max[axis] - tolerance
     );
 }
 
@@ -1757,9 +1726,8 @@ function interactWithBlock(action) {
 // 例: 一度に処理する更新チャンク数を制限する
 function processPendingChunkUpdatesBatch(batchSize = 2) {
     let processed = 0;
-    // while ループで、Set から直接値を１件ずつ取り出す
+    const iterator = pendingChunkUpdates.values();
     while (pendingChunkUpdates.size > 0 && processed < batchSize) {
-        const iterator = pendingChunkUpdates.values();
         const key = iterator.next().value;
         if (!key) break;
         const [x, z] = decodeChunkKey(key);
@@ -1767,11 +1735,8 @@ function processPendingChunkUpdatesBatch(batchSize = 2) {
         pendingChunkUpdates.delete(key);
         processed++;
     }
-    // まだ処理するキーが残っていれば、次のフレームで継続
-    if (pendingChunkUpdates.size > 0) {
-        requestAnimationFrame(() => processPendingChunkUpdatesBatch(batchSize));
-    } else {
-        scheduleChunkUpdate();
+    if (pendingChunkUpdates.size === 0) {
+        scheduleChunkUpdate(); // 全て処理し終わったときのみ呼ぶ
     }
 }
 
@@ -2641,25 +2606,44 @@ function updateUnderwaterPhysics(delta) {
 
 const clock = new THREE.Clock();
 let wasUnderwater = false;
+const camOffsetVec = new THREE.Vector3();
+let lastStatusHTML = "";
+// FPSに応じたチャンク更新のバッチ数を決定する関数
+function getDynamicBatchSize() {
+    const now = performance.now();
+    const elapsed = now - lastFpsTime;
+    if (elapsed === 0) return 2;
+    const fps = (frameCount * 1000) / elapsed;
+    if (fps > 55) return 6;
+    if (fps > 45) return 4;
+    return 2;
+}
 function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
-    updateBlockParticles(delta);
-    // FPS更新（1秒毎）
-    frameCount++;
     const now = performance.now();
+    frameCount++;
+    // HUD更新（1秒ごと / 値が変わったときのみ）
     if (now - lastFpsTime > 1000) {
-        fpsCounter.innerHTML = `<span>FPS: ${Math.round((frameCount * 1000) / (now - lastFpsTime))}</span><br>
-                                <span>version: 0.0.1a</span><br>
-                                <span>version name: alpha</span><br>
-                                <span>Flight: ${flightMode ? "ON" : "OFF"}</span><br>
-                                <span>Dash: ${dashActive ? "ON" : "OFF"}</span><br>
-                                <span>Sneak: ${sneakActive ? "ON" : "OFF"}</span><br>
-                                <span>Pos: (${player.position.x.toFixed(2)}, ${player.position.y.toFixed(2)}, ${player.position.z.toFixed(2)})</span>`;
+        const fps = Math.round((frameCount * 1000) / (now - lastFpsTime));
+        const newHTML = `<span>FPS: ${fps}</span><br>
+                         <span>version: 0.0.1a</span><br>
+                         <span>version name: alpha</span><br>
+                         <span>Flight: ${flightMode ? "ON" : "OFF"}</span><br>
+                         <span>Dash: ${dashActive ? "ON" : "OFF"}</span><br>
+                         <span>Sneak: ${sneakActive ? "ON" : "OFF"}</span><br>
+                         <span>Pos: (${player.position.x.toFixed(2)}, ${player.position.y.toFixed(2)}, ${player.position.z.toFixed(2)})</span>`;
+        if (newHTML !== lastStatusHTML) {
+            fpsCounter.innerHTML = newHTML;
+            lastStatusHTML = newHTML;
+        }
         frameCount = 0;
         lastFpsTime = now;
     }
-    if (!flightMode && keys[" "] && player.onGround && !wasUnderwater) jumpRequest = true;
+    updateBlockParticles(delta);
+    if (!flightMode && keys[" "] && player.onGround && !wasUnderwater) {
+        jumpRequest = true;
+    }
     camera.rotation.set(pitch, yaw, 0);
     const underwater = isPlayerEntireBodyInWater();
     if (flightMode) updateFlightPhysics(delta);
@@ -2671,7 +2655,8 @@ function animate() {
     updateChunks();
     processPendingChunkUpdates();
     const camOffset = flightMode ? getCurrentPlayerHeight() - 0.15 : getCurrentPlayerHeight();
-    camera.position.copy(player.position).add(new THREE.Vector3(0, camOffset, 0));
+    camOffsetVec.set(0, camOffset, 0);
+    camera.position.copy(player.position).add(camOffsetVec);
     updateBlockSelection();
     updateBlockInfo();
     updateHeadBlockInfo();
@@ -2680,7 +2665,10 @@ function animate() {
     updateCloudOpacity(camera.position);
     updateScreenOverlay();
     cloudTiles.forEach(tile => adjustCloudLayerDepth(tile, camera));
-    if (pendingChunkUpdates.size) processPendingChunkUpdatesBatch(2);
+    if (pendingChunkUpdates.size > 0) {
+        const batchSize = getDynamicBatchSize();
+        processPendingChunkUpdatesBatch(batchSize);
+    }
     renderer.render(scene, camera);
 }
 animate();
