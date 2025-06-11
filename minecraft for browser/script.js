@@ -1545,7 +1545,7 @@ function updateChunks() {
 
 window.updateChunksFromUI = () => {
     const d = parseInt(document.getElementById("chunkDistance").value, 10);
-    if (isNaN(d) || d < 2 || d > 32) return alert("2～32の範囲で入力してください。");
+    if (isNaN(d) || d < 0 || d > 32) return alert("0～32の範囲で入力してください。");
     CHUNK_VISIBLE_DISTANCE = d;
     offsets = null;
     updateChunks();
