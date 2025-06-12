@@ -45,6 +45,7 @@ const defaultBlockConfig = {
     customCollision: null,   // カスタム衝突判定は基本なし
     hardness: 1.0,           // ブロックの硬さや耐久性（任意）
     drop: null,              // ブロック破壊時に落とすアイテム（任意）
+    cullAdjacentFaces: true,
     previewType: "3D",      // 3D プレビュー表示の場合
     previewOptions: {
         // ひし型（ダイヤモンド型）に近づけるため、
@@ -57,7 +58,7 @@ const defaultBlockConfig = {
 // ── ユーティリティ：深いマージ（必要なら） ──
 // ※複雑なネストがなければスプレッド構文で十分です。
 function createBlockConfig(customConfig) {
-    return { ...defaultBlockConfig, ...customConfig };
+    return Object.assign({}, defaultBlockConfig, customConfig);
 }
 
 // ── 個別ブロック設定 ──
@@ -112,6 +113,7 @@ const BLOCK_CONFIG = {
         geometryType: "stairs",
         transparent: true,
         customCollision: pos => getCustomCollision("stairs"),
+        cullAdjacentFaces: false,
         screenFill: false,
         hardness: 2.0
     }),
@@ -121,6 +123,7 @@ const BLOCK_CONFIG = {
         geometryType: "slab",
         transparent: true,
         customCollision: pos => getCustomCollision("slab"),
+        cullAdjacentFaces: false,
         screenFill: false,
         hardness: 1.5
     }),
@@ -137,6 +140,7 @@ const BLOCK_CONFIG = {
         geometryType: "cross",
         transparent: true,
         customCollision: pos => getCustomCollision("cross"),
+        cullAdjacentFaces: false,
         screenFill: false,
         previewType: "2D"
     }),
@@ -147,11 +151,20 @@ const BLOCK_CONFIG = {
         geometryType: "cross",
         transparent: true,
         customCollision: pos => getCustomCollision("cross"),
+        cullAdjacentFaces: false,
         screenFill: false,
         previewType: "2D"
     }),
-    WATER: createBlockConfig({
+    LEAVES: createBlockConfig({
         id: 13,
+        textures: { all: "textures/leaves.png" },
+        geometryType: "leaves",
+        transparent: true,
+        cullAdjacentFaces: false,
+        screenFill: false
+    }),
+    WATER: createBlockConfig({
+        id: 14,
         textures: { all: "textures/water.png" },
         collision: false,
         transparent: true,
@@ -200,7 +213,7 @@ function createMaterialsFromBlockConfig(blockConfig) {
     if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
 
     const isStairsOrSlab = geometryType === "stairs" || geometryType === "slab";
-    const isCross = geometryType === "cross";
+    const isCross = geometryType === "cross" || geometryType === "leaves";
     const isWater = geometryType === "water";
 
     const opacity = (isStairsOrSlab || isCross) ? 1 : (transparent ? 0.7 : 1);
@@ -227,9 +240,9 @@ function createMaterialsFromBlockConfig(blockConfig) {
             opacity,
             vertexColors,
             side,
+            alphaTest: isCross ? 0.5 : 0,
         });
-        matCache[tex] = mat;
-        return mat;
+        return matCache[tex] = mat;
     }
 
     const materials = textures.all
@@ -250,19 +263,15 @@ const BLOCK_MATERIALS_CACHE = {};
  */
 function getBlockMaterials(blockType) {
     const bType = Number(blockType);
-    if (BLOCK_MATERIALS_CACHE[bType]) {
-        return BLOCK_MATERIALS_CACHE[bType];
-    }
+    if (BLOCK_MATERIALS_CACHE[bType]) return BLOCK_MATERIALS_CACHE[bType];
 
-    // BLOCK_CONFIG は事前定義されているブロック設定の辞書
-    for (let key in BLOCK_CONFIG) {
-        if (Number(BLOCK_CONFIG[key].id) === bType) {
-            const materials = createMaterialsFromBlockConfig(BLOCK_CONFIG[key]);
+    for (const config of Object.values(BLOCK_CONFIG)) {
+        if (config.id === bType) {
+            const materials = createMaterialsFromBlockConfig(config);
             BLOCK_MATERIALS_CACHE[bType] = materials;
             return materials;
         }
     }
-    // 対応なしの場合は null またはデフォルトマテリアルを返す
     return null;
 }
 
@@ -276,12 +285,10 @@ const cachedCustomGeometries = {};
 
 // BLOCK_CONFIG から各ブロック設定を高速に取得するためのルックアップテーブル
 const blockConfigLookup = {};
-for (const key in BLOCK_CONFIG) {
-    if (Object.prototype.hasOwnProperty.call(BLOCK_CONFIG, key)) {
-        const config = BLOCK_CONFIG[key];
-        blockConfigLookup[config.id] = config;
-    }
-}
+Object.values(BLOCK_CONFIG).forEach(config => {
+    blockConfigLookup[config.id] = config;
+});
+
 /**
  * 横面のライティング用 UV 座標を最適化する関数  
  * 対象は、法線の Y 成分が 0 に近い（＝横向き）の頂点
@@ -309,13 +316,9 @@ function adjustSideUVs(geom) {
  * @returns {THREE.BufferGeometry}
  */
 function getBlockGeometry(type, config) {
-    // カスタムジオメトリ優先
-    if (config && config.customGeometry) {
+    if (config?.customGeometry) {
         if (!cachedCustomGeometries[config.id]) {
-            let customGeom =
-                typeof config.customGeometry === "function"
-                    ? config.customGeometry()
-                    : config.customGeometry;
+            const customGeom = typeof config.customGeometry === "function" ? config.customGeometry() : config.customGeometry;
             customGeom.computeBoundingBox();
             customGeom.computeVertexNormals();
             cachedCustomGeometries[config.id] = customGeom;
@@ -323,10 +326,7 @@ function getBlockGeometry(type, config) {
         return cachedCustomGeometries[config.id];
     }
 
-    // 標準ジオメトリをキャッシュ済みならそのまま返す
-    if (cachedBlockGeometries[type]) {
-        return cachedBlockGeometries[type];
-    }
+    if (cachedBlockGeometries[type]) return cachedBlockGeometries[type];
 
     let geom;
     switch (type) {
@@ -365,15 +365,19 @@ function getBlockGeometry(type, config) {
             break;
         }
         case "water":
+            geom = new THREE.BoxGeometry(1, 0.88, 1);
+            geom.translate(0.5, 0.44, 0.5);
+            break;
+        case "leaves":
             geom = new THREE.BoxGeometry(1, 1, 1);
             geom.translate(0.5, 0.5, 0.5);
-            adjustSideUVs(geom);
             break;
         default:
             geom = new THREE.BoxGeometry(1, 1, 1);
             geom.translate(0.5, 0.5, 0.5);
             break;
     }
+
     geom.computeBoundingBox();
     geom.computeVertexNormals();
 
