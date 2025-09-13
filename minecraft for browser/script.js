@@ -2033,7 +2033,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 // --- 選択管理 ---
-let activeBlockType = 1;
+let activeBlockType = 0;
 let selectedHotbarIndex = 0;
 
 // --- 画像キャッシュ＆読み込み ---
@@ -2788,4 +2788,5 @@ function animate() {
     }
     renderer.render(scene, camera);
 }
+
 animate();
