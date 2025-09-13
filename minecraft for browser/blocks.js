@@ -91,20 +91,28 @@ const BLOCK_CONFIG = {
         id: 4,
         textures: { all: "textures/cobblestone.png" }
     }),
-    PLANKS: createBlockConfig({
+    COBBLE_STONE_MOSSY: createBlockConfig({
         id: 5,
+        textures: { all: "textures/cobblestone_mossy.png" }
+    }),
+    COAL_ORE: createBlockConfig({
+        id: 6,
+        textures: { all: "textures/coal_ore.png" }
+    }),
+    PLANKS: createBlockConfig({
+        id: 7,
         textures: { all: "textures/planks.png" }
     }),
     BRICK: createBlockConfig({
-        id: 6,
+        id: 8,
         textures: { all: "textures/brick.png" }
     }),
     BEDROCK: createBlockConfig({
-        id: 7,
+        id: 9,
         textures: { all: "textures/bedrock.png" }
     }),
     STONE_STAIRS: createBlockConfig({
-        id: 8,
+        id: 10,
         textures: {
             top: "textures/stone.png",
             bottom: "textures/stone.png",
@@ -118,7 +126,7 @@ const BLOCK_CONFIG = {
         hardness: 2.0
     }),
     STONE_SLAB: createBlockConfig({
-        id: 9,
+        id: 11,
         textures: { all: "textures/stone.png" },
         geometryType: "slab",
         transparent: true,
@@ -128,13 +136,13 @@ const BLOCK_CONFIG = {
         hardness: 1.5
     }),
     GLASS: createBlockConfig({
-        id: 10,
+        id: 12,
         textures: { all: "textures/glass.png" },
         transparent: true,
         screenFill: false
     }),
     FLOWER: createBlockConfig({
-        id: 11,
+        id: 13,
         textures: { all: "textures/flower.png" },
         collision: false,
         geometryType: "cross",
@@ -145,7 +153,7 @@ const BLOCK_CONFIG = {
         previewType: "2D"
     }),
     TALLGRASS: createBlockConfig({
-        id: 12,
+        id: 14,
         textures: { all: "textures/tallgrass.png" },
         collision: false,
         geometryType: "cross",
@@ -156,7 +164,7 @@ const BLOCK_CONFIG = {
         previewType: "2D"
     }),
     LEAVES: createBlockConfig({
-        id: 13,
+        id: 15,
         textures: { all: "textures/leaves.png" },
         geometryType: "leaves",
         transparent: true,
@@ -164,7 +172,7 @@ const BLOCK_CONFIG = {
         screenFill: false
     }),
     WATER: createBlockConfig({
-        id: 14,
+        id: 16,
         textures: { all: "textures/water.png" },
         collision: false,
         transparent: true,

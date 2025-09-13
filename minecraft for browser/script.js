@@ -367,22 +367,24 @@ scene.add(directionalLight);
 /* ======================================================
    【プレイヤーAABB・衝突判定関連】
    ====================================================== */
-function getPlayerAABB(pos = player.position) {
-    const half = PLAYER_RADIUS - COLLISION_MARGIN;
-    const height = getCurrentPlayerHeight();
-    const min = new THREE.Vector3(pos.x - half, pos.y, pos.z - half);
-    const max = new THREE.Vector3(pos.x + half, pos.y + height, pos.z + half);
-    return new THREE.Box3(min, max);
-}
+const half = PLAYER_RADIUS - COLLISION_MARGIN;
 
-function getPlayerAABBAt(pos) {
-    const half = PLAYER_RADIUS - COLLISION_MARGIN;
+function createAABB(pos) {
     const height = getCurrentPlayerHeight();
     return new THREE.Box3(
         new THREE.Vector3(pos.x - half, pos.y, pos.z - half),
         new THREE.Vector3(pos.x + half, pos.y + height, pos.z + half)
     );
 }
+
+function getPlayerAABB(pos = player.position) {
+    return createAABB(pos);
+}
+
+function getPlayerAABBAt(pos) {
+    return createAABB(pos);
+}
+
 
 function checkAABBCollision(aabb, velocity, dt) {
     if (!(aabb instanceof THREE.Box3)) {
@@ -451,10 +453,11 @@ function checkAABBCollision(aabb, velocity, dt) {
 const MAX_SEARCH_DEPTH = 32;
 
 function getTerrainHeight(worldX, worldZ, startY) {
+    const xInt = Math.floor(worldX);
+    const zInt = Math.floor(worldZ);
+
     if (startY !== undefined) {
         let y = Math.floor(startY);
-        const xInt = Math.floor(worldX);
-        const zInt = Math.floor(worldZ);
         const minY = Math.max(0, y - MAX_SEARCH_DEPTH);
         for (; y >= minY; y--) {
             if (getVoxelAtWorld(xInt, y, zInt) !== BLOCK_TYPES.SKY) return y + 1;
@@ -462,17 +465,14 @@ function getTerrainHeight(worldX, worldZ, startY) {
         return -Infinity;
     }
 
-    const xInt = Math.floor(worldX);
-    const zInt = Math.floor(worldZ);
     const key = `${xInt}_${zInt}`;
-
     if (terrainHeightCache.has(key)) return terrainHeightCache.get(key);
 
     const baseNoise = fractalNoise2D(worldX * BASE_SCALE, worldZ * BASE_SCALE, 4, 0.5);
     const detailNoise = fractalNoise2D(worldX * DETAIL_SCALE, worldZ * DETAIL_SCALE, 2, 0.5);
 
     const height = BASE_HEIGHT + baseNoise * MOUNTAIN_AMPLITUDE + detailNoise * DETAIL_AMPLITUDE;
-    const result = height | 0;
+    const result = Math.floor(height);
 
     if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
         terrainHeightCache.delete(terrainHeightCache.keys().next().value);
@@ -481,6 +481,7 @@ function getTerrainHeight(worldX, worldZ, startY) {
 
     return result;
 }
+
 
 
 const globalTerrainCache = new Map();
@@ -495,14 +496,16 @@ function getBlockConfigById(id) {
 }
 
 const { SKY, WATER, GRASS, DIRT, STONE, BEDROCK } = BLOCK_TYPES;
+
 function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, { raw = false } = {}) {
-    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+    if (![x, y, z].every(Number.isFinite)) {
         throw new TypeError("worldX, y, worldZ must be valid numbers.");
     }
-    if (y < 0) return BLOCK_TYPES.SKY;
+    if (y < 0) return SKY;
+
     const modKey = voxelKeyFor(x, y, z);
-    // --- モディファイされたブロックの確認と衝突判定キャッシュ ---
     const hasMod = Object.prototype.hasOwnProperty.call(voxelModifications, modKey);
+
     if (hasMod) {
         const id = voxelModifications[modKey];
         if (!raw) {
@@ -515,23 +518,18 @@ function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, { raw = fal
         }
         return id;
     }
-    // --- 地形キャッシュによる高さ取得 ---
+
     const tKey = terrainKeyHash(x, z);
     let h = terrainCache.get(tKey);
     if (h === undefined) {
         h = getTerrainHeight(x, z);
         terrainCache.set(tKey, h);
     }
-    // --- 高さに基づくブロック種別決定 ---
-    if (y > h) {
-        return (y >= 20 && y <= 45) ? WATER : SKY;
-    } else if (y === h) {
-        return h <= 44 ? DIRT : GRASS; // ← 水ブロック以下の高さなら DIRT にする
-    } else if (y >= h - 2) {
-        return DIRT;
-    } else {
-        return y > BEDROCK_LEVEL ? STONE : BEDROCK;
-    }
+
+    if (y > h) return (y >= 20 && y <= 45) ? WATER : SKY;
+    if (y === h) return h <= 44 ? DIRT : GRASS;
+    if (y >= h - 2) return DIRT;
+    return y > BEDROCK_LEVEL ? STONE : BEDROCK;
 }
 
 /**
@@ -578,20 +576,17 @@ function getPreciseHeadBlockType(headPos) {
 function updateScreenOverlay() {
     const headY = player.position.y + getCurrentPlayerHeight() * 0.85;
     const headPos = new THREE.Vector3(player.position.x, headY, player.position.z);
-
     const voxelID = getPreciseHeadBlockType(headPos);
     const config = getBlockConfiguration(voxelID);
     const el = document.getElementById("screenOverlayHtml");
-
     const texturePath = config?.screenFill && (config.textures.top || config.textures.all);
-
-    if (texturePath) {
-        el.style.opacity = voxelID === BLOCK_TYPES.WATER ? "0.8" : "1";
-        el.style.backgroundImage = `url(${texturePath})`;
-        el.style.display = "block";
-    } else {
+    if (!texturePath) {
         el.style.display = "none";
+        return;
     }
+    el.style.opacity = voxelID === BLOCK_TYPES.WATER ? "0.8" : "1";
+    el.style.backgroundImage = `url(${texturePath})`;
+    el.style.display = "block";
 }
 
 /* ======================================================
@@ -1023,22 +1018,22 @@ let chunkQueue = [];   // 新規チャンク生成用のキュー
  * @param {Function} onComplete - アニメーション完了時コールバック
  */
 function fadeInMesh(object, duration = 500, onComplete) {
-    if (object.userData.fadedIn) {
-        onComplete?.();
-        return;
-    }
+    if (object.userData.fadedIn) return onComplete?.();
 
     const materials = [];
-    object.traverse(obj => {
-        if (!obj.material) return;
-        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-        mats.forEach(m => {
-            if (!m) return;
-            materials.push({ mat: m, originalTransparent: m.transparent, originalDepthWrite: m.depthWrite });
-            m.opacity = 0;
-            m.transparent = true;
-            m.depthWrite = false;
-            m.needsUpdate = true;
+    object.traverse(o => {
+        if (!o.material) return;
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach(mat => {
+            if (!mat) return;
+            materials.push({
+                mat,
+                originalTransparent: mat.transparent,
+                originalDepthWrite: mat.depthWrite
+            });
+            mat.opacity = 0;
+            mat.transparent = true;
+            mat.depthWrite = true; // ←奥行きを正しくする
+            mat.needsUpdate = true;
         });
     });
 
@@ -1047,10 +1042,7 @@ function fadeInMesh(object, duration = 500, onComplete) {
     (function animate() {
         const t = Math.min((performance.now() - start) / duration, 1);
         materials.forEach(({ mat }) => {
-            mat.opacity = t;
-            mat.transparent = true;
-            mat.depthWrite = false;
-            mat.needsUpdate = true;
+            mat.opacity = t; // opacityだけ変更
         });
 
         if (t < 1) {
@@ -1068,6 +1060,7 @@ function fadeInMesh(object, duration = 500, onComplete) {
     })();
 }
 
+
 /**
  * 透明度を再帰的に設定する関数
  * @param {THREE.Object3D} root - 対象オブジェクトのルート
@@ -1075,26 +1068,28 @@ function fadeInMesh(object, duration = 500, onComplete) {
  */
 const setOpacityRecursive = (root, opacity) => {
     const clamped = Math.min(Math.max(opacity, 0), 1);
+    const isTransparent = clamped < 1;
     root.traverse(child => {
-        if (!child.material) return;
-        if (clamped < 1 && !child.userData?.transparentBlock) return;
+        const matList = child.material
+            ? (Array.isArray(child.material) ? child.material : [child.material])
+            : null;
+        if (!matList || (isTransparent && !child.userData?.transparentBlock)) return;
 
-        const mats = Array.isArray(child.material) ? child.material : [child.material];
-        mats.forEach(mat => {
+        matList.forEach(mat => {
             if (!mat) return;
             const needUpdate =
                 mat.opacity !== clamped ||
-                mat.transparent !== (clamped < 1 || mat.transparent) ||
-                mat.depthWrite !== (clamped < 1 ? false : true);
+                mat.transparent !== (isTransparent || mat.transparent) ||
+                mat.depthWrite !== !isTransparent;
             if (!needUpdate) return;
 
             mat.opacity = clamped;
-            mat.transparent = clamped < 1 || mat.transparent;
-            mat.depthWrite = clamped < 1 ? false : true;
+            mat.transparent = isTransparent || mat.transparent;
+            mat.depthWrite = !isTransparent;
             mat.needsUpdate = true;
         });
     });
-}
+};
 
 /**
  * チャンクメッシュをプールに返して再利用する関数
@@ -1546,16 +1541,34 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         for (const [type, geoms] of customGeomBatches.entries()) {
             const merged = mergeBufferGeometries(geoms);
             merged.computeBoundingSphere();
-            const mats = getBlockMaterials(+type)?.map(m => Object.assign(m.clone(), { side: THREE.FrontSide }));
+
+            const cfg = getBlockConfigCached(type);
+            const isCross = cfg?.geometryType === "cross";
+            const isTransparent = cfg?.transparent === true;
+
+            const hasVertexColors = !!merged.getAttribute('color'); // color属性があるか確認
+
+            const mats = (getBlockMaterials(+type) || []).map(m => {
+                const mat = m.clone();
+                Object.assign(mat, {
+                    side: isCross ? THREE.DoubleSide : THREE.FrontSide,
+                    transparent: isCross || isTransparent,
+                    depthWrite: !(isCross || isTransparent),
+                    vertexColors: !isCross && hasVertexColors  // color属性がある場合のみ true
+                });
+                return mat;
+            });
+
             const mesh = new THREE.Mesh(merged, mats[0]);
+            if (isCross) mesh.renderOrder = 1000;
+
             Object.assign(mesh, { castShadow: true, receiveShadow: true, frustumCulled: true });
             container.add(mesh);
         }
-    }
 
+    }
     return container;
 }
-
 
 const materialCache = new Map();
 const collisionCache = new Map();
@@ -1613,18 +1626,25 @@ function createCustomBlockMesh(type, position, rotation) {
 function processChunkQueue(deadline = { timeRemaining: () => 0, didTimeout: true }) {
     const startFrame = performance.now();
     let tasksProcessed = 0;
+    const MAX_CHUNKS_PER_FRAME = 2;  // 1フレームで最大2チャンクまで
+
     while (
         chunkQueue.length &&
         (deadline.timeRemaining?.() > 1 || deadline.didTimeout) &&
-        tasksProcessed < Math.max(2, 16 / (performance.now() - startFrame + 1))
+        tasksProcessed < MAX_CHUNKS_PER_FRAME
     ) {
         const start = performance.now();
         generateNextChunk();
+        // 1チャンクの生成が8ms以上かかったら次フレームに回す
         if (performance.now() - start > 8 && !deadline.didTimeout) break;
         tasksProcessed++;
     }
-    chunkQueue.length && (window.requestIdleCallback || window.requestAnimationFrame)(processChunkQueue);
+
+    if (chunkQueue.length) {
+        (window.requestIdleCallback || window.requestAnimationFrame)(processChunkQueue);
+    }
 }
+
 
 let lastChunk = { x: null, z: null }, offsets;
 
@@ -2035,6 +2055,7 @@ document.addEventListener("keydown", (e) => {
 // --- 選択管理 ---
 let activeBlockType = 0;
 let selectedHotbarIndex = 0;
+let activeHotbarIndex = 0;
 
 // --- 画像キャッシュ＆読み込み ---
 const imageCache = new Map();
@@ -2788,5 +2809,4 @@ function animate() {
     }
     renderer.render(scene, camera);
 }
-
 animate();
