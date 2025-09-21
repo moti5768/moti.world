@@ -1,105 +1,86 @@
 import * as THREE from "./build/three.module.js";
 "use strict";
 
-// グローバル変数
-let cloudTiles = new Map(); // "gridX,gridZ" キーごとに各雲タイルを保持
-const tileSize = 500;      // 各タイルのサイズ
-const gridRadius = 6;       // プレイヤー周辺に生成するグリッドの半径
-let cloudTexture = null;    // 全タイルで共有する雲テクスチャ
+let cloudTiles = new Map();
+const tileSize = 500;
+const gridRadius = 6;
+let cloudTexture = null;
 
 /**
- * クラウドテクスチャを読み込み、画像内の黒（背景色）を透明に変換します。
- * （パディングも適用）
+ * クラウドテクスチャを読み込み、黒背景を透明化＋パディング
  */
 function loadCloudTexture(callback) {
-    const loader = new THREE.TextureLoader();
-    loader.load(
+    new THREE.TextureLoader().load(
         'textures/clouds.png',
-        function (texture) {
-            const image = texture.image;
-            const border = 2;
-            const paddedWidth = image.width + 2 * border;
-            const paddedHeight = image.height + 2 * border;
+        texture => {
+            const img = texture.image, b = 2;
+            const w = img.width, h = img.height;
             const canvas = document.createElement('canvas');
-            canvas.width = paddedWidth;
-            canvas.height = paddedHeight;
+            canvas.width = w + b * 2;
+            canvas.height = h + b * 2;
             const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(image, border, border);
-            ctx.drawImage(image, 0, 0, image.width, 1, border, 0, image.width, 1);
-            ctx.drawImage(image, 0, image.height - 1, image.width, 1, border, image.height + border, image.width, 1);
-            ctx.drawImage(image, 0, 0, 1, image.height, 0, border, 1, image.height);
-            ctx.drawImage(image, image.width - 1, 0, 1, image.height, image.width + border, border, 1, image.height);
+            ctx.drawImage(img, b, b);
+            // 上下左右の境界コピーをまとめて処理
+            [
+                [0, 0, w, 1, b, 0, w, 1],
+                [0, h - 1, w, 1, b, h + b, w, 1],
+                [0, 0, 1, h, 0, b, 1, h],
+                [w - 1, 0, 1, h, w + b, b, 1, h]
+            ].forEach(a => ctx.drawImage(img, ...a));
 
-            const imageData = ctx.getImageData(0, 0, paddedWidth, paddedHeight);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imageData.data;
             for (let i = 0; i < data.length; i += 4) {
-                if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 0) {
-                    data[i + 3] = 0;
-                }
+                if (!(data[i] | data[i + 1] | data[i + 2])) data[i + 3] = 0;
             }
             ctx.putImageData(imageData, 0, 0);
 
-            const newTexture = new THREE.CanvasTexture(canvas);
-            newTexture.wrapS = THREE.RepeatWrapping;
-            newTexture.wrapT = THREE.RepeatWrapping;
-            newTexture.repeat.set(0.06, 0.06);
-            newTexture.magFilter = THREE.NearestFilter;
-            newTexture.minFilter = THREE.NearestFilter;
-            newTexture.generateMipmaps = false;
-            newTexture.anisotropy = 4;
-            newTexture.needsUpdate = true;
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(0.06, 0.06);
+            tex.magFilter = tex.minFilter = THREE.NearestFilter;
+            tex.generateMipmaps = false;
+            tex.anisotropy = 4;
+            tex.offset.set(0, 0); // 初期 offset を0に固定
+            tex.needsUpdate = true;
 
-            cloudTexture = newTexture;
-            if (callback) callback();
+            cloudTexture = tex;
+            callback && callback();
         },
         undefined,
-        function (err) {
-            console.error("Error loading cloud texture", err);
-        }
+        err => console.error("Error loading cloud texture", err)
     );
 }
 
 /**
- * Minecraft風の青空背景の設定
+ * Minecraft風の青空背景
  */
 function setMinecraftSky(scene) {
     const canvas = document.createElement("canvas");
     canvas.width = 16;
     canvas.height = 256;
-    const context = canvas.getContext("2d");
-    const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, "#000066");
-    gradient.addColorStop(1, "#87ceeb");
-    context.fillStyle = gradient;
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.magFilter = THREE.NearestFilter;
-    texture.minFilter = THREE.NearestMipmapNearestFilter;
-    scene.background = texture;
+    const ctx = canvas.getContext("2d");
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, "#000066");
+    grad.addColorStop(1, "#87ceeb");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestMipmapNearestFilter;
+    scene.background = tex;
 }
 
 /**
- * UV座標をテクセルグリッドに合わせるためのヘルパー関数
- * @param {number} worldCoord - ワールド座標
- * @param {number} uvScale - uvScale (例: 1/tileSize)
- * @param {number} textureSize - テクスチャのピクセルサイズ（横幅または縦幅）
- * @returns {number} - スナップ後のUV座標
- */
-function snapUV(worldCoord, uvScale, textureSize) {
-    return Math.floor(worldCoord * uvScale * textureSize) / textureSize;
-}
-
-/**
- * 指定したグリッド座標 (gridX, gridZ) において雲タイル（平面）を生成しシーンに追加
- * （各タイルの UV をワールド座標に基づいて計算することで、すべてのタイルが同じテクスチャ空間を参照するようにします）
+ * 雲タイル生成（UVはワールド座標基準でスナップ）
  */
 function addCloudTile(scene, gridX, gridZ) {
     if (!cloudTexture) return;
-    const geometry = new THREE.PlaneGeometry(tileSize, tileSize);
-    geometry.rotateX(-Math.PI / 2);
+    const geo = new THREE.PlaneGeometry(tileSize, tileSize);
+    geo.rotateX(-Math.PI / 2);
 
-    const material = new THREE.MeshBasicMaterial({
+    const mat = new THREE.MeshBasicMaterial({
         map: cloudTexture,
         transparent: true,
         opacity: 1,
@@ -110,44 +91,39 @@ function addCloudTile(scene, gridX, gridZ) {
         fog: true
     });
 
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(
-        gridX * tileSize + tileSize / 2,
-        256,
-        gridZ * tileSize + tileSize / 2
-    );
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.material.opacity = 0;        // 初期透明化
+    mesh.userData.fadeFactor = 0;     // フェード用フラグ
+    const px = gridX * tileSize + tileSize / 2;
+    const pz = gridZ * tileSize + tileSize / 2;
+    mesh.position.set(px, 256, pz);
 
-    const textureWidth = cloudTexture.image.width;
+    const texW = cloudTexture.image.width;
     const uvScale = 1 / tileSize;
-    const positions = geometry.attributes.position.array;
-    const uvs = geometry.attributes.uv.array;
+    const pos = geo.attributes.position.array;
+    const uvs = geo.attributes.uv.array;
     for (let i = 0, j = 0; j < uvs.length; i += 3, j += 2) {
-        const worldX = mesh.position.x + positions[i];
-        const worldZ = mesh.position.z + positions[i + 2];
-        uvs[j] = snapUV(worldX, uvScale, textureWidth);
-        uvs[j + 1] = snapUV(worldZ, uvScale, textureWidth);
+        // 元のスナップ方式でUV計算
+        uvs[j] = Math.floor((px + pos[i]) * uvScale * texW) / texW;
+        uvs[j + 1] = Math.floor((pz + pos[i + 2]) * uvScale * texW) / texW;
     }
-    geometry.attributes.uv.needsUpdate = true;
+    geo.attributes.uv.needsUpdate = true;
     scene.add(mesh);
     return mesh;
 }
 
 /**
- * プレイヤー（またはカメラ）の位置に基づいて必要な雲タイルのグリッドを更新
- * （不要なタイルは削除、新しいタイルは追加）
- * @param {THREE.Scene} scene - 対象シーン
- * @param {THREE.Vector3} playerPos - プレイヤーの現在位置
- * @param {number} delta - 経過時間（秒）
+ * プレイヤー位置に基づき雲タイルを更新
  */
-function updateCloudGrid(scene, playerPos, delta) {
-    const currentGridX = Math.floor(playerPos.x / tileSize);
-    const currentGridZ = Math.floor(playerPos.z / tileSize);
-    const requiredTiles = new Set();
+function updateCloudGrid(scene, playerPos) {
+    const gx = Math.floor(playerPos.x / tileSize);
+    const gz = Math.floor(playerPos.z / tileSize);
+    const needed = new Set();
 
-    for (let x = currentGridX - gridRadius; x <= currentGridX + gridRadius; x++) {
-        for (let z = currentGridZ - gridRadius; z <= currentGridZ + gridRadius; z++) {
+    for (let x = gx - gridRadius; x <= gx + gridRadius; x++) {
+        for (let z = gz - gridRadius; z <= gz + gridRadius; z++) {
             const key = `${x},${z}`;
-            requiredTiles.add(key);
+            needed.add(key);
             if (!cloudTiles.has(key)) {
                 const tile = addCloudTile(scene, x, z);
                 if (tile) {
@@ -157,9 +133,9 @@ function updateCloudGrid(scene, playerPos, delta) {
             }
         }
     }
-
-    for (const [key, tile] of cloudTiles.entries()) {
-        if (!requiredTiles.has(key)) {
+    // 不要タイル削除
+    for (const [key, tile] of cloudTiles) {
+        if (!needed.has(key)) {
             scene.remove(tile);
             tile.geometry.dispose();
             tile.material.dispose();
@@ -169,48 +145,43 @@ function updateCloudGrid(scene, playerPos, delta) {
 }
 
 /**
- * 全タイルで共有する雲テクスチャのオフセットを更新し、流れる雲を演出
- * @param {number} delta - 前フレームからの経過時間
+ * 雲テクスチャのオフセット更新
  */
 function updateCloudTiles(delta) {
     if (!cloudTexture) return;
-    cloudTexture.offset.x = (cloudTexture.offset.x + 0.0005 * delta) % 1;
+    let off = cloudTexture.offset.x + 0.0005 * delta;
+    cloudTexture.offset.x = off >= 1 ? off - 1 : off;
 }
 
 /**
- * プレイヤー（カメラ）との距離に応じて各タイルの不透明度を更新
- * @param {THREE.Vector3} playerPos - プレイヤーの位置
+ * 距離に応じた雲の不透明度更新
  */
 function updateCloudOpacity(playerPos) {
-    const nearDistance = 2000;
-    const farDistance = 6000;
+    const nearD2 = 2000 ** 2;
+    const farD2 = 6000 ** 2;
     cloudTiles.forEach(tile => {
-        const distance = tile.position.distanceTo(playerPos);
+        const dist2 = tile.position.distanceToSquared(playerPos);
         let baseOpacity = 1;
-        if (distance > nearDistance && distance < farDistance) {
-            baseOpacity = 1 - ((distance - nearDistance) / (farDistance - nearDistance));
-        } else if (distance >= farDistance) {
+        if (dist2 > nearD2 && dist2 < farD2) {
+            baseOpacity = 1 - ((Math.sqrt(dist2) - 2000) / 4000);
+        } else if (dist2 >= farD2) {
             baseOpacity = 0;
         }
-        const fadeFactor = tile.userData.fadeFactor ?? 1;
-        tile.material.opacity = baseOpacity * fadeFactor;
+        tile.userData.fadeFactor = Math.min((tile.userData.fadeFactor ?? 0) + 0.05, 1); // フェードイン
+        tile.material.opacity = baseOpacity * tile.userData.fadeFactor;
     });
 }
 
 /**
- * カメラの位置に応じて各雲タイルの描画順序／深度テストの設定を調整する補助関数
+ * カメラ高さに応じた描画順序調整
  */
 function adjustCloudLayerDepth(tile, camera) {
-    if (camera.position.y >= tile.position.y) {
-        tile.renderOrder = 1000;
-        tile.material.depthTest = false;
-    } else {
-        tile.renderOrder = 0;
-        tile.material.depthTest = true;
-    }
+    const above = camera.position.y >= tile.position.y;
+    tile.renderOrder = above ? 1000 : 0;
+    tile.material.depthTest = !above;
 }
 
-// グローバルに関数を公開
+// グローバル公開
 window.setMinecraftSky = setMinecraftSky;
 window.loadCloudTexture = loadCloudTexture;
 window.updateCloudGrid = updateCloudGrid;

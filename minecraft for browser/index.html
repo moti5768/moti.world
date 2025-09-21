@@ -31,6 +31,7 @@
     <div id="inventory">
       <!-- JavaScriptでアイテム追加 -->
     </div>
+
   </div>
 
 
@@ -69,7 +70,7 @@
     </button>
   </div>
 
-  <div id="screenOverlayHtml"></div>
+  <div id="screenOverlayHtml" style="pointer-events: none;"></div>
 
   <div style="position:fixed;bottom:20px;left:10px;background:#000a;color:#fff; padding:8px; font:14px;">
     <label>描画距離:<input id="chunkDistance" type="number" value="6" min="0" max="32"
@@ -78,9 +79,9 @@
   </div>
 
   <!-- メインの JavaScript -->
-  <script type="module" src="blocks.js"></script>
-  <script type="module" src="cloudsky.js"></script>
-  <script type="module" src="script.js"></script>
+  <script type="module" defer src="blocks.js"></script>
+  <script type="module" defer src="cloudsky.js"></script>
+  <script type="module" defer src="script.js"></script>
 
 </body>
 

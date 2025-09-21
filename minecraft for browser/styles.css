@@ -9,6 +9,46 @@ body {
     touch-action: manipulation;
 }
 
+.center {
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.border {
+    background: #c0c0c0;
+    border: 1.5px solid;
+    border-color: #eee #333 #333 #eee;
+}
+
+.border2 {
+    background: darkgray;
+    border: 1.5px solid;
+    border-color: #333 #eee #eee #333;
+}
+
+.button {
+    list-style: none;
+    display: inline-block;
+    color: black;
+    background-color: #C3C7CB;
+    border: 1.8px solid #808080;
+    border-color: #fff #808080 #808080 #fff;
+    box-shadow: 0.5px 0.5px black;
+}
+
+.button.pressed {
+    background-color: darkgray;
+    border: 1.5px solid;
+    border-color: #7a7a7a #fff #fff #7a7a7a;
+    box-shadow: 0.5px 0.5px 0 #000 inset;
+    transform: translate(0.6px, 0.6px);
+}
+
+.bold {
+    font-weight: bold;
+}
+
 canvas {
     display: block;
 }
@@ -34,27 +74,20 @@ canvas {
     left: 50%;
     top: 50%;
     width: 20px;
-    /* サイズは好みに合わせて調整 */
     height: 20px;
     transform: translate(-50%, -50%);
     pointer-events: none;
-    /* ユーザー操作をブロックしない */
     z-index: 100;
-    /* 常に前面表示 */
     mix-blend-mode: difference;
-    /* 背景色と差分表示して色を反転 */
 }
 
-/* 横線 */
 #crosshair:before,
 #crosshair:after {
     content: '';
     position: absolute;
     background: white;
-    /* 白色にしておくと差分で反転効果が得られます */
 }
 
-/* 垂直線 */
 #crosshair:before {
     left: 50%;
     top: 0;
@@ -63,7 +96,6 @@ canvas {
     transform: translateX(-50%);
 }
 
-/* 水平線 */
 #crosshair:after {
     top: 50%;
     left: 0;
@@ -72,27 +104,22 @@ canvas {
     transform: translateY(-50%);
 }
 
-
 /* ----- Touch Controls Panel ----- */
-/* 左側コンテナ：画面左下 */
 #left-controls {
     position: fixed;
     bottom: 115px;
-    /* 他の UI 要素と重ならないように調整 */
     left: 40px;
     width: 150px;
     height: 150px;
     z-index: 2;
 }
 
-/* dpad エリア：相対配置をベースに各ボタンを配置 */
 #touch-dpad {
     position: relative;
     width: 100%;
     height: 100%;
 }
 
-/* dpad 方向ボタンの基本設定 */
 .dpad-btn {
     position: absolute;
     background: rgba(0, 0, 0, 0.6);
@@ -105,7 +132,6 @@ canvas {
     user-select: none;
 }
 
-/* 各方向ボタンの配置 */
 #dpad-up {
     top: -30px;
     left: 60%;
@@ -130,7 +156,6 @@ canvas {
     transform: translateY(-50%);
 }
 
-/* スニークボタンの設定：中央に正確に配置 */
 #btn-sneak {
     position: absolute;
     top: 50%;
@@ -139,19 +164,15 @@ canvas {
     background: rgba(0, 0, 0, 0.7);
     border: none;
     width: 70px;
-    /* 幅と高さを固定 */
     height: 70px;
     padding: 0;
-    /* 余計なパディングがないように */
     display: flex;
-    /* 中身のアイコンを中央寄せ */
     align-items: center;
     justify-content: center;
     border-radius: 5px;
     user-select: none;
 }
 
-/* 右側コンテナ：画面右下 */
 #right-controls {
     position: fixed;
     bottom: 115px;
@@ -159,7 +180,6 @@ canvas {
     z-index: 1100;
 }
 
-/* ジャンプボタン（右側）の基本スタイル */
 .touch-action-btn {
     background: rgba(0, 0, 0, 0.7);
     border: none;
@@ -176,9 +196,6 @@ canvas {
     height: 70px;
 }
 
-
-/* ホットバーのスタイル */
-/* ホットバーのコンテナ */
 #hotbar {
     position: fixed;
     bottom: 10px;
@@ -192,7 +209,6 @@ canvas {
     border: solid 2px black;
 }
 
-/* 各ホットバーアイテム */
 .hotbar-item {
     width: 50px;
     height: 50px;
@@ -206,7 +222,6 @@ canvas {
     cursor: pointer;
 }
 
-/* 選択中のアイテム */
 .hotbar-item.active {
     outline: solid 2px white;
 }
@@ -239,14 +254,6 @@ canvas {
     cursor: pointer;
 }
 
-
-
-
-
-
-
-
-/* 例: style.css に記述 */
 #screenOverlayHtml {
     position: fixed;
     top: 0;

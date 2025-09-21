@@ -4,6 +4,24 @@
 import * as THREE from './build/three.module.js';
 "use strict";
 
+const touchpad_controls = {
+    leftcontrols: document.getElementById("left-controls"),
+    rightcontrols: document.getElementById("right-controls")
+};
+
+const ua = navigator.userAgent.toLowerCase();
+if (ua.includes("mobile")) {
+    // Mobile (iPhone、iPad「Chrome、Edge」、Android)
+    alert("この端末は対応していません!")
+} else if (ua.indexOf("ipad") > -1 || (ua.indexOf("macintosh") > -1 && "ontouchend" in document)) {
+    // Mobile (iPad「Safari」)
+    alert("この端末は対応していません!")
+} else {
+    //PC
+    touchpad_controls.leftcontrols.style.display = "none";
+    touchpad_controls.rightcontrols.style.display = "none";
+}
+
 /* ======================================================
    【ノイズ関数群】（地形生成用）
    改善点:
@@ -53,15 +71,22 @@ const smoothNoise2D = (x, y) => {
     return lerp(lerp(n00, n10, u), lerp(n01, n11, u), v);
 };
 
+const fractalNoiseCache = new Map();
 function fractalNoise2D(x, y, octaves = 4, persistence = 0.5) {
-    let total = 0, frequency = 1, amplitude = 1, maxValue = 0;
+    const cacheKey = `${x},${y},${octaves},${persistence}`;
+    if (fractalNoiseCache.has(cacheKey)) return fractalNoiseCache.get(cacheKey);
+    let total = 0, amplitude = 1, maxValue = 0;
+    let fx = x, fy = y;
     for (let i = 0; i < octaves; i++) {
-        total += smoothNoise2D(x * frequency, y * frequency) * amplitude;
+        total += smoothNoise2D(fx, fy) * amplitude;
         maxValue += amplitude;
         amplitude *= persistence;
-        frequency *= 2;
+        fx *= 2;
+        fy *= 2;
     }
-    return total / maxValue;
+    const result = total / maxValue;
+    fractalNoiseCache.set(cacheKey, result);
+    return result;
 }
 
 // 使用例
@@ -110,6 +135,44 @@ let lastFpsTime = performance.now();
 let frameCount = 0;
 const fpsCounter = document.getElementById("fpsCounter");
 
+// ======================================================
+// Vector3 / Box3 Object Pool (改良版)
+// ======================================================
+const _vecPool = [];
+const _boxPool = [];
+const POOL_MAX = 1024; // プール上限。環境に応じて調整可
+
+// Vector3 プール
+function allocVec() {
+    return _vecPool.length ? _vecPool.pop() : new THREE.Vector3();
+}
+
+function freeVec(v) {
+    if (!v) return;
+    v.set(0, 0, 0); // 再利用時の初期状態
+    if (_vecPool.length < POOL_MAX) _vecPool.push(v);
+}
+
+// Box3 プール
+function allocBox() {
+    const b = _boxPool.length ? _boxPool.pop() : new THREE.Box3();
+    b.makeEmpty(); // 常に「空の Box3」として返す
+    return b;
+}
+
+function freeBox(b) {
+    if (!b) return;
+    b.makeEmpty();
+    if (_boxPool.length < POOL_MAX) _boxPool.push(b);
+}
+
+// sweptAABB 用の一時オブジェクト（再利用）
+const _sweptTmpEntry = new THREE.Vector3();
+const _sweptTmpExit = new THREE.Vector3();
+
+// チャンク更新のバッチ制御（チューニング可）
+const CHUNK_UPDATE_BATCH = 4;
+const CHUNK_UPDATE_DELAY_MS = 60;
 
 // ───────────────────────────────────────────────────────────────
 // 【グローバル・テンポラリオブジェクトの宣言】
@@ -323,7 +386,6 @@ let yaw = 0, pitch = 0;
 const mouseSensitivity = 0.002;
 
 const dt = 1;
-const fixedCamY = player.position.y + PLAYER_HEIGHT;
 
 let sneakActive = false;
 function getCurrentPlayerHeight() {
@@ -371,9 +433,15 @@ const half = PLAYER_RADIUS - COLLISION_MARGIN;
 
 function createAABB(pos) {
     const height = getCurrentPlayerHeight();
+    let feetPos = pos.clone();
+
+    if (player.positionIsCenter) {
+        feetPos.y -= height / 2;
+    }
+
     return new THREE.Box3(
-        new THREE.Vector3(pos.x - half, pos.y, pos.z - half),
-        new THREE.Vector3(pos.x + half, pos.y + height, pos.z + half)
+        new THREE.Vector3(feetPos.x - half, feetPos.y, feetPos.z - half),
+        new THREE.Vector3(feetPos.x + half, feetPos.y + height, feetPos.z + half)
     );
 }
 
@@ -385,23 +453,26 @@ function getPlayerAABBAt(pos) {
     return createAABB(pos);
 }
 
-
 function checkAABBCollision(aabb, velocity, dt) {
+    // aabb が Box3 でない場合はコピーして Box3 化（参照を壊さない）
     if (!(aabb instanceof THREE.Box3)) {
-        aabb = new THREE.Box3(aabb.min, aabb.max);
+        aabb = new THREE.Box3(aabb.min.clone(), aabb.max.clone());
     }
 
     const isDynamic = velocity !== undefined && dt !== undefined;
-    const result = isDynamic ? { collision: false, time: dt, normal: new THREE.Vector3() } : false;
+    const result = isDynamic
+        ? { collision: false, time: dt, normal: new THREE.Vector3() }
+        : false;
 
-    const startX = Math.floor(aabb.min.x + COLLISION_MARGIN);
-    const endX = Math.ceil(aabb.max.x - COLLISION_MARGIN);
-    const startY = Math.floor(aabb.min.y + COLLISION_MARGIN);
-    const endY = Math.ceil(aabb.max.y - COLLISION_MARGIN);
-    const startZ = Math.floor(aabb.min.z + COLLISION_MARGIN);
-    const endZ = Math.ceil(aabb.max.z - COLLISION_MARGIN);
+    // 浮動小数点誤差用のマージン
+    const startX = Math.floor(aabb.min.x - COLLISION_MARGIN - 1e-5);
+    const endX = Math.ceil(aabb.max.x + COLLISION_MARGIN + 1e-5);
+    const startY = Math.floor(aabb.min.y - COLLISION_MARGIN - 1e-5);
+    const endY = Math.ceil(aabb.max.y + COLLISION_MARGIN + 1e-5);
+    const startZ = Math.floor(aabb.min.z - COLLISION_MARGIN - 1e-5);
+    const endZ = Math.ceil(aabb.max.z + COLLISION_MARGIN + 1e-5);
 
-    const tempBox = new THREE.Box3();
+    // ローカルキャッシュ（同じ voxelId の block config を繰り返さない）
     const configCache = new Map();
 
     for (let x = startX; x < endX; x++) {
@@ -410,39 +481,106 @@ function checkAABBCollision(aabb, velocity, dt) {
                 const voxelId = getVoxelAtWorld(x, y, z);
                 if (voxelId === BLOCK_TYPES.SKY) continue;
 
-                if (!configCache.has(voxelId)) {
-                    configCache.set(voxelId, getBlockConfiguration(voxelId));
+                // config をキャッシュから取得
+                let config;
+                if (configCache.has(voxelId)) {
+                    config = configCache.get(voxelId);
+                } else {
+                    config = getBlockConfiguration(voxelId);
+                    configCache.set(voxelId, config);
                 }
-                const config = configCache.get(voxelId);
-                if (config?.collision === false) continue;
 
+                if (!config || config.collision === false) continue;
+
+                // --- ブロック単位で使う Box3 配列（スコープ内で生成） ---
                 const boxes = [];
-                if (typeof config?.customCollision === 'function') {
-                    let localBoxes = config.customCollision(new THREE.Vector3());
-                    for (const b of localBoxes) {
-                        boxes.push(tempBox.copy(b).translate(new THREE.Vector3(x, y, z)).clone());
+
+                // カスタムコリジョンがある場合は相対 Box を取得して pooled Box にコピー
+                if (typeof config.customCollision === "function") {
+                    // tmpVec を渡す（customCollision が引数を取る実装に対応）
+                    const tmpVec = allocVec();
+                    let relBoxes;
+                    try {
+                        relBoxes = config.customCollision(tmpVec) || [];
+                    } catch (e) {
+                        // 万が一エラーなら引数無しで再試行（互換性確保）
+                        try { relBoxes = config.customCollision() || []; }
+                        catch (ee) { relBoxes = []; }
+                    }
+                    freeVec(tmpVec);
+
+                    for (let rb of relBoxes) {
+                        const pb = allocBox();
+                        // rb が THREE.Box3 の場合は copy、オブジェクトの場合は min/max をコピー
+                        if (rb instanceof THREE.Box3) {
+                            pb.copy(rb);
+                        } else if (rb && rb.min && rb.max) {
+                            pb.min.copy(rb.min);
+                            pb.max.copy(rb.max);
+                        } else {
+                            // 想定外の形なら 1x1x1 として扱う（保険）
+                            pb.min.set(0, 0, 0);
+                            pb.max.set(1, 1, 1);
+                        }
+                        // ワールド座標へオフセット
+                        const off = allocVec();
+                        off.set(x, y, z);
+                        pb.min.add(off);
+                        pb.max.add(off);
+                        freeVec(off);
+
+                        boxes.push(pb);
                     }
                 } else {
-                    boxes.push(tempBox.set(
-                        new THREE.Vector3(x, y, z),
-                        new THREE.Vector3(x + 1, y + 1, z + 1)
-                    ).clone());
+                    // 単純な 1x1x1 ブロック
+                    const pb = allocBox();
+                    const min = allocVec();
+                    const max = allocVec();
+                    min.set(x, y, z);
+                    max.set(x + 1, y + 1, z + 1);
+                    pb.min.copy(min);
+                    pb.max.copy(max);
+                    boxes.push(pb);
+                    freeVec(min);
+                    freeVec(max);
                 }
+
+                // --- boxes を使って判定（early return する場合も先に解放する） ---
+                let earlyReturn = false;
+                let earlyResult = null;
 
                 for (const box of boxes) {
                     if (isDynamic) {
                         const r = sweptAABB(aabb, velocity, dt, box);
                         if (r.collision && r.time < result.time) {
                             Object.assign(result, r);
-                            if (r.time < 1e-6) return result;
+                            if (r.time < 1e-5) {
+                                earlyResult = { type: 'dynamic', value: result };
+                                earlyReturn = true;
+                                break;
+                            }
                         }
                     } else {
-                        if (aabb.intersectsBox(box)) return true;
+                        if (aabb.intersectsBox(box)) {
+                            earlyResult = { type: 'static', value: true };
+                            earlyReturn = true;
+                            break;
+                        }
                     }
                 }
-            }
-        }
-    }
+
+                // --- 必ず解放する ---
+                for (const box of boxes) freeBox(box);
+
+                // --- earlyReturn の振る舞い（元実装と互換） ---
+                if (earlyReturn) {
+                    if (earlyResult.type === 'dynamic') return earlyResult.value;
+                    return true;
+                }
+
+            } // z
+        } // y
+    } // x
 
     return result;
 }
@@ -475,14 +613,13 @@ function getTerrainHeight(worldX, worldZ, startY) {
     const result = Math.floor(height);
 
     if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
-        terrainHeightCache.delete(terrainHeightCache.keys().next().value);
+        const firstKey = terrainHeightCache.keys().next().value;
+        terrainHeightCache.delete(firstKey);
     }
     terrainHeightCache.set(key, result);
 
     return result;
 }
-
-
 
 const globalTerrainCache = new Map();
 const blockCollisionCache = new Map();
@@ -498,7 +635,7 @@ function getBlockConfigById(id) {
 const { SKY, WATER, GRASS, DIRT, STONE, BEDROCK } = BLOCK_TYPES;
 
 function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, { raw = false } = {}) {
-    if (![x, y, z].every(Number.isFinite)) {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
         throw new TypeError("worldX, y, worldZ must be valid numbers.");
     }
     if (y < 0) return SKY;
@@ -509,12 +646,12 @@ function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, { raw = fal
     if (hasMod) {
         const id = voxelModifications[modKey];
         if (!raw) {
-            let collides = blockCollisionCache.get(id);
-            if (collides === undefined) {
-                collides = !!getBlockConfigById(id)?.collision;
-                blockCollisionCache.set(id, collides);
+            if (!raw) {
+                if (!blockCollisionCache.has(id)) {
+                    blockCollisionCache.set(id, !!getBlockConfigById(id)?.collision);
+                }
+                if (!blockCollisionCache.get(id)) return SKY;
             }
-            if (!collides) return SKY;
         }
         return id;
     }
@@ -526,10 +663,13 @@ function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, { raw = fal
         terrainCache.set(tKey, h);
     }
 
-    if (y > h) return (y >= 20 && y <= 45) ? WATER : SKY;
-    if (y === h) return h <= 44 ? DIRT : GRASS;
-    if (y >= h - 2) return DIRT;
-    return y > BEDROCK_LEVEL ? STONE : BEDROCK;
+    if (y > h) {
+        return (y >= 20 && y <= 45) ? WATER : SKY;
+    } else if (y >= h - 2) {
+        return y === h && h > 44 ? GRASS : DIRT;
+    } else {
+        return y > BEDROCK_LEVEL ? STONE : BEDROCK;
+    }
 }
 
 /**
@@ -593,9 +733,11 @@ function updateScreenOverlay() {
    【Swept AABB 衝突検出】
    ====================================================== */
 function sweptAABB(movingBox, velocity, dt, staticBox) {
-    let entry = new THREE.Vector3();
-    let exit = new THREE.Vector3();
+    // entry/exit を再利用（new を避ける）
+    const entry = _sweptTmpEntry; entry.set(0, 0, 0);
+    const exit = _sweptTmpExit; exit.set(0, 0, 0);
 
+    // X
     if (velocity.x > 0) {
         entry.x = (staticBox.min.x - movingBox.max.x) / velocity.x;
         exit.x = (staticBox.max.x - movingBox.min.x) / velocity.x;
@@ -603,9 +745,10 @@ function sweptAABB(movingBox, velocity, dt, staticBox) {
         entry.x = (staticBox.max.x - movingBox.min.x) / velocity.x;
         exit.x = (staticBox.min.x - movingBox.max.x) / velocity.x;
     } else {
-        entry.x = -Infinity;
-        exit.x = Infinity;
+        entry.x = -Infinity; exit.x = Infinity;
     }
+
+    // Y
     if (velocity.y > 0) {
         entry.y = (staticBox.min.y - movingBox.max.y) / velocity.y;
         exit.y = (staticBox.max.y - movingBox.min.y) / velocity.y;
@@ -613,9 +756,10 @@ function sweptAABB(movingBox, velocity, dt, staticBox) {
         entry.y = (staticBox.max.y - movingBox.min.y) / velocity.y;
         exit.y = (staticBox.min.y - movingBox.max.y) / velocity.y;
     } else {
-        entry.y = -Infinity;
-        exit.y = Infinity;
+        entry.y = -Infinity; exit.y = Infinity;
     }
+
+    // Z
     if (velocity.z > 0) {
         entry.z = (staticBox.min.z - movingBox.max.z) / velocity.z;
         exit.z = (staticBox.max.z - movingBox.min.z) / velocity.z;
@@ -623,21 +767,25 @@ function sweptAABB(movingBox, velocity, dt, staticBox) {
         entry.z = (staticBox.max.z - movingBox.min.z) / velocity.z;
         exit.z = (staticBox.min.z - movingBox.max.z) / velocity.z;
     } else {
-        entry.z = -Infinity;
-        exit.z = Infinity;
+        entry.z = -Infinity; exit.z = Infinity;
     }
+
     const entryTime = Math.max(entry.x, entry.y, entry.z);
     const exitTime = Math.min(exit.x, exit.y, exit.z);
-    if (entryTime > exitTime || entryTime < 0 || entryTime > dt) {
-        return { collision: false, time: dt, normal: new THREE.Vector3(0, 0, 0) };
-    } else {
-        let normal = new THREE.Vector3(0, 0, 0);
-        if (entryTime === entry.x) { normal.x = velocity.x > 0 ? -1 : 1; }
-        else if (entryTime === entry.y) { normal.y = velocity.y > 0 ? -1 : 1; }
-        else if (entryTime === entry.z) { normal.z = velocity.z > 0 ? -1 : 1; }
-        return { collision: true, time: entryTime, normal: normal };
+
+    if (entryTime > exitTime || (entry.x < 0 && entry.y < 0 && entry.z < 0) || entry.x > dt || entry.y > dt || entry.z > dt) {
+        return { collision: false };
     }
+
+    // 法線は従来どおり new する（呼び出し側で多用されている場合はさらに再利用化可能）
+    let normal = new THREE.Vector3();
+    if (entryTime === entry.x) normal.set((velocity.x > 0) ? -1 : 1, 0, 0);
+    else if (entryTime === entry.y) normal.set(0, (velocity.y > 0) ? -1 : 1, 0);
+    else normal.set(0, 0, (velocity.z > 0) ? -1 : 1);
+
+    return { collision: true, time: Math.max(0, entryTime), normal };
 }
+
 
 /* ======================================================
 【衝突解消（軸別：水平・垂直）】（安全移動調整）
@@ -733,41 +881,39 @@ function axisSeparatedCollisionResolve(dt) {
     const vel = player.velocity;
     const newPos = orig.clone();
 
-    // X軸移動
+    const halfWidth = PLAYER_RADIUS - COLLISION_MARGIN;
+    const margin = 0.02;
+    const isOnGround = player.onGround;
+
+    // --- X軸移動 ---
     const x = orig.x + vel.x * dt;
     if (!checkAABBCollision(getPlayerAABBAt(new THREE.Vector3(x, orig.y, orig.z)))) {
-        newPos.x = x;
+        const canDescendX = !canDescendFromSupport(x, orig.z, halfWidth, margin);
+        // 空中では移動制限しない
+        if (!sneakActive || !isOnGround || !canDescendX) {
+            newPos.x = x;
+        }
     }
 
-    // Z軸移動
+    // --- Z軸移動 ---
     const z = orig.z + vel.z * dt;
     if (!checkAABBCollision(getPlayerAABBAt(new THREE.Vector3(newPos.x, orig.y, z)))) {
-        newPos.z = z;
-    }
-
-    // スニーク境界支持チェック（XZ別々）
-    if (sneakActive && player.onGround) {
-        const yBelow = Math.floor(orig.y - 0.1);
-        const cellX = Math.floor(orig.x), cellZ = Math.floor(orig.z);
-
-        const xChanged = Math.floor(newPos.x) !== cellX;
-        const zChanged = Math.floor(newPos.z) !== cellZ;
-
-        if (xChanged && getVoxelAtWorld(Math.floor(newPos.x), yBelow, cellZ) === 0) {
-            newPos.x = player.velocity.x > 0 ? cellX + 0.999 : cellX + 0.001;
-        }
-        if (zChanged && getVoxelAtWorld(cellX, yBelow, Math.floor(newPos.z)) === 0) {
-            newPos.z = player.velocity.z > 0 ? cellZ + 0.999 : cellZ + 0.001;
+        const canDescendZ = !canDescendFromSupport(newPos.x, z, halfWidth, margin);
+        if (!sneakActive || !isOnGround || !canDescendZ) {
+            newPos.z = z;
         }
     }
 
-    // Y軸移動（飛行でなく下向きの場合はカット）
+    // --- Y軸移動 ---
     let y = orig.y + vel.y * dt;
     const posY = new THREE.Vector3(newPos.x, y, newPos.z);
 
-    if (sneakActive && !flightMode && player.onGround && vel.y < 0) {
-        y = orig.y;
-        vel.y = 0;
+    if (sneakActive && !flightMode && vel.y < 0) {
+        const canDescendY = !canDescendFromSupport(newPos.x, newPos.z, halfWidth, margin);
+        if (isOnGround && !canDescendY) {
+            y = orig.y;
+            vel.y = 0;
+        }
     } else if (checkAABBCollision(getPlayerAABBAt(posY))) {
         y = resolveVerticalCollision(orig.y, y, newPos.x, newPos.z);
         vel.y = 0;
@@ -775,6 +921,61 @@ function axisSeparatedCollisionResolve(dt) {
 
     newPos.y = y;
     player.position.copy(newPos);
+}
+
+/**
+ * 足元4隅に支えがあるか判定。
+ * 高さ差が小さい場合は支えとみなし、降りられない。
+ * 高さ差が十分あれば降りられる（ジャンプ後や段差中央でも動ける）。
+ */
+function canDescendFromSupport(centerX, centerZ, halfWidth, margin) {
+    const footY = player.position.y;
+    const offsets = [
+        [halfWidth - margin, halfWidth - margin],
+        [-halfWidth + margin, halfWidth - margin],
+        [halfWidth - margin, -halfWidth + margin],
+        [-halfWidth + margin, -halfWidth + margin],
+    ];
+
+    for (const [ox, oz] of offsets) {
+        const checkX = centerX + ox;
+        const checkZ = centerZ + oz;
+        const blockX = Math.floor(checkX);
+        const blockZ = Math.floor(checkZ);
+
+        // 足元ブロックのみをチェック
+        const blockY = Math.floor(footY - 0.01);
+
+        const voxel = getVoxelAtWorld(blockX, blockY, blockZ, globalTerrainCache, { raw: true });
+        if (voxel === 0) continue;
+
+        const config = getBlockConfiguration(voxel);
+        if (!config) continue;
+
+        // 支え判定は collision:true のブロックのみ
+        if (config.collision === true) {
+            const blockHeight = getBlockHeight(voxel);
+            const blockTopY = blockY + blockHeight;
+
+            // 足元ギリギリでも支えありとする
+            if (blockTopY - footY > -0.01) {
+                return true; // 支えあり → スニークで停止
+            }
+        }
+    }
+
+    return false; // 支えなし → 降りられる
+}
+
+/**
+ * ブロックIDから高さを返す（フルブロック、ハーフブロック、階段対応）
+ */
+function getBlockHeight(id) {
+    const config = getBlockConfiguration(id);
+    if (!config) return 1.0;         // 設定なしならデフォルト 1.0
+    // height が定義されていればそれを返す
+    // 未定義なら標準 1.0
+    return (typeof config.height === "number") ? config.height : 1.0;
 }
 
 /* ======================================================
@@ -861,9 +1062,14 @@ function updateFlightPhysics() {
    【onGround 判定】
    ====================================================== */
 function updateOnGround() {
-    const testPos = new THREE.Vector3(player.position.x, player.position.y - 0.05, player.position.z);
-    const testAABB = getPlayerAABBAt(testPos);
-    player.onGround = checkAABBCollision(testAABB);
+    const testPos = allocVec();
+    try {
+        testPos.set(player.position.x, player.position.y - 0.05, player.position.z);
+        const testAABB = getPlayerAABBAt(testPos);
+        player.onGround = checkAABBCollision(testAABB);
+    } finally {
+        freeVec(testPos);
+    }
 }
 
 // 各面の定義：法線と面を構成する 4 つの頂点を定義
@@ -912,7 +1118,6 @@ function markColumnModified(wx, wz, modY) {
     const key = `${wx}_${wz}`;
     const col = columnModifications[key] ??= { maxModifiedY: modY, blocks: [] };
     col.maxModifiedY = Math.max(col.maxModifiedY, modY);
-    // 必要なら col.blocks.push(...) を追加
 }
 
 function disposeMesh(mesh) {
@@ -979,28 +1184,57 @@ let pendingChunkUpdates = new Set();
  * @param {number} cx - チャンク X 座標
  * @param {number} cz - チャンク Z 座標
  */
+let chunkUpdateQueue = [];
+
+// 更新要求: キューに追加
 function requestChunkUpdate(cx, cz) {
-    pendingChunkUpdates.add(encodeChunkKey(cx, cz));
+    const key = `${cx}_${cz}`;
+    if (!chunkUpdateQueue.find(([x, z]) => x === cx && z === cz)) {
+        chunkUpdateQueue.push([cx, cz]);
+    }
 }
 
 /**
  * 保留中のチャンク更新要求を処理する関数
  * 集められたキーをデコードして、各チャンクに対して refreshChunkAt を呼び出す
  */
-let chunkUpdateTimer = null;
-function processPendingChunkUpdates() {
-    for (const key of pendingChunkUpdates) {
+function processPendingChunkUpdates(batchSize = 2) {
+    if (pendingChunkUpdates.size === 0) return;
+
+    let processed = 0;
+    const iterator = pendingChunkUpdates.values();
+
+    while (pendingChunkUpdates.size > 0 && processed < batchSize) {
+        const key = iterator.next().value;
+        if (!key) break;
+
         const [cx, cz] = decodeChunkKey(key);
-        refreshChunkAt(cx, cz);
+
+        if (typeof refreshChunkAt === "function") {
+            refreshChunkAt(cx, cz);
+        } else if (typeof requestChunkUpdate === "function") {
+            requestChunkUpdate(cx, cz);
+        } else {
+            console.warn("チャンク更新関数が見つかりません:", cx, cz);
+        }
+
+        pendingChunkUpdates.delete(key);
+        processed++;
     }
-    pendingChunkUpdates.clear();
+
+    if (pendingChunkUpdates.size > 0) {
+        scheduleChunkUpdate();
+    }
 }
+
+
+let chunkUpdateTimer = null;
 function scheduleChunkUpdate() {
     clearTimeout(chunkUpdateTimer);
     chunkUpdateTimer = setTimeout(() => {
         processPendingChunkUpdates();
         chunkUpdateTimer = null;
-    }, 200);
+    }, CHUNK_UPDATE_DELAY_MS);
 }
 
 /* ======================================================
@@ -1096,7 +1330,25 @@ const setOpacityRecursive = (root, opacity) => {
  * @param {THREE.Mesh} mesh 
  */
 function releaseChunkMesh(mesh) {
-    scene.remove(mesh);
+    if (!mesh) return;
+    if (mesh.parent) mesh.parent.remove(mesh);
+
+    // 中身だけ破棄
+    mesh.traverse(obj => {
+        if (!obj.isMesh) return;
+        if (obj.geometry) {
+            obj.geometry.dispose();
+            obj.geometry = null;
+        }
+        if (Array.isArray(obj.material)) {
+            for (const m of obj.material) if (m) m.dispose();
+        } else if (obj.material) {
+            obj.material.dispose();
+        }
+        obj.material = null;
+    });
+
+    // メッシュの Transform 等は残したままプールに返す
     chunkPool.push(mesh);
 }
 
@@ -1104,17 +1356,23 @@ function releaseChunkMesh(mesh) {
  * 1件のチャンクを生成する関数
  */
 function generateNextChunk() {
-    const chunkInfo = chunkQueue.shift();
-    if (!chunkInfo) return;
+    const chunkInfo = chunkQueue[0];
+    if (!chunkInfo) return false;
     const { cx, cz } = chunkInfo;
     const key = `${cx}_${cz}`;
-    if (loadedChunks[key]) return; // すでに存在
+    if (loadedChunks[key]) {
+        chunkQueue.shift(); // 存在する場合は削除だけ
+        return true;
+    }
+
+    chunkQueue.shift(); // 実際に生成する場合のみ削除
     const mesh = generateChunkMeshMultiTexture(cx, cz);
     mesh.userData.fadedIn = false;
     setOpacityRecursive(mesh, 0);
     scene.add(mesh);
     loadedChunks[key] = mesh;
     fadeInMesh(mesh, 500, () => mesh.userData.fadedIn = true);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1128,88 +1386,115 @@ function generateNextChunk() {
  * @returns {THREE.BufferGeometry | null}
  */
 function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
-    if (!geometries?.length) return null;
+    if (!geometries || geometries.length === 0) return null;
     if (geometries.length === 1) return geometries[0];
 
     const first = geometries[0];
-    const hasNormal = first.hasAttribute('normal');
-    const hasUV = first.hasAttribute('uv');
-    const hasColor = first.hasAttribute('color');
+    const hasNormal = first.hasAttribute && first.hasAttribute('normal');
+    const hasUV = first.hasAttribute && first.hasAttribute('uv');
+    const hasColor = first.hasAttribute && first.hasAttribute('color');
 
+    // 合計頂点数／インデックス数を算出
     let vertexCount = 0, indexCount = 0;
     for (const g of geometries) {
-        const count = g.getAttribute('position').count;
-        vertexCount += count;
-        indexCount += g.index ? g.index.count : count;
+        const p = g.getAttribute && g.getAttribute('position');
+        if (!p) continue; // position がないジオメトリは無視（元実装に合わせる）
+        vertexCount += p.count;
+        indexCount += g.index ? g.index.count : p.count;
     }
 
-    const IndexArray = vertexCount > 65535 ? Uint32Array : Uint16Array;
+    if (vertexCount === 0) return null;
+
+    // インデックス配列型は総頂点数／総インデックス数に基づいて選択
+    const needUint32 = (vertexCount > 65535) || (indexCount > 65535);
+    const IndexArray = needUint32 ? Uint32Array : Uint16Array;
+
+    // 結果バッファ（必要分だけ確保）
     const posArray = new Float32Array(vertexCount * 3);
     const normArray = hasNormal ? new Float32Array(vertexCount * 3) : null;
     const uvArray = hasUV ? new Float32Array(vertexCount * 2) : null;
     const colorArray = hasColor ? new Float32Array(vertexCount * 3) : null;
     const indexArray = new IndexArray(indexCount);
 
-    const zeroNormal = hasNormal ? new Float32Array(3) : null;
-    const zeroUV = hasUV ? new Float32Array(2) : null;
-    const zeroColor = hasColor ? new Float32Array(3) : null;
+    // ゼロ配列はループ内で new しないよう一つだけ作って使い回す
+    const zeroNormal = hasNormal ? new Float32Array([0, 0, 0]) : null;
+    const zeroUV = hasUV ? new Float32Array([0, 0]) : null;
+    const zeroColor = hasColor ? new Float32Array([0, 0, 0]) : null;
 
+    // オフセット変数
     let posOff = 0, normOff = 0, uvOff = 0, colorOff = 0, idxOff = 0, vertOff = 0;
     const groups = [];
 
-    const fillArray = (dest, src, offset, count, stride) => {
-        if (src) {
-            dest.set(src.array, offset);
-            return offset + src.array.length;
+    // helper: srcAttr があれば srcAttr.array をコピー、なければ zeroArr を count 回コピーする
+    const fillArray = (dest, srcAttr, offset, count, stride, zeroArr) => {
+        if (!dest) return offset;
+        if (srcAttr && srcAttr.array) {
+            dest.set(srcAttr.array, offset);
+            return offset + srcAttr.array.length;
         }
-        for (let i = 0; i < count; i++) {
-            dest.set(src ?? new Float32Array(stride), offset);
-            offset += stride;
+        // zeroArr をまとめてコピー
+        const totalLen = count * stride;
+        for (let i = 0; i < totalLen; i += stride) {
+            dest.set(zeroArr, offset + i);
         }
-        return offset;
+        return offset + totalLen;
     };
 
     for (const g of geometries) {
         const p = g.getAttribute('position');
+        if (!p) continue; // safety
         const n = hasNormal ? g.getAttribute('normal') : null;
         const uv = hasUV ? g.getAttribute('uv') : null;
         const c = hasColor ? g.getAttribute('color') : null;
         const count = p.count;
 
+        // positions は必ず存在すると仮定して一括コピー
         posArray.set(p.array, posOff);
-        posOff += p.array.length;
+        posOff += p.array.length; // p.array.length === count * 3
 
-        if (hasNormal) normOff = fillArray(normArray, n, normOff, count, 3);
-        if (hasUV) uvOff = fillArray(uvArray, uv, uvOff, count, 2);
-        if (hasColor) colorOff = fillArray(colorArray, c, colorOff, count, 3);
+        // 他属性は存在しなければ zero を埋める
+        if (hasNormal) normOff = fillArray(normArray, n, normOff, count, 3, zeroNormal);
+        if (hasUV) uvOff = fillArray(uvArray, uv, uvOff, count, 2, zeroUV);
+        if (hasColor) colorOff = fillArray(colorArray, c, colorOff, count, 3, zeroColor);
 
-        const idx = g.index?.array;
+        // indices: src に index があれば加算してコピー、無ければ連番
+        const idx = g.index ? g.index.array : null;
         if (idx) {
-            for (let j = 0; j < idx.length; j++) indexArray[idxOff++] = idx[j] + vertOff;
+            for (let j = 0; j < idx.length; j++) {
+                indexArray[idxOff++] = idx[j] + vertOff;
+            }
         } else {
-            for (let j = 0; j < count; j++) indexArray[idxOff++] = vertOff + j;
+            for (let j = 0; j < count; j++) {
+                indexArray[idxOff++] = vertOff + j;
+            }
         }
 
-        const base = idxOff - (g.index?.count ?? count);
-        if (g.groups?.length) {
-            for (const gr of g.groups) groups.push({ start: base + gr.start, count: gr.count, materialIndex: gr.materialIndex });
+        // groups の構成（start は indexArray 上の位置）
+        const base = idxOff - (g.index ? g.index.count : count);
+        if (g.groups && g.groups.length) {
+            for (const gr of g.groups) {
+                groups.push({ start: base + gr.start, count: gr.count, materialIndex: gr.materialIndex });
+            }
         } else {
-            groups.push({ start: base, count: g.index?.count ?? count, materialIndex: 0 });
+            groups.push({ start: base, count: (g.index ? g.index.count : count), materialIndex: 0 });
         }
 
         vertOff += count;
     }
 
+    // 結果ジオメトリを構築
     const merged = new THREE.BufferGeometry();
     merged.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
     if (hasNormal) merged.setAttribute('normal', new THREE.BufferAttribute(normArray, 3));
     if (hasUV) merged.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
     if (hasColor) merged.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
     merged.setIndex(new THREE.BufferAttribute(indexArray, 1));
-    groups.forEach(g => merged.addGroup(g.start, g.count, g.materialIndex));
 
+    // groups を追加
+    for (const gr of groups) merged.addGroup(gr.start, gr.count, gr.materialIndex);
+
+    // 必要なら法線計算（元の挙動に合わせる）
     if (computeNormals && !hasNormal) merged.computeVertexNormals();
-
     return merged;
 }
 
@@ -1246,23 +1531,6 @@ function getCachedFaceGeometry(faceKey) {
     return getCachedGeometry(`face_${faceKey}`, () => createFaceGeometry(faceData[faceKey]));
 }
 
-
-
-
-
-
-
-
-
-// 追加
-const DIR_OFFSETS = [
-    [1, 0, 0],  // +X
-    [-1, 0, 0],  // -X
-    [0, 1, 0],  // +Y
-    [0, -1, 0],  // -Y
-    [0, 0, 1],  // +Z
-    [0, 0, -1]   // -Z
-];
 // 追加
 function detectFaceDirection(geometry, group) {
     const normals = geometry.getAttribute('normal').array;
@@ -1317,28 +1585,46 @@ function computeVisibilityMask(getN, curType, curTransp, curCustom) {
     return mask;
 }
 
-const TOP_SHADOW_OFFSETS = { LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1] };
+// --- キャッシュ ---
 const blockConfigCache = new Map();
-const subterraneanAreaCache = new Map();
 const configCache = new Map();
-const clearCaches = () => subterraneanAreaCache.clear();
+const subterraneanAreaCache = new Map();
+const topShadowCache = new Map();
+const sideShadowCache = new Map();
 
+// --- キャッシュクリア関数 ---
+const clearCaches = () => {
+    blockConfigCache.clear();
+    configCache.clear();
+    subterraneanAreaCache.clear();
+    clearShadowCaches();
+};
+
+function clearShadowCaches() {
+    topShadowCache.clear();
+    sideShadowCache.clear();
+}
+// --- ブロック設定キャッシュ ---
 const getConfig = id => {
     if (!blockConfigCache.has(id)) blockConfigCache.set(id, getBlockConfiguration(id));
     return blockConfigCache.get(id);
 };
+
 const getConfigCached = id => {
     if (!configCache.has(id)) configCache.set(id, getConfig(id));
     return configCache.get(id);
 };
+// --- 地下判定 ---
 const subterraneanKeyHash = (wx, wy, wz) => `${wx}_${wy}_${wz}`;
+
 function isInSubterraneanArea(wx, wy, wz) {
     const key = subterraneanKeyHash(wx, wy, wz);
     if (subterraneanAreaCache.has(key)) return subterraneanAreaCache.get(key);
+
     const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
     for (let y = wy + 1; y < maxY; y++) {
         const id = getVoxelAtWorld(wx, y, wz);
-        if (typeof id === "number" && id !== BLOCK_TYPES.SKY) {
+        if (id && id !== BLOCK_TYPES.SKY) {
             const cfg = getConfigCached(id);
             if (cfg && !cfg.transparent) {
                 subterraneanAreaCache.set(key, true);
@@ -1349,236 +1635,356 @@ function isInSubterraneanArea(wx, wy, wz) {
     subterraneanAreaCache.set(key, false);
     return false;
 }
-
-function computeTopShadowFactorForCorner(wx, wy, wz, corner) {
-    const offset = TOP_SHADOW_OFFSETS[corner];
-    if (!offset) return 1;
-    const y = wy + 1;
-    const checkOpaque = (x, z) => {
-        const id = getVoxelAtWorld(x, y, z);
-        const cfg = getConfig(id);
-        return typeof id === "number" && id !== BLOCK_TYPES.SKY && !cfg.transparent;
-    };
-    const [dx, dz] = offset;
-    const opaque1 = checkOpaque(wx + dx, wz);
-    const opaque2 = checkOpaque(wx, wz + dz);
-    return (opaque1 && opaque2) || isInSubterraneanArea(wx, wy, wz) ? 0.4
-        : (opaque1 || opaque2) ? 0.7
-            : 1;
-}
-
-function getBlockConfigCached(id) {
-    let cfg = blockConfigCache.get(id);
-    if (!cfg) {
-        cfg = getBlockConfiguration(id);
-        blockConfigCache.set(id, cfg);
-    }
-    return cfg;
-}
-
-// 不透明判定
-function isFaceOpaque(id) {
+// --- 不透明判定（カスタム形状対応） ---
+function isFaceOpaque(id, worldPos = null) {
     if (!id || id === BLOCK_TYPES.SKY) return false;
-    const cfg = getBlockConfigCached(id);
-    return cfg && !cfg.transparent;
-}
+    const cfg = getConfigCached(id);
+    if (!cfg || cfg.transparent) return false;
 
-// 影関数群
+    if (typeof cfg.customCollision === "function" && worldPos) {
+        const boxes = cfg.customCollision(worldPos);
+        return boxes && boxes.some(box => box.max.y - box.min.y > 0.01);
+    }
+
+    return true; // 通常ブロックは不透明
+}
+// --- 下の影 ---
 function computeBottomShadowFactor(wx, wy, wz) {
+    const id = getVoxelAtWorld(wx, wy, wz);
+    const cfg = getConfigCached(id);
+
+    if (cfg && cfg.transparent) {
+        const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
+        for (let y = wy + 1; y < maxY; y++) {
+            const aboveId = getVoxelAtWorld(wx, y, wz);
+            if (aboveId && aboveId !== BLOCK_TYPES.SKY) {
+                const aboveCfg = getConfigCached(aboveId);
+                if (aboveCfg && !aboveCfg.transparent) return 0.4;
+            }
+        }
+        return 1.0;
+    }
+
     if (isInSubterraneanArea(wx, wy, wz)) return 0.4;
-    return isFaceOpaque(getVoxelAtWorld(wx, wy - 1, wz)) ? 0.55 : 0.45;
+    const belowId = getVoxelAtWorld(wx, wy - 1, wz);
+    return isFaceOpaque(belowId, [wx, wy - 1, wz]) ? 0.55 : 0.45;
 }
 
-const CEILING_CHECK_OFFSETS = { px: [1, 1, 0], nx: [-1, 1, 0], pz: [0, 1, 1], nz: [0, 1, -1] };
+// --- 側面の影 ---
+const CEILING_CHECK_OFFSETS = {
+    px: [1, 1, 0],
+    nx: [-1, 1, 0],
+    pz: [0, 1, 1],
+    nz: [0, 1, -1]
+};
+
 function computeSideShadowFactor(x, y, z, face, baseX, baseZ) {
+    const key = `${baseX + x}_${y}_${baseZ + z}_${face}`;
+    if (sideShadowCache.has(key)) return sideShadowCache.get(key);
+
     const o = CEILING_CHECK_OFFSETS[face];
     if (!o) return 1;
-    let [wx, wy, wz] = [baseX + x + o[0], BEDROCK_LEVEL + y + o[1], baseZ + z + o[2]];
-    for (; wy < BEDROCK_LEVEL + CHUNK_HEIGHT; wy++) {
-        if (isFaceOpaque(getVoxelAtWorld(wx, wy, wz))) return 0.4;
+
+    let wx = baseX + x + o[0];
+    let wy = BEDROCK_LEVEL + y + o[1];
+    let wz = baseZ + z + o[2];
+    const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
+
+    while (wy < maxY) {
+        const id = getVoxelAtWorld(wx, wy, wz);
+        if (isFaceOpaque(id, [wx, wy, wz])) {
+            sideShadowCache.set(key, 0.4);
+            return 0.4;
+        }
+        wy++;
     }
+
+    sideShadowCache.set(key, 1);
     return 1;
 }
 
+// --- 上面の影（角ごと） ---
+const TOP_SHADOW_OFFSETS = { LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1] };
+
+function computeTopShadowFactorForCorner(wx, wy, wz, corner, blockId) {
+    const key = `${wx}_${wy}_${wz}_${corner}_${blockId}`;
+    if (topShadowCache.has(key)) return topShadowCache.get(key);
+    const offset = TOP_SHADOW_OFFSETS[corner];
+    if (!offset) return 1;
+    const heights = getBlockHeights(blockId);
+    const [dx, dz] = offset;
+    let minShade = 1.0;
+    const config = getBlockConfiguration(blockId);
+    // Gamma プロパティで初期明るさを決定（指定がなければ 1.0）
+    const baseShade = (config && typeof config.Gamma === "number") ? config.Gamma : 1.0;
+    for (const h of heights) {
+        const y = wy + h;
+        const id1 = getVoxelAtWorld(wx + dx, y, wz);
+        const id2 = getVoxelAtWorld(wx, y, wz + dz);
+        const cfg1 = id1 && id1 !== BLOCK_TYPES.SKY ? getConfigCached(id1) : null;
+        const cfg2 = id2 && id2 !== BLOCK_TYPES.SKY ? getConfigCached(id2) : null;
+        let shade = baseShade;
+        if (isInSubterraneanArea(wx, wy, wz)) {
+            shade = 0.4;
+        } else if ((cfg1 && !cfg1.transparent) && (cfg2 && !cfg2.transparent)) {
+            shade = 0.4;
+        } else if ((cfg1 && !cfg1.transparent) || (cfg2 && !cfg2.transparent)) {
+            shade = 0.7;
+        }
+        if (shade < minShade) minShade = shade;
+    }
+    topShadowCache.set(key, minShade);
+    return minShade;
+}
+
 // メイン関数
+function getBlockHeights(id) {
+    const cfg = getConfigCached(id);
+    if (!cfg) return [1.0];
+    switch (cfg.geometryType) {
+        case "slab":
+            return [0.5];             // スラブは下半分
+        case "stairs":
+            return [0.5, 1.0];        // 階段は下段と上段
+        case "cross":
+            return [1.0];             // 植物等
+        case "water":
+            return [0.88];            // 水は高さ0.88
+        case "carpet":
+            return [0.0625];          // カーペットは薄い
+        default:
+            return [1.0];             // 標準ブロック
+    }
+}
+
+// ---------------------------------------
+// CHUNK MESH GENERATION (軽量化版)
+// ---------------------------------------
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     const baseX = cx * CHUNK_SIZE, baseZ = cz * CHUNK_SIZE;
     const idx = (x, y, z) => x + CHUNK_SIZE * (y + CHUNK_HEIGHT * z);
     const modMap = voxelModifications instanceof Map ? voxelModifications : new Map(Object.entries(voxelModifications || {}));
     const voxelData = new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE);
+    const container = new THREE.Object3D();
+    const tmpMat = new THREE.Matrix4();
 
-    // voxelData構築 (テンポラリ変数使用で軽量化)
-    for (let z = 0, wz = baseZ; z < CHUNK_SIZE; z++, wz++)
-        for (let y = 0, wy = BEDROCK_LEVEL; y < CHUNK_HEIGHT; y++, wy++)
-            for (let x = 0, wx = baseX; x < CHUNK_SIZE; x++, wx++) {
-                const key = `${wx}_${wy}_${wz}`;
-                voxelData[idx(x, y, z)] = modMap.get(key) ?? getVoxelAtWorld(wx, wy, wz);
+    clearCaches(); // キャッシュ初期化
+
+    // --- voxelData構築 ---
+    for (let z = 0; z < CHUNK_SIZE; z++)
+        for (let y = 0; y < CHUNK_HEIGHT; y++)
+            for (let x = 0; x < CHUNK_SIZE; x++) {
+                const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
+                voxelData[idx(x, y, z)] = modMap.get(`${wx}_${wy}_${wz}`) ?? getVoxelAtWorld(wx, wy, wz);
             }
 
-    const container = new THREE.Object3D();
-    const get = (x, y, z) => {
-        if (x >= 0 && x < CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT && z >= 0 && z < CHUNK_SIZE)
-            return voxelData[idx(x, y, z)];
-        const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
-        return modMap.get(`${wx}_${wy}_${wz}`) ?? getVoxelAtWorld(wx, wy, wz);
+    const get = (x, y, z) => (x >= 0 && x < CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT && z >= 0 && z < CHUNK_SIZE)
+        ? voxelData[idx(x, y, z)]
+        : modMap.get(`${baseX + x}_${BEDROCK_LEVEL + y}_${baseZ + z}`) ?? getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z);
+
+    const visCache = new Map();
+    const getVisMask = (x, y, z, type, cfg) => {
+        const key = `${x},${y},${z}`;
+        if (!visCache.has(key)) {
+            visCache.set(key, computeVisibilityMask(
+                i => get(x + neighbors[i].dx, y + neighbors[i].dy, z + neighbors[i].dz),
+                type, cfg.transparent ?? false, cfg.customGeometry
+            ));
+        }
+        return visCache.get(key);
     };
 
+    // --- ジオメトリキャッシュ ---
     const customGeomCache = new Map();
     const customGeomBatches = new Map();
+    const faceGeoms = new Map();
 
-    if (useInstancing) {
-        const instMap = new Map();
-        const dummy = new THREE.Object3D();
-        for (let z = 0; z < CHUNK_SIZE; z++)
-            for (let y = 0; y < CHUNK_HEIGHT; y++)
-                for (let x = 0; x < CHUNK_SIZE; x++) {
-                    const type = voxelData[idx(x, y, z)];
-                    if (!type || type === BLOCK_TYPES.SKY) continue;
-                    const cfg = getBlockConfigCached(type);
-                    if (!cfg || cfg.customGeometry || cfg.geometryType !== "cube") continue;
-                    const visMask = computeVisibilityMask(i => get(x + neighbors[i].dx, y + neighbors[i].dy, z + neighbors[i].dz), type, cfg.transparent ?? false, cfg.customGeometry);
-                    if (!visMask) continue;
-                    if (!instMap.has(type)) instMap.set(type, []);
-                    instMap.get(type).push([baseX + x + 0.5, BEDROCK_LEVEL + y + 0.5, baseZ + z + 0.5]);
+    // --- メインループ ---
+    for (let z = 0; z < CHUNK_SIZE; z++)
+        for (let y = 0; y < CHUNK_HEIGHT; y++)
+            for (let x = 0; x < CHUNK_SIZE; x++) {
+                const type = voxelData[idx(x, y, z)];
+                if (!type || type === BLOCK_TYPES.SKY) continue;
+
+                const cfg = getConfigCached(type);
+                if (!cfg) continue;
+
+                const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
+                const visMask = getVisMask(x, y, z, type, cfg);
+
+                // --- カスタムジオメトリ ---
+                if (cfg.customGeometry || cfg.geometryType !== 'cube') {
+                    if (!customGeomCache.has(type)) {
+                        const mesh = createCustomBlockMesh(type, new THREE.Vector3(), null);
+                        if (mesh) customGeomCache.set(type, mesh.geometry.clone());
+                    }
+                    const template = customGeomCache.get(type);
+                    if (!template) continue;
+                    if (!visMask && cfg.cullAdjacentFaces !== false) continue;
+
+                    const filtered = template.groups.flatMap(group => {
+                        const dir = detectFaceDirection(template, group);
+                        if (cfg.cullAdjacentFaces !== false && ((visMask >> dir) & 1) === 0) return [];
+                        const subGeo = new THREE.BufferGeometry();
+                        extractGroupGeometry(template, group, subGeo);
+                        subGeo.applyMatrix4(tmpMat.makeTranslation(wx, wy, wz));
+                        return subGeo;
+                    });
+
+                    if (filtered.length) {
+                        if (!customGeomBatches.has(type)) customGeomBatches.set(type, []);
+                        const merged = mergeBufferGeometries(filtered, true);
+
+                        const posAttr = merged.getAttribute('position');
+                        const normalAttr = merged.getAttribute('normal');
+                        const colors = new Float32Array(posAttr.count * 3);
+
+                        if (cfg.geometryType === "cross") {
+                            const centerX = Math.floor((posAttr.getX(0) + posAttr.getX(posAttr.count - 1)) / 2) - baseX;
+                            const centerZ = Math.floor((posAttr.getZ(0) + posAttr.getZ(posAttr.count - 1)) / 2) - baseZ;
+                            let yMin = Infinity;
+                            for (let i = 0; i < posAttr.count; i++) yMin = Math.min(yMin, posAttr.getY(i));
+                            yMin = Math.floor(yMin) - BEDROCK_LEVEL;
+
+                            let shade = 1.0;
+                            for (let yCheck = yMin + 1; yCheck < CHUNK_HEIGHT; yCheck++) {
+                                const aboveType = get(centerX, yCheck, centerZ);
+                                const aboveCfg = getConfigCached(aboveType);
+                                if (aboveType && aboveCfg && aboveCfg.transparent !== true) { shade = 0.2; break; }
+                            }
+                            colors.fill(shade);
+                        } else {
+                            const faceShadeCache = {};
+                            for (let i = 0; i < posAttr.count; i++) {
+                                const ny = normalAttr.getY(i), nx = normalAttr.getX(i), nz = normalAttr.getZ(i);
+                                let shade = 1.0;
+                                if (ny > 0.9) shade = computeTopShadowFactorForCorner(wx, wy, wz, ["LL", "LR", "UR", "UL"][i % 4], type);
+                                else if (ny < -0.9) shade = computeBottomShadowFactor(wx, wy, wz);
+                                else {
+                                    const face = nx > 0.9 ? "px" : nx < -0.9 ? "nx" : nz > 0.9 ? "pz" : nz < -0.9 ? "nz" : null;
+                                    if (face) {
+                                        if (!faceShadeCache[face]) faceShadeCache[face] = computeSideShadowFactor(x, y, z, face, baseX, baseZ);
+                                        shade = faceShadeCache[face];
+                                    }
+                                }
+                                colors.set([shade, shade, shade], i * 3);
+                            }
+                        }
+
+                        merged.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+                        customGeomBatches.get(type).push(merged);
+                    }
+                    continue;
                 }
 
-        for (const [type, list] of instMap.entries()) {
-            const mats = getBlockMaterials(+type);
-            if (!mats?.length) continue;
-            const inst = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mats[0].clone(), list.length);
-            list.forEach(([x, y, z], i) => {
-                dummy.position.set(x, y, z);
-                dummy.updateMatrix();
-                inst.setMatrixAt(i, dummy.matrix);
-            });
-            Object.assign(inst, { castShadow: true, receiveShadow: true, frustumCulled: true });
-            container.add(inst);
-        }
-    } else {
-        const faceGeoms = new Map();
+                // --- 通常立方体 ---
+                if (!visMask) continue;
 
-        for (let z = 0; z < CHUNK_SIZE; z++)
-            for (let y = 0; y < CHUNK_HEIGHT; y++)
-                for (let x = 0; x < CHUNK_SIZE; x++) {
-                    const type = voxelData[idx(x, y, z)];
-                    if (!type || type === BLOCK_TYPES.SKY) continue;
-                    const cfg = getBlockConfigCached(type);
-                    if (!cfg) continue;
-                    const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
-
-                    if (cfg.customGeometry || cfg.geometryType !== 'cube') {
-                        if (!customGeomCache.has(type)) {
-                            const mesh = createCustomBlockMesh(type, new THREE.Vector3(), null);
-                            if (!mesh) continue;
-                            mesh.geometry.computeBoundingBox();
-                            customGeomCache.set(type, mesh.geometry.clone());
-                        }
-                        const template = customGeomCache.get(type);
-
-                        const visMask = computeVisibilityMask(
-                            i => get(x + neighbors[i].dx, y + neighbors[i].dy, z + neighbors[i].dz),
-                            type, cfg.transparent, cfg.customGeometry
-                        );
-                        const finalVisMask = (cfg.cullAdjacentFaces === false) ? (1 << neighbors.length) - 1 : visMask;
-
-                        const filtered = template.groups.flatMap(group => {
-                            const dir = detectFaceDirection(template, group);
-                            if (((finalVisMask >> dir) & 1) === 0) return [];
-                            const subGeo = new THREE.BufferGeometry();
-                            extractGroupGeometry(template, group, subGeo);
-                            subGeo.applyMatrix4(new THREE.Matrix4().makeTranslation(wx, wy, wz));
-                            return subGeo;
-                        });
-
-                        if (filtered.length) {
-                            if (!customGeomBatches.has(type)) customGeomBatches.set(type, []);
-                            customGeomBatches.get(type).push(mergeBufferGeometries(filtered));
-                        }
-                        continue;
-                    }
-
-                    const visMask = computeVisibilityMask(
-                        i => get(x + neighbors[i].dx, y + neighbors[i].dy, z + neighbors[i].dz),
-                        type, cfg.transparent ?? false, cfg.customGeometry
-                    );
-                    if (!visMask) continue;
+                if (useInstancing) {
+                    if (!faceGeoms.has(type)) faceGeoms.set(type, new Map());
+                    const matMap = faceGeoms.get(type);
 
                     for (const [face, data] of Object.entries(faceData)) {
                         if (!((visMask >> data.bit) & 1)) continue;
-                        const geom = getCachedFaceGeometry(face).clone().applyMatrix4(new THREE.Matrix4().makeTranslation(wx, wy, wz));
-                        const colors = face === "py" ?
-                            ["LL", "LR", "UR", "UL"].flatMap(c => Array(3).fill(computeTopShadowFactorForCorner(wx, wy, wz, c))) :
-                            face === "ny" ? Array(12).fill(computeBottomShadowFactor(wx, wy, wz)) :
-                                Array(12).fill(computeSideShadowFactor(x, y, z, face, baseX, baseZ));
-                        geom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
-
-                        if (!faceGeoms.has(type)) faceGeoms.set(type, new Map());
-                        const matMap = faceGeoms.get(type);
-                        if (!matMap.has(faceToMaterialIndex[face])) matMap.set(faceToMaterialIndex[face], []);
-                        matMap.get(faceToMaterialIndex[face]).push(geom);
+                        if (!matMap.has(face)) matMap.set(face, []);
+                        matMap.get(face).push([wx, wy, wz]);
                     }
+                    continue;
                 }
 
-        // 通常ブロックのマージ
-        for (const [type, group] of faceGeoms.entries()) {
+                for (const [face, data] of Object.entries(faceData)) {
+                    if (!((visMask >> data.bit) & 1)) continue;
+                    const geom = getCachedFaceGeometry(face);
+                    if (!geom) continue;
+                    const geomClone = geom.clone().applyMatrix4(tmpMat.makeTranslation(wx, wy, wz));
+
+                    const posAttr = geomClone.getAttribute('position');
+                    const normalAttr = geomClone.getAttribute('normal');
+                    const colors = new Float32Array(posAttr.count * 3);
+
+                    for (let i = 0; i < posAttr.count; i++) {
+                        const nx = normalAttr.getX(i), ny = normalAttr.getY(i), nz = normalAttr.getZ(i);
+                        let shade = 1.0;
+                        if (ny > 0.9) shade = computeTopShadowFactorForCorner(wx, wy, wz, ["LL", "LR", "UR", "UL"][i % 4], type);
+                        else if (ny < -0.9) shade = computeBottomShadowFactor(wx, wy, wz);
+                        else {
+                            const faceDir = nx > 0.9 ? "px" : nx < -0.9 ? "nx" : nz > 0.9 ? "pz" : nz < -0.9 ? "nz" : null;
+                            if (faceDir) shade = computeSideShadowFactor(x, y, z, faceDir, baseX, baseZ);
+                        }
+                        colors.set([shade, shade, shade], i * 3);
+                    }
+
+                    geomClone.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+                    if (!faceGeoms.has(type)) faceGeoms.set(type, new Map());
+                    const matMap = faceGeoms.get(type);
+                    if (!matMap.has(faceToMaterialIndex[face])) matMap.set(faceToMaterialIndex[face], []);
+                    matMap.get(faceToMaterialIndex[face]).push(geomClone);
+                }
+            }
+
+    // --- 通常立方体マージ ---
+    for (const [type, group] of faceGeoms.entries()) {
+        if (useInstancing) {
+            for (const [face, positions] of group.entries()) {
+                if (!positions.length) continue;
+                const geom = getCachedFaceGeometry(face).clone();
+                const mats = getBlockMaterials(type);
+                const mat = mats?.[0] ? Object.assign(mats[0].clone(), { vertexColors: true }) : new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const mesh = new THREE.InstancedMesh(geom, mat, positions.length);
+                const dummy = new THREE.Object3D();
+                positions.forEach((pos, i) => { dummy.position.set(...pos); dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix); });
+                container.add(mesh);
+            }
+        } else {
             const subGeoms = [...group.values()].map(mergeBufferGeometries);
             const finalGeom = mergeBufferGeometries(subGeoms);
             finalGeom.clearGroups();
             let offset = 0;
-            [...group.keys()].forEach((matIdx, i) => {
-                const count = subGeoms[i].index.count;
-                finalGeom.addGroup(offset, count, +matIdx);
-                offset += count;
-            });
+            [...group.keys()].forEach((matIdx, i) => { finalGeom.addGroup(offset, subGeoms[i].index.count, +matIdx); offset += subGeoms[i].index.count; });
             finalGeom.computeBoundingSphere();
             const mats = getBlockMaterials(+type)?.map(m => Object.assign(m.clone(), { vertexColors: true, side: THREE.FrontSide }));
             const mesh = new THREE.Mesh(finalGeom, mats);
-            Object.assign(mesh, { castShadow: true, receiveShadow: true, frustumCulled: true });
+            mesh.castShadow = mesh.receiveShadow = true;
+            mesh.frustumCulled = true;
             container.add(mesh);
         }
-
-        // カスタムジオメトリのマージ
-        for (const [type, geoms] of customGeomBatches.entries()) {
-            const merged = mergeBufferGeometries(geoms);
-            merged.computeBoundingSphere();
-
-            const cfg = getBlockConfigCached(type);
-            const isCross = cfg?.geometryType === "cross";
-            const isTransparent = cfg?.transparent === true;
-
-            const hasVertexColors = !!merged.getAttribute('color'); // color属性があるか確認
-
-            const mats = (getBlockMaterials(+type) || []).map(m => {
-                const mat = m.clone();
-                Object.assign(mat, {
-                    side: isCross ? THREE.DoubleSide : THREE.FrontSide,
-                    transparent: isCross || isTransparent,
-                    depthWrite: !(isCross || isTransparent),
-                    vertexColors: !isCross && hasVertexColors  // color属性がある場合のみ true
-                });
-                return mat;
-            });
-
-            const mesh = new THREE.Mesh(merged, mats[0]);
-            if (isCross) mesh.renderOrder = 1000;
-
-            Object.assign(mesh, { castShadow: true, receiveShadow: true, frustumCulled: true });
-            container.add(mesh);
-        }
-
     }
+
+    // --- カスタムジオメトリマージ ---
+    for (const [type, geoms] of customGeomBatches.entries()) {
+        const merged = mergeBufferGeometries(geoms, true);
+        merged.computeBoundingSphere();
+        const cfg = getConfigCached(type);
+        const isCross = cfg?.geometryType === "cross", isTransparent = cfg?.transparent === true;
+        const mats = (getBlockMaterials(+type) || []).map(m => {
+            const mat = m.clone();
+            mat.side = isCross ? THREE.DoubleSide : THREE.FrontSide;
+            mat.transparent = isCross || isTransparent;
+            mat.depthWrite = !(isCross || isTransparent);
+            mat.vertexColors = true;
+            return mat;
+        });
+        const mesh = new THREE.Mesh(merged, mats[0]);
+        if (isCross) mesh.renderOrder = 1000;
+        mesh.castShadow = mesh.receiveShadow = true;
+        mesh.frustumCulled = true;
+        container.add(mesh);
+    }
+
     return container;
 }
 
+// ------------------------------
+// CUSTOM BLOCK MESH (軽量化版)
+// ------------------------------
 const materialCache = new Map();
 const collisionCache = new Map();
+
 function createCustomBlockMesh(type, position, rotation) {
     const config = getBlockConfiguration(type);
-    if (!config) {
-        console.error("Unknown block type:", type);
-        return null;
-    }
-    // geometry取得（キャッシュ利用）
+    if (!config) { console.error("Unknown block type:", type); return null; }
+
     let geometry;
     if (config.geometryType) {
         if (!geometryCache.has(type)) geometryCache.set(type, getBlockGeometry(config.geometryType, config));
@@ -1589,31 +1995,32 @@ function createCustomBlockMesh(type, position, rotation) {
         console.warn(`No geometry for block type: ${type}`);
         return null;
     }
-    // material取得（キャッシュ利用）
+
     let materials = materialCache.get(type);
-    if (!materials) {
-        materials = getBlockMaterials(type);
-        materialCache.set(type, materials);
-    }
+    if (!materials) { materials = getBlockMaterials(type); materialCache.set(type, materials); }
+
     const useMultiMaterial = Array.isArray(materials) && materials.length > 1 && geometry.groups?.length > 0;
     const meshGeometry = config.geometryType ? geometry : geometry.clone();
     const meshMaterial = useMultiMaterial ? materials : materials[0];
+
     const mesh = new THREE.Mesh(meshGeometry, meshMaterial);
     mesh.position.copy(position);
     if (rotation) mesh.rotation.copy(rotation);
     mesh.castShadow = mesh.receiveShadow = mesh.frustumCulled = true;
-    // 衝突ボックスキャッシュ＆変換
+
     if (!collisionCache.has(type)) {
         const boxes = typeof config.customCollision === "function"
             ? config.customCollision(new THREE.Vector3())
             : (config.collision ? [new THREE.Box3(new THREE.Vector3(), new THREE.Vector3(1, config.geometryType === "slab" ? 0.5 : 1, 1))] : []);
         collisionCache.set(type, boxes);
     }
+
     mesh.userData = {
         isCustomBlock: !!config.customGeometry,
         blockType: type,
         collisionBoxes: collisionCache.get(type).map(box => box.clone().translate(position))
     };
+
     mesh.updateMatrixWorld();
     return mesh;
 }
@@ -1623,28 +2030,33 @@ function createCustomBlockMesh(type, position, rotation) {
  * @param {IdleDeadline} [deadline] -
  */
 // チャンク更新キュー（chunkQueue は既存のグローバル変数）
+let chunkQueueScheduled = false;
+
 function processChunkQueue(deadline = { timeRemaining: () => 0, didTimeout: true }) {
-    const startFrame = performance.now();
     let tasksProcessed = 0;
-    const MAX_CHUNKS_PER_FRAME = 2;  // 1フレームで最大2チャンクまで
+    const MAX_CHUNKS_PER_FRAME = 2;
 
     while (
         chunkQueue.length &&
         (deadline.timeRemaining?.() > 1 || deadline.didTimeout) &&
         tasksProcessed < MAX_CHUNKS_PER_FRAME
     ) {
-        const start = performance.now();
-        generateNextChunk();
-        // 1チャンクの生成が8ms以上かかったら次フレームに回す
-        if (performance.now() - start > 8 && !deadline.didTimeout) break;
+        const t0 = performance.now();
+        if (!generateNextChunk()) break; // falseなら処理中断
+        if (performance.now() - t0 > 8 && !deadline.didTimeout) break;
         tasksProcessed++;
     }
 
     if (chunkQueue.length) {
-        (window.requestIdleCallback || window.requestAnimationFrame)(processChunkQueue);
+        if (!chunkQueueScheduled) {
+            chunkQueueScheduled = true;
+            (window.requestIdleCallback || window.requestAnimationFrame)((dl) => {
+                chunkQueueScheduled = false;
+                processChunkQueue(dl);
+            });
+        }
     }
 }
-
 
 let lastChunk = { x: null, z: null }, offsets;
 
@@ -1703,7 +2115,7 @@ window.updateChunksFromUI = () => {
 /* ======================================================
    【ブロックの破壊・設置機能】（長押し、範囲指定、プレイヤー領域禁止）
    ====================================================== */
-const BLOCK_INTERACT_RANGE = 6;
+const BLOCK_INTERACT_RANGE = 9;
 /**
  * 座標からチャンク座標を求めるユーティリティ関数
  * 非負の場合はビット演算で高速に、負の場合は Math.floor を利用
@@ -1787,77 +2199,323 @@ function blockIntersectsPlayer(blockPos, playerAABB, tolerance = 0.001) {
 
 // --- interactWithBlock 関数 ---
 // ブロックの設置／破壊操作を行い voxelModifications を更新し、必要なチャンク（領域）再生成を指示する
-// ※ この例では、レイキャストを用いて対象セル（ワールド座標）を取得し、プレイヤーの範囲チェックも実施します。
-// グローバル管理用（カスタムブロック Mesh の管理）
 const placedCustomBlocks = {};
 const raycaster = new THREE.Raycaster();
 
+// ============================================================
+// クリック→6方向スナップで隣接セル一意決定版（フル書き直し）
+// ============================================================
+
+// ジャンプ中の縦連続設置防止用
+let lastPlacedKey = null;
+
+// ----------------------------------------
+// 6方向へ量子化
+// ----------------------------------------
+function axisSnapDir(n) {
+    const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+    if (ax >= ay && ax >= az) return { x: Math.sign(n.x) || 1, y: 0, z: 0 };
+    if (ay >= ax && ay >= az) return { x: 0, y: Math.sign(n.y) || 1, z: 0 };
+    return { x: 0, y: 0, z: Math.sign(n.z) || 1 };
+}
+
+// ----------------------------------------
+// ヒットブロック(base)と設置/破壊対象(target)を決定
+// ----------------------------------------
+function computeHitBlockAndTarget(hit, action) {
+    const EPS = 1e-5;
+    // raw normal は既存の hit.face.normal を使う（割当最小化）
+    const n = (hit.face && hit.face.normal) ? hit.face.normal : new THREE.Vector3(0, 1, 0);
+
+    const baseX = Math.floor(hit.point.x - n.x * EPS);
+    const baseY = Math.floor(hit.point.y - n.y * EPS);
+    const baseZ = Math.floor(hit.point.z - n.z * EPS);
+
+    const base = new THREE.Vector3(baseX, baseY, baseZ);
+
+    const dir = axisSnapDir(n); // now an object {x,y,z}, no new Vector3 allocation
+
+    const target = (action === "destroy")
+        ? base
+        : new THREE.Vector3(base.x + dir.x, base.y + dir.y, base.z + dir.z);
+
+    return { base, dir, target, rawNormal: n };
+}
+
+// ----------------------------------------
+// 最初の有効ヒットを取得（距離順）
+// - 水は破壊かつアクティブが水のときのみ許可（元の仕様踏襲）
+// ----------------------------------------
+// グローバルに追加（ファイル先頭など）
+const _intersectPool = [];
+function allocIntersects() {
+    return _intersectPool.pop() || [];
+}
+function freeIntersects(arr) {
+    if (!arr) return;
+    arr.length = 0;
+    if (_intersectPool.length < 32) _intersectPool.push(arr);
+}
+
+// pickFirstValidHit（挙動そのまま軽量化）
+function pickFirstValidHit(raycaster, objects, action) {
+    const EPS = 1e-6;
+    const intersects = allocIntersects();
+    const tempNormal = allocVec(); // ← Vector3プールから借りる
+
+    try {
+        // ---- レイキャスト結果収集 ----
+        for (const obj of objects) {
+            if (!obj) continue;
+            try {
+                if (obj.isInstancedMesh && typeof obj.raycast === "function") {
+                    obj.raycast(raycaster, intersects);
+                } else {
+                    raycaster.intersectObject(obj, true, intersects);
+                }
+            } catch (e) {
+                console.warn("raycast error:", e);
+            }
+        }
+
+        if (intersects.length === 0) return null;
+        intersects.sort((a, b) => a.distance - b.distance);
+
+        // ---- 最初の有効ヒットを探す ----
+        for (const hit of intersects) {
+            if (hit.distance > BLOCK_INTERACT_RANGE + EPS) continue;
+
+            // 法線をプールVector3にコピー
+            if (hit.face?.normal) {
+                tempNormal.copy(hit.face.normal);
+            } else {
+                tempNormal.set(0, 1, 0);
+            }
+
+            const base = allocVec();
+            base.set(
+                Math.floor(hit.point.x - tempNormal.x * EPS),
+                Math.floor(hit.point.y - tempNormal.y * EPS),
+                Math.floor(hit.point.z - tempNormal.z * EPS)
+            );
+
+            const voxelId =
+                voxelModifications[`${base.x}_${base.y}_${base.z}`] ??
+                getVoxelAtWorld(base.x, base.y, base.z, globalTerrainCache, true);
+
+            const cfg = getBlockConfiguration(voxelId);
+
+            // 水ブロックの処理は元のまま
+            if (cfg?.geometryType === "water") {
+                if (action === "destroy" && activeBlockType === BLOCK_TYPES.WATER) {
+                    freeVec(base);
+                    return hit; // 水を破壊したいケースだけは通す
+                }
+                freeVec(base);
+                continue;
+            }
+
+            freeVec(base);
+            return hit; // 非水ブロック
+        }
+
+        return null;
+    } finally {
+        freeIntersects(intersects);
+        freeVec(tempNormal);
+    }
+}
+
+// ----------------------------------------
+// メイン：破壊/設置
+// ----------------------------------------
 function interactWithBlock(action) {
+    if (action !== "place" && action !== "destroy") {
+        console.warn("未知のアクション:", action);
+        return;
+    }
+
+    const EPS = 1e-6;
+    const TOP_FACE_THRESHOLD = 0.9; // 既存の上面判定互換用
+    const TOP_Y_EPS = 1e-3;
+
+    // セットアップ：中心照準でレイキャスト
     raycaster.near = 0.01;
+    raycaster.far = BLOCK_INTERACT_RANGE;
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
 
     const objects = [...Object.values(loadedChunks), ...Object.values(placedCustomBlocks)];
-    let intersects = [];
-    for (const obj of objects) {
-        obj.isInstancedMesh ? obj.raycast(raycaster, intersects) : intersects.push(...raycaster.intersectObject(obj, true));
-    }
-    intersects.sort((a, b) => a.distance - b.distance);
+    const intersect = pickFirstValidHit(raycaster, objects, action);
 
-    let intersect = intersects[0];
-    if (!intersect && action === "destroy") {
-        const headY = player.position.y + getCurrentPlayerHeight() * 0.85;
-        intersect = { point: new THREE.Vector3(Math.floor(player.position.x), Math.floor(headY), Math.floor(player.position.z)), face: { normal: new THREE.Vector3() } };
-    }
-    if (!intersect) return console.warn("設置対象のブロックが取得できませんでした。");
-
-    const { point: p, face: { normal: n } } = intersect;
-    const factor = action === "destroy" ? -0.5 : 0.5;
-    const candidateA = new THREE.Vector3(Math.floor(p.x + n.x * factor), Math.floor(p.y + n.y * factor), Math.floor(p.z + n.z * factor));
-    const candidateB = new THREE.Vector3(Math.floor(p.x - n.x * 0.01), Math.floor(p.y - n.y * 0.01), Math.floor(p.z - n.z * 0.01));
-
-    const rawKey = `${candidateB.x}_${candidateB.y}_${candidateB.z}`;
-    let rawVoxel = voxelModifications[rawKey] ?? getVoxelAtWorld(candidateB.x, candidateB.y, candidateB.z, globalTerrainCache, true);
-    let rawConfig = getBlockConfiguration(rawVoxel);
-
-    let candidateBlockPos = rawConfig?.geometryType === "water" ? candidateB : candidateA;
-    const key = `${candidateBlockPos.x}_${candidateBlockPos.y}_${candidateBlockPos.z}`;
-    let finalVoxel = voxelModifications[key] ?? getVoxelAtWorld(candidateBlockPos.x, candidateBlockPos.y, candidateBlockPos.z, globalTerrainCache, true);
-    const config = action === "place" ? getBlockConfiguration(activeBlockType) : getBlockConfiguration(finalVoxel);
-
-    if (action === "destroy") {
-        if (config?.targetblock === false) return console.warn("このブロックは破壊できません。");
-        if (finalVoxel === BLOCK_TYPES.SKY) return console.warn("該当セルは空気のため破壊できません。");
-    } else if (action === "place" && finalVoxel !== BLOCK_TYPES.SKY) {
-        const currentConfig = getBlockConfiguration(finalVoxel);
-        if (currentConfig?.geometryType === "water") {
-            if (placedCustomBlocks[key]) { scene.remove(placedCustomBlocks[key]); delete placedCustomBlocks[key]; }
-            voxelModifications[key] = BLOCK_TYPES.SKY;
-        } else return console.warn("このセルには既にブロックが配置されています。");
+    if (!intersect) {
+        console.warn("破壊/設置対象が見つかりません");
+        return;
     }
 
-    const blockCenter = new THREE.Vector3(candidateBlockPos.x + 0.5, candidateBlockPos.y + (config?.geometryType === "slab" ? 0.25 : 0.5), candidateBlockPos.z + 0.5);
-    if (player.position.distanceTo(blockCenter) > BLOCK_INTERACT_RANGE) return console.warn(`${action === "destroy" ? "破壊" : "設置"}対象が範囲外です。`);
+    // base/dir/target を一意に決定
+    const { base, dir, target, rawNormal } = computeHitBlockAndTarget(intersect, action);
 
-    if (action === "destroy") {
-        createMinecraftBreakParticles(blockCenter, finalVoxel, 1.0);
-        if (config && ["slab", "stairs", "cross", "water"].includes(config.geometryType)) {
-            if (placedCustomBlocks[key]) { scene.remove(placedCustomBlocks[key]); delete placedCustomBlocks[key]; }
+    // candidate は target に一本化
+    const candidate = target;
+    const key = `${candidate.x}_${candidate.y}_${candidate.z}`;
+
+    // 現在の candidate の中身
+    let voxel = voxelModifications[key]
+        ?? getVoxelAtWorld(candidate.x, candidate.y, candidate.z, globalTerrainCache, true);
+    let cfg = getBlockConfiguration(voxel);
+
+    // 射程チェック（candidate の中心で判定）
+    const candidateCenter = new THREE.Vector3(candidate.x + 0.5, candidate.y + 0.5, candidate.z + 0.5);
+    const cameraPos = camera.position ? camera.position : new THREE.Vector3(0, 0, 0);
+    const distToCandidate = cameraPos.distanceTo(candidateCenter);
+    if (distToCandidate > BLOCK_INTERACT_RANGE + 0.6) {
+        console.warn("ターゲットは射程外です:", distToCandidate.toFixed(2));
+        return;
+    }
+
+    // --- プレイヤーAABBと安全判定 ---
+    const belowBlockBox = new THREE.Box3(
+        new THREE.Vector3(candidate.x + EPS, candidate.y - 1 + EPS, candidate.z + EPS),
+        new THREE.Vector3(candidate.x + 1 - EPS, candidate.y - EPS, candidate.z + 1 - EPS)
+    );
+
+    let playerBox = null;
+    try {
+        playerBox = getPlayerAABB();
+    } catch (e) {
+        playerBox = null;
+    }
+
+    // 旧ロジック互換の上面判定（必要なら dir.y > 0 も使える）
+    const topPlaneY = candidate.y + 1;
+    const isTopFaceByNormal = rawNormal.y > TOP_FACE_THRESHOLD;
+    const hitPointIsAtTop = (Math.abs(intersect.point.y - topPlaneY) <= TOP_Y_EPS) || (intersect.point.y > topPlaneY - TOP_Y_EPS);
+    const isActuallyTopAttempt = isTopFaceByNormal || hitPointIsAtTop || (dir.y > 0);
+
+    if (action === "place" && playerBox) {
+        const playerFeetY = playerBox.min.y;
+        const isAboveFeet = candidate.y >= Math.floor(playerFeetY + EPS);
+        const overlaps = playerBox.intersectsBox(belowBlockBox);
+
+        // スニーク中の自分足元ブロック上面禁止（安全）
+        if (sneakActive && overlaps && isActuallyTopAttempt) {
+            console.warn("自分の立っているブロックの上面には設置できません（安全判定）");
+            return;
         }
-        voxelModifications[key] = BLOCK_TYPES.SKY;
-        console.log("破壊完了：", candidateBlockPos);
-    } else {
-        if (config?.collision && blockIntersectsPlayer(candidateBlockPos, getPlayerAABB(), 0.05)) return console.warn("プレイヤーの領域に近すぎるため、設置できません。");
-        if (candidateBlockPos.y >= BEDROCK_LEVEL + CHUNK_HEIGHT) return console.warn("高さ制限により、設置できません。");
 
-        voxelModifications[key] = activeBlockType;
-        console.log("設置完了：", candidateBlockPos, "タイプ：", activeBlockType);
+        // 真上条件付きジャンプ中縦連続設置禁止
+        if (isAboveFeet && isActuallyTopAttempt) {
+            if (lastPlacedKey) {
+                const [lx, ly, lz] = lastPlacedKey.split("_").map(Number);
+                const sameColumn = (candidate.x === lx && candidate.z === lz);
+                const higherThanLast = candidate.y > ly;
+
+                const playerCenterX = (playerBox.min.x + playerBox.max.x) / 2;
+                const playerCenterZ = (playerBox.min.z + playerBox.max.z) / 2;
+                const dx = Math.abs(playerCenterX - (candidate.x + 0.5));
+                const dz = Math.abs(playerCenterZ - (candidate.z + 0.5));
+                const isDirectlyAbove = dx < 0.4 && dz < 0.4;
+
+                if (sameColumn && higherThanLast && isDirectlyAbove) {
+                    console.warn("真上でのジャンプ中縦連続設置は禁止");
+                    return;
+                }
+            }
+        }
     }
 
-    const chunkX = Math.floor(candidateBlockPos.x / CHUNK_SIZE);
-    const chunkZ = Math.floor(candidateBlockPos.z / CHUNK_SIZE);
-    markColumnModified(`${chunkX}_${chunkZ}`, candidateBlockPos.x, candidateBlockPos.z, candidateBlockPos.y);
-    updateAffectedChunks(candidateBlockPos);
-    console.log("操作完了 (" + action + ") at: ", candidateBlockPos);
+    // ====================
+    // 破壊
+    // ====================
+    if (action === "destroy") {
+        // 破壊対象は base（＝現に当たっているブロック）
+        const destroyKey = `${base.x}_${base.y}_${base.z}`;
+        let destroyVoxel = voxelModifications[destroyKey]
+            ?? getVoxelAtWorld(base.x, base.y, base.z, globalTerrainCache, true);
+        const destroyCfg = getBlockConfiguration(destroyVoxel);
+
+        if (destroyCfg?.targetblock === false) {
+            console.warn("破壊不可ブロックです");
+            return;
+        }
+        if (destroyVoxel === BLOCK_TYPES.SKY) {
+            console.warn("空気は破壊できません");
+            return;
+        }
+
+        const blockCenter = new THREE.Vector3(base.x + 0.5, base.y + 0.5, base.z + 0.5);
+        createMinecraftBreakParticles(blockCenter, destroyVoxel, 1.0);
+
+        if (placedCustomBlocks[destroyKey]) {
+            scene.remove(placedCustomBlocks[destroyKey]);
+            delete placedCustomBlocks[destroyKey];
+        }
+        voxelModifications[destroyKey] = BLOCK_TYPES.SKY;
+        console.log("破壊完了:", base);
+
+        // チャンク更新
+        const chunkX = Math.floor(base.x / CHUNK_SIZE);
+        const chunkZ = Math.floor(base.z / CHUNK_SIZE);
+        markColumnModified(`${chunkX}_${chunkZ}`, base.x, base.z, base.y);
+        updateAffectedChunks(base);
+        return;
+    }
+
+    // ====================
+    // 設置
+    // ====================
+    if (action === "place") {
+        if (candidate.y <= -1) {
+            console.warn("y座標が0以下のため、設置できません。");
+            return;
+        }
+        if (candidate.y >= BEDROCK_LEVEL + CHUNK_HEIGHT) {
+            console.warn("高さ制限により、設置できません。");
+            return;
+        }
+        const newBlockCfg = getBlockConfiguration(activeBlockType);
+        // プレイヤーと衝突しすぎる場合は拒否
+        if (newBlockCfg?.collision !== false && blockIntersectsPlayer(candidate, playerBox ?? getPlayerAABB(), 0.2)) {
+            console.warn("プレイヤーの領域に近すぎるため、設置できません。");
+            return;
+        }
+
+        // 既存ブロックとの競合処理
+        if (voxel !== BLOCK_TYPES.SKY) {
+            const currentCfg = getBlockConfiguration(voxel);
+            if (currentCfg?.geometryType === "water" || currentCfg?.overwrite === true) {
+                if (placedCustomBlocks[key]) {
+                    scene.remove(placedCustomBlocks[key]);
+                    delete placedCustomBlocks[key];
+                }
+                voxelModifications[key] = BLOCK_TYPES.SKY; // 上書き許可ケースは先に空気化
+            } else {
+                console.warn("設置不可: ブロックが存在します");
+                return;
+            }
+        }
+
+        // 設置確定
+        voxelModifications[key] = activeBlockType;
+        lastPlacedKey = key;
+        console.log("設置完了:", candidate);
+
+        // チャンク更新
+        const chunkX = Math.floor(candidate.x / CHUNK_SIZE);
+        const chunkZ = Math.floor(candidate.z / CHUNK_SIZE);
+        markColumnModified(`${chunkX}_${chunkZ}`, candidate.x, candidate.z, candidate.y);
+        updateAffectedChunks(candidate);
+        return;
+    }
+}
+
+// ----------------------------------------
+// 地面に着いたら連続設置ガードをリセット
+// ----------------------------------------
+function resetLastPlacedIfOnGround() {
+    if (player?.isOnGround) {
+        lastPlacedKey = null;
+    }
 }
 
 // 例: 一度に処理する更新チャンク数を制限する
@@ -2055,7 +2713,6 @@ document.addEventListener("keydown", (e) => {
 // --- 選択管理 ---
 let activeBlockType = 0;
 let selectedHotbarIndex = 0;
-let activeHotbarIndex = 0;
 
 // --- 画像キャッシュ＆読み込み ---
 const imageCache = new Map();
@@ -2073,16 +2730,31 @@ const createCanvas = size => Object.assign(document.createElement("canvas"), { w
 
 // --- 2Dプレビュー ---
 const create2DPreview = ({ id, textures = {}, previewOptions = {} }, size) => {
+    const cacheKey = `${id}_${size}_2D`;
+    if (previewCache.has(cacheKey)) {
+        const cached = previewCache.get(cacheKey);
+        const clone = createCanvas(size);
+        clone.getContext("2d").drawImage(cached, 0, 0);
+        return clone;
+    }
+
     const canvas = createCanvas(size);
     canvas.style.imageRendering = "pixelated";
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
     const src = textures.all || textures.side || textures.top;
     if (!src) return (console.warn(`テクスチャなし block: ${id}`), canvas);
+
     loadImage(src).then(img => {
         const { x = 0, y = 0 } = previewOptions.offset || {};
         ctx.drawImage(img, x, y, size, size);
+
+        // キャッシュ保存
+        const cacheCanvas = createCanvas(size);
+        cacheCanvas.getContext("2d").drawImage(canvas, 0, 0);
+        previewCache.set(cacheKey, cacheCanvas);
     }).catch(e => console.error(`画像読み込み失敗 block: ${id}`, e));
+
     return canvas;
 };
 
@@ -2110,23 +2782,37 @@ sharedCamera.lookAt(0, 0, 0);
 // 3Dプレビュー作成（レンダラーは共有、戻り値は描画結果をコピーした2D canvas）
 // 対象箇所: create3DPreview関数
 // 変更点: テクスチャが完全に読み込まれてから描画を行うようにする
+// --- プレビューキャッシュ ---
+const previewCache = new Map();
 
 // create3DPreview関数内の改善案
 const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) => {
+    const cacheKey = `${id}_${size}_3D`;
+    if (previewCache.has(cacheKey)) {
+        const cached = previewCache.get(cacheKey);
+        const clone = createCanvas(size);
+        clone.getContext("2d").drawImage(cached, 0, 0);
+        return clone;
+    }
+
     const previewCanvas = createCanvas(size);
     previewCanvas.style.imageRendering = "pixelated";
-    sharedRenderer.setSize(size, size);
-    // メッシュ生成
+
+    // サイズ変更時のみリサイズ
+    if (sharedRenderer.domElement.width !== size || sharedRenderer.domElement.height !== size) {
+        sharedRenderer.setSize(size, size);
+    }
+
     const mesh = createBlockMesh(id, new THREE.Vector3());
     if (!mesh) {
         console.error(`メッシュ生成失敗 id: ${id}`);
         return previewCanvas;
     }
-    // カスタムジオメトリは法線計算
+
     if (mesh.geometry && typeof mesh.geometry.computeVertexNormals === "function") {
         mesh.geometry.computeVertexNormals();
     }
-    // マテリアルをライト対応の MeshLambertMaterial に置き換え（透明も考慮）
+
     const originalMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     const newMaterials = originalMaterials.map(m => {
         return new THREE.MeshLambertMaterial({
@@ -2138,7 +2824,6 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
     });
     mesh.material = Array.isArray(mesh.material) ? newMaterials : newMaterials[0];
 
-    // 使用される全てのテクスチャを抽出して読み込みを待つ
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     const loadPromises = materials
         .map(m => m.map)
@@ -2152,7 +2837,6 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
         }));
     await Promise.all(loadPromises);
 
-    // テクスチャフィルター設定
     materials.forEach(m => {
         if (m.map) {
             m.map.magFilter = THREE.NearestFilter;
@@ -2162,16 +2846,12 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
         }
     });
 
-    // ライト位置の調整（強めに光が当たるように）
     light.position.set(10, 10, 10);
     light.intensity = 0.8;
-
-    // カメラ調整（念のため）
     sharedCamera.position.set(2, 2, 2);
     sharedCamera.lookAt(0, 0, 0);
     sharedCamera.updateProjectionMatrix();
 
-    // 古いメッシュを除去
     while (sharedScene.children.length > 2) {
         const old = sharedScene.children[2];
         sharedScene.remove(old);
@@ -2187,7 +2867,6 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
 
     sharedScene.add(mesh);
 
-    // 中心合わせ・位置調整
     const box = new THREE.Box3().setFromObject(mesh);
     const center = box.getCenter(new THREE.Vector3());
     mesh.position.sub(center);
@@ -2199,7 +2878,6 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
         ));
     }
 
-    // 回転設定
     const rot = previewOptions.rotation || { x: 30, y: 45, z: 0 };
     mesh.rotation.set(
         THREE.MathUtils.degToRad(rot.x),
@@ -2207,29 +2885,23 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
         THREE.MathUtils.degToRad(rot.z)
     );
 
-    // スケール設定
     mesh.scale.setScalar(previewOptions.scale || 1);
-
     if (geometryType === "stairs") {
         mesh.scale.x *= -1;
         mesh.position.sub(new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()));
     }
 
-    // レンダリング
     sharedRenderer.render(sharedScene, sharedCamera);
 
-    const ctx = previewCanvas.getContext("2d");
-    ctx.clearRect(0, 0, size, size);
-    ctx.drawImage(shared3DCanvas, 0, 0, size, size);
+    // キャッシュ用Canvasに保存
+    const cacheCanvas = createCanvas(size);
+    cacheCanvas.getContext("2d").drawImage(shared3DCanvas, 0, 0, size, size);
+    previewCache.set(cacheKey, cacheCanvas);
 
-    // メッシュ削除
-    sharedScene.remove(mesh);
-    if (mesh.geometry) mesh.geometry.dispose();
-    materials.forEach(m => {
-        if (m.map) m.map.dispose();
-        m.dispose();
-    });
-    return previewCanvas;
+    // 呼び出し元には複製を返す
+    const resultCanvas = createCanvas(size);
+    resultCanvas.getContext("2d").drawImage(cacheCanvas, 0, 0);
+    return resultCanvas;
 };
 
 // --- プレビュー選択 ---
@@ -2248,9 +2920,11 @@ const createHotbarItemPreview = async blockConfig => {
 
 window.addEventListener("DOMContentLoaded", async () => {
     const inventoryEl = document.getElementById("inventory");
-    inventoryEl.innerHTML = `<span>select block</span>`;
+    inventoryEl.innerHTML = `<span>select block</span>
+    <p style="position: absolute; z-index: 999; margin-top: 80px;" class="center bold border"><span class="button">&nbsp;E&nbsp;</span>&emsp;キーでインベントリを閉じる</p>`;
 
-    for (const blockConfig of Object.values(BLOCK_CONFIG)) {
+    const promises = Object.values(BLOCK_CONFIG).map(async blockConfig => {
+        if (!blockConfig.itemdisplay) return null;
         const item = document.createElement("div");
         item.className = "inventory-item";
         item.dataset.blocktype = blockConfig?.id || "";
@@ -2277,9 +2951,13 @@ window.addEventListener("DOMContentLoaded", async () => {
             console.log("Inventory block set to hotbar slot", selectedHotbarIndex, activeBlockType);
         });
 
-        inventoryEl.appendChild(item);
-    }
+        return item;
+    });
+
+    const items = await Promise.all(promises);
+    items.filter(Boolean).forEach(item => inventoryEl.appendChild(item));
 });
+
 
 // --- ホットバー初期化 ---
 const hotbarEl = document.getElementById("hotbar");
@@ -2473,6 +3151,11 @@ function updateBlockSelection() {
                 center.set(cellCandidate.x + 0.5, cellCandidate.y + 0.4, cellCandidate.z + 0.5);
                 size.set(0.8, 0.8, 0.8);
                 break;
+            case "carpet":
+                const carpetHeight = 0.0625; // CUSTOM_COLLISION_CACHE と一致
+                center.set(cellCandidate.x + 0.5, cellCandidate.y + carpetHeight / 2, cellCandidate.z + 0.5);
+                size.set(1, carpetHeight, 1);
+                break;
             default:
                 center.set(cellCandidate.x + 0.5, cellCandidate.y + 0.5, cellCandidate.z + 0.5);
                 size.set(1, 1, 1);
@@ -2558,15 +3241,32 @@ function updateHeadBlockInfo() {
     }
 }
 
-// グローバルなパーティクルプールとアクティブグループの管理
+// --- グローバル改善点 ---
 const particlePool = [];
 const activeParticleGroups = [];
 const GRAVITY = 9.8 * 0.8;
 
+const materialPool = new Map();
+let noTextureMaterial = null;
+
+const getOrCreateMaterialForTexture = (texture) => {
+    if (!texture) {
+        if (!noTextureMaterial) noTextureMaterial = new THREE.MeshLambertMaterial({
+            transparent: true, opacity: 1, side: THREE.DoubleSide
+        });
+        return noTextureMaterial;
+    }
+    if (materialPool.has(texture)) return materialPool.get(texture);
+    const mat = new THREE.MeshLambertMaterial({
+        map: texture, transparent: true, opacity: 1, side: THREE.DoubleSide
+    });
+    materialPool.set(texture, mat);
+    return mat;
+};
+
 const getCachedParticleGeometry = (i, j, grid, size) => {
     const key = `${grid}_${i}_${j}_${size}`;
     if (geometryCache.has(key)) return geometryCache.get(key);
-
     const geo = new THREE.PlaneGeometry(size, size).center();
     const uv = geo.attributes.uv.array;
     const [u0, v0] = [i / grid, j / grid];
@@ -2580,68 +3280,74 @@ const getCachedParticleGeometry = (i, j, grid, size) => {
 
 const getPooledParticle = () => {
     const p = particlePool.pop();
-    if (p) {
-        p.visible = true;
-        return p;
-    }
+    if (p) { p.visible = true; return p; }
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.__cached = false;
-    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
-        transparent: true,
-        opacity: 1,
-        side: THREE.DoubleSide,
-    }));
+    const mat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 1, side: THREE.DoubleSide });
+    return new THREE.Mesh(geo, mat);
 };
 
 const releasePooledParticle = p => {
     p.userData = {};
     p.visible = false;
-    p.parent?.remove(p);
-    if (p.geometry && !p.geometry.__cached) p.geometry.dispose();
+    if (p.parent) p.parent.remove(p);
+    if (p.geometry && !p.geometry.__cached) { p.geometry.dispose(); p.geometry = null; }
     particlePool.push(p);
 };
 
 const createMinecraftBreakParticles = (pos, blockType, lifetime = 3.0) => {
-    const grid = 4, size = 0.5 / grid, group = new THREE.Group();
+    const grid = 4;
+    const size = 0.5 / grid;
+    const group = new THREE.Group();
     const texture = getBlockMaterials(blockType)?.[0]?.map || null;
-    const offset = new THREE.Vector3();
-    activeParticleGroups.push(group);
+    const sharedMat = getOrCreateMaterialForTexture(texture);
 
-    for (let i = 0; i < grid; i++)
-        for (let j = 0; j < grid; j++)
+    const offset = new THREE.Vector3();
+    const rndVec = new THREE.Vector3();
+    const basePos = pos.clone();
+
+    for (let i = 0; i < grid; i++) {
+        for (let j = 0; j < grid; j++) {
             for (let k = 0; k < grid; k++) {
                 const p = getPooledParticle();
-                p.material.map = texture;
-                p.material.needsUpdate = true;
+                p.material = sharedMat;
                 p.geometry = getCachedParticleGeometry(i, j, grid, size);
-                offset.set((i + 0.5) / grid - 0.5 + (Math.random() - 0.5) * 0.05,
+                offset.set(
+                    (i + 0.5) / grid - 0.5 + (Math.random() - 0.5) * 0.05,
                     (j + 0.5) / grid - 0.5 + (Math.random() - 0.5) * 0.05,
-                    (k + 0.5) / grid - 0.5 + (Math.random() - 0.5) * 0.05);
-                p.position.copy(pos).add(offset);
+                    (k + 0.5) / grid - 0.5 + (Math.random() - 0.5) * 0.05
+                );
+                p.position.copy(basePos).add(offset);
                 p.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+                rndVec.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
                 p.userData = {
-                    origin: pos.clone(),
-                    velocity: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5),
+                    origin: basePos.clone(),
+                    velocity: rndVec.clone(),
                     lifetime: 0.2 + Math.random() * (lifetime - 0.2),
                     elapsed: 0
                 };
                 group.add(p);
             }
+        }
+    }
 
     scene.add(group);
-    console.log(`Created particles: ${group.children.length}`);
+    activeParticleGroups.push(group);
     return group;
 };
 
 const updateBlockParticles = delta => {
-    for (let gi = activeParticleGroups.length - 1; gi >= 0; gi--) {
-        const group = activeParticleGroups[gi];
-        group.updateMatrixWorld();
-
-        for (let pi = group.children.length - 1; pi >= 0; pi--) {
-            const p = group.children[pi], ud = p.userData;
+    const ag = activeParticleGroups;
+    for (let gi = ag.length - 1; gi >= 0; gi--) {
+        const group = ag[gi];
+        const children = group.children;
+        for (let pi = children.length - 1; pi >= 0; pi--) {
+            const p = children[pi];
+            const ud = p.userData;
             ud.elapsed += delta;
-            p.position.addScaledVector(ud.velocity, delta);
+            p.position.x += ud.velocity.x * delta;
+            p.position.y += ud.velocity.y * delta;
+            p.position.z += ud.velocity.z * delta;
             ud.velocity.y -= GRAVITY * delta;
 
             const landY = getTerrainHeight(ud.origin.x, ud.origin.z, p.position.y);
@@ -2651,17 +3357,17 @@ const updateBlockParticles = delta => {
                 ud.velocity.x *= 0.9;
                 ud.velocity.z *= 0.9;
             }
-            p.lookAt(camera.position);
+
+            p.quaternion.copy(camera.quaternion);
 
             if (ud.elapsed >= ud.lifetime) {
                 releasePooledParticle(p);
                 group.remove(p);
             }
         }
-
         if (group.children.length === 0) {
             scene.remove(group);
-            activeParticleGroups.splice(gi, 1);
+            ag.splice(gi, 1);
         }
     }
 };
@@ -2745,68 +3451,110 @@ function updateUnderwaterPhysics(delta) {
 const clock = new THREE.Clock();
 let wasUnderwater = false;
 const camOffsetVec = new THREE.Vector3();
-let lastStatusHTML = "";
-// FPSに応じたチャンク更新のバッチ数を決定する関数
+
+// タイマー管理用
+let cloudUpdateTimer = 0;
+let cloudGridTimer = 0;
+let underwaterTimer = 0;
+let lastBatchSize = 2; // 前フレームのbatchSizeを保持
 function getDynamicBatchSize() {
-    const now = performance.now();
-    const elapsed = now - lastFpsTime;
-    if (elapsed === 0) return 2;
+    const elapsed = performance.now() - lastFpsTime;
+    if (elapsed === 0) return lastBatchSize;
     const fps = (frameCount * 1000) / elapsed;
-    if (fps > 55) return 6;
-    if (fps > 45) return 4;
-    return 2;
+    let newBatchSize;
+    // FPSに応じて処理件数を調整（滑らかに）
+    if (fps > 55) {
+        newBatchSize = 6;
+    } else if (fps > 45) {
+        newBatchSize = 4;
+    } else {
+        newBatchSize = 2;
+    }
+    // 前フレームとの差を1件以内に制限して急激な変化を防ぐ
+    if (newBatchSize > lastBatchSize + 1) newBatchSize = lastBatchSize + 1;
+    if (newBatchSize < lastBatchSize - 1) newBatchSize = lastBatchSize - 1;
+    lastBatchSize = newBatchSize;
+    return newBatchSize;
 }
+
 function animate() {
     requestAnimationFrame(animate);
+
     const delta = clock.getDelta();
     const now = performance.now();
     frameCount++;
-    // HUD更新（1秒ごと / 値が変わったときのみ）
+
+    // -------- HUD更新（1秒ごと） --------
     if (now - lastFpsTime > 1000) {
         const fps = Math.round((frameCount * 1000) / (now - lastFpsTime));
-        const newHTML = `<span>FPS: ${fps}</span><br>
-                         <span>version: 0.0.1a</span><br>
-                         <span>version name: alpha</span><br>
-                         <span>Flight: ${flightMode ? "ON" : "OFF"}</span><br>
-                         <span>Dash: ${dashActive ? "ON" : "OFF"}</span><br>
-                         <span>Sneak: ${sneakActive ? "ON" : "OFF"}</span><br>
-                         <span>Pos: (${player.position.x.toFixed(2)}, ${player.position.y.toFixed(2)}, ${player.position.z.toFixed(2)})</span>`;
-        if (newHTML !== lastStatusHTML) {
-            fpsCounter.innerHTML = newHTML;
-            lastStatusHTML = newHTML;
-        }
+        fpsCounter.innerHTML = `
+            <span>FPS: ${fps}</span><br>
+            <span>v0.0.1a (alpha)</span><br>
+            <span>Flight: ${flightMode ? "ON" : "OFF"}</span><br>
+            <span>Dash: ${dashActive ? "ON" : "OFF"}</span><br>
+            <span>Sneak: ${sneakActive ? "ON" : "OFF"}</span><br>
+            <span>Pos: (${player.position.x.toFixed(2)},${player.position.y.toFixed(2)},${player.position.z.toFixed(2)})</span>`;
         frameCount = 0;
         lastFpsTime = now;
     }
+
+    // -------- プレイヤー操作 --------
     updateBlockParticles(delta);
-    if (!flightMode && keys[" "] && player.onGround && !wasUnderwater) {
-        jumpRequest = true;
-    }
+
+    if (!flightMode && keys[" "] && player.onGround && !wasUnderwater) jumpRequest = true;
     camera.rotation.set(pitch, yaw, 0);
-    const underwater = isPlayerEntireBodyInWater();
-    if (flightMode) updateFlightPhysics(delta);
-    else if (underwater) updateUnderwaterPhysics(delta);
-    else updateNormalPhysics(delta);
-    wasUnderwater = underwater;
+
+    // -------- 水中判定（0.1秒に1回） --------
+    underwaterTimer += delta;
+    if (underwaterTimer > 0.1) {
+        wasUnderwater = isPlayerEntireBodyInWater();
+        underwaterTimer = 0;
+    }
+
+    flightMode
+        ? updateFlightPhysics(delta)
+        : wasUnderwater
+            ? updateUnderwaterPhysics(delta)
+            : updateNormalPhysics(delta);
+
     resolvePlayerCollision();
     updateOnGround();
+
+    // -------- チャンク更新 --------
     updateChunks();
-    processPendingChunkUpdates();
-    const camOffset = flightMode ? getCurrentPlayerHeight() - 0.15 : getCurrentPlayerHeight();
-    camOffsetVec.set(0, camOffset, 0);
+    // 動的バッチサイズで保留チャンクを処理
+    processPendingChunkUpdates(getDynamicBatchSize());
+
+    // -------- カメラ更新 --------
+    camOffsetVec.set(0, getCurrentPlayerHeight() - (flightMode ? 0.15 : 0), 0);
     camera.position.copy(player.position).add(camOffsetVec);
+
+    // -------- ブロック情報更新 --------
     updateBlockSelection();
     updateBlockInfo();
     updateHeadBlockInfo();
-    updateCloudGrid(scene, camera.position);
-    updateCloudTiles(delta);
-    updateCloudOpacity(camera.position);
-    updateScreenOverlay();
-    cloudTiles.forEach(tile => adjustCloudLayerDepth(tile, camera));
-    if (pendingChunkUpdates.size > 0) {
-        const batchSize = getDynamicBatchSize();
-        processPendingChunkUpdatesBatch(batchSize);
+
+    // -------- クラウド更新 --------
+    cloudUpdateTimer += delta;
+    cloudGridTimer += delta;
+
+    if (cloudUpdateTimer > 0.033) { // 約30fps相当で雲スクロール・不透明度更新
+        updateCloudTiles(delta);
+        updateCloudOpacity(camera.position);
+        cloudUpdateTimer = 0;
     }
+
+    if (cloudGridTimer > 0.1) { // 10fps相当でグリッド更新・描画順序調整
+        cloudTiles.forEach(tile => adjustCloudLayerDepth(tile, camera));
+        updateCloudGrid(scene, camera.position);
+        cloudGridTimer = 0;
+    }
+
+    // -------- スクリーンオーバーレイ --------
+    updateScreenOverlay();
+    resetLastPlacedIfOnGround();
+
+    // -------- 描画 --------
     renderer.render(scene, camera);
 }
 animate();
