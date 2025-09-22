@@ -794,37 +794,19 @@ function sweptAABB(movingBox, velocity, dt, staticBox) {
 
 // 新しい垂直方向の衝突解決関数（バイナリサーチによる安全位置算出）
 function resolveVerticalCollision(origY, candidateY, newX, newZ) {
-    let low, high;
     let safeY = origY;
-    // 上昇か下降かで探索区間を設定
-    if (candidateY > origY) {
-        low = origY;
-        high = candidateY;
-    } else {
-        low = candidateY;
-        high = origY;
-    }
-    // 10回の反復で安全な Y 座標を求める
+    const testPos = allocVec(); // ← Vector3 をプールから取得
     for (let i = 0; i < 10; i++) {
-        const mid = (low + high) / 2;
-        const testPos = new THREE.Vector3(newX, mid, newZ);
+        const mid = (origY + candidateY) / 2;
+        testPos.set(newX, mid, newZ);
         if (checkAABBCollision(getPlayerAABBAt(testPos))) {
-            // 衝突しているので、移動幅を狭める
-            if (candidateY > origY) {
-                high = mid;
-            } else {
-                low = mid;
-            }
+            candidateY = mid;
         } else {
-            // 衝突していなければ安全とみなし、さらに踏み込めるか探索
             safeY = mid;
-            if (candidateY > origY) {
-                low = mid;
-            } else {
-                high = mid;
-            }
+            origY = mid;
         }
     }
+    freeVec(testPos); // ← 使用後に返却
     return safeY;
 }
 
@@ -981,30 +963,43 @@ function getBlockHeight(id) {
 /* ======================================================
    【物理更新：通常モード用】（重力・ジャンプ・水平慣性）
    ====================================================== */
-function updateNormalPhysics() {
-    const forward = new THREE.Vector3();
+function getDesiredHorizontalVelocity(multiplier = 1) {
+    const forward = allocVec();
     camera.getWorldDirection(forward);
     forward.y = 0; forward.normalize();
-    const right = new THREE.Vector3();
-    right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
-    let desiredVel = new THREE.Vector3(0, 0, 0);
-    if (keys["w"] || keys["arrowup"]) desiredVel.add(forward);
-    if (keys["s"] || keys["arrowdown"]) desiredVel.add(forward.clone().negate());
-    if (keys["a"] || keys["arrowleft"]) desiredVel.add(right.clone().negate());
-    if (keys["d"] || keys["arrowright"]) desiredVel.add(right);
-    if (desiredVel.length() > 0) desiredVel.normalize();
 
-    if (sneakActive && !flightMode) {
-        desiredVel.multiplyScalar(playerSpeed() * 0.3);
-    } else {
-        if (dashActive) {
-            desiredVel.multiplyScalar(normalDashMultiplier);
-        } else {
-            desiredVel.multiplyScalar(playerSpeed());
-        }
+    const right = allocVec();
+    right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+    const desired = allocVec();
+    if (keys["w"] || keys["arrowup"]) desired.add(forward);
+    if (keys["s"] || keys["arrowdown"]) desired.add(forward.clone().negate());
+    if (keys["a"] || keys["arrowleft"]) desired.add(right.clone().negate());
+    if (keys["d"] || keys["arrowright"]) desired.add(right);
+
+    if (desired.length() > 0) desired.normalize().multiplyScalar(multiplier);
+
+    freeVec(forward); freeVec(right);
+    return desired;
+}
+
+function updateNormalPhysics() {
+    // 歩行モードの速度計算
+    let speed = dashActive ? normalDashMultiplier : playerSpeed();
+
+    // スニーク時は歩行速度を低下させる
+    if (sneakActive) {
+        speed *= 0.3;
     }
+
+    const desiredVel = getDesiredHorizontalVelocity(speed);
+
     player.velocity.x = THREE.MathUtils.lerp(player.velocity.x, desiredVel.x, 0.1);
     player.velocity.z = THREE.MathUtils.lerp(player.velocity.z, desiredVel.z, 0.1);
+
+    freeVec(desiredVel);
+
+    // 垂直方向は元のコードそのまま
     if (!flightMode) {
         if (player.velocity.y >= 0) {
             player.velocity.y -= UP_DECEL;
@@ -1030,32 +1025,23 @@ function playerSpeed() {
    【物理更新：飛行モード用】（重力無視・一定速度移動）
    ====================================================== */
 function updateFlightPhysics() {
-    const forward = new THREE.Vector3();
-    camera.getWorldDirection(forward);
-    forward.y = 0; forward.normalize();
-    const right = new THREE.Vector3();
-    right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
-    let desiredVel = new THREE.Vector3(0, 0, 0);
-    if (keys["w"] || keys["arrowup"]) desiredVel.add(forward);
-    if (keys["s"] || keys["arrowdown"]) desiredVel.add(forward.clone().negate());
-    if (keys["a"] || keys["arrowleft"]) desiredVel.add(right.clone().negate());
-    if (keys["d"] || keys["arrowright"]) desiredVel.add(right);
-    if (desiredVel.length() > 0) desiredVel.normalize();
-    if (dashActive) {
-        desiredVel.multiplyScalar(flightDashMultiplier);
-    } else {
-        desiredVel.multiplyScalar(playerSpeed());
-    }
+    // 飛行モードはスニークで速度変更しない
+    const speed = dashActive ? flightDashMultiplier : playerSpeed();
+
+    const desiredVel = getDesiredHorizontalVelocity(speed);
+
     player.velocity.x = THREE.MathUtils.lerp(player.velocity.x, desiredVel.x, 0.1);
     player.velocity.z = THREE.MathUtils.lerp(player.velocity.z, desiredVel.z, 0.1);
+
     let targetVertical = 0;
     if (keys[" "] || keys["spacebar"]) {
         targetVertical = flightSpeed;
     } else if (keys["shift"] && flightMode) {
-        // 飛行モード中の下降時、dashActive はそのまま維持する
         targetVertical = -flightSpeed;
     }
     player.velocity.y = THREE.MathUtils.lerp(player.velocity.y, targetVertical, 0.1);
+
+    freeVec(desiredVel);
 }
 
 /* ======================================================
@@ -1601,6 +1587,7 @@ const clearCaches = () => {
 };
 
 function clearShadowCaches() {
+    ceilingCache.clear();
     topShadowCache.clear();
     sideShadowCache.clear();
 }
@@ -1649,23 +1636,41 @@ function isFaceOpaque(id, worldPos = null) {
     return true; // 通常ブロックは不透明
 }
 // --- 下の影 ---
+// 共通の天井チェック関数
+const ceilingCache = new Map();
+
+// 天井チェック（キャッシュ付き）
+function hasCeilingAbove(wx, wy, wz) {
+    const key = `${wx}_${wz}`;
+    if (ceilingCache.has(key)) return ceilingCache.get(key);
+
+    const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
+    for (let y = wy + 1; y < maxY; y++) {
+        const id = getVoxelAtWorld(wx, y, wz);
+        if (id && id !== BLOCK_TYPES.SKY) {
+            const cfg = getConfigCached(id);
+            if (cfg && !cfg.transparent) {
+                ceilingCache.set(key, true);
+                return true;
+            }
+        }
+    }
+
+    ceilingCache.set(key, false);
+    return false;
+}
+
+// キャッシュ付き computeBottomShadowFactor
 function computeBottomShadowFactor(wx, wy, wz) {
     const id = getVoxelAtWorld(wx, wy, wz);
     const cfg = getConfigCached(id);
 
     if (cfg && cfg.transparent) {
-        const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
-        for (let y = wy + 1; y < maxY; y++) {
-            const aboveId = getVoxelAtWorld(wx, y, wz);
-            if (aboveId && aboveId !== BLOCK_TYPES.SKY) {
-                const aboveCfg = getConfigCached(aboveId);
-                if (aboveCfg && !aboveCfg.transparent) return 0.4;
-            }
-        }
-        return 1.0;
+        return hasCeilingAbove(wx, wy, wz) ? 0.4 : 1.0;
     }
 
     if (isInSubterraneanArea(wx, wy, wz)) return 0.4;
+
     const belowId = getVoxelAtWorld(wx, wy - 1, wz);
     return isFaceOpaque(belowId, [wx, wy - 1, wz]) ? 0.55 : 0.45;
 }
@@ -1690,15 +1695,25 @@ function computeSideShadowFactor(x, y, z, face, baseX, baseZ) {
     let wz = baseZ + z + o[2];
     const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
 
+    // 天井チェックはキャッシュを利用
+    const cacheKey = `${wx}_${wz}`;
+    if (ceilingCache.has(cacheKey)) {
+        const factor = ceilingCache.get(cacheKey) ? 0.4 : 1;
+        sideShadowCache.set(key, factor);
+        return factor;
+    }
+
     while (wy < maxY) {
         const id = getVoxelAtWorld(wx, wy, wz);
         if (isFaceOpaque(id, [wx, wy, wz])) {
+            ceilingCache.set(cacheKey, true);
             sideShadowCache.set(key, 0.4);
             return 0.4;
         }
         wy++;
     }
 
+    ceilingCache.set(cacheKey, false);
     sideShadowCache.set(key, 1);
     return 1;
 }
