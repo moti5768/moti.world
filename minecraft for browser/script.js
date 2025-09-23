@@ -1131,26 +1131,12 @@ function refreshChunkAt(cx, cz) {
     clearCaches();
 }
 
-// ここでは、チャンク座標 (cx, cz) を (cx + OFFSET) と (cz + OFFSET) で正数化し、
-// それらを 32bit 分ずつシフトして 64bit (BigInt) にエンコードします。
-// ※ ビッグワールド向けに、OFFSET を 2^31 (約21億) に設定（必要なら調整）
-const BIGINT_OFFSET = 2n ** 31n;
+const BIGINT_OFFSET = 2_000_000n; // ±1,875,000 + 安全マージン
 
-/**
- * チャンクキーを BigInt にエンコードする関数
- * @param {number} cx - チャンク X 座標
- * @param {number} cz - チャンク Z 座標
- * @returns {bigint} エンコード済みのキー
- */
 function encodeChunkKey(cx, cz) {
     return (BigInt(cx) + BIGINT_OFFSET) << 32n | ((BigInt(cz) + BIGINT_OFFSET) & 0xffffffffn);
 }
 
-/**
- * BigInt でエンコードされたキーからチャンク座標をデコードする関数
- * @param {bigint} key - エンコード済みのチャンクキー
- * @returns {[number, number]} [cx, cz] の配列
- */
 function decodeChunkKey(key) {
     return [
         Number((key >> 32n) - BIGINT_OFFSET),
@@ -1164,6 +1150,7 @@ function decodeChunkKey(key) {
 
 // pendingChunkUpdates は BigInt 値を保持する Set
 let pendingChunkUpdates = new Set();
+let chunkUpdateTimer = null;
 
 /**
  * 指定チャンク (cx, cz) の更新要求を pendingChunkUpdates に追加する関数
@@ -1184,18 +1171,19 @@ function requestChunkUpdate(cx, cz) {
  * 保留中のチャンク更新要求を処理する関数
  * 集められたキーをデコードして、各チャンクに対して refreshChunkAt を呼び出す
  */
+// バッチ処理（batchSize = 2 がデフォルト）
 function processPendingChunkUpdates(batchSize = 2) {
     if (pendingChunkUpdates.size === 0) return;
 
     let processed = 0;
-    const iterator = pendingChunkUpdates.values();
-
     while (pendingChunkUpdates.size > 0 && processed < batchSize) {
-        const key = iterator.next().value;
+        // Set.values().next() で安全に取り出す
+        const key = pendingChunkUpdates.values().next().value;
         if (!key) break;
 
         const [cx, cz] = decodeChunkKey(key);
 
+        // 実際のチャンク更新呼び出し
         if (typeof refreshChunkAt === "function") {
             refreshChunkAt(cx, cz);
         } else if (typeof requestChunkUpdate === "function") {
@@ -1208,16 +1196,19 @@ function processPendingChunkUpdates(batchSize = 2) {
         processed++;
     }
 
+    // 残っている場合は再スケジュール
     if (pendingChunkUpdates.size > 0) {
         scheduleChunkUpdate();
     }
 }
 
-
-let chunkUpdateTimer = null;
+// タイマー予約
 function scheduleChunkUpdate() {
-    clearTimeout(chunkUpdateTimer);
+    // 既にタイマーがある場合はスキップ
+    if (chunkUpdateTimer) return;
+
     chunkUpdateTimer = setTimeout(() => {
+        // デフォルトバッチサイズで処理
         processPendingChunkUpdates();
         chunkUpdateTimer = null;
     }, CHUNK_UPDATE_DELAY_MS);
@@ -1683,34 +1674,33 @@ const CEILING_CHECK_OFFSETS = {
     nz: [0, 1, -1]
 };
 
-function computeSideShadowFactor(x, y, z, face, baseX, baseZ) {
-    const key = `${baseX + x}_${y}_${baseZ + z}_${face}`;
+function computeSideShadowFactor(wx, wy, wz, face, baseX, baseZ) {
+    const key = `${baseX + wx}_${wy}_${baseZ + wz}_${face}`;
     if (sideShadowCache.has(key)) return sideShadowCache.get(key);
 
     const o = CEILING_CHECK_OFFSETS[face];
     if (!o) return 1;
 
-    let wx = baseX + x + o[0];
-    let wy = BEDROCK_LEVEL + y + o[1];
-    let wz = baseZ + z + o[2];
+    let checkX = baseX + wx + o[0];
+    let checkY = wy + o[1]; // ここはワールド座標
+    let checkZ = baseZ + wz + o[2];
     const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
 
-    // 天井チェックはキャッシュを利用
-    const cacheKey = `${wx}_${wz}`;
+    const cacheKey = `${checkX}_${checkY}_${checkZ}`;
     if (ceilingCache.has(cacheKey)) {
         const factor = ceilingCache.get(cacheKey) ? 0.4 : 1;
         sideShadowCache.set(key, factor);
         return factor;
     }
 
-    while (wy < maxY) {
-        const id = getVoxelAtWorld(wx, wy, wz);
-        if (isFaceOpaque(id, [wx, wy, wz])) {
+    while (checkY < maxY) {
+        const id = getVoxelAtWorld(checkX, checkY, checkZ);
+        if (isFaceOpaque(id, [checkX, checkY, checkZ])) {
             ceilingCache.set(cacheKey, true);
             sideShadowCache.set(key, 0.4);
             return 0.4;
         }
-        wy++;
+        checkY++;
     }
 
     ceilingCache.set(cacheKey, false);
@@ -2088,34 +2078,54 @@ const precomputeOffsets = () => {
 function updateChunks() {
     const pCx = Math.floor(player.position.x / CHUNK_SIZE);
     const pCz = Math.floor(player.position.z / CHUNK_SIZE);
+
+    // 移動がなければ offsets キャッシュを使い回す
     if (lastChunk.x === pCx && lastChunk.z === pCz && offsets) return;
     lastChunk = { x: pCx, z: pCz };
     offsets ||= precomputeOffsets();
 
-    const req = new Set(), queued = new Set(chunkQueue.map(e => `${e.cx}_${e.cz}`));
+    // 必要チャンクのセットと、既にキューにあるチャンクのセット
+    const req = new Set();
+    const queued = new Set(chunkQueue.map(e => `${e.cx}_${e.cz}`));
+
+    // offsets をもとに候補チャンクを計算
     const cands = offsets.map(({ dx, dz }) => ({ cx: pCx + dx, cz: pCz + dz }));
 
     for (const { cx, cz } of cands) {
         const key = `${cx}_${cz}`;
         req.add(key);
-        if (!loadedChunks[key] && !queued.has(key)) chunkQueue.push({ cx, cz });
+        if (!loadedChunks[key] && !queued.has(key)) {
+            chunkQueue.push({ cx, cz });
+        }
     }
 
+    // キュー内で不要になったチャンクを削除
     chunkQueue = chunkQueue.filter(e => req.has(`${e.cx}_${e.cz}`));
-    chunkQueue.sort((a, b) =>
-        (a.cx - pCx) ** 2 + (a.cz - pCz) ** 2 - ((b.cx - pCx) ** 2 + (b.cz - pCz) ** 2)
-    );
 
-    for (const key in loadedChunks)
-        if (!req.has(key)) {
+    // プレイヤーが移動した場合のみソート（優先度: 中心に近い順）
+    if (lastChunk.x !== pCx || lastChunk.z !== pCz) {
+        chunkQueue.sort((a, b) =>
+            (a.cx - pCx) ** 2 + (a.cz - pCz) ** 2 - ((b.cx - pCx) ** 2 + (b.cz - pCz) ** 2)
+        );
+    }
+
+    // 正方形範囲外のチャンクを破棄
+    for (const key in loadedChunks) {
+        const [cx, cz] = key.split("_").map(Number);
+        const dx = cx - pCx, dz = cz - pCz;
+
+        if (Math.abs(dx) > CHUNK_VISIBLE_DISTANCE || Math.abs(dz) > CHUNK_VISIBLE_DISTANCE) {
             releaseChunkMesh(loadedChunks[key]);
             delete loadedChunks[key];
         }
+    }
 
+    // Idle/非同期でチャンク生成を処理
     (window.requestIdleCallback || ((cb) => setTimeout(cb, 16)))(
         () => processChunkQueue({ timeRemaining: () => 16, didTimeout: true })
     );
 }
+
 
 window.updateChunksFromUI = () => {
     const d = parseInt(document.getElementById("chunkDistance").value, 10);
@@ -2139,26 +2149,6 @@ function getChunkCoord(val) {
     return Math.floor(val / CHUNK_SIZE);  // 負の値も正しく処理
 }
 
-// 更新要求を蓄積するための Set とデバウンス用タイマー
-let updateTimeout = null;
-/**
- * デバウンスしつつ、一定数以上の更新要求が溜まったら即座に処理する
- * @param {number} cx - チャンクのX座標
- * @param {number} cz - チャンクのZ座標
- */
-function requestDebouncedChunkUpdate(cx, cz) {
-    pendingChunkUpdates.add(encodeChunkKey(cx, cz));
-    // もし更新要求が 8 以上になったら即座に処理
-    if (pendingChunkUpdates.size >= 8) {
-        processChunkUpdates();
-        return;
-    }
-    if (updateTimeout) return;
-    updateTimeout = setTimeout(() => {
-        processChunkUpdates();
-    }, 16);
-}
-
 /**
  * チャンク更新要求をまとめて処理
  */
@@ -2179,19 +2169,45 @@ function processChunkUpdates() {
  *
  * @param {{x: number, y: number, z: number}} blockPos - 操作対象のブロックワールド座標
  */
-function updateAffectedChunks(blockPos) {
+function updateAffectedChunks(blockPos, forceImmediate = true) {
     const cx = getChunkCoord(blockPos.x);
     const cz = getChunkCoord(blockPos.z);
-    requestDebouncedChunkUpdate(cx, cz); // 自分のチャンク
+
+    // 自分のチャンクキー
+    const keys = [encodeChunkKey(cx, cz)];
+
     const localX = blockPos.x & (CHUNK_SIZE - 1);
     const localZ = blockPos.z & (CHUNK_SIZE - 1);
-    const offsets = [];
-    if (localX === 0) offsets.push([-1, 0]);
-    else if (localX === CHUNK_SIZE - 1) offsets.push([1, 0]);
-    if (localZ === 0) offsets.push([0, -1]);
-    else if (localZ === CHUNK_SIZE - 1) offsets.push([0, 1]);
-    for (const [dx, dz] of offsets) {
-        requestDebouncedChunkUpdate(cx + dx, cz + dz);
+
+    // 隣接チャンクのキーをまとめて作成
+    const neighbors = [];
+    if (localX === 0) neighbors.push([cx - 1, cz]);
+    else if (localX === CHUNK_SIZE - 1) neighbors.push([cx + 1, cz]);
+
+    if (localZ === 0) neighbors.push([cx, cz - 1]);
+    else if (localZ === CHUNK_SIZE - 1) neighbors.push([cx, cz + 1]);
+
+    // pendingChunkUpdates に追加（重複は追加しない）
+    for (const [nx, nz] of neighbors) {
+        const k = encodeChunkKey(nx, nz);
+        if (!pendingChunkUpdates.has(k)) keys.push(k);
+    }
+
+    for (const k of keys) pendingChunkUpdates.add(k);
+
+    if (forceImmediate) {
+        // 即時処理：処理済みキーを除きつつバッチ
+        const batchSize = Math.min(pendingChunkUpdates.size, 4);
+        processPendingChunkUpdates(batchSize);
+        // Set は残すので同フレームで追加更新可能
+    } else {
+        // デバウンス：タイマーセット
+        if (!updateTimeout) {
+            updateTimeout = setTimeout(() => {
+                processChunkUpdates();
+                updateTimeout = null;
+            }, 16);
+        }
     }
 }
 
@@ -2472,7 +2488,7 @@ function interactWithBlock(action) {
         const chunkX = Math.floor(base.x / CHUNK_SIZE);
         const chunkZ = Math.floor(base.z / CHUNK_SIZE);
         markColumnModified(`${chunkX}_${chunkZ}`, base.x, base.z, base.y);
-        updateAffectedChunks(base);
+        updateAffectedChunks(base, true); // 即時更新
         return;
     }
 
@@ -2519,7 +2535,7 @@ function interactWithBlock(action) {
         const chunkX = Math.floor(candidate.x / CHUNK_SIZE);
         const chunkZ = Math.floor(candidate.z / CHUNK_SIZE);
         markColumnModified(`${chunkX}_${chunkZ}`, candidate.x, candidate.z, candidate.y);
-        updateAffectedChunks(candidate);
+        updateAffectedChunks(candidate, true); // 即時更新
         return;
     }
 }
@@ -2530,23 +2546,6 @@ function interactWithBlock(action) {
 function resetLastPlacedIfOnGround() {
     if (player?.isOnGround) {
         lastPlacedKey = null;
-    }
-}
-
-// 例: 一度に処理する更新チャンク数を制限する
-function processPendingChunkUpdatesBatch(batchSize = 2) {
-    let processed = 0;
-    const iterator = pendingChunkUpdates.values();
-    while (pendingChunkUpdates.size > 0 && processed < batchSize) {
-        const key = iterator.next().value;
-        if (!key) break;
-        const [x, z] = decodeChunkKey(key);
-        requestChunkUpdate(x, z);
-        pendingChunkUpdates.delete(key);
-        processed++;
-    }
-    if (pendingChunkUpdates.size === 0) {
-        scheduleChunkUpdate(); // 全て処理し終わったときのみ呼ぶ
     }
 }
 
@@ -3471,23 +3470,20 @@ const camOffsetVec = new THREE.Vector3();
 let cloudUpdateTimer = 0;
 let cloudGridTimer = 0;
 let underwaterTimer = 0;
+let chunkUpdateFrameTimer = 0;  // 自然チャンク更新用
+let blockInfoTimer = 0;
 let lastBatchSize = 2; // 前フレームのbatchSizeを保持
+
 function getDynamicBatchSize() {
     const elapsed = performance.now() - lastFpsTime;
     if (elapsed === 0) return lastBatchSize;
     const fps = (frameCount * 1000) / elapsed;
-    let newBatchSize;
-    // FPSに応じて処理件数を調整（滑らかに）
-    if (fps > 55) {
-        newBatchSize = 6;
-    } else if (fps > 45) {
-        newBatchSize = 4;
-    } else {
-        newBatchSize = 2;
-    }
-    // 前フレームとの差を1件以内に制限して急激な変化を防ぐ
-    if (newBatchSize > lastBatchSize + 1) newBatchSize = lastBatchSize + 1;
-    if (newBatchSize < lastBatchSize - 1) newBatchSize = lastBatchSize - 1;
+
+    let newBatchSize = lastBatchSize;
+    if (fps > 55) newBatchSize = Math.min(lastBatchSize + 1, 6);
+    else if (fps > 45) newBatchSize = Math.min(lastBatchSize, 4);
+    else newBatchSize = Math.max(lastBatchSize - 1, 1);
+
     lastBatchSize = newBatchSize;
     return newBatchSize;
 }
@@ -3508,18 +3504,19 @@ function animate() {
             <span>Flight: ${flightMode ? "ON" : "OFF"}</span><br>
             <span>Dash: ${dashActive ? "ON" : "OFF"}</span><br>
             <span>Sneak: ${sneakActive ? "ON" : "OFF"}</span><br>
-            <span>Pos: (${player.position.x.toFixed(2)},${player.position.y.toFixed(2)},${player.position.z.toFixed(2)})</span>`;
+            <span>Pos: (${player.position.x.toFixed(2)},${player.position.y.toFixed(2)},${player.position.z.toFixed(2)})</span>
+        `;
         frameCount = 0;
         lastFpsTime = now;
     }
 
-    // -------- プレイヤー操作 --------
+    // -------- プレイヤー操作 & 物理更新 --------
     updateBlockParticles(delta);
 
     if (!flightMode && keys[" "] && player.onGround && !wasUnderwater) jumpRequest = true;
     camera.rotation.set(pitch, yaw, 0);
 
-    // -------- 水中判定（0.1秒に1回） --------
+    // 水中判定（0.1秒ごと）
     underwaterTimer += delta;
     if (underwaterTimer > 0.1) {
         wasUnderwater = isPlayerEntireBodyInWater();
@@ -3537,30 +3534,44 @@ function animate() {
 
     // -------- チャンク更新 --------
     updateChunks();
-    // 動的バッチサイズで保留チャンクを処理
-    processPendingChunkUpdates(getDynamicBatchSize());
+
+    // 自然チャンク更新（周囲生成用）を分散
+    chunkUpdateFrameTimer += delta;
+    if (chunkUpdateFrameTimer > 0.016) { // 60fps相当
+        const batchSize = getDynamicBatchSize();
+        processPendingChunkUpdates(batchSize);
+        chunkUpdateFrameTimer = 0;
+    }
 
     // -------- カメラ更新 --------
     camOffsetVec.set(0, getCurrentPlayerHeight() - (flightMode ? 0.15 : 0), 0);
     camera.position.copy(player.position).add(camOffsetVec);
 
-    // -------- ブロック情報更新 --------
-    updateBlockSelection();
-    updateBlockInfo();
-    updateHeadBlockInfo();
+    // -------- ブロック情報更新（間引き） --------
+    blockInfoTimer += delta;
+    if (blockInfoTimer > 0.033) { // 30fps
+        updateBlockSelection();
+        updateBlockInfo();
+        updateHeadBlockInfo();
+        blockInfoTimer = 0;
+    }
 
     // -------- クラウド更新 --------
     cloudUpdateTimer += delta;
     cloudGridTimer += delta;
 
-    if (cloudUpdateTimer > 0.033) { // 約30fps相当で雲スクロール・不透明度更新
+    if (cloudUpdateTimer > 0.05) { // 20fps
         updateCloudTiles(delta);
         updateCloudOpacity(camera.position);
         cloudUpdateTimer = 0;
     }
 
-    if (cloudGridTimer > 0.1) { // 10fps相当でグリッド更新・描画順序調整
-        cloudTiles.forEach(tile => adjustCloudLayerDepth(tile, camera));
+    if (cloudGridTimer > 0.1) { // 10fps
+        cloudTiles.forEach(tile => {
+            const distSq = tile.position.distanceToSquared(camera.position);
+            if (distSq > 256) return;
+            adjustCloudLayerDepth(tile, camera);
+        });
         updateCloudGrid(scene, camera.position);
         cloudGridTimer = 0;
     }
