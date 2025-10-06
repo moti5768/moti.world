@@ -32,33 +32,48 @@ if (ua.includes("mobile")) {
    - JSDoc形式のコメントによるドキュメンテーション
    ====================================================== */
 
-// 定数はそのまま
+// === Pseudo Random Function（軽量・再現性保持版） ===
+
+// 定数群（元の値を維持）
 const PRIME_MULTIPLIER = 57;
 const SIN_MULTIPLIER = 43758.5453;
 const SCALE = 1;
 const OFFSET = -1;
 
-// pseudoRandom の結果キャッシュ（Map）
+// キャッシュ（結果の再利用）
 const pseudoRandomCache = new Map();
-let cloudTiles = new Map(); // "gridX,gridZ" キーごとに各雲タイルを保持
 
+// 雲システム用（必要なら残す）
+let cloudTiles = new Map(); // "gridX,gridZ" キーで各雲タイルを保持
+
+// 整数ペア → 一意キー生成（高速・GCなし）
 function hashXY(x, y) {
     return ((x & 0xffff) << 16) | (y & 0xffff);
 }
 
+// === メイン関数 ===
 const pseudoRandom = (x, y) => {
     if (typeof x !== "number" || typeof y !== "number") {
         throw new TypeError("x と y は数値でなければなりません");
     }
+
     const ix = Math.floor(x), iy = Math.floor(y);
     const key = hashXY(ix, iy);
+
+    // キャッシュヒット時の早期返却
     if (pseudoRandomCache.has(key)) return pseudoRandomCache.get(key);
+
+    // 元アルゴリズム（地形一致）
     const n = ix + iy * PRIME_MULTIPLIER;
     const s = Math.sin(n) * SIN_MULTIPLIER;
-    const result = (s % 1) * SCALE + OFFSET; // s - floor(s) を s % 1 に変更
+    const result = (s % 1) * SCALE + OFFSET; // 出力範囲 -1〜0
+
+    // キャッシュ登録
     pseudoRandomCache.set(key, result);
+
     return result;
 };
+
 
 const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
 const lerp = (a, b, t) => a + t * (b - a);
@@ -104,6 +119,7 @@ let voxelModifications = {};  // 例: { "5_10_3": 1, … }
 
 const MAX_CACHE_SIZE = 15000; // おすすめのキャッシュサイズ
 const terrainHeightCache = new Map();
+const terrainCacheKeys = [];
 // 定数も同様にグローバル領域に外だししておきます
 const BASE_SCALE = 0.005;
 const DETAIL_SCALE = 0.05;
@@ -453,137 +469,77 @@ function getPlayerAABBAt(pos) {
     return createAABB(pos);
 }
 
-function checkAABBCollision(aabb, velocity, dt) {
-    // aabb が Box3 でない場合はコピーして Box3 化（参照を壊さない）
-    if (!(aabb instanceof THREE.Box3)) {
-        aabb = new THREE.Box3(aabb.min.clone(), aabb.max.clone());
+const blockCollisionBoxCache = new Map();
+const blockCollisionFlagCache = new Map();
+const pooledBoxArray = [];
+
+function getPooledBox() {
+    return pooledBoxArray.length ? pooledBoxArray.pop() : new THREE.Box3();
+}
+function releasePooledBox(b) {
+    if (!b) return;
+    b.makeEmpty();
+    if (pooledBoxArray.length < POOL_MAX) pooledBoxArray.push(b);
+}
+
+function getCachedCollisionBoxes(voxelId) {
+    if (blockCollisionBoxCache.has(voxelId)) return blockCollisionBoxCache.get(voxelId);
+    const cfg = getBlockConfiguration(voxelId);
+    const rel = [];
+    if (cfg && typeof cfg.customCollision === "function") {
+        try { rel.push(...cfg.customCollision()); } catch { }
     }
+    if (rel.length === 0) rel.push(new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 1)));
+    blockCollisionBoxCache.set(voxelId, rel);
+    blockCollisionFlagCache.set(voxelId, !!cfg?.collision);
+    return rel;
+}
 
+function checkAABBCollision(aabb, velocity, dt) {
+    if (!(aabb instanceof THREE.Box3)) aabb = new THREE.Box3(aabb.min.clone(), aabb.max.clone());
     const isDynamic = velocity !== undefined && dt !== undefined;
-    const result = isDynamic
-        ? { collision: false, time: dt, normal: new THREE.Vector3() }
-        : false;
+    const result = isDynamic ? { collision: false, time: dt, normal: new THREE.Vector3() } : false;
 
-    // 浮動小数点誤差用のマージン
-    const startX = Math.floor(aabb.min.x - COLLISION_MARGIN - 1e-5);
-    const endX = Math.ceil(aabb.max.x + COLLISION_MARGIN + 1e-5);
-    const startY = Math.floor(aabb.min.y - COLLISION_MARGIN - 1e-5);
-    const endY = Math.ceil(aabb.max.y + COLLISION_MARGIN + 1e-5);
-    const startZ = Math.floor(aabb.min.z - COLLISION_MARGIN - 1e-5);
-    const endZ = Math.ceil(aabb.max.z + COLLISION_MARGIN + 1e-5);
+    const startX = Math.floor(aabb.min.x - 0.01);
+    const endX = Math.ceil(aabb.max.x + 0.01);
+    const startY = Math.floor(aabb.min.y - 0.01);
+    const endY = Math.ceil(aabb.max.y + 0.01);
+    const startZ = Math.floor(aabb.min.z - 0.01);
+    const endZ = Math.ceil(aabb.max.z + 0.01);
 
-    // ローカルキャッシュ（同じ voxelId の block config を繰り返さない）
-    const configCache = new Map();
-
-    for (let x = startX; x < endX; x++) {
-        for (let y = startY; y < endY; y++) {
+    for (let x = startX; x < endX; x++)
+        for (let y = startY; y < endY; y++)
             for (let z = startZ; z < endZ; z++) {
-                const voxelId = getVoxelAtWorld(x, y, z);
-                if (voxelId === BLOCK_TYPES.SKY) continue;
+                const id = getVoxelAtWorld(x, y, z);
+                if (id === BLOCK_TYPES.SKY) continue;
 
-                // config をキャッシュから取得
-                let config;
-                if (configCache.has(voxelId)) {
-                    config = configCache.get(voxelId);
-                } else {
-                    config = getBlockConfiguration(voxelId);
-                    configCache.set(voxelId, config);
-                }
+                let coll = blockCollisionFlagCache.get(id);
+                if (coll === undefined) { getCachedCollisionBoxes(id); coll = blockCollisionFlagCache.get(id); }
+                if (!coll) continue;
 
-                if (!config || config.collision === false) continue;
+                const relBoxes = blockCollisionBoxCache.get(id);
+                for (const rel of relBoxes) {
+                    const wb = getPooledBox();
+                    wb.copy(rel);
+                    wb.min.addScalar(0); wb.max.addScalar(0);
+                    wb.min.x += x; wb.max.x += x;
+                    wb.min.y += y; wb.max.y += y;
+                    wb.min.z += z; wb.max.z += z;
 
-                // --- ブロック単位で使う Box3 配列（スコープ内で生成） ---
-                const boxes = [];
-
-                // カスタムコリジョンがある場合は相対 Box を取得して pooled Box にコピー
-                if (typeof config.customCollision === "function") {
-                    // tmpVec を渡す（customCollision が引数を取る実装に対応）
-                    const tmpVec = allocVec();
-                    let relBoxes;
-                    try {
-                        relBoxes = config.customCollision(tmpVec) || [];
-                    } catch (e) {
-                        // 万が一エラーなら引数無しで再試行（互換性確保）
-                        try { relBoxes = config.customCollision() || []; }
-                        catch (ee) { relBoxes = []; }
-                    }
-                    freeVec(tmpVec);
-
-                    for (let rb of relBoxes) {
-                        const pb = allocBox();
-                        // rb が THREE.Box3 の場合は copy、オブジェクトの場合は min/max をコピー
-                        if (rb instanceof THREE.Box3) {
-                            pb.copy(rb);
-                        } else if (rb && rb.min && rb.max) {
-                            pb.min.copy(rb.min);
-                            pb.max.copy(rb.max);
-                        } else {
-                            // 想定外の形なら 1x1x1 として扱う（保険）
-                            pb.min.set(0, 0, 0);
-                            pb.max.set(1, 1, 1);
-                        }
-                        // ワールド座標へオフセット
-                        const off = allocVec();
-                        off.set(x, y, z);
-                        pb.min.add(off);
-                        pb.max.add(off);
-                        freeVec(off);
-
-                        boxes.push(pb);
-                    }
-                } else {
-                    // 単純な 1x1x1 ブロック
-                    const pb = allocBox();
-                    const min = allocVec();
-                    const max = allocVec();
-                    min.set(x, y, z);
-                    max.set(x + 1, y + 1, z + 1);
-                    pb.min.copy(min);
-                    pb.max.copy(max);
-                    boxes.push(pb);
-                    freeVec(min);
-                    freeVec(max);
-                }
-
-                // --- boxes を使って判定（early return する場合も先に解放する） ---
-                let earlyReturn = false;
-                let earlyResult = null;
-
-                for (const box of boxes) {
                     if (isDynamic) {
-                        const r = sweptAABB(aabb, velocity, dt, box);
-                        if (r.collision && r.time < result.time) {
-                            Object.assign(result, r);
-                            if (r.time < 1e-5) {
-                                earlyResult = { type: 'dynamic', value: result };
-                                earlyReturn = true;
-                                break;
-                            }
-                        }
-                    } else {
-                        if (aabb.intersectsBox(box)) {
-                            earlyResult = { type: 'static', value: true };
-                            earlyReturn = true;
-                            break;
-                        }
+                        const r = sweptAABB(aabb, velocity, dt, wb);
+                        if (r.collision && r.time < result.time) Object.assign(result, r);
+                        if (r.time < 1e-5) { releasePooledBox(wb); return result; }
+                    } else if (aabb.intersectsBox(wb)) {
+                        releasePooledBox(wb);
+                        return true;
                     }
+                    releasePooledBox(wb);
                 }
-
-                // --- 必ず解放する ---
-                for (const box of boxes) freeBox(box);
-
-                // --- earlyReturn の振る舞い（元実装と互換） ---
-                if (earlyReturn) {
-                    if (earlyResult.type === 'dynamic') return earlyResult.value;
-                    return true;
-                }
-
-            } // z
-        } // y
-    } // x
-
+            }
     return result;
 }
+
 
 /* ======================================================
    【地形生成】（フラクタルノイズ＋ユーザー変更反映）
@@ -603,23 +559,25 @@ function getTerrainHeight(worldX, worldZ, startY) {
         return -Infinity;
     }
 
-    const key = `${xInt}_${zInt}`;
+    const key = ((xInt & 0xffff) << 16) | (zInt & 0xffff);
     if (terrainHeightCache.has(key)) return terrainHeightCache.get(key);
 
-    const baseNoise = fractalNoise2D(worldX * BASE_SCALE, worldZ * BASE_SCALE, 4, 0.5);
-    const detailNoise = fractalNoise2D(worldX * DETAIL_SCALE, worldZ * DETAIL_SCALE, 2, 0.5);
-
+    const baseNoise = fractalNoise2D(xInt * BASE_SCALE, zInt * BASE_SCALE, 4, 0.5);
+    const detailNoise = fractalNoise2D(xInt * DETAIL_SCALE, zInt * DETAIL_SCALE, 2, 0.5);
     const height = BASE_HEIGHT + baseNoise * MOUNTAIN_AMPLITUDE + detailNoise * DETAIL_AMPLITUDE;
     const result = Math.floor(height);
 
-    if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
-        const firstKey = terrainHeightCache.keys().next().value;
-        terrainHeightCache.delete(firstKey);
+    // LRU的キャッシュ削除
+    if (terrainCacheKeys.length >= MAX_CACHE_SIZE) {
+        const oldKey = terrainCacheKeys.shift();
+        terrainHeightCache.delete(oldKey);
     }
-    terrainHeightCache.set(key, result);
 
+    terrainCacheKeys.push(key);
+    terrainHeightCache.set(key, result);
     return result;
 }
+
 
 const globalTerrainCache = new Map();
 const blockCollisionCache = new Map();
@@ -963,43 +921,64 @@ function getBlockHeight(id) {
 /* ======================================================
    【物理更新：通常モード用】（重力・ジャンプ・水平慣性）
    ====================================================== */
+// === 軽量版 getDesiredHorizontalVelocity ===
+// 外見や挙動は一切変わりません
+
+// 再利用ベクトルをグローバルに1回だけ作成
+const _vForward = new THREE.Vector3();
+const _vRight = new THREE.Vector3();
+const _vDesired = new THREE.Vector3();
+const _vUp = new THREE.Vector3(0, 1, 0);
+
 function getDesiredHorizontalVelocity(multiplier = 1) {
-    const forward = allocVec();
-    camera.getWorldDirection(forward);
-    forward.y = 0; forward.normalize();
+    // カメラの前方向ベクトルを取得
+    camera.getWorldDirection(_vForward);
+    _vForward.y = 0;
+    _vForward.normalize();
 
-    const right = allocVec();
-    right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+    // 右方向ベクトル（forward × up）
+    _vRight.crossVectors(_vForward, _vUp).normalize();
 
-    const desired = allocVec();
-    if (keys["w"] || keys["arrowup"]) desired.add(forward);
-    if (keys["s"] || keys["arrowdown"]) desired.add(forward.clone().negate());
-    if (keys["a"] || keys["arrowleft"]) desired.add(right.clone().negate());
-    if (keys["d"] || keys["arrowright"]) desired.add(right);
+    // 希望移動方向
+    _vDesired.set(0, 0, 0);
+    if (keys["w"] || keys["arrowup"]) _vDesired.add(_vForward);
+    if (keys["s"] || keys["arrowdown"]) _vDesired.addScaledVector(_vForward, -1);
+    if (keys["a"] || keys["arrowleft"]) _vDesired.addScaledVector(_vRight, -1);
+    if (keys["d"] || keys["arrowright"]) _vDesired.add(_vRight);
 
-    if (desired.length() > 0) desired.normalize().multiplyScalar(multiplier);
+    // 正規化＋スカラー適用
+    if (_vDesired.lengthSq() > 0) {
+        _vDesired.normalize().multiplyScalar(multiplier);
+    } else {
+        _vDesired.set(0, 0, 0);
+    }
 
-    freeVec(forward); freeVec(right);
-    return desired;
+    return _vDesired;
 }
 
+
+// === 再利用ベクトルを1回だけ確保 ===
+const _tmpDesiredVel = new THREE.Vector3();
+
+/* ======================================================
+   【物理更新：地上モード】
+   ====================================================== */
 function updateNormalPhysics() {
     // 歩行モードの速度計算
     let speed = dashActive ? normalDashMultiplier : playerSpeed();
 
     // スニーク時は歩行速度を低下させる
-    if (sneakActive) {
-        speed *= 0.3;
-    }
+    if (sneakActive) speed *= 0.3;
 
+    // 希望速度ベクトル（再利用）
     const desiredVel = getDesiredHorizontalVelocity(speed);
+    _tmpDesiredVel.copy(desiredVel); // cloneの代わりにコピー（再利用）
 
-    player.velocity.x = THREE.MathUtils.lerp(player.velocity.x, desiredVel.x, 0.1);
-    player.velocity.z = THREE.MathUtils.lerp(player.velocity.z, desiredVel.z, 0.1);
+    // --- 水平速度補間 ---
+    player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * 0.1;
+    player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * 0.1;
 
-    freeVec(desiredVel);
-
-    // 垂直方向は元のコードそのまま
+    // --- 垂直方向処理（元のまま） ---
     if (!flightMode) {
         if (player.velocity.y >= 0) {
             player.velocity.y -= UP_DECEL;
@@ -1010,6 +989,8 @@ function updateNormalPhysics() {
             }
         }
     }
+
+    // --- ジャンプ ---
     if (jumpRequest && player.onGround && !flightMode) {
         player.velocity.y = JUMP_INITIAL_SPEED;
         player.onGround = false;
@@ -1025,23 +1006,25 @@ function playerSpeed() {
    【物理更新：飛行モード用】（重力無視・一定速度移動）
    ====================================================== */
 function updateFlightPhysics() {
-    // 飛行モードはスニークで速度変更しない
     const speed = dashActive ? flightDashMultiplier : playerSpeed();
 
+    // 希望速度ベクトル（再利用）
     const desiredVel = getDesiredHorizontalVelocity(speed);
+    _tmpDesiredVel.copy(desiredVel);
 
-    player.velocity.x = THREE.MathUtils.lerp(player.velocity.x, desiredVel.x, 0.1);
-    player.velocity.z = THREE.MathUtils.lerp(player.velocity.z, desiredVel.z, 0.1);
+    // --- 水平移動補間 ---
+    player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * 0.1;
+    player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * 0.1;
 
+    // --- 垂直移動 ---
     let targetVertical = 0;
     if (keys[" "] || keys["spacebar"]) {
         targetVertical = flightSpeed;
     } else if (keys["shift"] && flightMode) {
         targetVertical = -flightSpeed;
     }
-    player.velocity.y = THREE.MathUtils.lerp(player.velocity.y, targetVertical, 0.1);
 
-    freeVec(desiredVel);
+    player.velocity.y += (targetVertical - player.velocity.y) * 0.1;
 }
 
 /* ======================================================
@@ -1159,12 +1142,12 @@ let chunkUpdateTimer = null;
  */
 let chunkUpdateQueue = [];
 
-// 更新要求: キューに追加
+// チャンク更新要求（重複防止あり）
 function requestChunkUpdate(cx, cz) {
-    const key = `${cx}_${cz}`;
-    if (!chunkUpdateQueue.find(([x, z]) => x === cx && z === cz)) {
+    if (!chunkUpdateQueue.some(([x, z]) => x === cx && z === cz)) {
         chunkUpdateQueue.push([cx, cz]);
     }
+    scheduleChunkUpdate(); // 呼び出しを即トリガー
 }
 
 /**
@@ -1202,17 +1185,22 @@ function processPendingChunkUpdates(batchSize = 2) {
     }
 }
 
-// タイマー予約
 function scheduleChunkUpdate() {
-    // 既にタイマーがある場合はスキップ
-    if (chunkUpdateTimer) return;
+    if (chunkUpdateQueue.length === 0) return;
 
-    chunkUpdateTimer = setTimeout(() => {
-        // デフォルトバッチサイズで処理
-        processPendingChunkUpdates();
-        chunkUpdateTimer = null;
-    }, CHUNK_UPDATE_DELAY_MS);
+    const BATCH_SIZE = 2; // 一度に処理するチャンク数（調整可）
+    const batch = chunkUpdateQueue.splice(0, BATCH_SIZE);
+
+    for (const [cx, cz] of batch) {
+        refreshChunkAt(cx, cz); // 既存の更新関数呼び出し
+    }
+
+    // まだキューが残っていれば次のフレームで続行
+    if (chunkUpdateQueue.length > 0) {
+        requestAnimationFrame(scheduleChunkUpdate);
+    }
 }
+
 
 /* ======================================================
    【チャンクの管理】
@@ -1568,124 +1556,96 @@ const configCache = new Map();
 const subterraneanAreaCache = new Map();
 const topShadowCache = new Map();
 const sideShadowCache = new Map();
+const ceilingCache = new Map();
 
-// --- キャッシュクリア関数 ---
 const clearCaches = () => {
     blockConfigCache.clear();
     configCache.clear();
     subterraneanAreaCache.clear();
-    clearShadowCaches();
-};
-
-function clearShadowCaches() {
-    ceilingCache.clear();
     topShadowCache.clear();
     sideShadowCache.clear();
-}
-// --- ブロック設定キャッシュ ---
-const getConfig = id => {
-    if (!blockConfigCache.has(id)) blockConfigCache.set(id, getBlockConfiguration(id));
-    return blockConfigCache.get(id);
+    ceilingCache.clear();
 };
 
+// --- コンフィグ取得（キャッシュ統合） ---
 const getConfigCached = id => {
-    if (!configCache.has(id)) configCache.set(id, getConfig(id));
+    if (!configCache.has(id)) {
+        if (!blockConfigCache.has(id)) blockConfigCache.set(id, getBlockConfiguration(id));
+        configCache.set(id, blockConfigCache.get(id));
+    }
     return configCache.get(id);
 };
-// --- 地下判定 ---
-const subterraneanKeyHash = (wx, wy, wz) => `${wx}_${wy}_${wz}`;
 
-function isInSubterraneanArea(wx, wy, wz) {
-    const key = subterraneanKeyHash(wx, wy, wz);
+// --- 地下判定 ---
+const subterraneanKey = (wx, wy, wz) => `${wx}_${wy}_${wz}`;
+const isInSubterraneanArea = (wx, wy, wz) => {
+    const key = subterraneanKey(wx, wy, wz);
     if (subterraneanAreaCache.has(key)) return subterraneanAreaCache.get(key);
 
     const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
     for (let y = wy + 1; y < maxY; y++) {
         const id = getVoxelAtWorld(wx, y, wz);
-        if (id && id !== BLOCK_TYPES.SKY) {
-            const cfg = getConfigCached(id);
-            if (cfg && !cfg.transparent) {
-                subterraneanAreaCache.set(key, true);
-                return true;
-            }
+        if (id && id !== BLOCK_TYPES.SKY && !(getConfigCached(id)?.transparent)) {
+            subterraneanAreaCache.set(key, true);
+            return true;
         }
     }
     subterraneanAreaCache.set(key, false);
     return false;
-}
-// --- 不透明判定（カスタム形状対応） ---
-function isFaceOpaque(id, worldPos = null) {
+};
+
+// --- 不透明判定 ---
+const isFaceOpaque = (id, worldPos) => {
     if (!id || id === BLOCK_TYPES.SKY) return false;
     const cfg = getConfigCached(id);
     if (!cfg || cfg.transparent) return false;
-
-    if (typeof cfg.customCollision === "function" && worldPos) {
+    if (cfg.customCollision && worldPos) {
         const boxes = cfg.customCollision(worldPos);
-        return boxes && boxes.some(box => box.max.y - box.min.y > 0.01);
+        return boxes?.some(b => b.max.y - b.min.y > 0.01) || false;
     }
+    return true;
+};
 
-    return true; // 通常ブロックは不透明
-}
-// --- 下の影 ---
-// 共通の天井チェック関数
-const ceilingCache = new Map();
-
-// 天井チェック（キャッシュ付き）
-function hasCeilingAbove(wx, wy, wz) {
-    const key = `${wx}_${wz}`;
+// --- 天井チェック ---
+const ceilingKey = (wx, wz) => `${wx}_${wz}`;
+const hasCeilingAbove = (wx, wy, wz) => {
+    const key = ceilingKey(wx, wz);
     if (ceilingCache.has(key)) return ceilingCache.get(key);
 
     const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
     for (let y = wy + 1; y < maxY; y++) {
         const id = getVoxelAtWorld(wx, y, wz);
-        if (id && id !== BLOCK_TYPES.SKY) {
-            const cfg = getConfigCached(id);
-            if (cfg && !cfg.transparent) {
-                ceilingCache.set(key, true);
-                return true;
-            }
+        if (id && id !== BLOCK_TYPES.SKY && !(getConfigCached(id)?.transparent)) {
+            ceilingCache.set(key, true);
+            return true;
         }
     }
-
     ceilingCache.set(key, false);
     return false;
-}
+};
 
-// キャッシュ付き computeBottomShadowFactor
-function computeBottomShadowFactor(wx, wy, wz) {
+// --- 下影 ---
+const computeBottomShadowFactor = (wx, wy, wz) => {
     const id = getVoxelAtWorld(wx, wy, wz);
     const cfg = getConfigCached(id);
 
-    if (cfg && cfg.transparent) {
-        return hasCeilingAbove(wx, wy, wz) ? 0.4 : 1.0;
-    }
-
+    if (cfg?.transparent) return hasCeilingAbove(wx, wy, wz) ? 0.4 : 1.0;
     if (isInSubterraneanArea(wx, wy, wz)) return 0.4;
 
     const belowId = getVoxelAtWorld(wx, wy - 1, wz);
     return isFaceOpaque(belowId, [wx, wy - 1, wz]) ? 0.55 : 0.45;
-}
-
-// --- 側面の影 ---
-const CEILING_CHECK_OFFSETS = {
-    px: [1, 1, 0],
-    nx: [-1, 1, 0],
-    pz: [0, 1, 1],
-    nz: [0, 1, -1]
 };
 
-function computeSideShadowFactor(wx, wy, wz, face, baseX, baseZ) {
+// --- 側面影 ---
+const CEILING_CHECK_OFFSETS = { px: [1, 1, 0], nx: [-1, 1, 0], pz: [0, 1, 1], nz: [0, 1, -1] };
+const computeSideShadowFactor = (wx, wy, wz, face, baseX, baseZ) => {
     const key = `${baseX + wx}_${wy}_${baseZ + wz}_${face}`;
     if (sideShadowCache.has(key)) return sideShadowCache.get(key);
 
     const o = CEILING_CHECK_OFFSETS[face];
     if (!o) return 1;
 
-    let checkX = baseX + wx + o[0];
-    let checkY = wy + o[1]; // ここはワールド座標
-    let checkZ = baseZ + wz + o[2];
-    const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
-
+    let [checkX, checkY, checkZ] = [baseX + wx + o[0], wy + o[1], baseZ + wz + o[2]];
     const cacheKey = `${checkX}_${checkY}_${checkZ}`;
     if (ceilingCache.has(cacheKey)) {
         const factor = ceilingCache.get(cacheKey) ? 0.4 : 1;
@@ -1693,74 +1653,47 @@ function computeSideShadowFactor(wx, wy, wz, face, baseX, baseZ) {
         return factor;
     }
 
-    while (checkY < maxY) {
-        const id = getVoxelAtWorld(checkX, checkY, checkZ);
-        if (isFaceOpaque(id, [checkX, checkY, checkZ])) {
+    while (checkY < BEDROCK_LEVEL + CHUNK_HEIGHT) {
+        if (isFaceOpaque(getVoxelAtWorld(checkX, checkY, checkZ), [checkX, checkY, checkZ])) {
             ceilingCache.set(cacheKey, true);
-            sideShadowCache.set(key, 0.4);
-            return 0.4;
+            return sideShadowCache.set(key, 0.4).get(key);
         }
         checkY++;
     }
 
     ceilingCache.set(cacheKey, false);
-    sideShadowCache.set(key, 1);
-    return 1;
-}
+    return sideShadowCache.set(key, 1).get(key);
+};
 
-// --- 上面の影（角ごと） ---
+// --- 上面影 ---
 const TOP_SHADOW_OFFSETS = { LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1] };
-
-function computeTopShadowFactorForCorner(wx, wy, wz, corner, blockId) {
+const getBlockHeights = id => {
+    const type = getConfigCached(id)?.geometryType;
+    return { slab: [0.5], stairs: [0.5, 1], cross: [1], water: [0.88], carpet: [0.0625] }[type] || [1];
+};
+const computeTopShadowFactorForCorner = (wx, wy, wz, corner, blockId) => {
     const key = `${wx}_${wy}_${wz}_${corner}_${blockId}`;
     if (topShadowCache.has(key)) return topShadowCache.get(key);
+
     const offset = TOP_SHADOW_OFFSETS[corner];
     if (!offset) return 1;
-    const heights = getBlockHeights(blockId);
-    const [dx, dz] = offset;
-    let minShade = 1.0;
-    const config = getBlockConfiguration(blockId);
-    // Gamma プロパティで初期明るさを決定（指定がなければ 1.0）
-    const baseShade = (config && typeof config.Gamma === "number") ? config.Gamma : 1.0;
-    for (const h of heights) {
-        const y = wy + h;
-        const id1 = getVoxelAtWorld(wx + dx, y, wz);
-        const id2 = getVoxelAtWorld(wx, y, wz + dz);
+
+    let minShade = getConfigCached(blockId)?.Gamma ?? 1;
+    for (const h of getBlockHeights(blockId)) {
+        const [dx, dz] = offset;
+        const id1 = getVoxelAtWorld(wx + dx, wy + h, wz);
+        const id2 = getVoxelAtWorld(wx, wy + h, wz + dz);
         const cfg1 = id1 && id1 !== BLOCK_TYPES.SKY ? getConfigCached(id1) : null;
         const cfg2 = id2 && id2 !== BLOCK_TYPES.SKY ? getConfigCached(id2) : null;
-        let shade = baseShade;
-        if (isInSubterraneanArea(wx, wy, wz)) {
-            shade = 0.4;
-        } else if ((cfg1 && !cfg1.transparent) && (cfg2 && !cfg2.transparent)) {
-            shade = 0.4;
-        } else if ((cfg1 && !cfg1.transparent) || (cfg2 && !cfg2.transparent)) {
-            shade = 0.7;
-        }
+        let shade = isInSubterraneanArea(wx, wy, wz) ? 0.4 :
+            (cfg1 && !cfg1.transparent && cfg2 && !cfg2.transparent ? 0.4 :
+                (cfg1 && !cfg1.transparent || cfg2 && !cfg2.transparent ? 0.7 : 1));
         if (shade < minShade) minShade = shade;
     }
+
     topShadowCache.set(key, minShade);
     return minShade;
-}
-
-// メイン関数
-function getBlockHeights(id) {
-    const cfg = getConfigCached(id);
-    if (!cfg) return [1.0];
-    switch (cfg.geometryType) {
-        case "slab":
-            return [0.5];             // スラブは下半分
-        case "stairs":
-            return [0.5, 1.0];        // 階段は下段と上段
-        case "cross":
-            return [1.0];             // 植物等
-        case "water":
-            return [0.88];            // 水は高さ0.88
-        case "carpet":
-            return [0.0625];          // カーペットは薄い
-        default:
-            return [1.0];             // 標準ブロック
-    }
-}
+};
 
 // ---------------------------------------
 // CHUNK MESH GENERATION (軽量化版)
