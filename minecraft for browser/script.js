@@ -1103,14 +1103,16 @@ function refreshChunkAt(cx, cz) {
     const key = `${cx}_${cz}`;
     const oldChunk = loadedChunks[key];
     if (!oldChunk) return;
-    console.info("チャンク再生成（全更新）:", key);
+
     disposeMesh(oldChunk);
     scene.remove(oldChunk);
+
     const newChunk = generateChunkMeshMultiTexture(cx, cz);
     newChunk.userData.fadedIn = true;
     setOpacityRecursive(newChunk, 1);
     scene.add(newChunk);
     loadedChunks[key] = newChunk;
+
     clearCaches();
 }
 
@@ -1141,13 +1143,14 @@ let chunkUpdateTimer = null;
  * @param {number} cz - チャンク Z 座標
  */
 let chunkUpdateQueue = [];
+let chunkUpdateRunning = false;
 
 // チャンク更新要求（重複防止あり）
 function requestChunkUpdate(cx, cz) {
     if (!chunkUpdateQueue.some(([x, z]) => x === cx && z === cz)) {
         chunkUpdateQueue.push([cx, cz]);
     }
-    scheduleChunkUpdate(); // 呼び出しを即トリガー
+    scheduleChunkUpdate();
 }
 
 /**
@@ -1186,19 +1189,25 @@ function processPendingChunkUpdates(batchSize = 2) {
 }
 
 function scheduleChunkUpdate() {
-    if (chunkUpdateQueue.length === 0) return;
+    if (chunkUpdateRunning) return;
+    chunkUpdateRunning = true;
 
-    const BATCH_SIZE = 2; // 一度に処理するチャンク数（調整可）
-    const batch = chunkUpdateQueue.splice(0, BATCH_SIZE);
+    const MAX_FRAME_TIME = 10;
 
-    for (const [cx, cz] of batch) {
-        refreshChunkAt(cx, cz); // 既存の更新関数呼び出し
-    }
+    (function step() {
+        const start = performance.now();
 
-    // まだキューが残っていれば次のフレームで続行
-    if (chunkUpdateQueue.length > 0) {
-        requestAnimationFrame(scheduleChunkUpdate);
-    }
+        while (chunkUpdateQueue.length > 0 && performance.now() - start < MAX_FRAME_TIME) {
+            const [cx, cz] = chunkUpdateQueue.shift();
+            refreshChunkAt(cx, cz);
+        }
+
+        if (chunkUpdateQueue.length > 0) {
+            requestIdleCallback(step);
+        } else {
+            chunkUpdateRunning = false;
+        }
+    })();
 }
 
 
@@ -1209,6 +1218,7 @@ function scheduleChunkUpdate() {
 const loadedChunks = {}; // 現在シーンに配置中のチャンク（キーは "cx_cz"）
 const chunkPool = [];    // 使い回し可能なチャンクメッシュのプール
 let chunkQueue = [];   // 新規チャンク生成用のキュー
+let chunkQueueRunning = false;
 
 /**
  * フェードインアニメーションを Mesh に適用する関数
@@ -1321,23 +1331,36 @@ function releaseChunkMesh(mesh) {
  * 1件のチャンクを生成する関数
  */
 function generateNextChunk() {
-    const chunkInfo = chunkQueue[0];
-    if (!chunkInfo) return false;
-    const { cx, cz } = chunkInfo;
-    const key = `${cx}_${cz}`;
-    if (loadedChunks[key]) {
-        chunkQueue.shift(); // 存在する場合は削除だけ
-        return true;
-    }
+    if (chunkQueueRunning) return;
+    chunkQueueRunning = true;
 
-    chunkQueue.shift(); // 実際に生成する場合のみ削除
-    const mesh = generateChunkMeshMultiTexture(cx, cz);
-    mesh.userData.fadedIn = false;
-    setOpacityRecursive(mesh, 0);
-    scene.add(mesh);
-    loadedChunks[key] = mesh;
-    fadeInMesh(mesh, 500, () => mesh.userData.fadedIn = true);
-    return true;
+    const MAX_FRAME_TIME = 10; // 1フレーム内の最大処理時間 (ms)
+
+    (function step() {
+        const start = performance.now();
+
+        while (chunkQueue.length > 0 && performance.now() - start < MAX_FRAME_TIME) {
+            const chunkInfo = chunkQueue.shift();
+            if (!chunkInfo) break;
+
+            const { cx, cz } = chunkInfo;
+            const key = `${cx}_${cz}`;
+            if (loadedChunks[key]) continue;
+
+            const mesh = generateChunkMeshMultiTexture(cx, cz);
+            mesh.userData.fadedIn = false;
+            setOpacityRecursive(mesh, 0);
+            scene.add(mesh);
+            loadedChunks[key] = mesh;
+            fadeInMesh(mesh, 500, () => mesh.userData.fadedIn = true);
+        }
+
+        if (chunkQueue.length > 0) {
+            requestIdleCallback(step);
+        } else {
+            chunkQueueRunning = false;
+        }
+    })();
 }
 
 // ---------------------------------------------------------------------------
@@ -1720,16 +1743,18 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         ? voxelData[idx(x, y, z)]
         : modMap.get(`${baseX + x}_${BEDROCK_LEVEL + y}_${baseZ + z}`) ?? getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z);
 
-    const visCache = new Map();
+    const visCache = new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE);
     const getVisMask = (x, y, z, type, cfg) => {
-        const key = `${x},${y},${z}`;
-        if (!visCache.has(key)) {
-            visCache.set(key, computeVisibilityMask(
+        const key = idx(x, y, z);
+        let mask = visCache[key];
+        if (!mask) {
+            mask = computeVisibilityMask(
                 i => get(x + neighbors[i].dx, y + neighbors[i].dy, z + neighbors[i].dz),
                 type, cfg.transparent ?? false, cfg.customGeometry
-            ));
+            );
+            visCache[key] = mask;
         }
-        return visCache.get(key);
+        return mask;
     };
 
     // --- ジオメトリキャッシュ ---
