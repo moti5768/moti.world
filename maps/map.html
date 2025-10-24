@@ -238,8 +238,14 @@
         <div class="stat">方角: <div id="heading">---</div>
         </div>
       </div>
-      <div class="row small">住所: <div id="address" style="margin-left:8px;font-weight:600">---</div>
+      <div class="row small address-row"
+        style="flex-direction: column; align-items: flex-start; gap:2px; margin:0; padding:0;">
+        <span style="font-weight:500; color:#555; line-height:1;">住所:</span>
+        <div id="address" style="font-weight:600; word-break: break-word; line-height:1.2; margin:0; padding:0;">
+          ---
+        </div>
       </div>
+
       <div class="row small">最終更新: <span id="lastAge" style="margin-left:8px">---</span></div>
       <div style="height:8px"></div>
       <div class="controls">
@@ -303,7 +309,29 @@
     function redrawPolylines() { polylines.forEach(p => map.removeLayer(p)); polylines = []; for (const seg of pathSegments) { if (seg.length < 2) continue; polylines.push(L.polyline(seg, { color: '#ff4444', weight: 4, opacity: 0.9 }).addTo(map)); } }
 
     // ===== 住所取得 =====
-    async function fetchAddress(lat, lng) { if (now() - lastFetchTime < 1000) return '取得間隔制御中'; lastFetchTime = now(); try { const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`); if (!r.ok) return '住所取得失敗'; const d = await r.json(); return d.display_name || '住所情報なし'; } catch (e) { return '住所取得エラー'; } }
+    async function fetchAddress(lat, lng) {
+      if (now() - lastFetchTime < 1000) return '取得間隔制御中';
+      lastFetchTime = now();
+      try {
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`);
+        if (!r.ok) return '住所取得失敗';
+        const d = await r.json();
+        if (!d.address) return d.display_name || '住所情報なし';
+
+        const a = d.address;
+        const country = a.country || '';
+        const postcode = a.postcode || '';
+        const state = a.state || '';
+        const city = a.city || a.town || a.village || '';
+        const suburb = a.suburb || a.neighbourhood || '';
+        const road = a.road || '';
+
+        // 希望順で結合
+        return [country, postcode, state, city, suburb, road].filter(Boolean).join(', ');
+      } catch (e) {
+        return '住所取得エラー';
+      }
+    }
 
     // ===== ログ追加（カード化＋色分け） =====
     function addLogEntry(e, restoreMode = false) {
@@ -410,19 +438,13 @@
     setInterval(() => {
       if (lastPosTime) {
         const deltaSec = Math.floor((now() - lastPosTime) / 1000);
-        let text;
-        if (deltaSec < 60) {
-          text = `${deltaSec}秒前`;
-        } else if (deltaSec < 3600) {
-          const m = Math.floor(deltaSec / 60);
-          const s = deltaSec % 60;
-          text = s === 0 ? `${m}分前` : `${m}分${s}秒前`;
-        } else {
-          const h = Math.floor(deltaSec / 3600);
-          const m = Math.floor((deltaSec % 3600) / 60);
-          const s = deltaSec % 60;
-          text = `${h}時間${m}分${s}秒前`;
-        }
+        const h = Math.floor(deltaSec / 3600);
+        const m = Math.floor((deltaSec % 3600) / 60);
+        const s = deltaSec % 60;
+        let text = '';
+        if (h > 0) text += `${h}時間`;
+        if (m > 0 || h > 0) text += `${m}分`;
+        text += `${s}秒前`; // 常に秒を表示
         document.getElementById('lastAge').textContent = text;
       }
     }, 1000);
