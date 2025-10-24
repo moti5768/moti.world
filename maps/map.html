@@ -1,263 +1,313 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
-<meta charset="utf-8">
-<title>位置観測マップ</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-:root {
-  --bg:#fafafa;
-  --card:#fff;
-  --muted:#666;
-  --accent:#1976d2;
-  --danger:#e53935;
-  --warning:#ff9800;
-}
-
-body{
-  margin:0;
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;
-  background:var(--bg);
-  color:#222;
-}
-
-#app{
-  display:grid;
-  grid-template-columns:1fr 400px;
-  gap:12px;
-  height:100vh;
-  padding:12px;
-  box-sizing:border-box;
-}
-
-#map{
-  height:100%;
-  width:100%;
-  border-radius:8px;
-  overflow:hidden;
-  box-shadow:0 6px 18px rgba(0,0,0,0.08);
-}
-
-.panel{
-  background:var(--card);
-  padding:12px;
-  border-radius:8px;
-  box-shadow:0 4px 12px rgba(0,0,0,0.06);
-  overflow:auto;
-  display:flex;
-  flex-direction:column;
-}
-
-h2{
-  margin:4px 0 12px;
-  font-size:18px;
-}
-
-.info-grid{
-  display:grid;
-  grid-template-columns:repeat(2,1fr);
-  gap:8px;
-  margin-bottom:12px;
-}
-
-.stat{
-  background:#f7f7f8;
-  padding:10px;
-  border-radius:6px;
-  font-size:0.9em;
-  text-align:center;
-}
-
-.stat div{
-  font-weight:600;
-  margin-top:4px;
-}
-
-.controls{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(100px,1fr));
-  gap:8px;
-  margin-bottom:12px;
-}
-
-button{
-  background:var(--accent);
-  color:#fff;
-  border:none;
-  padding:10px;
-  border-radius:6px;
-  cursor:pointer;
-  font-size:0.9em;
-}
-
-button.secondary{background:#444;}
-button.warning{background:var(--warning);}
-button.danger{background:var(--danger);}
-
-.row{
-  display:flex;
-  gap:8px;
-  align-items:center;
-  font-size:0.85em;
-}
-
-#log{
-  max-height:35vh;
-  overflow:auto;
-  font-size:0.85em;
-  background:#f5f5f5;
-  padding:6px;
-  border-radius:6px;
-}
-
-/* ===== ログカードスタイル ===== */
-.log-entry{
-  background:#f7f7f8;
-  margin-bottom:6px;
-  padding:8px;
-  border-radius:6px;
-  box-shadow:0 1px 4px rgba(0,0,0,0.05);
-}
-
-.log-entry .time{
-  font-weight:600;
-  margin-bottom:4px;
-  font-size:0.85em;
-  color:#444;
-}
-
-.log-entry .coords{
-  font-size:0.8em;
-  color:#666;
-  margin-bottom:4px;
-}
-
-.log-entry .address{
-  font-size:0.85em;
-  font-weight:500;
-  margin-bottom:4px;
-}
-
-.log-entry .info{
-  display:flex;
-  gap:6px;
-  font-size:0.8em;
-}
-
-.log-entry .accuracy{
-  font-weight:600;
-}
-
-.acc-green{color:green;}
-.acc-yellowgreen{color:yellowgreen;}
-.acc-orange{color:orange;}
-.acc-red{color:red;}
-
-@media(max-width:900px){
-  #app{
-    grid-template-columns:1fr;
-    grid-template-rows:65vh auto;
-  }
-  .panel{
-    max-height:calc(100vh - 65vh);
-  }
-  .controls{
-    grid-template-columns:repeat(auto-fit,minmax(80px,1fr));
-  }
-}
-</style>
-</head>
-<body>
-<div id="app">
-  <div id="map"></div>
-  <div class="panel">
-    <h2>📍 位置観測マップ</h2>
-    <div class="info-grid">
-      <div class="stat">緯度: <div id="lat">---</div></div>
-      <div class="stat">経度: <div id="lng">---</div></div>
-      <div class="stat">精度: <div id="acc">---</div></div>
-      <div class="stat">高度: <div id="alt">---</div></div>
-      <div class="stat">速度: <div id="speed">---</div></div>
-      <div class="stat">方角: <div id="heading">---</div></div>
-    </div>
-    <div class="row small">住所: <div id="address" style="margin-left:8px;font-weight:600">---</div></div>
-    <div class="row small">最終更新: <span id="lastAge" style="margin-left:8px">---</span></div>
-    <div style="height:8px"></div>
-    <div class="controls">
-      <button id="stopBtn" class="danger">観測停止</button>
-      <button id="restartBtn">再開</button>
-      <button id="centerToggle" class="secondary">自動追尾: ON</button>
-      <button id="exportJsonBtn" class="warning">JSON保存</button>
-      <button id="exportCsvBtn" class="warning">CSV保存</button>
-      <button id="clearBtn" class="secondary">ログ/経路クリア</button>
-    </div>
-    <div class="row" style="margin:8px 0;gap:12px;align-items:center">
-      <div>総距離: <strong id="totalDist">0 m</strong></div>
-      <div>平均速度: <strong id="avgSpeed">0 km/h</strong></div>
-    </div>
-    <div style="margin-top:8px">
-      <label>ログ</label>
-      <div id="log" class="panel" style="padding:8px;margin-top:6px"></div>
-    </div>
-    <div style="margin-top:10px" class="small">※ Nominatim 逆ジオコーディングは1秒未満の連続リクエストを避けています。</div>
-  </div>
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-let map, marker, watchId=null, pathSegments=[[]], polylines=[], logData=[];
-let lastFetchTime=0, lastPosTime=0, follow=true;
-const LS_KEYS={PATH:'hp_map_path_v3', LOG:'hp_map_log_v3'};
-
-// ===== 初期化 =====
-function initMap(){
-  map=L.map('map').setView([35.6812,139.7671],15);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'© OpenStreetMap contributors'}).addTo(map);
-  map.on('dragstart',()=>{follow=false;document.getElementById('centerToggle').textContent='自動追尾: OFF';});
-}
-
-// ===== ユーティリティ =====
-const toFixedOrDash=(v,d=6)=>typeof v==='number'?v.toFixed(d):'---';
-const now=()=>Date.now();
-const haversine=(a,b)=>{const R=6371e3,toRad=d=>d*Math.PI/180;const φ1=toRad(a[0]),φ2=toRad(b[0]);const Δφ=toRad(b[0]-a[0]),Δλ=toRad(b[1]-a[1]);const aa=Math.sin(Δφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;return R*2*Math.atan2(Math.sqrt(aa),Math.sqrt(1-aa));};
-const directionName=deg=>{if(deg===null||isNaN(deg))return '---';const dirs=['北','北東','東','南東','南','南西','西','北西'];return `${dirs[Math.round(deg/45)%8]} (${deg.toFixed(0)}°)`;};
-
-// ===== 距離・速度 =====
-function calcTotalDistance(){let t=0;for(const seg of pathSegments)for(let i=1;i<seg.length;i++)t+=haversine(seg[i-1],seg[i]);return t;}
-function calcAvgSpeed(){if(logData.length<2)return 0;const first=new Date(logData[logData.length-1]?.time||now()).getTime();const last=new Date(logData[0]?.time||now()).getTime();const dt=Math.abs(last-first)/1000;if(dt<=0)return 0;return (calcTotalDistance()/dt)*3.6;}
-function updateStatsUI(){document.getElementById('totalDist').textContent=(calcTotalDistance()/1000).toFixed(3)+' km';document.getElementById('avgSpeed').textContent=calcAvgSpeed().toFixed(2)+' km/h';}
-
-// ===== 保存 / 復元 =====
-function safeSaveLocal(){try{localStorage.setItem(LS_KEYS.PATH,JSON.stringify(pathSegments));localStorage.setItem(LS_KEYS.LOG,JSON.stringify(logData));}catch(e){console.warn('save error',e);}}
-function restoreLocal(){
-  try{
-    const rawP=localStorage.getItem(LS_KEYS.PATH),rawL=localStorage.getItem(LS_KEYS.LOG);
-    if(rawP)pathSegments=JSON.parse(rawP);if(rawL)logData=JSON.parse(rawL);
-    const log=document.getElementById('log'); log.innerHTML='';
-    for(const e of logData.slice(0,200)){
-      addLogEntry(e,true); // true = restoreモード（UIに再保存しない）
+  <meta charset="utf-8">
+  <title>位置観測マップ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      --bg: #e8f0f8;
+      /* 背景を淡い青にして地図を引き立てる */
+      --card: rgba(255, 255, 255, 0.95);
+      /* 半透明パネルで地図を透かす */
+      --muted: #555;
+      --accent: #1976d2;
+      --danger: #e53935;
+      --warning: #ff9800;
+      --marker-border: #fff;
+      --polyline-color: #ff4444;
+      --polyline-weight: 5;
     }
-  }catch(e){console.warn('restore error',e);}
-}
 
-// ===== ポリライン =====
-function redrawPolylines(){polylines.forEach(p=>map.removeLayer(p));polylines=[];for(const seg of pathSegments){if(seg.length<2)continue;polylines.push(L.polyline(seg,{color:'#ff4444',weight:4,opacity:0.9}).addTo(map));}}
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
+      background: var(--bg);
+      color: #222;
+    }
 
-// ===== 住所取得 =====
-async function fetchAddress(lat,lng){if(now()-lastFetchTime<1000)return '取得間隔制御中';lastFetchTime=now();try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`);if(!r.ok)return '住所取得失敗';const d=await r.json();return d.display_name||'住所情報なし';}catch(e){return '住所取得エラー';}}
+    #app {
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      gap: 12px;
+      height: 100vh;
+      padding: 12px;
+      box-sizing: border-box;
+    }
 
-// ===== ログ追加（カード化＋色分け） =====
-function addLogEntry(e,restoreMode=false){
-  if(!restoreMode) logData.unshift(e);
+    #map {
+      height: 100%;
+      width: 100%;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+    }
 
-  // 精度に応じた色
-  let accClass='acc-red';
-  if(e.accuracy<5) accClass='acc-green';
-  else if(e.accuracy<15) accClass='acc-yellowgreen';
-  else if(e.accuracy<30) accClass='acc-orange';
+    .panel {
+      background: var(--card);
+      padding: 14px;
+      border-radius: 10px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      backdrop-filter: blur(5px);
+    }
 
-  const html=`
+    h2 {
+      margin: 6px 0 14px;
+      font-size: 20px;
+      color: var(--accent);
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .stat {
+      background: #f9f9fb;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.95em;
+      text-align: center;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    .stat div {
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.95em;
+      transition: 0.2s;
+    }
+
+    button:hover {
+      opacity: 0.85;
+    }
+
+    button.secondary {
+      background: #666;
+    }
+
+    button.warning {
+      background: var(--warning);
+    }
+
+    button.danger {
+      background: var(--danger);
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      font-size: 0.87em;
+    }
+
+    #log {
+      max-height: 35vh;
+      overflow: auto;
+      font-size: 0.85em;
+      background: #f3f6fa;
+      padding: 8px;
+      border-radius: 8px;
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    /* ===== ログカードスタイル ===== */
+    .log-entry {
+      background: #f7f7f8;
+      margin-bottom: 6px;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.08);
+    }
+
+    .log-entry .time {
+      font-weight: 600;
+      margin-bottom: 4px;
+      font-size: 0.85em;
+      color: #333;
+    }
+
+    .log-entry .coords {
+      font-size: 0.82em;
+      color: #555;
+      margin-bottom: 4px;
+    }
+
+    .log-entry .address {
+      font-size: 0.87em;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    .log-entry .info {
+      display: flex;
+      gap: 8px;
+      font-size: 0.82em;
+    }
+
+    .log-entry .accuracy {
+      font-weight: 600;
+    }
+
+    .acc-green {
+      color: green;
+    }
+
+    .acc-yellowgreen {
+      color: yellowgreen;
+    }
+
+    .acc-orange {
+      color: orange;
+    }
+
+    .acc-red {
+      color: red;
+    }
+
+    @media(max-width:900px) {
+      #app {
+        grid-template-columns: 1fr;
+        grid-template-rows: 65vh auto;
+      }
+
+      .panel {
+        max-height: calc(100vh - 65vh);
+      }
+
+      .controls {
+        grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+      }
+    }
+
+    /* ===== マーカー改善 ===== */
+    .custom-marker div {
+      border: 2px solid var(--marker-border);
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <div id="map"></div>
+    <div class="panel">
+      <h2>📍 位置観測マップ</h2>
+      <div class="info-grid">
+        <div class="stat">緯度: <div id="lat">---</div>
+        </div>
+        <div class="stat">経度: <div id="lng">---</div>
+        </div>
+        <div class="stat">精度: <div id="acc">---</div>
+        </div>
+        <div class="stat">高度: <div id="alt">---</div>
+        </div>
+        <div class="stat">速度: <div id="speed">---</div>
+        </div>
+        <div class="stat">方角: <div id="heading">---</div>
+        </div>
+      </div>
+      <div class="row small">住所: <div id="address" style="margin-left:8px;font-weight:600">---</div>
+      </div>
+      <div class="row small">最終更新: <span id="lastAge" style="margin-left:8px">---</span></div>
+      <div style="height:8px"></div>
+      <div class="controls">
+        <button id="stopBtn" class="danger">観測停止</button>
+        <button id="restartBtn">再開</button>
+        <button id="centerToggle" class="secondary">自動追尾: ON</button>
+        <button id="exportJsonBtn" class="warning">JSON保存</button>
+        <button id="exportCsvBtn" class="warning">CSV保存</button>
+        <button id="clearBtn" class="secondary">ログ/経路クリア</button>
+      </div>
+      <div class="row" style="margin:8px 0;gap:12px;align-items:center">
+        <div>総距離: <strong id="totalDist">0 m</strong></div>
+        <div>平均速度: <strong id="avgSpeed">0 km/h</strong></div>
+      </div>
+      <div style="margin-top:8px">
+        <label>ログ</label>
+        <div id="log" class="panel" style="padding:8px;margin-top:6px"></div>
+      </div>
+      <div style="margin-top:10px" class="small">※ Nominatim 逆ジオコーディングは1秒未満の連続リクエストを避けています。</div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    let map, marker, watchId = null, pathSegments = [[]], polylines = [], logData = [];
+    let lastFetchTime = 0, lastPosTime = 0, follow = true;
+    const LS_KEYS = { PATH: 'hp_map_path_v3', LOG: 'hp_map_log_v3' };
+
+    // ===== 初期化 =====
+    function initMap() {
+      map = L.map('map').setView([35.6812, 139.7671], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
+      map.on('dragstart', () => { follow = false; document.getElementById('centerToggle').textContent = '自動追尾: OFF'; });
+    }
+
+    // ===== ユーティリティ =====
+    const toFixedOrDash = (v, d = 6) => typeof v === 'number' ? v.toFixed(d) : '---';
+    const now = () => Date.now();
+    const haversine = (a, b) => { const R = 6371e3, toRad = d => d * Math.PI / 180; const φ1 = toRad(a[0]), φ2 = toRad(b[0]); const Δφ = toRad(b[0] - a[0]), Δλ = toRad(b[1] - a[1]); const aa = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa)); };
+    const directionName = deg => { if (deg === null || isNaN(deg)) return '---'; const dirs = ['北', '北東', '東', '南東', '南', '南西', '西', '北西']; return `${dirs[Math.round(deg / 45) % 8]} (${deg.toFixed(0)}°)`; };
+
+    // ===== 距離・速度 =====
+    function calcTotalDistance() { let t = 0; for (const seg of pathSegments) for (let i = 1; i < seg.length; i++)t += haversine(seg[i - 1], seg[i]); return t; }
+    function calcAvgSpeed() { if (logData.length < 2) return 0; const first = new Date(logData[logData.length - 1]?.time || now()).getTime(); const last = new Date(logData[0]?.time || now()).getTime(); const dt = Math.abs(last - first) / 1000; if (dt <= 0) return 0; return (calcTotalDistance() / dt) * 3.6; }
+    function updateStatsUI() { document.getElementById('totalDist').textContent = (calcTotalDistance() / 1000).toFixed(3) + ' km'; document.getElementById('avgSpeed').textContent = calcAvgSpeed().toFixed(2) + ' km/h'; }
+
+    // ===== 保存 / 復元 =====
+    function safeSaveLocal() { try { localStorage.setItem(LS_KEYS.PATH, JSON.stringify(pathSegments)); localStorage.setItem(LS_KEYS.LOG, JSON.stringify(logData)); } catch (e) { console.warn('save error', e); } }
+    function restoreLocal() {
+      try {
+        const rawP = localStorage.getItem(LS_KEYS.PATH), rawL = localStorage.getItem(LS_KEYS.LOG);
+        if (rawP) pathSegments = JSON.parse(rawP); if (rawL) logData = JSON.parse(rawL);
+        const log = document.getElementById('log'); log.innerHTML = '';
+        for (const e of logData.slice(0, 200)) {
+          addLogEntry(e, true); // true = restoreモード（UIに再保存しない）
+        }
+      } catch (e) { console.warn('restore error', e); }
+    }
+
+    // ===== ポリライン =====
+    function redrawPolylines() { polylines.forEach(p => map.removeLayer(p)); polylines = []; for (const seg of pathSegments) { if (seg.length < 2) continue; polylines.push(L.polyline(seg, { color: '#ff4444', weight: 4, opacity: 0.9 }).addTo(map)); } }
+
+    // ===== 住所取得 =====
+    async function fetchAddress(lat, lng) { if (now() - lastFetchTime < 1000) return '取得間隔制御中'; lastFetchTime = now(); try { const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`); if (!r.ok) return '住所取得失敗'; const d = await r.json(); return d.display_name || '住所情報なし'; } catch (e) { return '住所取得エラー'; } }
+
+    // ===== ログ追加（カード化＋色分け） =====
+    function addLogEntry(e, restoreMode = false) {
+      if (!restoreMode) logData.unshift(e);
+
+      // 精度に応じた色
+      let accClass = 'acc-red';
+      if (e.accuracy < 5) accClass = 'acc-green';
+      else if (e.accuracy < 15) accClass = 'acc-yellowgreen';
+      else if (e.accuracy < 30) accClass = 'acc-orange';
+
+      const html = `
     <div class="log-entry">
       <div class="time">🕒 ${new Date(e.time).toLocaleString()}</div>
       <div class="coords">(${e.lat.toFixed(6)}, ${e.lng.toFixed(6)})</div>
@@ -269,105 +319,124 @@ function addLogEntry(e,restoreMode=false){
       </div>
     </div>
   `;
-  const logContainer=document.getElementById('log');
-  logContainer.insertAdjacentHTML('afterbegin',html);
+      const logContainer = document.getElementById('log');
+      logContainer.insertAdjacentHTML('afterbegin', html);
 
-  // ログ件数制限
-  while(logContainer.childElementCount>200){
-    logContainer.removeChild(logContainer.lastChild);
-  }
+      // ログ件数制限
+      while (logContainer.childElementCount > 200) {
+        logContainer.removeChild(logContainer.lastChild);
+      }
 
-  if(!restoreMode){
-    safeSaveLocal();
-    updateStatsUI();
-  }
-}
+      if (!restoreMode) {
+        safeSaveLocal();
+        updateStatsUI();
+      }
+    }
 
-// ===== ダウンロード =====
-function download(filename,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));a.download=filename;a.click();}
-document.getElementById('exportJsonBtn').addEventListener('click',()=>{download('location_log.json',JSON.stringify({pathSegments,logData,savedAt:new Date().toISOString()},null,2));});
-document.getElementById('exportCsvBtn').addEventListener('click',()=>{const h=['time,lat,lng,accuracy,speed_kmh,heading,address'];const rows=logData.map(e=>`${JSON.stringify(e.time)},${e.lat},${e.lng},${e.accuracy},${parseFloat(e.speedKmh)||''},${JSON.stringify(e.headingText)},${JSON.stringify(e.address)}`);download('location_log.csv',h.concat(rows).join('\n'));});
+    // ===== ダウンロード =====
+    function download(filename, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = filename; a.click(); }
+    document.getElementById('exportJsonBtn').addEventListener('click', () => { download('location_log.json', JSON.stringify({ pathSegments, logData, savedAt: new Date().toISOString() }, null, 2)); });
+    document.getElementById('exportCsvBtn').addEventListener('click', () => { const h = ['time,lat,lng,accuracy,speed_kmh,heading,address']; const rows = logData.map(e => `${JSON.stringify(e.time)},${e.lat},${e.lng},${e.accuracy},${parseFloat(e.speedKmh) || ''},${JSON.stringify(e.headingText)},${JSON.stringify(e.address)}`); download('location_log.csv', h.concat(rows).join('\n')); });
 
-// ===== 停止/再開/クリア =====
-document.getElementById('stopBtn').addEventListener('click',()=>{if(watchId){navigator.geolocation.clearWatch(watchId);watchId=null;pathSegments.push([]);alert('観測停止');}});
-document.getElementById('restartBtn').addEventListener('click',()=>{if(!watchId)startTracking();alert('観測再開');});
-document.getElementById('clearBtn').addEventListener('click',()=>{if(confirm('本当にクリアしますか？')){pathSegments=[[]];logData=[];redrawPolylines();document.getElementById('log').innerHTML='';safeSaveLocal();updateStatsUI();}});
+    // ===== 停止/再開/クリア =====
+    document.getElementById('stopBtn').addEventListener('click', () => { if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; pathSegments.push([]); alert('観測停止'); } });
+    document.getElementById('restartBtn').addEventListener('click', () => { if (!watchId) startTracking(); alert('観測再開'); });
+    document.getElementById('clearBtn').addEventListener('click', () => { if (confirm('本当にクリアしますか？')) { pathSegments = [[]]; logData = []; redrawPolylines(); document.getElementById('log').innerHTML = ''; safeSaveLocal(); updateStatsUI(); } });
 
-// ===== 自動追尾 =====
-document.getElementById('centerToggle').addEventListener('click',()=>{follow=!follow;document.getElementById('centerToggle').textContent=`自動追尾: ${follow?'ON':'OFF'}`;});
+    // ===== 自動追尾 =====
+    document.getElementById('centerToggle').addEventListener('click', () => { follow = !follow; document.getElementById('centerToggle').textContent = `自動追尾: ${follow ? 'ON' : 'OFF'}`; });
 
-// ===== 位置更新（高速対応） =====
-async function handlePosition(pos){
-  const c=pos.coords;
-  const lat=c.latitude,lng=c.longitude,acc=c.accuracy||0;
-  const alt=c.altitude; const speed=(typeof c.speed==='number'&&c.speed>=0)?c.speed:null;
-  const heading=(typeof c.heading==='number')?c.heading:null;
+    // ===== 位置更新（高速対応） =====
+    async function handlePosition(pos) {
+      const c = pos.coords;
+      const lat = c.latitude, lng = c.longitude, acc = c.accuracy || 0;
+      const alt = c.altitude; const speed = (typeof c.speed === 'number' && c.speed >= 0) ? c.speed : null;
+      const heading = (typeof c.heading === 'number') ? c.heading : null;
 
-  document.getElementById('lat').textContent=toFixedOrDash(lat,6);
-  document.getElementById('lng').textContent=toFixedOrDash(lng,6);
-  document.getElementById('acc').textContent=`${acc.toFixed(1)} m`;
-  document.getElementById('alt').textContent=alt===null?'---':`${alt.toFixed(1)} m`;
-  document.getElementById('speed').textContent=speed?`${(speed*3.6).toFixed(1)} km/h`:'---';
-  document.getElementById('heading').textContent=directionName(heading);
+      document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
+      document.getElementById('lng').textContent = toFixedOrDash(lng, 6);
+      document.getElementById('acc').textContent = `${acc.toFixed(1)} m`;
+      document.getElementById('alt').textContent = alt === null ? '---' : `${alt.toFixed(1)} m`;
+      document.getElementById('speed').textContent = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
+      document.getElementById('heading').textContent = directionName(heading);
 
-  let accColor='red';
-  if(acc<5) accColor='green';
-  else if(acc<15) accColor='yellowgreen';
-  else if(acc<30) accColor='orange';
+      let accColor = 'red';
+      if (acc < 5) accColor = 'green';
+      else if (acc < 15) accColor = 'yellowgreen';
+      else if (acc < 30) accColor = 'orange';
 
-  let size=16;
-  if(speed && speed*3.6>200) size=20; // 高速ならマーカー大きく
+      let size = 16;
+      if (speed && speed * 3.6 > 200) size = 20; // 高速ならマーカー大きく
 
-  document.getElementById('acc').style.color=accColor;
+      document.getElementById('acc').style.color = accColor;
 
-  const icon=L.divIcon({className:'custom-marker',html:`<div style="width:${size}px;height:${size}px;border-radius:50%;background:${accColor};border:2px solid #fff"></div>`,iconSize:[size,size],iconAnchor:[size/2,size/2]});
-  if(!marker) marker=L.marker([lat,lng],{icon}).addTo(map);
-  else marker.setLatLng([lat,lng]).setIcon(icon);
+      const icon = L.divIcon({ className: 'custom-marker', html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${accColor};border:2px solid #fff"></div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+      if (!marker) marker = L.marker([lat, lng], { icon }).addTo(map);
+      else marker.setLatLng([lat, lng]).setIcon(icon);
 
-  pathSegments[pathSegments.length-1].push([lat,lng]);
-  redrawPolylines();
-  if(follow) map.setView([lat,lng]);
+      pathSegments[pathSegments.length - 1].push([lat, lng]);
+      redrawPolylines();
+      if (follow) map.setView([lat, lng]);
 
-  const addr=await fetchAddress(lat,lng);
-  document.getElementById('address').textContent=addr;
+      const addr = await fetchAddress(lat, lng);
+      document.getElementById('address').textContent = addr;
 
-  const time=new Date().toISOString();
-  const speedText=speed?`${(speed*3.6).toFixed(1)} km/h`:'---';
-  const headingText=directionName(heading);
-  addLogEntry({time,lat,lng,accuracy:acc,altitude:alt,speedKmh:speed?speed*3.6:null,speedText,headingText,address:addr});
+      const time = new Date().toISOString();
+      const speedText = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
+      const headingText = directionName(heading);
+      addLogEntry({ time, lat, lng, accuracy: acc, altitude: alt, speedKmh: speed ? speed * 3.6 : null, speedText, headingText, address: addr });
 
-  lastPosTime=now();
-  document.getElementById('lastAge').textContent='0秒前';
-}
+      lastPosTime = now();
+      document.getElementById('lastAge').textContent = '0秒前';
+    }
 
-// ===== エラー処理 =====
-let retryTimer=null;
-function clearRetryTimer(){if(retryTimer){clearTimeout(retryTimer);retryTimer=null;}}
-function handleError(err){console.warn('位置取得エラー',err);if(!retryTimer)retryTimer=setTimeout(()=>{startTracking();},3000);}
+    // ===== エラー処理 =====
+    let retryTimer = null;
+    function clearRetryTimer() { if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; } }
+    function handleError(err) { console.warn('位置取得エラー', err); if (!retryTimer) retryTimer = setTimeout(() => { startTracking(); }, 3000); }
 
-// ===== トラッキング開始 =====
-function startTracking(){if(!navigator.geolocation){alert('位置情報未対応');return;}watchId=navigator.geolocation.watchPosition(handlePosition,handleError,{enableHighAccuracy:true,timeout:15000,maximumAge:0});}
+    // ===== トラッキング開始 =====
+    function startTracking() { if (!navigator.geolocation) { alert('位置情報未対応'); return; } watchId = navigator.geolocation.watchPosition(handlePosition, handleError, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
 
-// ===== 更新秒 =====
-setInterval(()=>{if(lastPosTime){document.getElementById('lastAge').textContent=`${Math.floor((now()-lastPosTime)/1000)}秒前`; }},1000);
+    // ===== 更新時間表示=====
+    setInterval(() => {
+      if (lastPosTime) {
+        const deltaSec = Math.floor((now() - lastPosTime) / 1000);
+        let text;
+        if (deltaSec < 60) {
+          text = `${deltaSec}秒前`;
+        } else if (deltaSec < 3600) {
+          const m = Math.floor(deltaSec / 60);
+          const s = deltaSec % 60;
+          text = s === 0 ? `${m}分前` : `${m}分${s}秒前`;
+        } else {
+          const h = Math.floor(deltaSec / 3600);
+          const m = Math.floor((deltaSec % 3600) / 60);
+          const s = deltaSec % 60;
+          text = `${h}時間${m}分${s}秒前`;
+        }
+        document.getElementById('lastAge').textContent = text;
+      }
+    }, 1000);
 
-// ===== DeviceOrientation =====
-async function setupDeviceOrientation(){
-  if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
-    const btn=document.createElement('button');btn.textContent='コンパス許可';btn.className='warning';btn.style.margin='6px';document.querySelector('.panel').appendChild(btn);
-    btn.addEventListener('click',async()=>{try{const perm=await DeviceOrientationEvent.requestPermission();if(perm==='granted'){window.addEventListener('deviceorientationabsolute',onDeviceOrientation);btn.remove();}else alert('拒否');}catch(e){alert('権限エラー:'+e.message);}});
-  }else if(window.DeviceOrientationEvent)window.addEventListener('deviceorientationabsolute',onDeviceOrientation);
-}
-function onDeviceOrientation(e){if(e && typeof e.alpha==='number'){const heading=(360-e.alpha)%360;document.getElementById('heading').textContent=directionName(heading);}}
+    // ===== DeviceOrientation =====
+    async function setupDeviceOrientation() {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const btn = document.createElement('button'); btn.textContent = 'コンパス許可'; btn.className = 'warning'; btn.style.margin = '6px'; document.querySelector('.panel').appendChild(btn);
+        btn.addEventListener('click', async () => { try { const perm = await DeviceOrientationEvent.requestPermission(); if (perm === 'granted') { window.addEventListener('deviceorientationabsolute', onDeviceOrientation); btn.remove(); } else alert('拒否'); } catch (e) { alert('権限エラー:' + e.message); } });
+      } else if (window.DeviceOrientationEvent) window.addEventListener('deviceorientationabsolute', onDeviceOrientation);
+    }
+    function onDeviceOrientation(e) { if (e && typeof e.alpha === 'number') { const heading = (360 - e.alpha) % 360; document.getElementById('heading').textContent = directionName(heading); } }
 
-// ===== 初期ロード =====
-window.addEventListener('load',()=>{
-  initMap();
-  restoreLocal();
-  redrawPolylines();
-  setupDeviceOrientation();
-  startTracking();
-});
-</script>
+    // ===== 初期ロード =====
+    window.addEventListener('load', () => {
+      initMap();
+      restoreLocal();
+      redrawPolylines();
+      setupDeviceOrientation();
+      startTracking();
+    });
+  </script>
 </body>
+
 </html>
