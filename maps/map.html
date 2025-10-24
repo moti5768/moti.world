@@ -581,7 +581,7 @@
       });
 
       // ナビ中ルート更新
-      if (routingControl && currentDestination) {
+      if (routingControl && currentDestination && !userSelectedRoute) {
         routingControl.setWaypoints([L.latLng(lat, lng), currentDestination]);
       }
 
@@ -645,11 +645,14 @@
       const navModeBtn = document.getElementById("navModeBtn");
       navModeBtn.addEventListener("click", () => { navMode = !navMode; navModeBtn.textContent = navMode ? "地図クリックで目的地を選択中…" : "ナビ開始(車のみ)"; });
 
+      // マップクリックで目的地選択
       map.on("click", async e => {
         if (!navMode) return;
         if (!marker) { alert("現在地を取得中です。位置が確定したらもう一度クリックしてください。"); return; }
 
         currentDestination = e.latlng;
+        userSelectedRoute = false;  // 新しい目的地選択時はフラグリセット
+
         const destAddress = await fetchAddress(currentDestination.lat, currentDestination.lng);
         document.getElementById("address").textContent = destAddress;
 
@@ -670,18 +673,23 @@
           altLineOptions: () => ({ color: "#f44336", weight: 5, opacity: 1 }),
           createMarker: (i, wp) => {
             const size = 20, color = i === 0 ? "#4fc3f7" : "#ff9800";
-            return L.marker(wp.latLng, { icon: L.divIcon({ className: 'custom-marker', html: `<div style="width:${size}px;height:${size}px;background:${color};border:2px solid #fff;border-radius:50%;box-shadow:0 0 5px rgba(0,0,0,0.3);"></div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] }) });
+            return L.marker(wp.latLng, {
+              icon: L.divIcon({
+                className: 'custom-marker',
+                html: `<div style="width:${size}px;height:${size}px;background:${color};border:2px solid #fff;border-radius:50%;box-shadow:0 0 5px rgba(0,0,0,0.3);"></div>`,
+                iconSize: [size, size],
+                iconAnchor: [size / 2, size / 2]
+              })
+            });
           },
           position: 'bottomright'
-        }).on("routesfound", e => updateEta(e.routes[0]))
-          .on("routeselected", e => updateEta(e.route))
+        })
+          .on("routesfound", e => updateEta(e.routes[0]))
+          .on("routeselected", e => {
+            updateEta(e.route);
+            userSelectedRoute = true;  // ユーザーが代替ルート選択したらフラグON
+          })
           .addTo(map);
-
-        const panelContainer = document.querySelector('.leaflet-routing-container');
-        if (panelContainer) {
-          const observer = new MutationObserver(() => { panelContainer.querySelectorAll('.leaflet-routing-alt h3').forEach(h3 => h3.textContent = ''); });
-          observer.observe(panelContainer, { childList: true, subtree: true });
-        }
 
         navMode = false;
         document.getElementById("navModeBtn").textContent = "ナビ開始(車のみ)";
@@ -702,12 +710,12 @@
     });
 
     // ===== ナビキャンセル =====
-    const cancelNavBtn = document.getElementById("cancelNavBtn");
     cancelNavBtn.addEventListener("click", async () => {
       if (routingControl) { map.removeControl(routingControl); routingControl = null; }
       navMode = false;
       document.getElementById("navModeBtn").textContent = "ナビ開始(車のみ)";
       currentDestination = null;
+      userSelectedRoute = false;  // フラグリセット
 
       // 現在地住所に戻す
       if (marker) {
@@ -720,6 +728,7 @@
       const etaContainer = document.getElementById("eta");
       if (etaContainer) etaContainer.textContent = "---";
     });
+
   </script>
 
 
