@@ -571,7 +571,7 @@
       updateMarker(lat, lng, heading, accColor, speed);
 
       // 自動追尾
-      if (follow) map.setView([lat, lng]);
+      if (follow) map.panTo([lat, lng], { animate: true });
 
       // 住所取得
       const addr = await fetchAddress(lat, lng);
@@ -692,6 +692,7 @@
           addWaypoints: false,
           draggableWaypoints: false,
           showAlternatives: true,
+          fitSelectedRoutes: false,
           language: "en",
 
           // メインルート（太く・濃い青）
