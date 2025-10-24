@@ -301,19 +301,31 @@
     const logToggleBtn = document.getElementById('logToggleBtn');
     const logContainer = document.getElementById('log');
 
+    function isMobile() {
+      return window.innerWidth <= 900;
+    }
+
     logToggleBtn.addEventListener('click', () => {
       if (logContainer.classList.contains('collapsed')) {
-        // 展開時 → scrollHeight に合わせて高さを自動設定
-        logContainer.style.maxHeight = logContainer.scrollHeight + 'px';
+        // 展開
+        if (isMobile()) {
+          // スマホは画面下半分確保
+          const availableHeight = window.innerHeight * 0.45; // 45%確保
+          logContainer.style.maxHeight = availableHeight + 'px';
+        } else {
+          // PCは自動
+          logContainer.style.maxHeight = logContainer.scrollHeight + 'px';
+        }
         logContainer.classList.remove('collapsed');
         logToggleBtn.textContent = '▲';
       } else {
-        // 折りたたみ時 → 高さを0に
+        // 折りたたみ
         logContainer.style.maxHeight = '40px';
         logContainer.classList.add('collapsed');
         logToggleBtn.textContent = '▼';
       }
     });
+
 
 
     // ===== 初期設定 =====
