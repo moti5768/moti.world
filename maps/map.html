@@ -285,6 +285,14 @@
         <button id="cancelNavBtn" class="secondary">ナビ取り消し</button>
       </div>
       <div class="row">所要時間: <span id="eta">---</span></div>
+      <div class="row small address-row"
+        style="flex-direction: column; align-items: flex-start; gap:2px; margin:0; padding:0;">
+        <span style="font-weight:500; color:#555; line-height:1;">住所:</span>
+        <div id="address" style="font-weight:600; word-break: break-word; line-height:1.2; margin:0; padding:0;">---
+        </div>
+      </div>
+
+      <div class="row small">最終更新: <span id="lastAge" style="margin-left:8px">---</span></div>
       <h2>📍 位置観測マップ</h2>
       <div class="info-grid">
         <div class="stat">緯度: <div id="lat">---</div>
@@ -300,15 +308,6 @@
         <div class="stat">方角: <div id="heading">---</div>
         </div>
       </div>
-
-      <div class="row small address-row"
-        style="flex-direction: column; align-items: flex-start; gap:2px; margin:0; padding:0;">
-        <span style="font-weight:500; color:#555; line-height:1;">住所:</span>
-        <div id="address" style="font-weight:600; word-break: break-word; line-height:1.2; margin:0; padding:0;">---
-        </div>
-      </div>
-
-      <div class="row small">最終更新: <span id="lastAge" style="margin-left:8px">---</span></div>
 
       <div style="height:8px"></div>
       <div class="controls">
