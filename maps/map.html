@@ -49,11 +49,11 @@
       padding: 14px;
       border-radius: 10px;
       box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
-      overflow: hidden;
-      /* scrollはlogに任せる */
       display: flex;
       flex-direction: column;
       backdrop-filter: blur(5px);
+      overflow-y: auto;
+      /* ここを hidden → auto に変更 */
     }
 
     h2 {
@@ -128,11 +128,9 @@
       max-height: 35vh;
       /* 展開時の高さ */
       min-height: 40px;
-      /* 折りたたみ時の最小高さ */
+      /* 折りたたみ時 */
       overflow: hidden;
-      transition: max-height 0.4s ease;
-      flex: 1;
-      /* 残りスペースに応じて伸縮 */
+      transition: max-height 0.4s ease, opacity 0.4s ease, padding 0.3s ease;
     }
 
     #log {
@@ -152,7 +150,6 @@
       opacity: 0;
       padding-top: 0;
       padding-bottom: 0;
-      transition: max-height 0.4s ease, opacity 0.4s ease, padding 0.3s ease;
     }
 
     .log-entry {
