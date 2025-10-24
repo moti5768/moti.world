@@ -531,9 +531,16 @@
 
     // ===== 位置更新 =====
     async function handlePosition(pos) {
-      if (!pos || !pos.coords) { updateMarker(null, null, 0, 'black', 0); return; }
+      if (!pos || !pos.coords) {
+        updateMarker(null, null, 0, 'black', 0);
+        return;
+      }
+
       const c = pos.coords;
-      const lat = c.latitude, lng = c.longitude, acc = c.accuracy || 0, alt = c.altitude;
+      const lat = c.latitude,
+        lng = c.longitude,
+        acc = c.accuracy || 0,
+        alt = c.altitude;
       let speed = (c.speed >= 0) ? c.speed : null;
       let heading = (typeof c.heading === 'number') ? c.heading : null;
 
@@ -552,7 +559,7 @@
 
       const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
 
-      // UI更新
+      // ===== UI更新 =====
       document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
       document.getElementById('lng').textContent = toFixedOrDash(lng, 6);
       document.getElementById('acc').textContent = `${acc.toFixed(1)} m`;
@@ -561,16 +568,25 @@
       document.getElementById('heading').textContent = directionName(heading);
       document.getElementById('acc').style.color = accColor;
 
-      // パス更新
+      // ===== パス更新 =====
       pathSegments[pathSegments.length - 1].push([lat, lng]);
       redrawPolylines();
       updateMarker(lat, lng, heading, accColor, speed);
 
       if (follow) map.panTo([lat, lng], { animate: true });
 
-      const addr = await fetchAddress(lat, lng);
-      document.getElementById('address').textContent = addr;
+      // ===== 住所更新 =====
+      // ナビ中かつ代替ルート未選択の場合は最終目的地住所を維持
+      let addrElem = document.getElementById('address');
+      let addr = addrElem.textContent;
 
+      if (!routingControl) {
+        // ナビ中でなければ現在地住所を取得
+        addr = await fetchAddress(lat, lng);
+        addrElem.textContent = addr;
+      }
+
+      // ===== ログ追加 =====
       addLogEntry({
         time: new Date().toISOString(),
         lat, lng, accuracy: acc, altitude: alt,
@@ -580,7 +596,7 @@
         address: addr
       });
 
-      // ナビ中ルート更新
+      // ===== ナビ中ルート更新 =====
       if (routingControl && currentDestination && !userSelectedRoute) {
         routingControl.setWaypoints([L.latLng(lat, lng), currentDestination]);
       }
@@ -588,6 +604,7 @@
       lastPosTime = pos.timestamp || now();
       document.getElementById('lastAge').textContent = '0秒前';
     }
+
 
     // ===== エラー処理 =====
     let retryTimer = null;
