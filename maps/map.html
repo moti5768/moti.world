@@ -130,17 +130,13 @@
     }
 
     #log {
-      max-height: 50vh;
-      /* 画面高さの50%まで表示 */
-      overflow: auto;
+      overflow: hidden;
+      transition: max-height 0.4s ease, opacity 0.4s ease, padding 0.3s ease;
       padding: 8px;
       opacity: 1;
-      transition: max-height 0.4s ease, opacity 0.4s ease, padding 0.3s ease;
     }
 
     #log.collapsed {
-      max-height: 40px;
-      /* 折りたたみ高さ */
       opacity: 0;
       padding-top: 0;
       padding-bottom: 0;
@@ -306,10 +302,19 @@
     const logContainer = document.getElementById('log');
 
     logToggleBtn.addEventListener('click', () => {
-      const log = document.getElementById('log');
-      log.classList.toggle('collapsed');
-      logToggleBtn.textContent = log.classList.contains('collapsed') ? '▼' : '▲';
+      if (logContainer.classList.contains('collapsed')) {
+        // 展開時 → scrollHeight に合わせて高さを自動設定
+        logContainer.style.maxHeight = logContainer.scrollHeight + 'px';
+        logContainer.classList.remove('collapsed');
+        logToggleBtn.textContent = '▲';
+      } else {
+        // 折りたたみ時 → 高さを0に
+        logContainer.style.maxHeight = '40px';
+        logContainer.classList.add('collapsed');
+        logToggleBtn.textContent = '▼';
+      }
     });
+
 
     // ===== 初期設定 =====
     let map, marker, watchId = null, pathSegments = [[]], polylines = [], logData = [];
