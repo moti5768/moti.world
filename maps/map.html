@@ -3,15 +3,13 @@
 
 <head>
   <meta charset="utf-8">
-  <title>位置観測マップ</title>
+  <title>高精度位置観測マップ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <style>
     :root {
       --bg: #e8f0f8;
-      /* 背景を淡い青にして地図を引き立てる */
       --card: rgba(255, 255, 255, 0.95);
-      /* 半透明パネルで地図を透かす */
       --muted: #555;
       --accent: #1976d2;
       --danger: #e53935;
@@ -134,7 +132,6 @@
       box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
     }
 
-    /* ===== ログカードスタイル ===== */
     .log-entry {
       background: #f7f7f8;
       margin-bottom: 6px;
@@ -160,6 +157,7 @@
       font-size: 0.87em;
       font-weight: 500;
       margin-bottom: 4px;
+      word-break: break-word;
     }
 
     .log-entry .info {
@@ -203,18 +201,15 @@
       }
     }
 
-    /* 右下クレジットを目立たなくする */
     .leaflet-control-attribution {
       font-size: 10px;
-      /* 小さくする */
       opacity: 0.8;
-      /* 透明度を下げる */
     }
 
-    /* ===== マーカー改善 ===== */
     .custom-marker div {
       border: 2px solid var(--marker-border);
       box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+      border-radius: 50%;
     }
   </style>
 </head>
@@ -238,15 +233,16 @@
         <div class="stat">方角: <div id="heading">---</div>
         </div>
       </div>
+
       <div class="row small address-row"
         style="flex-direction: column; align-items: flex-start; gap:2px; margin:0; padding:0;">
         <span style="font-weight:500; color:#555; line-height:1;">住所:</span>
-        <div id="address" style="font-weight:600; word-break: break-word; line-height:1.2; margin:0; padding:0;">
-          ---
+        <div id="address" style="font-weight:600; word-break: break-word; line-height:1.2; margin:0; padding:0;">---
         </div>
       </div>
 
       <div class="row small">最終更新: <span id="lastAge" style="margin-left:8px">---</span></div>
+
       <div style="height:8px"></div>
       <div class="controls">
         <button id="stopBtn" class="danger">観測停止</button>
@@ -256,25 +252,29 @@
         <button id="exportCsvBtn" class="warning">CSV保存</button>
         <button id="clearBtn" class="secondary">ログ<br>経路クリア</button>
       </div>
+
       <div class="row" style="margin:8px 0;gap:12px;align-items:center">
         <div>総距離: <strong id="totalDist">0 m</strong></div>
         <div>平均速度: <strong id="avgSpeed">0 km/h</strong></div>
       </div>
+
       <div style="margin-top:8px">
         <label>ログ</label>
         <div id="log" class="panel" style="padding:8px;margin-top:6px"></div>
       </div>
+
       <div style="margin-top:10px" class="small">※位置の取得は1秒以上間隔を空けています。</div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
+    // ===== 初期設定 =====
     let map, marker, watchId = null, pathSegments = [[]], polylines = [], logData = [];
-    let lastFetchTime = 0, lastPosTime = 0, follow = true;
+    let lastFetchTime = 0, lastPosTime = 0, follow = true, lastOrientation = null;
     const LS_KEYS = { PATH: 'hp_map_path_v3', LOG: 'hp_map_log_v3' };
 
-    // ===== 初期化 =====
+    // ===== マップ初期化 =====
     function initMap() {
       map = L.map('map').setView([35.6812, 139.7671], 15);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
@@ -284,157 +284,133 @@
     // ===== ユーティリティ =====
     const toFixedOrDash = (v, d = 6) => typeof v === 'number' ? v.toFixed(d) : '---';
     const now = () => Date.now();
-    const haversine = (a, b) => { const R = 6371e3, toRad = d => d * Math.PI / 180; const φ1 = toRad(a[0]), φ2 = toRad(b[0]); const Δφ = toRad(b[0] - a[0]), Δλ = toRad(b[1] - a[1]); const aa = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2; return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa)); };
-    const directionName = deg => { if (deg === null || isNaN(deg)) return '---'; const dirs = ['北', '北東', '東', '南東', '南', '南西', '西', '北西']; return `${dirs[Math.round(deg / 45) % 8]} (${deg.toFixed(0)}°)`; };
+    const haversine = (a, b) => {
+      const R = 6371e3, toRad = d => d * Math.PI / 180;
+      const φ1 = toRad(a[0]), φ2 = toRad(b[0]);
+      const Δφ = toRad(b[0] - a[0]), Δλ = toRad(b[1] - a[1]);
+      const aa = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+    };
+    const directionName = deg => {
+      if (deg === null || isNaN(deg)) return '---';
+      const dirs = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+      return `${dirs[Math.round(deg / 45) % 8]} (${deg.toFixed(0)}°)`;
+    };
 
-    // ===== 距離・速度 =====
-    function calcTotalDistance() { let t = 0; for (const seg of pathSegments) for (let i = 1; i < seg.length; i++)t += haversine(seg[i - 1], seg[i]); return t; }
-    function calcAvgSpeed() { if (logData.length < 2) return 0; const first = new Date(logData[logData.length - 1]?.time || now()).getTime(); const last = new Date(logData[0]?.time || now()).getTime(); const dt = Math.abs(last - first) / 1000; if (dt <= 0) return 0; return (calcTotalDistance() / dt) * 3.6; }
-    function updateStatsUI() { document.getElementById('totalDist').textContent = (calcTotalDistance() / 1000).toFixed(3) + ' km'; document.getElementById('avgSpeed').textContent = calcAvgSpeed().toFixed(2) + ' km/h'; }
+    // ===== 距離・速度計算 =====
+    function calcTotalDistance() { return pathSegments.flatMap(seg => seg.slice(1).map((_, i) => haversine(seg[i], seg[i + 1]))).reduce((a, b) => a + b, 0); }
+    function calcAvgSpeed() {
+      if (logData.length < 2) return 0;
+      const first = new Date(logData[logData.length - 1]?.time || now()).getTime();
+      const last = new Date(logData[0]?.time || now()).getTime();
+      const dt = Math.abs(last - first) / 1000;
+      return dt <= 0 ? 0 : (calcTotalDistance() / dt) * 3.6;
+    }
+    function updateStatsUI() {
+      document.getElementById('totalDist').textContent = (calcTotalDistance() / 1000).toFixed(3) + ' km';
+      document.getElementById('avgSpeed').textContent = calcAvgSpeed().toFixed(2) + ' km/h';
+    }
 
-    // ===== 保存 / 復元 =====
-    function safeSaveLocal() { try { localStorage.setItem(LS_KEYS.PATH, JSON.stringify(pathSegments)); localStorage.setItem(LS_KEYS.LOG, JSON.stringify(logData)); } catch (e) { console.warn('save error', e); } }
+    // ===== 保存・復元 =====
+    function safeSaveLocal() {
+      try { localStorage.setItem(LS_KEYS.PATH, JSON.stringify(pathSegments)); localStorage.setItem(LS_KEYS.LOG, JSON.stringify(logData)); } catch { }
+    }
     function restoreLocal() {
       try {
         const rawP = localStorage.getItem(LS_KEYS.PATH), rawL = localStorage.getItem(LS_KEYS.LOG);
-        if (rawP) pathSegments = JSON.parse(rawP); if (rawL) logData = JSON.parse(rawL);
-        const log = document.getElementById('log'); log.innerHTML = '';
-        for (const e of logData.slice(0, 200)) {
-          addLogEntry(e, true); // true = restoreモード（UIに再保存しない）
-        }
-      } catch (e) { console.warn('restore error', e); }
+        if (rawP) pathSegments = JSON.parse(rawP);
+        if (rawL) logData = JSON.parse(rawL);
+        logData.slice(0, 200).forEach(e => addLogEntry(e, true));
+      } catch { }
     }
 
     // ===== ポリライン =====
-    function redrawPolylines() { polylines.forEach(p => map.removeLayer(p)); polylines = []; for (const seg of pathSegments) { if (seg.length < 2) continue; polylines.push(L.polyline(seg, { color: '#ff4444', weight: 4, opacity: 0.9 }).addTo(map)); } }
+    function redrawPolylines() {
+      polylines.forEach(p => map.removeLayer(p));
+      polylines = pathSegments.filter(seg => seg.length > 1).map(seg => L.polyline(seg, { color: '#ff4444', weight: 4, opacity: 0.9 }).addTo(map));
+    }
 
     // ===== 住所取得 =====
     async function fetchAddress(lat, lng) {
       if (now() - lastFetchTime < 1000) return '取得間隔制御中';
       lastFetchTime = now();
       try {
-        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`);
-        if (!r.ok) return '住所取得失敗';
-        const d = await r.json();
-        if (!d.address) return d.display_name || '住所情報なし';
-
-        const a = d.address;
-        const country = a.country || '';
-        const postcode = a.postcode || '';
-        const state = a.state || '';
-        const city = a.city || a.town || a.village || '';
-        const suburb = a.suburb || a.neighbourhood || '';
-        const road = a.road || '';
-
-        // 希望順で結合
-        return [country, postcode, state, city, suburb, road].filter(Boolean).join(', ');
-      } catch (e) {
-        return '住所取得エラー';
-      }
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`);
+        if (!res.ok) return '住所取得失敗';
+        const data = await res.json();
+        const a = data.address || {};
+        const parts = [a.country, a.postcode, a.state, a.city || a.town || a.village, a.suburb || a.neighbourhood, a.road].filter(Boolean);
+        return parts.join(', ') || data.display_name || '住所情報なし';
+      } catch { return '住所取得エラー'; }
     }
 
-    // ===== ログ追加（カード化＋色分け） =====
+    // ===== ログ表示 =====
     function addLogEntry(e, restoreMode = false) {
       if (!restoreMode) logData.unshift(e);
-
-      // 精度に応じた色
-      let accClass = 'acc-red';
-      if (e.accuracy < 5) accClass = 'acc-green';
-      else if (e.accuracy < 15) accClass = 'acc-yellowgreen';
-      else if (e.accuracy < 30) accClass = 'acc-orange';
-
-      const html = `
-    <div class="log-entry">
-      <div class="time">🕒 ${new Date(e.time).toLocaleString()}</div>
-      <div class="coords">(${e.lat.toFixed(6)}, ${e.lng.toFixed(6)})</div>
-      <div class="address">📍 ${e.address}</div>
-      <div class="info">
-        <div class="accuracy ${accClass}">精度:${e.accuracy.toFixed(1)}m</div>
-        <div>速度:${e.speedText}</div>
-        <div>方角:${e.headingText}</div>
-      </div>
-    </div>
-  `;
+      let accClass = e.accuracy < 5 ? 'acc-green' : e.accuracy < 15 ? 'acc-yellowgreen' : e.accuracy < 30 ? 'acc-orange' : 'acc-red';
+      const html = `<div class="log-entry">
+        <div class="time">🕒 ${new Date(e.time).toLocaleString()}</div>
+        <div class="coords">(${e.lat.toFixed(6)}, ${e.lng.toFixed(6)})</div>
+        <div class="address">📍 ${e.address}</div>
+        <div class="info">
+          <div class="accuracy ${accClass}">精度:${e.accuracy.toFixed(1)}m</div>
+          <div>速度:${e.speedText}</div>
+          <div>方角:${e.headingText}</div>
+        </div>
+      </div>`;
       const logContainer = document.getElementById('log');
       logContainer.insertAdjacentHTML('afterbegin', html);
-
-      // ログ件数制限
-      while (logContainer.childElementCount > 200) {
-        logContainer.removeChild(logContainer.lastChild);
-      }
-
-      if (!restoreMode) {
-        safeSaveLocal();
-        updateStatsUI();
-      }
+      while (logContainer.childElementCount > 200) logContainer.removeChild(logContainer.lastChild);
+      if (!restoreMode) { safeSaveLocal(); updateStatsUI(); }
     }
 
     // ===== ダウンロード =====
     function download(filename, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = filename; a.click(); }
-    document.getElementById('exportJsonBtn').addEventListener('click', () => { download('location_log.json', JSON.stringify({ pathSegments, logData, savedAt: new Date().toISOString() }, null, 2)); });
-    document.getElementById('exportCsvBtn').addEventListener('click', () => { const h = ['time,lat,lng,accuracy,speed_kmh,heading,address']; const rows = logData.map(e => `${JSON.stringify(e.time)},${e.lat},${e.lng},${e.accuracy},${parseFloat(e.speedKmh) || ''},${JSON.stringify(e.headingText)},${JSON.stringify(e.address)}`); download('location_log.csv', h.concat(rows).join('\n')); });
+    document.getElementById('exportJsonBtn').addEventListener('click', () => download('location_log.json', JSON.stringify({ pathSegments, logData, savedAt: new Date().toISOString() }, null, 2)));
+    document.getElementById('exportCsvBtn').addEventListener('click', () => {
+      const h = ['time,lat,lng,accuracy,speed_kmh,heading,address'];
+      const rows = logData.map(e => `${JSON.stringify(e.time)},${e.lat},${e.lng},${e.accuracy},${parseFloat(e.speedKmh) || ''},${JSON.stringify(e.headingText)},${JSON.stringify(e.address)}`);
+      download('location_log.csv', h.concat(rows).join('\n'));
+    });
 
-    // ===== 停止/再開/クリア =====
+    // ===== 操作ボタン =====
     document.getElementById('stopBtn').addEventListener('click', () => { if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; pathSegments.push([]); alert('観測停止'); } });
     document.getElementById('restartBtn').addEventListener('click', () => { if (!watchId) startTracking(); alert('観測再開'); });
     document.getElementById('clearBtn').addEventListener('click', () => { if (confirm('本当にクリアしますか？')) { pathSegments = [[]]; logData = []; redrawPolylines(); document.getElementById('log').innerHTML = ''; safeSaveLocal(); updateStatsUI(); } });
-
-    // ===== 自動追尾 =====
     document.getElementById('centerToggle').addEventListener('click', () => { follow = !follow; document.getElementById('centerToggle').textContent = `自動追尾: ${follow ? 'ON' : 'OFF'}`; });
 
-    // ===== 位置更新（高速対応） =====
-    let lastOrientation = null; // DeviceOrientation からの補正用
-
+    // ===== 位置更新 =====
     async function handlePosition(pos) {
       const c = pos.coords;
       const lat = c.latitude, lng = c.longitude, acc = c.accuracy || 0;
       const alt = c.altitude;
-      let speed = (typeof c.speed === 'number' && c.speed >= 0) ? c.speed : null;
+      let speed = (c.speed >= 0) ? c.speed : null;
       let heading = (typeof c.heading === 'number') ? c.heading : null;
 
-      // 前回位置
       const prev = pathSegments[pathSegments.length - 1].slice(-1)[0];
       if (prev) {
         const dt = (pos.timestamp - lastPosTime) / 1000;
-        if ((!speed || speed === 0) && dt > 0) {
-          const dist = haversine(prev, [lat, lng]);
-          speed = dist / dt; // m/s
-        }
+        if ((!speed || speed === 0) && dt > 0) speed = haversine(prev, [lat, lng]) / dt;
         if ((heading === null || isNaN(heading)) && dt > 0) {
-          const dy = lat - prev[0];
-          const dx = lng - prev[1];
+          const dy = lat - prev[0], dx = lng - prev[1];
           heading = Math.atan2(dx, dy) * 180 / Math.PI;
           if (heading < 0) heading += 360;
         }
       }
 
-      // DeviceOrientation で補正
       if (lastOrientation !== null) heading = lastOrientation;
 
+      // UI更新
       document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
       document.getElementById('lng').textContent = toFixedOrDash(lng, 6);
       document.getElementById('acc').textContent = `${acc.toFixed(1)} m`;
       document.getElementById('alt').textContent = alt === null ? '---' : `${alt.toFixed(1)} m`;
       document.getElementById('speed').textContent = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
       document.getElementById('heading').textContent = directionName(heading);
+      document.getElementById('acc').style.color = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
 
-      let accColor = 'red';
-      if (acc < 5) accColor = 'green';
-      else if (acc < 15) accColor = 'yellowgreen';
-      else if (acc < 30) accColor = 'orange';
-
-      let size = 16;
-      if (speed && speed * 3.6 > 200) size = 20;
-
-      document.getElementById('acc').style.color = accColor;
-
-      const icon = L.divIcon({
-        className: 'custom-marker',
-        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${accColor};border:2px solid #fff"></div>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2]
-      });
-
+      const size = speed && speed * 3.6 > 200 ? 20 : 16;
+      const icon = L.divIcon({ className: 'custom-marker', html: `<div style="width:${size}px;height:${size}px;background:${document.getElementById('acc').style.color};border:2px solid #fff;transform:rotate(${heading}deg)"></div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
       if (!marker) marker = L.marker([lat, lng], { icon }).addTo(map);
       else marker.setLatLng([lat, lng]).setIcon(icon);
 
@@ -446,9 +422,7 @@
       document.getElementById('address').textContent = addr;
 
       const time = new Date().toISOString();
-      const speedText = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
-      const headingText = directionName(heading);
-      addLogEntry({ time, lat, lng, accuracy: acc, altitude: alt, speedKmh: speed ? speed * 3.6 : null, speedText, headingText, address: addr });
+      addLogEntry({ time, lat, lng, accuracy: acc, altitude: alt, speedKmh: speed ? speed * 3.6 : null, speedText: speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---', headingText: directionName(heading), address: addr });
 
       lastPosTime = pos.timestamp || now();
       document.getElementById('lastAge').textContent = '0秒前';
@@ -456,13 +430,12 @@
 
     // ===== エラー処理 =====
     let retryTimer = null;
-    function clearRetryTimer() { if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; } }
     function handleError(err) { console.warn('位置取得エラー', err); if (!retryTimer) retryTimer = setTimeout(() => { startTracking(); }, 3000); }
 
-    // ===== トラッキング開始 =====
+    // ===== 追跡開始 =====
     function startTracking() { if (!navigator.geolocation) { alert('位置情報未対応'); return; } watchId = navigator.geolocation.watchPosition(handlePosition, handleError, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }
 
-    // ===== 更新時間表示=====
+    // ===== 更新時間表示 =====
     setInterval(() => {
       if (lastPosTime) {
         const deltaSec = Math.floor((now() - lastPosTime) / 1000);
@@ -472,13 +445,8 @@
         let text = '';
         if (h > 0) text += `${h}時間`;
         if (m > 0 || h > 0) text += `${m}分`;
-        text += `${s}秒前`; // 常に秒を表示
+        text += `${s}秒前`;
         document.getElementById('lastAge').textContent = text;
-      }
-
-      if (lastOrientation !== null) {
-        // 画面上の方角更新（移動なしでも）
-        document.getElementById('heading').textContent = directionName(lastOrientation);
       }
     }, 1000);
 
@@ -491,31 +459,17 @@
         btn.style.margin = '6px';
         document.querySelector('.panel').appendChild(btn);
         btn.addEventListener('click', async () => {
-          try {
-            const perm = await DeviceOrientationEvent.requestPermission();
-            if (perm === 'granted') {
-              window.addEventListener('deviceorientationabsolute', onDeviceOrientation);
-              btn.remove();
-            } else alert('拒否');
-          } catch (e) { alert('権限エラー:' + e.message); }
+          const perm = await DeviceOrientationEvent.requestPermission();
+          if (perm === 'granted') { window.addEventListener('deviceorientationabsolute', onDeviceOrientation); btn.remove(); } else alert('拒否');
         });
-      } else if (window.DeviceOrientationEvent) {
-        window.addEventListener('deviceorientationabsolute', onDeviceOrientation);
-      }
+      } else if (window.DeviceOrientationEvent) window.addEventListener('deviceorientationabsolute', onDeviceOrientation);
     }
 
     function onDeviceOrientation(e) {
       if (e && typeof e.alpha === 'number') {
         lastOrientation = (360 - e.alpha) % 360;
-
-        // 1️⃣ 画面上の方角表示更新
         document.getElementById('heading').textContent = directionName(lastOrientation);
-
-        // 2️⃣ マーカーも回転させたい場合（任意）
-        if (marker) {
-          const iconDiv = marker.getElement().querySelector('div');
-          if (iconDiv) iconDiv.style.transform = `rotate(${lastOrientation}deg)`;
-        }
+        if (marker) marker.getElement().querySelector('div').style.transform = `rotate(${lastOrientation}deg)`;
       }
     }
 
