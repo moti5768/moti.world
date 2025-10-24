@@ -49,7 +49,8 @@
       padding: 14px;
       border-radius: 10px;
       box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
-      overflow: auto;
+      overflow: hidden;
+      /* scrollはlogに任せる */
       display: flex;
       flex-direction: column;
       backdrop-filter: blur(5px);
@@ -124,13 +125,14 @@
     }
 
     #log-container {
-      /* ログ用スペースを確保 */
-      height: 35vh;
-      /* 最大展開高さ */
+      max-height: 35vh;
+      /* 展開時の高さ */
       min-height: 40px;
-      /* 折りたたんだときの最小スペース */
+      /* 折りたたみ時の最小高さ */
       overflow: hidden;
-      transition: height 0.5s ease;
+      transition: max-height 0.4s ease;
+      flex: 1;
+      /* 残りスペースに応じて伸縮 */
     }
 
     #log {
@@ -145,9 +147,12 @@
     }
 
     #log.collapsed {
+      max-height: 40px;
+      /* 折りたたみ時 */
       opacity: 0;
       padding-top: 0;
       padding-bottom: 0;
+      transition: max-height 0.4s ease, opacity 0.4s ease, padding 0.3s ease;
     }
 
     .log-entry {
@@ -301,11 +306,13 @@
       log.classList.toggle('collapsed');
 
       if (log.classList.contains('collapsed')) {
-        logContainer.style.height = '40px'; // 折りたたみ後の最小スペース
         logToggleBtn.textContent = '▲';
       } else {
-        logContainer.style.height = '35vh'; // 展開
         logToggleBtn.textContent = '▼';
+        // スマホ横画面でもパネルの残りスペースに応じて max-height 自動調整
+        const panelHeight = logContainer.parentElement.clientHeight;
+        const controlsHeight = logContainer.previousElementSibling.offsetHeight + 20; // 前の要素分
+        logContainer.style.maxHeight = (panelHeight - controlsHeight) + 'px';
       }
     });
 
