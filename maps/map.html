@@ -49,11 +49,10 @@
       padding: 14px;
       border-radius: 10px;
       box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+      overflow: auto;
       display: flex;
       flex-direction: column;
       backdrop-filter: blur(5px);
-      overflow-y: auto;
-      /* ここを hidden → auto に変更 */
     }
 
     h2 {
@@ -125,15 +124,24 @@
     }
 
     #log-container {
+      /* ログ用スペースを確保 */
+      height: 35vh;
+      /* 最大展開高さ */
+      min-height: 40px;
+      /* 折りたたんだときの最小スペース */
       overflow: hidden;
-      transition: max-height 0.4s ease, opacity 0.4s ease, padding 0.3s ease;
+      transition: height 0.5s ease;
     }
 
     #log {
-      overflow: hidden;
-      transition: max-height 0.4s ease, opacity 0.4s ease, padding 0.3s ease;
+      height: 100%;
+      overflow: auto;
       padding: 8px;
+      background: #f3f6fa;
+      border-radius: 8px;
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
       opacity: 1;
+      transition: opacity 0.4s ease, padding 0.3s ease;
     }
 
     #log.collapsed {
@@ -200,29 +208,15 @@
       #app {
         grid-template-columns: 1fr;
         grid-template-rows: 65vh auto;
-        height: 100vh;
       }
 
       .panel {
         max-height: calc(100vh - 65vh);
-        overflow-y: auto;
-        padding: 12px;
       }
 
       .controls {
         grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
       }
-
-      #log {
-        max-height: 60vh;
-        /* スマホでは画面の60%まで表示 */
-      }
-
-      #log-container {
-        max-height: none;
-        /* JS で調整 */
-      }
-
     }
 
     .leaflet-control-attribution {
@@ -301,32 +295,21 @@
     const logToggleBtn = document.getElementById('logToggleBtn');
     const logContainer = document.getElementById('log');
 
-    function isMobile() {
-      return window.innerWidth <= 900;
-    }
-
     logToggleBtn.addEventListener('click', () => {
-      if (logContainer.classList.contains('collapsed')) {
-        // 展開
-        if (isMobile()) {
-          // スマホは画面下半分確保
-          const availableHeight = window.innerHeight * 0.45; // 45%確保
-          logContainer.style.maxHeight = availableHeight + 'px';
-        } else {
-          // PCは自動
-          logContainer.style.maxHeight = logContainer.scrollHeight + 'px';
-        }
-        logContainer.classList.remove('collapsed');
+      const logContainer = document.getElementById('log-container');
+      const log = document.getElementById('log');
+      log.classList.toggle('collapsed');
+
+      if (log.classList.contains('collapsed')) {
+        logContainer.style.minHeight = '40px'; // 折りたたみ後の最小スペース
+        logContainer.style.height = '40px'; // 折りたたみ後の最小スペース
         logToggleBtn.textContent = '▲';
       } else {
-        // 折りたたみ
-        logContainer.style.maxHeight = '40px';
-        logContainer.classList.add('collapsed');
+        logContainer.style.height = ''; // 展開
+        logContainer.style.minHeight = '20vh'; // 展開
         logToggleBtn.textContent = '▼';
       }
     });
-
-
 
     // ===== 初期設定 =====
     let map, marker, watchId = null, pathSegments = [[]], polylines = [], logData = [];
