@@ -5,7 +5,18 @@
   <meta charset="utf-8">
   <title>高精度位置観測マップ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <!-- Leaflet Routing Machine CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+
+  <!-- Leaflet 本体 (必ず Routing Machine より先) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Routing Machine 本体 -->
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+
   <style>
     :root {
       --bg: #e8f0f8;
@@ -229,6 +240,39 @@
       box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
       border-radius: 50%;
     }
+
+
+    /* ルートのステップパネル */
+    .leaflet-routing-container {
+      display: flex;
+      flex-direction: column;
+      width: 220px;
+      height: auto;
+      /* 高さ固定 */
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 8px;
+      padding: 6px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    /* ヘッダ固定 */
+    .leaflet-routing-container .leaflet-routing-header,
+    .leaflet-routing-container .leaflet-routing-alternatives {
+      flex: 0 0 auto;
+    }
+
+    /* ステップ一覧スクロール */
+    .leaflet-routing-container .leaflet-routing-step-container {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow-y: auto;
+    }
+
+    /* 代替ルートの色分け（地図上） */
+    .leaflet-routing-alt-line {
+      opacity: 0.6;
+      dash-array: 8, 4;
+    }
   </style>
 </head>
 
@@ -236,6 +280,11 @@
   <div id="app">
     <div id="map"></div>
     <div class="panel">
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <button id="navModeBtn" class="secondary">ナビ開始(車のみ)</button>
+        <button id="cancelNavBtn" class="secondary">ナビ取り消し</button>
+      </div>
+      <div class="row">所要時間: <span id="eta">---</span></div>
       <h2>📍 位置観測マップ</h2>
       <div class="info-grid">
         <div class="stat">緯度: <div id="lat">---</div>
@@ -289,8 +338,11 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
+
+    let navMode = false;       // ナビモード ON/OFF
+    let routingControl = null; // ルーティングコントロール
+    let currentDestination = null; // 目的地を保持
 
     const logToggleBtn = document.getElementById('logToggleBtn');
     const logContainer = document.getElementById('log');
@@ -380,12 +432,15 @@
       const lastSeg = pathSegments[pathSegments.length - 1];
       if (!lastSeg || lastSeg.length === 0) return;
 
+      // 既存の赤線を取得
       let lastLine = polylines[polylines.length - 1];
+
+      // 赤線が無ければ新規作成
       if (!lastLine || lastLine.getLatLngs().length === 0) {
         lastLine = L.polyline(lastSeg, { color: '#ff4444', weight: 4, opacity: 0.9 }).addTo(map);
         polylines.push(lastLine);
       } else {
-        // 最後の座標だけ追加
+        // 赤線に最新座標だけ追加
         lastLine.addLatLng(lastSeg[lastSeg.length - 1]);
       }
     }
@@ -393,6 +448,8 @@
     // ===== マーカー更新 =====
     function updateMarker(lat, lng, heading, accColor, speedKmh) {
       const size = speedKmh && speedKmh * 3.6 > 200 ? 20 : 16;
+      // 位置情報不明の場合は黒
+      if (lat === null || lng === null || accColor === null) accColor = 'black';
       if (!marker) {
         const icon = L.divIcon({
           className: 'custom-marker',
@@ -471,6 +528,10 @@
 
     // ===== 位置更新 =====
     async function handlePosition(pos) {
+      if (!pos || !pos.coords) {
+        updateMarker(null, null, 0, 'black', 0);
+        return;
+      }
       const c = pos.coords;
       const lat = c.latitude, lng = c.longitude, acc = c.accuracy || 0;
       const alt = c.altitude;
@@ -488,10 +549,12 @@
         }
       }
 
+      // DeviceOrientation がある場合は上書き
       if (lastOrientation !== null) heading = lastOrientation;
 
       const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
 
+      // UI 更新
       document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
       document.getElementById('lng').textContent = toFixedOrDash(lng, 6);
       document.getElementById('acc').textContent = `${acc.toFixed(1)} m`;
@@ -500,18 +563,40 @@
       document.getElementById('heading').textContent = directionName(heading);
       document.getElementById('acc').style.color = accColor;
 
+      // パス更新
       pathSegments[pathSegments.length - 1].push([lat, lng]);
       redrawPolylines();
+
+      // マーカー更新
       updateMarker(lat, lng, heading, accColor, speed);
 
+      // 自動追尾
       if (follow) map.setView([lat, lng]);
 
+      // 住所取得
       const addr = await fetchAddress(lat, lng);
       document.getElementById('address').textContent = addr;
 
+      // ログに追加
       const time = new Date().toISOString();
-      addLogEntry({ time, lat, lng, accuracy: acc, altitude: alt, speedKmh: speed ? speed * 3.6 : null, speedText: speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---', headingText: directionName(heading), address: addr });
+      addLogEntry({
+        time,
+        lat,
+        lng,
+        accuracy: acc,
+        altitude: alt,
+        speedKmh: speed ? speed * 3.6 : null,
+        speedText: speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---',
+        headingText: directionName(heading),
+        address: addr
+      });
 
+      // ===== ナビ中のルートを現在地から更新 =====
+      if (routingControl && currentDestination) {
+        routingControl.setWaypoints([L.latLng(lat, lng), currentDestination]);
+      }
+
+      // 最終更新時間
       lastPosTime = pos.timestamp || now();
       document.getElementById('lastAge').textContent = '0秒前';
     }
@@ -568,8 +653,153 @@
       redrawPolylines();
       setupDeviceOrientation();
       startTracking();
+
+      const navModeBtn = document.getElementById("navModeBtn");
+
+      // ナビモード切り替えボタン
+      navModeBtn.addEventListener("click", () => {
+        navMode = !navMode;
+        navModeBtn.textContent = navMode ? "地図クリックで目的地を選択中…" : "ナビ開始(車のみ)";
+      });
+
+      // ナビモード用クリックイベント
+      map.on("click", async e => { // ← async を追加
+        if (!navMode) return;
+
+        if (!marker) {
+          alert("現在地を取得中です。位置が確定したらもう一度クリックしてください。");
+          return;
+        }
+
+        // 目的地を保存
+        currentDestination = e.latlng;
+
+        // 目的地住所を取得してパネルに表示
+        const destAddress = await fetchAddress(currentDestination.lat, currentDestination.lng);
+        document.getElementById("address").textContent = destAddress;
+
+        // 現在地
+        const start = marker.getLatLng();
+        const dest = currentDestination;
+
+        // 既存のルーティングコントロールを削除
+        if (routingControl) map.removeControl(routingControl);
+
+        // 新しいルーティングコントロール作成
+        routingControl = L.Routing.control({
+          waypoints: [start, dest],
+          routeWhileDragging: false,
+          addWaypoints: false,
+          draggableWaypoints: false,
+          showAlternatives: true,
+          language: "en",
+
+          // メインルート（太く・濃い青）
+          lineOptions: { styles: [{ color: "#1976d2", weight: 7, opacity: 1 }] },
+
+          // 代替ルート（赤色）
+          altLineOptions: () => ({ color: "#f44336", weight: 5, opacity: 1 }),
+
+          // スタートとゴールのマーカーをカスタム
+          createMarker: (i, wp) => {
+            const size = 20;
+            let color = i === 0 ? "#4fc3f7" : "#ff9800";
+            const divIcon = L.divIcon({
+              className: 'custom-marker',
+              html: `<div style="
+          width:${size}px;
+          height:${size}px;
+          background:${color};
+          border:2px solid #fff;
+          border-radius:50%;
+          box-shadow:0 0 5px rgba(0,0,0,0.3);
+        "></div>`,
+              iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2]
+            });
+
+            const marker = L.marker(wp.latLng, { icon: divIcon });
+
+            if (wp.name) {
+              marker.bindTooltip(wp.name, { permanent: true, direction: 'top', className: 'route-label' });
+            }
+
+            return marker;
+          },
+
+          position: 'bottomright'
+        })
+          .on("routesfound", e => updateEta(e.routes[0]))       // 初期ルート
+          .on("routeselected", e => updateEta(e.route))        // 代替ルート選択時
+          .addTo(map);
+
+        // MutationObserver で h3 を監視・削除
+        const panelContainer = document.querySelector('.leaflet-routing-container');
+        if (panelContainer) {
+          const observer = new MutationObserver(() => {
+            const altH3s = panelContainer.querySelectorAll('.leaflet-routing-alt h3');
+            altH3s.forEach(h3 => h3.textContent = '');
+          });
+          observer.observe(panelContainer, { childList: true, subtree: true });
+        }
+
+        // ナビモード解除
+        navMode = false;
+        document.getElementById("navModeBtn").textContent = "ナビ開始(車のみ)";
+      });
+
+      // ===== ETA更新用関数 =====
+      function updateEta(route) {
+        if (!route) return;
+        const summary = route.summary;
+        const distKm = (summary.totalDistance / 1000).toFixed(2);
+
+        let totalSec = summary.totalTime; // 秒
+        const hours = Math.floor(totalSec / 3600);
+        const minutes = Math.round((totalSec % 3600) / 60);
+
+        let timeText = '';
+        if (hours > 0) timeText += `${hours}時間`;
+        timeText += `${minutes}分`;
+
+        document.getElementById("eta").textContent = `${distKm} km / 約 ${timeText}`;
+      }
+
+
     });
+
+    const cancelNavBtn = document.getElementById("cancelNavBtn");
+
+    cancelNavBtn.addEventListener("click", async () => {
+      // ルート削除
+      if (routingControl) {
+        map.removeControl(routingControl);
+        routingControl = null;
+      }
+
+      // ナビモード解除
+      navMode = false;
+      document.getElementById("navModeBtn").textContent = "ナビ開始(車のみ)";
+
+      // 現在地の住所に戻す
+      if (marker) {
+        const currentLatLng = marker.getLatLng();
+        const address = await fetchAddress(currentLatLng.lat, currentLatLng.lng);
+        document.getElementById("address").textContent = address;
+      }
+      // ETA（所要時間）リセット
+      const etaContainer = document.getElementById("eta"); // ETA表示用要素
+      if (etaContainer) {
+        etaContainer.textContent = "---"; // 空にする
+      }
+
+      // 目的地情報もクリア
+      currentDestination = null;
+    });
+
+
   </script>
+
 </body>
 
 </html>
