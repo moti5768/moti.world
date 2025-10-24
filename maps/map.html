@@ -264,7 +264,7 @@
         <label>ログ</label>
         <div id="log" class="panel" style="padding:8px;margin-top:6px"></div>
       </div>
-      <div style="margin-top:10px" class="small">※ Nominatim 逆ジオコーディングは1秒未満の連続リクエストを避けています。</div>
+      <div style="margin-top:10px" class="small">※位置の取得は1秒以上間隔を空けています。</div>
     </div>
   </div>
 
@@ -383,11 +383,33 @@
     document.getElementById('centerToggle').addEventListener('click', () => { follow = !follow; document.getElementById('centerToggle').textContent = `自動追尾: ${follow ? 'ON' : 'OFF'}`; });
 
     // ===== 位置更新（高速対応） =====
+    let lastOrientation = null; // DeviceOrientation からの補正用
+
     async function handlePosition(pos) {
       const c = pos.coords;
       const lat = c.latitude, lng = c.longitude, acc = c.accuracy || 0;
-      const alt = c.altitude; const speed = (typeof c.speed === 'number' && c.speed >= 0) ? c.speed : null;
-      const heading = (typeof c.heading === 'number') ? c.heading : null;
+      const alt = c.altitude;
+      let speed = (typeof c.speed === 'number' && c.speed >= 0) ? c.speed : null;
+      let heading = (typeof c.heading === 'number') ? c.heading : null;
+
+      // 前回位置
+      const prev = pathSegments[pathSegments.length - 1].slice(-1)[0];
+      if (prev) {
+        const dt = (pos.timestamp - lastPosTime) / 1000;
+        if ((!speed || speed === 0) && dt > 0) {
+          const dist = haversine(prev, [lat, lng]);
+          speed = dist / dt; // m/s
+        }
+        if ((heading === null || isNaN(heading)) && dt > 0) {
+          const dy = lat - prev[0];
+          const dx = lng - prev[1];
+          heading = Math.atan2(dx, dy) * 180 / Math.PI;
+          if (heading < 0) heading += 360;
+        }
+      }
+
+      // DeviceOrientation で補正
+      if (lastOrientation !== null) heading = lastOrientation;
 
       document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
       document.getElementById('lng').textContent = toFixedOrDash(lng, 6);
@@ -402,11 +424,17 @@
       else if (acc < 30) accColor = 'orange';
 
       let size = 16;
-      if (speed && speed * 3.6 > 200) size = 20; // 高速ならマーカー大きく
+      if (speed && speed * 3.6 > 200) size = 20;
 
       document.getElementById('acc').style.color = accColor;
 
-      const icon = L.divIcon({ className: 'custom-marker', html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${accColor};border:2px solid #fff"></div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+      const icon = L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${accColor};border:2px solid #fff"></div>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2]
+      });
+
       if (!marker) marker = L.marker([lat, lng], { icon }).addTo(map);
       else marker.setLatLng([lat, lng]).setIcon(icon);
 
@@ -422,7 +450,7 @@
       const headingText = directionName(heading);
       addLogEntry({ time, lat, lng, accuracy: acc, altitude: alt, speedKmh: speed ? speed * 3.6 : null, speedText, headingText, address: addr });
 
-      lastPosTime = now();
+      lastPosTime = pos.timestamp || now();
       document.getElementById('lastAge').textContent = '0秒前';
     }
 
@@ -447,16 +475,49 @@
         text += `${s}秒前`; // 常に秒を表示
         document.getElementById('lastAge').textContent = text;
       }
+
+      if (lastOrientation !== null) {
+        // 画面上の方角更新（移動なしでも）
+        document.getElementById('heading').textContent = directionName(lastOrientation);
+      }
     }, 1000);
 
     // ===== DeviceOrientation =====
     async function setupDeviceOrientation() {
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        const btn = document.createElement('button'); btn.textContent = 'コンパス許可'; btn.className = 'warning'; btn.style.margin = '6px'; document.querySelector('.panel').appendChild(btn);
-        btn.addEventListener('click', async () => { try { const perm = await DeviceOrientationEvent.requestPermission(); if (perm === 'granted') { window.addEventListener('deviceorientationabsolute', onDeviceOrientation); btn.remove(); } else alert('拒否'); } catch (e) { alert('権限エラー:' + e.message); } });
-      } else if (window.DeviceOrientationEvent) window.addEventListener('deviceorientationabsolute', onDeviceOrientation);
+        const btn = document.createElement('button');
+        btn.textContent = 'コンパス許可';
+        btn.className = 'warning';
+        btn.style.margin = '6px';
+        document.querySelector('.panel').appendChild(btn);
+        btn.addEventListener('click', async () => {
+          try {
+            const perm = await DeviceOrientationEvent.requestPermission();
+            if (perm === 'granted') {
+              window.addEventListener('deviceorientationabsolute', onDeviceOrientation);
+              btn.remove();
+            } else alert('拒否');
+          } catch (e) { alert('権限エラー:' + e.message); }
+        });
+      } else if (window.DeviceOrientationEvent) {
+        window.addEventListener('deviceorientationabsolute', onDeviceOrientation);
+      }
     }
-    function onDeviceOrientation(e) { if (e && typeof e.alpha === 'number') { const heading = (360 - e.alpha) % 360; document.getElementById('heading').textContent = directionName(heading); } }
+
+    function onDeviceOrientation(e) {
+      if (e && typeof e.alpha === 'number') {
+        lastOrientation = (360 - e.alpha) % 360;
+
+        // 1️⃣ 画面上の方角表示更新
+        document.getElementById('heading').textContent = directionName(lastOrientation);
+
+        // 2️⃣ マーカーも回転させたい場合（任意）
+        if (marker) {
+          const iconDiv = marker.getElement().querySelector('div');
+          if (iconDiv) iconDiv.style.transform = `rotate(${lastOrientation}deg)`;
+        }
+      }
+    }
 
     // ===== 初期ロード =====
     window.addEventListener('load', () => {
