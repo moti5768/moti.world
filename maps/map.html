@@ -125,28 +125,22 @@
     }
 
     #log-container {
-      max-height: 35vh;
-      /* 展開時の高さ */
-      min-height: 40px;
-      /* 折りたたみ時 */
       overflow: hidden;
       transition: max-height 0.4s ease, opacity 0.4s ease, padding 0.3s ease;
     }
 
     #log {
-      height: 100%;
+      max-height: 50vh;
+      /* 画面高さの50%まで表示 */
       overflow: auto;
       padding: 8px;
-      background: #f3f6fa;
-      border-radius: 8px;
-      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
       opacity: 1;
-      transition: opacity 0.4s ease, padding 0.3s ease;
+      transition: max-height 0.4s ease, opacity 0.4s ease, padding 0.3s ease;
     }
 
     #log.collapsed {
       max-height: 40px;
-      /* 折りたたみ時 */
+      /* 折りたたみ高さ */
       opacity: 0;
       padding-top: 0;
       padding-bottom: 0;
@@ -210,20 +204,22 @@
       #app {
         grid-template-columns: 1fr;
         grid-template-rows: 65vh auto;
-        /* 上が地図、下がパネル */
         height: 100vh;
       }
 
       .panel {
         max-height: calc(100vh - 65vh);
-        /* パネルが画面下半分に */
         overflow-y: auto;
-        /* 縦スクロール可能に */
         padding: 12px;
       }
 
       .controls {
         grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+      }
+
+      #log {
+        max-height: 60vh;
+        /* スマホでは画面の60%まで表示 */
       }
 
       #log-container {
@@ -311,25 +307,8 @@
 
     logToggleBtn.addEventListener('click', () => {
       const log = document.getElementById('log');
-      const logContainer = document.getElementById('log-container');
-      const panel = logContainer.parentElement;
-
       log.classList.toggle('collapsed');
-
-      if (log.classList.contains('collapsed')) {
-        logToggleBtn.textContent = '▼';
-        logContainer.style.maxHeight = '40px';
-      } else {
-        logToggleBtn.textContent = '▲';
-        // パネルの残りスペースに応じて高さ調整
-        const panelHeight = panel.clientHeight;
-        const usedHeight = Array.from(panel.children)
-          .filter(c => c !== logContainer)
-          .reduce((sum, el) => sum + el.offsetHeight + parseInt(getComputedStyle(el).marginTop || 0) + parseInt(getComputedStyle(el).marginBottom || 0), 0);
-        let availableHeight = panelHeight - usedHeight - 16;
-        if (window.innerWidth <= 900) availableHeight = Math.max(availableHeight, 150); // スマホでも最低150px
-        logContainer.style.maxHeight = availableHeight + 'px';
-      }
+      logToggleBtn.textContent = log.classList.contains('collapsed') ? '▼' : '▲';
     });
 
     // ===== 初期設定 =====
