@@ -309,6 +309,15 @@
         logContainer.style.minHeight = '20vh'; // 展開
         logToggleBtn.textContent = '▼';
       }
+
+      // panel全体をスクロール対象にする
+      const panel = document.querySelector('.panel');
+
+      // スムーズに最下部へスクロール
+      panel.scrollTo({
+        top: panel.scrollHeight,
+        behavior: 'smooth'
+      });
     });
 
     // ===== 初期設定 =====
