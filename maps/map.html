@@ -6,24 +6,166 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-:root{--bg:#fafafa;--card:#fff;--muted:#666}
-body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;background:var(--bg);color:#222}
-#app{display:grid;grid-template-columns:1fr 380px;gap:12px;height:100vh;padding:12px;box-sizing:border-box}
-#map{height:100%;width:100%;border-radius:8px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,0.08)}
-.panel{background:var(--card);padding:12px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.06);overflow:auto}
-h2{margin:4px 0 12px;font-size:18px}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
-.stat{background:#f7f7f8;padding:8px;border-radius:6px}
-#log{max-height:38vh;overflow:auto;font-size:0.9em}
-button{background:#1976d2;color:#fff;border:none;padding:8px 10px;border-radius:6px;cursor:pointer}
-button.secondary{background:#444}
-button.warning{background:#ff9800}
-button.danger{background:#e53935}
-.controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
-label{font-size:0.85em;color:var(--muted)}
-.small{font-size:0.85em;color:var(--muted)}
-.row{display:flex;gap:8px;align-items:center}
-@media(max-width:900px){#app{grid-template-columns:1fr;grid-template-rows:60vh auto}}
+:root {
+  --bg:#fafafa;
+  --card:#fff;
+  --muted:#666;
+  --accent:#1976d2;
+  --danger:#e53935;
+  --warning:#ff9800;
+}
+
+body{
+  margin:0;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;
+  background:var(--bg);
+  color:#222;
+}
+
+#app{
+  display:grid;
+  grid-template-columns:1fr 400px;
+  gap:12px;
+  height:100vh;
+  padding:12px;
+  box-sizing:border-box;
+}
+
+#map{
+  height:100%;
+  width:100%;
+  border-radius:8px;
+  overflow:hidden;
+  box-shadow:0 6px 18px rgba(0,0,0,0.08);
+}
+
+.panel{
+  background:var(--card);
+  padding:12px;
+  border-radius:8px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.06);
+  overflow:auto;
+  display:flex;
+  flex-direction:column;
+}
+
+h2{
+  margin:4px 0 12px;
+  font-size:18px;
+}
+
+.info-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:8px;
+  margin-bottom:12px;
+}
+
+.stat{
+  background:#f7f7f8;
+  padding:10px;
+  border-radius:6px;
+  font-size:0.9em;
+  text-align:center;
+}
+
+.stat div{
+  font-weight:600;
+  margin-top:4px;
+}
+
+.controls{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(100px,1fr));
+  gap:8px;
+  margin-bottom:12px;
+}
+
+button{
+  background:var(--accent);
+  color:#fff;
+  border:none;
+  padding:10px;
+  border-radius:6px;
+  cursor:pointer;
+  font-size:0.9em;
+}
+
+button.secondary{background:#444;}
+button.warning{background:var(--warning);}
+button.danger{background:var(--danger);}
+
+.row{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  font-size:0.85em;
+}
+
+#log{
+  max-height:35vh;
+  overflow:auto;
+  font-size:0.85em;
+  background:#f5f5f5;
+  padding:6px;
+  border-radius:6px;
+}
+
+/* ===== ログカードスタイル ===== */
+.log-entry{
+  background:#f7f7f8;
+  margin-bottom:6px;
+  padding:8px;
+  border-radius:6px;
+  box-shadow:0 1px 4px rgba(0,0,0,0.05);
+}
+
+.log-entry .time{
+  font-weight:600;
+  margin-bottom:4px;
+  font-size:0.85em;
+  color:#444;
+}
+
+.log-entry .coords{
+  font-size:0.8em;
+  color:#666;
+  margin-bottom:4px;
+}
+
+.log-entry .address{
+  font-size:0.85em;
+  font-weight:500;
+  margin-bottom:4px;
+}
+
+.log-entry .info{
+  display:flex;
+  gap:6px;
+  font-size:0.8em;
+}
+
+.log-entry .accuracy{
+  font-weight:600;
+}
+
+.acc-green{color:green;}
+.acc-yellowgreen{color:yellowgreen;}
+.acc-orange{color:orange;}
+.acc-red{color:red;}
+
+@media(max-width:900px){
+  #app{
+    grid-template-columns:1fr;
+    grid-template-rows:65vh auto;
+  }
+  .panel{
+    max-height:calc(100vh - 65vh);
+  }
+  .controls{
+    grid-template-columns:repeat(auto-fit,minmax(80px,1fr));
+  }
+}
 </style>
 </head>
 <body>
@@ -94,7 +236,7 @@ function restoreLocal(){
     if(rawP)pathSegments=JSON.parse(rawP);if(rawL)logData=JSON.parse(rawL);
     const log=document.getElementById('log'); log.innerHTML='';
     for(const e of logData.slice(0,200)){
-      log.insertAdjacentHTML('afterbegin',`<div>🕒 ${new Date(e.time).toLocaleString()}<br><span class="small">(${e.lat.toFixed(6)}, ${e.lng.toFixed(6)})</span><br>📍 ${e.address}<br>🔎 精度:${e.accuracy.toFixed(1)}m 速度:${e.speedText} 方角:${e.headingText}</div><hr>`);
+      addLogEntry(e,true); // true = restoreモード（UIに再保存しない）
     }
   }catch(e){console.warn('restore error',e);}
 }
@@ -105,8 +247,41 @@ function redrawPolylines(){polylines.forEach(p=>map.removeLayer(p));polylines=[]
 // ===== 住所取得 =====
 async function fetchAddress(lat,lng){if(now()-lastFetchTime<1000)return '取得間隔制御中';lastFetchTime=now();try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`);if(!r.ok)return '住所取得失敗';const d=await r.json();return d.display_name||'住所情報なし';}catch(e){return '住所取得エラー';}}
 
-// ===== ログ追加 =====
-function addLogEntry(e){logData.unshift(e);const html=`<div>🕒 ${new Date(e.time).toLocaleString()}<br><span class="small">(${e.lat.toFixed(6)}, ${e.lng.toFixed(6)})</span><br>📍 ${e.address}<br>🔎 精度:${e.accuracy.toFixed(1)}m 速度:${e.speedText} 方角:${e.headingText}</div><hr>`;document.getElementById('log').insertAdjacentHTML('afterbegin',html);safeSaveLocal();updateStatsUI();}
+// ===== ログ追加（カード化＋色分け） =====
+function addLogEntry(e,restoreMode=false){
+  if(!restoreMode) logData.unshift(e);
+
+  // 精度に応じた色
+  let accClass='acc-red';
+  if(e.accuracy<5) accClass='acc-green';
+  else if(e.accuracy<15) accClass='acc-yellowgreen';
+  else if(e.accuracy<30) accClass='acc-orange';
+
+  const html=`
+    <div class="log-entry">
+      <div class="time">🕒 ${new Date(e.time).toLocaleString()}</div>
+      <div class="coords">(${e.lat.toFixed(6)}, ${e.lng.toFixed(6)})</div>
+      <div class="address">📍 ${e.address}</div>
+      <div class="info">
+        <div class="accuracy ${accClass}">精度:${e.accuracy.toFixed(1)}m</div>
+        <div>速度:${e.speedText}</div>
+        <div>方角:${e.headingText}</div>
+      </div>
+    </div>
+  `;
+  const logContainer=document.getElementById('log');
+  logContainer.insertAdjacentHTML('afterbegin',html);
+
+  // ログ件数制限
+  while(logContainer.childElementCount>200){
+    logContainer.removeChild(logContainer.lastChild);
+  }
+
+  if(!restoreMode){
+    safeSaveLocal();
+    updateStatsUI();
+  }
+}
 
 // ===== ダウンロード =====
 function download(filename,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));a.download=filename;a.click();}
