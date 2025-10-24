@@ -44,6 +44,7 @@
     }
 
     .panel {
+      position: relative;
       background: var(--card);
       padding: 14px;
       border-radius: 10px;
@@ -122,14 +123,31 @@
       font-size: 0.87em;
     }
 
+    #log-container {
+      /* ログ用スペースを確保 */
+      height: 35vh;
+      /* 最大展開高さ */
+      min-height: 40px;
+      /* 折りたたんだときの最小スペース */
+      overflow: hidden;
+      transition: height 0.5s ease;
+    }
+
     #log {
-      max-height: 35vh;
+      height: 100%;
       overflow: auto;
-      font-size: 0.85em;
-      background: #f3f6fa;
       padding: 8px;
+      background: #f3f6fa;
       border-radius: 8px;
       box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+      opacity: 1;
+      transition: opacity 0.4s ease, padding 0.3s ease;
+    }
+
+    #log.collapsed {
+      opacity: 0;
+      padding-top: 0;
+      padding-bottom: 0;
     }
 
     .log-entry {
@@ -258,9 +276,13 @@
         <div>平均速度: <strong id="avgSpeed">0 km/h</strong></div>
       </div>
 
-      <div style="margin-top:8px">
-        <label>ログ</label>
-        <div id="log" class="panel" style="padding:8px;margin-top:6px"></div>
+      <label id="logToggleLabel"
+        style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+        過去の位置情報ログ
+        <button id="logToggleBtn" class="secondary" style="font-size:0.8em; padding:2px 6px;">▼</button>
+      </label>
+      <div id="log-container">
+        <div id="log"></div>
       </div>
 
       <div style="margin-top:10px" class="small">※位置の取得は1秒以上間隔を空けています。</div>
@@ -269,6 +291,24 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
+
+    const logToggleBtn = document.getElementById('logToggleBtn');
+    const logContainer = document.getElementById('log');
+
+    logToggleBtn.addEventListener('click', () => {
+      const logContainer = document.getElementById('log-container');
+      const log = document.getElementById('log');
+      log.classList.toggle('collapsed');
+
+      if (log.classList.contains('collapsed')) {
+        logContainer.style.height = '40px'; // 折りたたみ後の最小スペース
+        logToggleBtn.textContent = '▲';
+      } else {
+        logContainer.style.height = '35vh'; // 展開
+        logToggleBtn.textContent = '▼';
+      }
+    });
+
     // ===== 初期設定 =====
     let map, marker, watchId = null, pathSegments = [[]], polylines = [], logData = [];
     let lastFetchTime = 0, lastPosTime = 0, follow = true, lastOrientation = null;
@@ -326,8 +366,37 @@
 
     // ===== ポリライン =====
     function redrawPolylines() {
-      polylines.forEach(p => map.removeLayer(p));
-      polylines = pathSegments.filter(seg => seg.length > 1).map(seg => L.polyline(seg, { color: '#ff4444', weight: 4, opacity: 0.9 }).addTo(map));
+      const lastSeg = pathSegments[pathSegments.length - 1];
+      if (!lastSeg || lastSeg.length === 0) return;
+
+      let lastLine = polylines[polylines.length - 1];
+      if (!lastLine || lastLine.getLatLngs().length === 0) {
+        lastLine = L.polyline(lastSeg, { color: '#ff4444', weight: 4, opacity: 0.9 }).addTo(map);
+        polylines.push(lastLine);
+      } else {
+        // 最後の座標だけ追加
+        lastLine.addLatLng(lastSeg[lastSeg.length - 1]);
+      }
+    }
+
+    // ===== マーカー更新 =====
+    function updateMarker(lat, lng, heading, accColor, speedKmh) {
+      const size = speedKmh && speedKmh * 3.6 > 200 ? 20 : 16;
+      if (!marker) {
+        const icon = L.divIcon({
+          className: 'custom-marker',
+          html: `<div style="width:${size}px;height:${size}px;background:${accColor};border:2px solid #fff;transform:rotate(${heading}deg)"></div>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2]
+        });
+        marker = L.marker([lat, lng], { icon }).addTo(map);
+      } else {
+        marker.setLatLng([lat, lng]);
+        const div = marker.getElement().querySelector('div');
+        div.style.transform = `rotate(${heading}deg)`;
+        div.style.background = accColor;
+        div.style.width = div.style.height = size + 'px';
+      }
     }
 
     // ===== 住所取得 =====
@@ -347,7 +416,8 @@
     // ===== ログ表示 =====
     function addLogEntry(e, restoreMode = false) {
       if (!restoreMode) logData.unshift(e);
-      let accClass = e.accuracy < 5 ? 'acc-green' : e.accuracy < 15 ? 'acc-yellowgreen' : e.accuracy < 30 ? 'acc-orange' : 'acc-red';
+
+      const accClass = e.accuracy < 5 ? 'acc-green' : e.accuracy < 15 ? 'acc-yellowgreen' : e.accuracy < 30 ? 'acc-orange' : 'acc-red';
       const html = `<div class="log-entry">
         <div class="time">🕒 ${new Date(e.time).toLocaleString()}</div>
         <div class="coords">(${e.lat.toFixed(6)}, ${e.lng.toFixed(6)})</div>
@@ -358,10 +428,19 @@
           <div>方角:${e.headingText}</div>
         </div>
       </div>`;
+
       const logContainer = document.getElementById('log');
       logContainer.insertAdjacentHTML('afterbegin', html);
-      while (logContainer.childElementCount > 200) logContainer.removeChild(logContainer.lastChild);
-      if (!restoreMode) { safeSaveLocal(); updateStatsUI(); }
+
+      // 200件以上になったらまとめて削除
+      if (logContainer.childElementCount > 200) {
+        while (logContainer.childElementCount > 200) logContainer.removeChild(logContainer.lastChild);
+      }
+
+      if (!restoreMode) {
+        safeSaveLocal();
+        updateStatsUI();
+      }
     }
 
     // ===== ダウンロード =====
@@ -400,22 +479,20 @@
 
       if (lastOrientation !== null) heading = lastOrientation;
 
-      // UI更新
+      const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
+
       document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
       document.getElementById('lng').textContent = toFixedOrDash(lng, 6);
       document.getElementById('acc').textContent = `${acc.toFixed(1)} m`;
       document.getElementById('alt').textContent = alt === null ? '---' : `${alt.toFixed(1)} m`;
       document.getElementById('speed').textContent = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
       document.getElementById('heading').textContent = directionName(heading);
-      document.getElementById('acc').style.color = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
-
-      const size = speed && speed * 3.6 > 200 ? 20 : 16;
-      const icon = L.divIcon({ className: 'custom-marker', html: `<div style="width:${size}px;height:${size}px;background:${document.getElementById('acc').style.color};border:2px solid #fff;transform:rotate(${heading}deg)"></div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
-      if (!marker) marker = L.marker([lat, lng], { icon }).addTo(map);
-      else marker.setLatLng([lat, lng]).setIcon(icon);
+      document.getElementById('acc').style.color = accColor;
 
       pathSegments[pathSegments.length - 1].push([lat, lng]);
       redrawPolylines();
+      updateMarker(lat, lng, heading, accColor, speed);
+
       if (follow) map.setView([lat, lng]);
 
       const addr = await fetchAddress(lat, lng);
