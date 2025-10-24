@@ -210,15 +210,27 @@
       #app {
         grid-template-columns: 1fr;
         grid-template-rows: 65vh auto;
+        /* 上が地図、下がパネル */
+        height: 100vh;
       }
 
       .panel {
         max-height: calc(100vh - 65vh);
+        /* パネルが画面下半分に */
+        overflow-y: auto;
+        /* 縦スクロール可能に */
+        padding: 12px;
       }
 
       .controls {
         grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
       }
+
+      #log-container {
+        max-height: none;
+        /* JS で調整 */
+      }
+
     }
 
     .leaflet-control-attribution {
@@ -298,18 +310,25 @@
     const logContainer = document.getElementById('log');
 
     logToggleBtn.addEventListener('click', () => {
-      const logContainer = document.getElementById('log-container');
       const log = document.getElementById('log');
+      const logContainer = document.getElementById('log-container');
+      const panel = logContainer.parentElement;
+
       log.classList.toggle('collapsed');
 
       if (log.classList.contains('collapsed')) {
-        logToggleBtn.textContent = '▲';
-      } else {
         logToggleBtn.textContent = '▼';
-        // スマホ横画面でもパネルの残りスペースに応じて max-height 自動調整
-        const panelHeight = logContainer.parentElement.clientHeight;
-        const controlsHeight = logContainer.previousElementSibling.offsetHeight + 20; // 前の要素分
-        logContainer.style.maxHeight = (panelHeight - controlsHeight) + 'px';
+        logContainer.style.maxHeight = '40px';
+      } else {
+        logToggleBtn.textContent = '▲';
+        // パネルの残りスペースに応じて高さ調整
+        const panelHeight = panel.clientHeight;
+        const usedHeight = Array.from(panel.children)
+          .filter(c => c !== logContainer)
+          .reduce((sum, el) => sum + el.offsetHeight + parseInt(getComputedStyle(el).marginTop || 0) + parseInt(getComputedStyle(el).marginBottom || 0), 0);
+        let availableHeight = panelHeight - usedHeight - 16;
+        if (window.innerWidth <= 900) availableHeight = Math.max(availableHeight, 150); // スマホでも最低150px
+        logContainer.style.maxHeight = availableHeight + 'px';
       }
     });
 
