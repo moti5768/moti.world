@@ -358,6 +358,8 @@
     let currentDestination = null;    // 目的地を保持
     let userSelectedRoute = null;     // ユーザーが代替ルートを選択した場合に保持
     let startMarker = null;
+    let userInteracting = false;
+    let programMoving = false; // 追加
 
     // ログUI
     const logToggleBtn = document.getElementById('logToggleBtn');
@@ -416,15 +418,19 @@
         attribution: '© OpenStreetMap contributors'
       }).addTo(map);
 
-      map.on('dragstart', () => {
-        follow = false;
-        document.getElementById('centerToggle').textContent = '自動追尾: OFF';
+      // ドラッグやズーム開始時にユーザー操作フラグを立てる
+      map.on('dragstart zoomstart', () => {
+        if (!programMoving) { // プログラム移動中は無視
+          userInteracting = true;
+        }
       });
-      // ズーム操作でも自動追尾OFFにする
-      map.on('zoomstart', () => {
-        if (follow) {
+
+      // ドラッグやズーム終了時にユーザー操作ならOFF
+      map.on('dragend zoomend', () => {
+        if (userInteracting) {
           follow = false;
           document.getElementById('centerToggle').textContent = '自動追尾: OFF';
+          userInteracting = false;
         }
       });
 
@@ -586,12 +592,20 @@
       if (follow && marker) {
         const pos = marker.getLatLng();
 
+        // プログラム移動中フラグON
+        programMoving = true;
+
         // 現在地にアニメーションで移動＆ズーム
-        map.flyTo(pos, 17, { animate: true, duration: 1.2 }); // durationは秒
+        map.flyTo(pos, 17, { animate: true, duration: 1.2 });
+
+        // flyToアニメーション終了後にフラグを解除
+        map.once('moveend', () => {
+          programMoving = false;
+        });
 
         // 現在地の住所を更新
         const addr = await fetchAddress(pos.lat, pos.lng);
-        document.getElementById('address').textContent = addr;
+        document.getElementById('currentAddress').textContent = addr;
 
         // 追尾中はユーザー操作でズーム・パン可能
         map.dragging.enable();
@@ -600,8 +614,6 @@
         map.doubleClickZoom.enable();
         map.boxZoom.enable();
         map.keyboard.enable();
-      } else {
-        // 追尾OFF時は自由操作のまま（必要なら無効化も可）
       }
     });
 
@@ -1070,8 +1082,9 @@
           })
           .addTo(map);
 
-        // --- 閉じるボタン追加 & 自動追尾OFF ---
+        // --- 閉じるボタン追加（再表示対応） ---
         const container = routingControl.getContainer();
+        container.style.zIndex = "999";
         if (container && !container.querySelector('.leaflet-routing-close')) {
           const closeBtn = document.createElement('a');
           closeBtn.className = 'leaflet-routing-close';
@@ -1079,19 +1092,30 @@
           closeBtn.style.position = 'relative';
           closeBtn.style.display = 'block';
           closeBtn.style.marginTop = '2.5px';    // 下に余白
-          closeBtn.style.marginLeft = 'auto';   // 右寄せ
+          closeBtn.style.marginLeft = 'auto';    // 右寄せ
           closeBtn.style.marginRight = '2.5px';  // 右端から余白
           closeBtn.style.fontSize = '20px';
           closeBtn.style.cursor = 'pointer';
+
           closeBtn.onclick = () => {
-            container.style.display = 'none'; // パネル非表示
-            follow = false;                    // 自動追尾OFF
-            document.getElementById('centerToggle').textContent = '自動追尾: OFF';
+            if (container.style.height !== '20px') {
+              // パネル非表示 & ボタンを再表示用に変更
+              container.style.height = '20px';
+              container.style.width = '20px';
+              closeBtn.style.position = "absolute";
+              closeBtn.style.top = "2.5px";
+              closeBtn.style.left = "-2.5px";
+            } else {
+              // パネル再表示 & ボタンを閉じる用に戻す
+              container.style.height = '';
+              container.style.width = '';
+              closeBtn.style.position = "";
+              closeBtn.style.top = "";
+              closeBtn.style.left = "";
+            }
           };
           container.appendChild(closeBtn);
         }
-
-
 
         // ナビモード終了
         navMode = false;
