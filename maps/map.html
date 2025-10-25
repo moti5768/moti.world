@@ -832,6 +832,161 @@
       }
     }
 
+
+    const instructionMap = {
+      "Destination": "目的地",
+      "Arrive at destination": "目的地に到着",
+      "Start": "出発地点",
+      "Merge": "合流",
+      "U-turn": "Uターン",
+      "Via": "経由",
+      "on": "上",
+      "toward": "方面",
+      "heading": "方向",
+      "north": "北",
+      "south": "南",
+      "east": "東",
+      "west": "西",
+      "the left": "左側",
+      "the right": "右側",
+      "left": "左",
+      "right": "右",
+      "onto": "上に"
+    };
+
+    const patterns = [
+      // ラウンドアバウト
+      { re: /^Enter roundabout/i, replace: "ロータリーに入る" },
+      { re: /^Exit roundabout/i, replace: "ロータリーを出る" },
+      { re: /^Roundabout with (\d+) exits/i, replace: (m) => `ロータリー（${m[1]}出口）` },
+
+      // Turn + direction + onto + road
+      { re: /^Turn (?:the )?(left|right) onto (.+)/i, replace: (m) => `${m[2]} に${m[1].toLowerCase() === "left" ? "左折" : "右折"}で合流` },
+
+      // right/left onto 単体対応（Turnなし）
+      { re: /^(?:the )?(left|right) onto (.+)/i, replace: (m) => `${m[2]} に${m[1].toLowerCase() === "left" ? "左折" : "右折"}で合流` },
+
+      // Make a + Sharp/Slight + direction
+      { re: /make a sharp left/i, replace: "鋭角に左折" },
+      { re: /make a sharp right/i, replace: "鋭角に右折" },
+      { re: /make a slight left/i, replace: "やや左方向" },
+      { re: /make a slight right/i, replace: "やや右方向" },
+
+      // 左右折単体
+      { re: /^Turn (left|right)/i, replace: (m) => m[1].toLowerCase() === "left" ? "左折" : "右折" },
+      { re: /^Slight (left|right)/i, replace: (m) => "やや" + (m[1].toLowerCase() === "left" ? "左" : "右") + "方向" },
+      { re: /^Sharp (left|right)/i, replace: (m) => "鋭角に" + (m[1].toLowerCase() === "left" ? "左" : "右") + "折" },
+      { re: /^Keep (left|right)/i, replace: (m) => m[1].toLowerCase() === "left" ? "左側を維持" : "右側を維持" },
+
+      // Take the ramp / Take the exit
+      { re: /^Take (?:the )?ramp(?: to (.+))?/i, replace: (m) => m[1] ? `${m[1]} にランプで合流` : "ランプで合流" },
+      { re: /^Take (?:the )?exit (\d+)(?: to (.+))?/i, replace: (m) => m[2] ? `${m[2]} に${m[1]}出口で合流` : `${m[1]}出口で合流` },
+
+      // 分岐点
+      { re: /at the fork/i, replace: "分岐点で" },
+
+      // 進行方向・head対応
+      { re: /^head (\w+)/i, replace: (m) => `${m[1]} 方向に進む` },
+      { re: /^Head (\w+)/i, replace: (m) => `${m[1]} 方向に進む` },
+      { re: /heading (\w+)/i, replace: (m) => `${m[1]} 方向に進む` },
+
+      // 進行方向単体
+      { re: /^Continue/i, replace: "直進" },
+      { re: /Go straight/i, replace: "直進" },
+      { re: /Proceed/i, replace: "直進" },
+
+      // 信号・交差点
+      { re: /At traffic light/i, replace: "信号で" },
+      { re: /At intersection/i, replace: "交差点で" },
+      { re: /Turn at junction/i, replace: "交差点で曲がる" }
+    ];
+
+    function translateInstructions(route) {
+      if (!route.instructions) return;
+
+      route.instructions.forEach(instr => {
+        let text = instr.text;
+
+        // 文章をフレーズに分割
+        const parts = text.split(/,|then|and/i).map(p => p.trim()).filter(p => p);
+
+        const translatedParts = parts.map(part => {
+          let t = part;
+
+          // 目的地到着
+          if (/You have arrived at your/i.test(t)) return "目的地に到着です";
+
+          // right/left onto 単体対応（Turnなし）
+          let match = t.match(/^(?:the )?(left|right) onto (.+)/i);
+          if (match) return `${match[2]}に${match[1].toLowerCase() === "left" ? "左折" : "右折"}してください`;
+
+          // Turn + left/right onto
+          match = t.match(/^Turn (?:the )?(left|right) onto (.+)/i);
+          if (match) return `${match[2]}に${match[1].toLowerCase() === "left" ? "左折" : "右折"}してください`;
+
+          // Take the ramp（入口）
+          match = t.match(/^Take (?:the )?ramp(?: to (.+))?/i);
+          if (match) {
+            const road = match[1];
+            if (!road) return "道路に入ります"; // 道路名が無い場合の汎用表現
+            if (/I-|Highway/i.test(road)) return `${road}高速に入ります`;
+            if (/Route/i.test(road)) return `国道${road.replace(/\D/g, '')}号に入ります`;
+            if (/Prefectural Road/i.test(road)) return `県道${road.replace(/\D/g, '')}号に入ります`;
+            return `${road}に入ります`; // 一般道路
+          }
+
+          // Take the exit（出口）
+          match = t.match(/^Take (?:the )?exit (\d+)(?: to (.+))?/i);
+          if (match) {
+            const exitNum = match[1];
+            const road = match[2];
+            if (!road) return `${exitNum}番出口で降ります`; // 道路名なしの場合
+            if (/I-|Highway/i.test(road)) return `${exitNum}番出口で降りて${road}高速に入ります`;
+            if (/Route/i.test(road)) return `${exitNum}番出口で降りて国道${road.replace(/\D/g, '')}号に入ります`;
+            if (/Prefectural Road/i.test(road)) return `${exitNum}番出口で降りて県道${road.replace(/\D/g, '')}号に入ります`;
+            return `${exitNum}番出口で降りて${road}に入ります`; // 一般道路
+          }
+
+          // Enter + 道路名
+          match = t.match(/^Enter (.+)/i);
+          if (match) return `${match[1]}に入ります`;
+
+          // head / heading + 方角
+          match = t.match(/^(head|Head|heading) (\w+)/i);
+          if (match) {
+            const dirMap = { north: "北", south: "南", east: "東", west: "西" };
+            const dirJa = dirMap[match[2].toLowerCase()] || match[2];
+            return `${dirJa}方向に進みます`;
+          }
+
+          // straight ahead
+          if (/straight ahead/i.test(t)) return "直進してください";
+
+          // パターンルール
+          for (const p of patterns) {
+            const m = t.match(p.re);
+            if (m) {
+              const replaced = typeof p.replace === "function" ? p.replace(m) : p.replace;
+              return replaced.replace(/方向$/, "方向に進みます");
+            }
+          }
+
+          // 単語置換
+          Object.entries(instructionMap)
+            .sort((a, b) => b[0].length - a[0].length)
+            .forEach(([en, ja]) => {
+              const re = new RegExp(`\\b${en}\\b`, 'gi');
+              t = t.replace(re, ja);
+            });
+
+          return t;
+        });
+
+        // 自然な接続語で結合
+        instr.text = translatedParts.join("。次に、");
+      });
+    }
+
     // ===== 初期ロード =====
     window.addEventListener('load', () => {
       initMap();
@@ -896,12 +1051,18 @@
           .on("routingstart", () => {
             document.getElementById("eta").textContent = "計算中...";
           })
-          .on("routesfound", e => updateEta(e.routes[0]))
+          .on("routesfound", e => {
+            const route = e.routes[0];
+            translateInstructions(route); // ← 英語→日本語変換
+            updateEta(route);
+          })
           .on("routingerror", () => {
             document.getElementById("eta").textContent = "経路取得失敗";
           })
           .on("routeselected", e => {
-            updateEta(e.route);
+            const route = e.route;
+            translateInstructions(route); // ← 選択した代替ルートも日本語化
+            updateEta(route);
             userSelectedRoute = true;  // ユーザーが代替ルートを選択したらフラグON
           })
           .addTo(map);
