@@ -271,7 +271,11 @@
     /* 代替ルートの色分け（地図上） */
     .leaflet-routing-alt-line {
       opacity: 0.6;
-      dash-array: 8, 4;
+      stroke-dasharray: 8, 4;
+    }
+
+    .leaflet-routing-alt h3 {
+      display: none !important;
     }
   </style>
 </head>
@@ -284,15 +288,16 @@
         <button id="navModeBtn" class="secondary">ナビ開始(車のみ)</button>
         <button id="cancelNavBtn" class="secondary">ナビ取り消し</button>
       </div>
-      <div class="row">所要時間: <span id="eta">---</span></div>
+      <div class="row">目的地までの所要時間: <span id="eta">---</span></div>
       <div class="row small address-row"
         style="flex-direction: column; align-items: flex-start; gap:2px; margin:0; padding:0;">
-        <span style="font-weight:500; color:#555; line-height:1;">住所:</span>
-        <div id="address" style="font-weight:600; word-break: break-word; line-height:1.2; margin:0; padding:0;">---
-        </div>
+        <span style="font-weight:500; color:#555; line-height:1;">
+          住所:
+          <span id="address" style="font-weight:600; word-break: break-word; line-height:1.2;">---</span>
+        </span>
       </div>
 
-      <div class="row small">最終更新: <span id="lastAge" style="margin-left:8px">---</span></div>
+      <div class="row small">最終更新:<span id="lastAge" style="margin-left:8px">---</span></div>
       <h2>📍 位置観測マップ</h2>
       <div class="info-grid">
         <div class="stat">緯度: <div id="lat">---</div>
@@ -469,21 +474,21 @@
     // ===== 住所取得 =====
     async function fetchAddress(lat, lng) {
       if (now() - lastFetchTime < 1000) return '取得間隔制御中';
+      if (marker && lastRoutePoint && haversine([lat, lng], lastRoutePoint) < 10)
+        return document.getElementById('address').textContent;
       lastFetchTime = now();
       try {
         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`);
         if (!res.ok) return '住所取得失敗';
         const data = await res.json();
         const a = data.address || {};
-        const parts = [a.country, a.postcode, a.state, a.city || a.town || a.village, a.suburb || a.neighbourhood, a.road].filter(Boolean);
-        return parts.join(', ') || data.display_name || '住所情報なし';
+        return [a.country, a.postcode, a.state, a.city || a.town || a.village, a.suburb || a.neighbourhood, a.road].filter(Boolean).join(', ') || data.display_name || '住所情報なし';
       } catch { return '住所取得エラー'; }
     }
 
     // ===== ログ表示 =====
     function addLogEntry(e, restoreMode = false) {
       if (!restoreMode) logData.unshift(e);
-
       const accClass = e.accuracy < 5 ? 'acc-green' : e.accuracy < 15 ? 'acc-yellowgreen' : e.accuracy < 30 ? 'acc-orange' : 'acc-red';
       const html = `<div class="log-entry">
     <div class="time">🕒 ${new Date(e.time).toLocaleString()}</div>
@@ -495,17 +500,11 @@
       <div>方角:${e.headingText}</div>
     </div>
   </div>`;
-      const logContainer = document.getElementById('log');
-      logContainer.insertAdjacentHTML('afterbegin', html);
-
-      if (logContainer.childElementCount > 200) {
-        while (logContainer.childElementCount > 200) logContainer.removeChild(logContainer.lastChild);
-      }
-
-      if (!restoreMode) {
-        safeSaveLocal();
-        updateStatsUI();
-      }
+      const logElem = document.getElementById('log');
+      logElem.insertAdjacentHTML('afterbegin', html);
+      // while を使わず、一度に削除して高速化
+      if (logElem.childElementCount > 200) logElem.removeChild(logElem.lastChild);
+      if (!restoreMode) { safeSaveLocal(); updateStatsUI(); }
     }
 
     // ===== ダウンロード =====
@@ -526,9 +525,38 @@
     document.getElementById('stopBtn').addEventListener('click', () => { if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; pathSegments.push([]); alert('観測停止'); } });
     document.getElementById('restartBtn').addEventListener('click', () => { if (!watchId) startTracking(); alert('観測再開'); });
     document.getElementById('clearBtn').addEventListener('click', () => { if (confirm('本当にクリアしますか？')) { pathSegments = [[]]; logData = []; redrawPolylines(); document.getElementById('log').innerHTML = ''; safeSaveLocal(); updateStatsUI(); } });
-    document.getElementById('centerToggle').addEventListener('click', () => { follow = !follow; document.getElementById('centerToggle').textContent = `自動追尾: ${follow ? 'ON' : 'OFF'}`; });
+    document.getElementById('centerToggle').addEventListener('click', async () => {
+      follow = !follow;
+      document.getElementById('centerToggle').textContent = `自動追尾: ${follow ? 'ON' : 'OFF'}`;
+
+      if (follow && marker) {
+        const pos = marker.getLatLng();
+
+        // 現在地にアニメーションで移動＆ズーム
+        map.flyTo(pos, 17, { animate: true, duration: 1.2 }); // durationは秒
+
+        // 現在地の住所を更新
+        const addr = await fetchAddress(pos.lat, pos.lng);
+        document.getElementById('address').textContent = addr;
+
+        // 追尾中はユーザー操作でズーム・パン可能
+        map.dragging.enable();
+        map.touchZoom.enable();
+        map.scrollWheelZoom.enable();
+        map.doubleClickZoom.enable();
+        map.boxZoom.enable();
+        map.keyboard.enable();
+      } else {
+        // 追尾OFF時は自由操作のまま（必要なら無効化も可）
+      }
+    });
+
 
     // ===== 位置更新 =====
+    let lastRouteUpdate = 0;
+    let lastRoutePoint = null;
+    let lastAddressTime = 0;
+
     async function handlePosition(pos) {
       if (!pos || !pos.coords) {
         updateMarker(null, null, 0, 'black', 0);
@@ -543,7 +571,12 @@
       let speed = (c.speed >= 0) ? c.speed : null;
       let heading = (typeof c.heading === 'number') ? c.heading : null;
 
-      const prev = pathSegments[pathSegments.length - 1].slice(-1)[0];
+      // パスの直前点取得
+      const lastSegment = pathSegments[pathSegments.length - 1];
+      const prev = lastSegment ? lastSegment.slice(-1)[0] : null;
+      const nowTime = Date.now();
+
+      // ===== 速度・方角計算 =====
       if (prev) {
         const dt = (pos.timestamp - lastPosTime) / 1000;
         if ((!speed || speed === 0) && dt > 0) speed = haversine(prev, [lat, lng]) / dt;
@@ -555,6 +588,7 @@
       }
 
       if (lastOrientation !== null) heading = lastOrientation;
+      heading = (heading === null || isNaN(heading)) ? 0 : heading;
 
       const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
 
@@ -567,22 +601,23 @@
       document.getElementById('heading').textContent = directionName(heading);
       document.getElementById('acc').style.color = accColor;
 
-      // ===== パス更新 =====
-      pathSegments[pathSegments.length - 1].push([lat, lng]);
-      redrawPolylines();
-      updateMarker(lat, lng, heading, accColor, speed);
+      // ===== パス更新 & マーカー =====
+      const shouldUpdateMarker = !marker || !prev || haversine(prev, [lat, lng]) > 0.5;
+      if (shouldUpdateMarker) {
+        if (!lastSegment) pathSegments.push([]);
+        pathSegments[pathSegments.length - 1].push([lat, lng]);
+        redrawPolylines();
+        updateMarker(lat, lng, heading, accColor, speed);
+      }
 
-      if (follow) map.panTo([lat, lng], { animate: true });
+      if (follow && map) map.panTo([lat, lng], { animate: true });
 
-      // ===== 住所更新 =====
-      // ナビ中かつ代替ルート未選択の場合は最終目的地住所を維持
-      let addrElem = document.getElementById('address');
-      let addr = addrElem.textContent;
-
-      if (!routingControl) {
-        // ナビ中でなければ現在地住所を取得
-        addr = await fetchAddress(lat, lng);
+      // ===== 住所更新（1秒間隔） =====
+      const addrElem = document.getElementById('address');
+      if (!routingControl && nowTime - lastAddressTime > 1000) {
+        const addr = await fetchAddress(lat, lng);
         addrElem.textContent = addr;
+        lastAddressTime = nowTime;
       }
 
       // ===== ログ追加 =====
@@ -592,15 +627,21 @@
         speedKmh: speed ? speed * 3.6 : null,
         speedText: speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---',
         headingText: directionName(heading),
-        address: addr
+        address: addrElem.textContent
       });
 
-      // ===== ナビ中ルート更新 =====
+      // ===== ナビ中ルート更新（距離・時間制限） =====
+      const current = [lat, lng];
       if (routingControl && currentDestination && !userSelectedRoute) {
-        routingControl.setWaypoints([L.latLng(lat, lng), currentDestination]);
+        const distMoved = lastRoutePoint ? haversine(lastRoutePoint, current) : Infinity;
+        if (distMoved > 30 && nowTime - lastRouteUpdate > 5000) {
+          routingControl.setWaypoints([L.latLng(lat, lng), currentDestination]);
+          lastRoutePoint = current;
+          lastRouteUpdate = nowTime;
+        }
       }
 
-      lastPosTime = pos.timestamp || now();
+      lastPosTime = pos.timestamp || Date.now();
       document.getElementById('lastAge').textContent = '0秒前';
     }
 
@@ -610,9 +651,22 @@
     function handleError(err) { console.warn('位置取得エラー', err); if (!retryTimer) retryTimer = setTimeout(() => { startTracking(); }, 3000); }
 
     // ===== 追跡開始 =====
-    function startTracking() {
+    async function startTracking() {
       if (!navigator.geolocation) { alert('位置情報未対応'); return; }
-      watchId = navigator.geolocation.watchPosition(handlePosition, handleError, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+
+      // 初回取得（低精度で即時表示）
+      navigator.geolocation.getCurrentPosition(
+        pos => handlePosition(pos),
+        err => console.warn('初回取得失敗', err),
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 5000 }
+      );
+
+      // 継続追跡（高精度）
+      watchId = navigator.geolocation.watchPosition(
+        pos => handlePosition(pos),
+        err => console.warn('追跡取得エラー', err),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 }
+      );
     }
 
     // ===== 更新時間表示 =====
@@ -688,7 +742,7 @@
           lineOptions: { styles: [{ color: "#1976d2", weight: 7, opacity: 1 }] },
           altLineOptions: () => ({ color: "#f44336", weight: 5, opacity: 1 }),
           createMarker: (i, wp) => {
-            const size = 20, color = i === 0 ? "#4fc3f7" : "#ff9800";
+            const size = 20, color = i === 0 ? "#00BCD4" : "#800080";
             return L.marker(wp.latLng, {
               icon: L.divIcon({
                 className: 'custom-marker',
@@ -700,10 +754,17 @@
           },
           position: 'bottomright'
         })
+          // ==== 新しく追加したイベント ====
+          .on("routingstart", () => {
+            document.getElementById("eta").textContent = "計算中...";
+          })
           .on("routesfound", e => updateEta(e.routes[0]))
+          .on("routingerror", () => {
+            document.getElementById("eta").textContent = "経路取得失敗";
+          })
           .on("routeselected", e => {
             updateEta(e.route);
-            userSelectedRoute = true;  // ユーザーが代替ルート選択したらフラグON
+            userSelectedRoute = true;  // ユーザーが代替ルートを選択したらフラグON
           })
           .addTo(map);
 
