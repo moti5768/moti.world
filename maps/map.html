@@ -49,10 +49,47 @@
     #map {
       height: 100%;
       width: 100%;
-      border-radius: 10px;
+      border-radius: 18px;
+      /* iPhone風角丸 */
       overflow: hidden;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+      /* 立体感 */
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      background: #f6f8fa;
+      /* 読み込み中背景 */
     }
+
+    /* ズームボタンをApple風に */
+    .leaflet-control-zoom {
+      border: none;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 12px;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+    }
+
+    .leaflet-control-zoom a {
+      color: #1976d2;
+      font-weight: bold;
+    }
+
+    /* attribution控えめ */
+    .leaflet-control-attribution {
+      font-size: 10px;
+      opacity: 0.7;
+      color: #555;
+    }
+
+    .leaflet-touch .leaflet-bar a:first-child {
+      border-top-left-radius: 10px;
+      border-top-right-radius: 10px;
+    }
+
+    .leaflet-touch .leaflet-bar a:last-child {
+      border-bottom-left-radius: 10px;
+      border-bottom-right-radius: 10px;
+    }
+
+
 
     .panel {
       position: relative;
@@ -411,12 +448,30 @@
         }
       } catch (e) { console.warn('ローカル復元失敗', e); }
 
-      // マップ作成（初回ロード時にズーム済み）
-      map = L.map('map').setView([initLat, initLng], initialZoom);
+      // ===== マップ作成（iPhoneマップ風のスタイル） =====
+      map = L.map('map', {
+        zoomAnimation: true,          // ズームを滑らかに
+        fadeAnimation: true,          // タイル切り替えをフェードで
+        markerZoomAnimation: true,    // マーカー拡大縮小アニメ
+        inertia: true,                // スワイプ慣性
+        inertiaDeceleration: 2500,    // 慣性の減衰（iPhoneっぽく）
+        zoomControl: false,           // デフォルトズームUIを隠す
+        attributionControl: false,    // 著作権表記を下に移す
+      }).setView([initLat, initLng], initialZoom);
+
+      // 高精細（Retina対応）タイル読み込み
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
+        maxZoom: 21,
+        detectRetina: false,
         attribution: '© OpenStreetMap contributors'
       }).addTo(map);
+
+      // iPhoneの右下ズームボタン風に再配置
+      L.control.zoom({ position: 'topleft' }).addTo(map);
+
+      // 下部にスッキリと著作権表記
+      L.control.attribution({ position: 'bottomleft' }).addTo(map);
+
 
       // ドラッグやズーム開始時にユーザー操作フラグを立てる
       map.on('dragstart zoomstart', () => {
@@ -514,21 +569,90 @@
     function updateMarker(lat, lng, heading, accColor, speedKmh) {
       const size = speedKmh && speedKmh * 3.6 > 200 ? 20 : 16;
       if (lat === null || lng === null || accColor === null) accColor = 'black';
+
+      // null が渡されたらマーカー削除して終了（次の有効座標で再作成）
+      if (lat === null || lng === null) {
+        if (marker) {
+          try { map.removeLayer(marker); } catch (e) { /* ignore */ }
+          marker = null;
+        }
+        return;
+      }
+
+      // イージング（ローカル関数、グローバルは増やさない）
+      function easeOutQuad(t) { return t * (2 - t); }
+
+      // 初回作成
       if (!marker) {
         const icon = L.divIcon({
           className: 'custom-marker',
-          html: `<div style="width:${size}px;height:${size}px;background:${accColor};border:2px solid #fff;transform:rotate(${heading}deg)"></div>`,
+          html: `<div style="width:${size}px;height:${size}px;background:${accColor};border:2px solid #fff;border-radius:50%;transform:rotate(${heading}deg)"></div>`,
           iconSize: [size, size],
           iconAnchor: [size / 2, size / 2]
         });
         marker = L.marker([lat, lng], { icon }).addTo(map);
-      } else {
-        marker.setLatLng([lat, lng]);
-        const div = marker.getElement().querySelector('div');
-        div.style.transform = `rotate(${heading}deg)`;
-        div.style.background = accColor;
-        div.style.width = div.style.height = size + 'px';
+        // アニメ管理用プロパティを付与
+        marker._animId = null;
+        marker._lastHeading = (typeof heading === 'number') ? heading : 0;
+        marker._lastPos = marker.getLatLng();
+        return;
       }
+
+      // 要素（div）取得（存在しない場面があるため安全に）
+      const el = marker.getElement && marker.getElement();
+      const div = el ? el.querySelector('div') : null;
+
+      // 見た目（色・サイズ）を即時更新
+      if (div) {
+        div.style.width = div.style.height = size + 'px';
+        div.style.background = accColor;
+        div.style.borderRadius = '50%';
+      }
+
+      // 既存アニメがあればキャンセル
+      if (marker._animId) {
+        cancelAnimationFrame(marker._animId);
+        marker._animId = null;
+      }
+
+      // 補間開始値と終了値
+      const from = marker.getLatLng();
+      const fromLat = from.lat, fromLng = from.lng;
+      const fromHeading = (marker._lastHeading === undefined) ? 0 : marker._lastHeading;
+      const toLat = lat, toLng = lng;
+      const toHeading = (typeof heading === 'number') ? heading : fromHeading;
+
+      // 角度差を -180..180 に正規化（360回り込み対策）
+      let delta = toHeading - fromHeading;
+      if (delta > 180) delta -= 360;
+      if (delta < -180) delta += 360;
+
+      const duration = 600; // ms（見た目の好みで 300-800 に調整可）
+      const startTime = performance.now();
+
+      function step(now) {
+        const t = Math.min(1, (now - startTime) / duration);
+        const e = easeOutQuad(t);
+
+        const curLat = fromLat + (toLat - fromLat) * e;
+        const curLng = fromLng + (toLng - fromLng) * e;
+        marker.setLatLng([curLat, curLng]);
+
+        if (div) {
+          const curHead = fromHeading + delta * e;
+          div.style.transform = `rotate(${curHead}deg)`;
+        }
+
+        if (t < 1) {
+          marker._animId = requestAnimationFrame(step);
+        } else {
+          marker._animId = null;
+          marker._lastHeading = toHeading;
+          marker._lastPos = marker.getLatLng();
+        }
+      }
+
+      marker._animId = requestAnimationFrame(step);
     }
 
     // ===== 住所取得 =====
@@ -855,7 +979,8 @@
 
       // ===== スタートマーカー追従 =====
       if (routingControl && currentDestination && startMarker) {
-        startMarker.setLatLng([lat, lng]);
+        const markerPos = smoothBuffer.length ? smoothed : [lat, lng];
+        startMarker.setLatLng(markerPos);
       }
 
       lastPosTime = pos.timestamp || now();
