@@ -1067,18 +1067,47 @@
             document.getElementById("eta").textContent = "計算中...";
           })
           .on("routesfound", e => {
-            const route = e.routes[0];
-            translateInstructions(route);
-            updateEta(route);
+            // 全ルートに翻訳を適用
+            e.routes.forEach(route => translateInstructions(route));
+            // ETA は最初のルートだけ表示
+            updateEta(e.routes[0]);
+
+            // 表示中のルートパネルも日本語化
+            setTimeout(() => {
+              document.querySelectorAll('.leaflet-routing-instruction').forEach(el => {
+                let text = el.textContent;
+                Object.entries(instructionMap)
+                  .sort((a, b) => b[0].length - a[0].length) // 長い単語から置換
+                  .forEach(([en, ja]) => {
+                    const re = new RegExp(`\\b${en}\\b`, 'gi');
+                    text = text.replace(re, ja);
+                  });
+                el.textContent = text;
+              });
+            }, 100);
           })
           .on("routingerror", () => {
             document.getElementById("eta").textContent = "経路取得失敗";
           })
           .on("routeselected", e => {
-            const route = e.route;
-            translateInstructions(route);
-            updateEta(route);
+            // 選択されたルートを翻訳
+            translateInstructions(e.route);
+            updateEta(e.route);
             userSelectedRoute = true;
+
+            // 選択ルートパネルのテキストも再翻訳
+            setTimeout(() => {
+              document.querySelectorAll('.leaflet-routing-instruction').forEach(el => {
+                let text = el.textContent;
+                Object.entries(instructionMap)
+                  .sort((a, b) => b[0].length - a[0].length)
+                  .forEach(([en, ja]) => {
+                    const re = new RegExp(`\\b${en}\\b`, 'gi');
+                    text = text.replace(re, ja);
+                  });
+                el.textContent = text;
+              });
+            }, 100);
           })
           .addTo(map);
 
