@@ -277,6 +277,10 @@
     .leaflet-routing-alt h3 {
       display: none !important;
     }
+
+    .leaflet-routing-collapse-btn {
+      display: none !important;
+    }
   </style>
 </head>
 
@@ -1033,7 +1037,7 @@
           altLineOptions: () => ({ color: "#f44336", weight: 5, opacity: 1 }),
           createMarker: (i, wp) => {
             const size = 20;
-            const color = i === 0 ? "#00BCD4" : "#800080"; // スタートは水色、ゴールは紫
+            const color = i === 0 ? "#00BCD4" : "#800080";
             const m = L.marker(wp.latLng, {
               icon: L.divIcon({
                 className: 'custom-marker',
@@ -1042,18 +1046,17 @@
                 iconAnchor: [size / 2, size / 2]
               })
             });
-            if (i === 0) startMarker = m; // スタートマーカーを保持
+            if (i === 0) startMarker = m;
             return m;
           },
           position: 'bottomright'
         })
-          // イベント設定
           .on("routingstart", () => {
             document.getElementById("eta").textContent = "計算中...";
           })
           .on("routesfound", e => {
             const route = e.routes[0];
-            translateInstructions(route); // ← 英語→日本語変換
+            translateInstructions(route);
             updateEta(route);
           })
           .on("routingerror", () => {
@@ -1061,11 +1064,34 @@
           })
           .on("routeselected", e => {
             const route = e.route;
-            translateInstructions(route); // ← 選択した代替ルートも日本語化
+            translateInstructions(route);
             updateEta(route);
-            userSelectedRoute = true;  // ユーザーが代替ルートを選択したらフラグON
+            userSelectedRoute = true;
           })
           .addTo(map);
+
+        // --- 閉じるボタン追加 & 自動追尾OFF ---
+        const container = routingControl.getContainer();
+        if (container && !container.querySelector('.leaflet-routing-close')) {
+          const closeBtn = document.createElement('a');
+          closeBtn.className = 'leaflet-routing-close';
+          closeBtn.innerHTML = '×';
+          closeBtn.style.position = 'relative';
+          closeBtn.style.display = 'block';
+          closeBtn.style.marginTop = '2.5px';    // 下に余白
+          closeBtn.style.marginLeft = 'auto';   // 右寄せ
+          closeBtn.style.marginRight = '2.5px';  // 右端から余白
+          closeBtn.style.fontSize = '20px';
+          closeBtn.style.cursor = 'pointer';
+          closeBtn.onclick = () => {
+            container.style.display = 'none'; // パネル非表示
+            follow = false;                    // 自動追尾OFF
+            document.getElementById('centerToggle').textContent = '自動追尾: OFF';
+          };
+          container.appendChild(closeBtn);
+        }
+
+
 
         // ナビモード終了
         navMode = false;
