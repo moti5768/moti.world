@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>高精度位置観測マップ</title>
+  <title>位置観測マップ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -1411,25 +1411,62 @@
           .on("routesfound", e => {
             e.routes.forEach(route => translateInstructions(route));
             updateEta(e.routes[0]);
-
             // 各ルートのアニメーション & クリックでETA更新＆選択色
             e.routes.forEach((route, idx) => {
               const color = idx === 0 ? "#1976d2" : "#f44336";
               const weight = idx === 0 ? 8 : 4;
-
               const animLine = animateRouteSmooth(route.coordinates, color, weight, 1500);
-
-              // 透明クリック用ライン
-              const clickLine = L.polyline(route.coordinates, { color, weight, opacity: 0 }).addTo(map);
-              clickLine.on('click', () => {
+              // プラットフォーム判定（iPhone 向けにヒット幅を大きめに）
+              const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+              const touchHitWeight = isIOS ? 30 : 30; // iPhone はさらに広く
+              // 透明クリック用ライン（タッチ領域を拡大）
+              const clickLine = L.polyline(route.coordinates, {
+                color: color,
+                weight: touchHitWeight,
+                opacity: 0.02,      // 完全透明は拾わない場合があるのでごく薄く
+                interactive: true,
+              }).addTo(map);
+              // 保険：要素が取れたら直接 style/属性を設定して確実に当たり判定を広げる
+              setTimeout(() => {
+                try {
+                  const el = clickLine.getElement && clickLine.getElement();
+                  if (el) {
+                    // SVG path の strokeWidth 等を上書き（Leaflet がつけた属性より確実に効く）
+                    el.style.pointerEvents = 'stroke';
+                    el.style.cursor = 'pointer';
+                    el.style.strokeLinecap = 'round';
+                    el.style.strokeWidth = (touchHitWeight) + 'px';
+                    // iOS では opacity を微小値にしておく（表示上はほぼ透明）
+                    el.style.opacity = 0.02;
+                    // さらに属性としても設定（ブラウザ差対策）
+                    el.setAttribute('stroke-linecap', 'round');
+                    el.setAttribute('stroke-width', String(touchHitWeight));
+                  }
+                } catch (e) { /* ignore */ }
+              }, 0);
+              // 選択処理（タッチ / クリック の両方に対応）
+              const onSelect = (ev) => {
                 updateEta(route);
+                userSelectedRoute = true;
                 // 選択色反映（選択中：青、他：赤）
-                animatedPolylines.forEach(p => {
-                  if (p.route === route) p.polyline.setStyle({ color: "#1976d2", weight: 8 });
-                  else p.polyline.setStyle({ color: "#f44336", weight: 4 });
-                });
-              });
-
+                try {
+                  animatedPolylines.forEach(p => {
+                    if (p.polyline && p.route) {
+                      if (p.route === route) p.polyline.setStyle({ color: "#1976d2", weight: 8 });
+                      else p.polyline.setStyle({ color: "#f44336", weight: 4 });
+                    }
+                  });
+                } catch (err) {
+                  console.warn('route style update error', err);
+                }
+                if (ev && ev.originalEvent && ev.originalEvent.stopPropagation) ev.originalEvent.stopPropagation();
+              };
+              // pointerdown / touchstart / click を登録（幅広くカバー）
+              clickLine.on('pointerdown touchstart click', onSelect);
+              // 任意：ホバー/タッチで少し見せるフィードバック（必要なら）
+              clickLine.on('mouseover', () => clickLine.setStyle({ opacity: 0.12 }));
+              clickLine.on('mouseout', () => clickLine.setStyle({ opacity: 0.02 }));
+              // 元と同じ形式で配列に格納（構造は変えない）
               animatedPolylines.push({ polyline: animLine, route });
               animatedPolylines.push({ polyline: clickLine, route });
             });
