@@ -453,6 +453,7 @@ async function handlePosition(pos) {
     const c = pos.coords;
     const lat = c.latitude, lng = c.longitude, acc = c.accuracy || 0, alt = c.altitude;
     let speed = (c.speed >= 0) ? c.speed : null;
+    const speedKmh = speed ? speed * 3.6 : 0;     // km/hに変換
     let heading = (typeof c.heading === 'number') ? c.heading : null;
     const nowTime = Date.now();
 
@@ -464,19 +465,31 @@ async function handlePosition(pos) {
     if (isFirst) firstPositionReceived = true;
 
     // 精度チェック + 時間経過で更新
+    let accChanged = false;
+    if (typeof lastAcc !== 'undefined' && acc !== lastAcc) {
+        accChanged = true; // 精度が変化した場合
+    }
+    lastAcc = acc; // 今回の精度を保存
+
     if (!isFirst) {
         if (acc <= MIN_ACCURACY) {
             // 精度良好 → 更新OK、lastGoodUpdateTimeを更新
             lastGoodUpdateTime = Date.now();
         } else if (acc > retryAccuracyThreshold) {
             // 精度悪い場合は時間経過で更新
-            if (Date.now() - lastGoodUpdateTime <= 5000) return; // まだ時間経過していなければスキップ
+            if (Date.now() - lastGoodUpdateTime <= 5000 && !accChanged) return; // 精度変化がなければスキップ
             console.warn('精度悪いが時間経過で更新:', acc);
         } else {
             // 精度は悪いがretryThreshold以内 → 通常スルー
-            return;
+            if (!accChanged) return; // 精度変化がなければスルー
         }
     }
+
+    const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
+
+    // この後でマーカー更新
+    updateMarker(lat, lng, heading, accColor, speedKmh);
+
 
     // 速度・方角補正
     if (prev) {
@@ -489,8 +502,6 @@ async function handlePosition(pos) {
     }
     if (lastOrientation !== null) heading = lastOrientation;
     heading = (heading === null || isNaN(heading)) ? 0 : heading;
-
-    const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
 
     // ===== UI更新 =====
     document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
