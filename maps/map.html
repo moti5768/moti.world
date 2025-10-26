@@ -72,13 +72,6 @@
       font-weight: bold;
     }
 
-    /* attribution控えめ */
-    .leaflet-control-attribution {
-      font-size: 10px;
-      opacity: 0.7;
-      color: #555;
-    }
-
     .leaflet-touch .leaflet-bar a:first-child {
       border-top-left-radius: 10px;
       border-top-right-radius: 10px;
@@ -267,17 +260,19 @@
       }
     }
 
-    .leaflet-control-attribution {
-      font-size: 10px;
-      opacity: 0.8;
-    }
-
     .custom-marker div {
       border: 2px solid var(--marker-border);
       box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
       border-radius: 50%;
     }
 
+    .leaflet-left {
+      bottom: 50px;
+    }
+
+    .leaflet-bottom {
+      bottom: 0px;
+    }
 
     /* ルートのステップパネル */
     .leaflet-routing-container {
@@ -290,7 +285,15 @@
       border-radius: 8px;
       padding: 6px;
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      bottom: 50px;
+      z-index: 998;
     }
+
+    .leaflet-control-attribution {
+      font-size: 10px;
+      opacity: 0.8;
+    }
+
 
     /* ヘッダ固定 */
     .leaflet-routing-container .leaflet-routing-header,
@@ -1418,7 +1421,7 @@
               const animLine = animateRouteSmooth(route.coordinates, color, weight, 1500);
               // プラットフォーム判定（iPhone 向けにヒット幅を大きめに）
               const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-              const touchHitWeight = isIOS ? 30 : 30; // iPhone はさらに広く
+              const touchHitWeight = isIOS ? 31 : 31; // iPhone はさらに広く
               // 透明クリック用ライン（タッチ領域を拡大）
               const clickLine = L.polyline(route.coordinates, {
                 color: color,
@@ -1510,34 +1513,33 @@
 
         // 閉じるボタン追加
         const container = routingControl.getContainer();
-        container.style.zIndex = "999";
-        if (container && !container.querySelector('.leaflet-routing-close')) {
+        container.style.zIndex = "998";
+        if (!document.querySelector('.leaflet-routing-close')) {
           const closeBtn = document.createElement('a');
           closeBtn.className = 'leaflet-routing-close';
-          closeBtn.innerHTML = '×';
-          closeBtn.style.position = 'relative';
+          closeBtn.style.position = 'absolute';
           closeBtn.style.display = 'block';
-          closeBtn.style.marginTop = '2.5px';
-          closeBtn.style.marginLeft = 'auto';
-          closeBtn.style.marginRight = '2.5px';
-          closeBtn.style.fontSize = '20px';
+          closeBtn.style.bottom = '12.5px';
+          closeBtn.style.right = '20px';
+          closeBtn.style.padding = '6px 16px';
+          closeBtn.style.height = '20px';
+          closeBtn.style.backgroundColor = 'darkgray';
+          closeBtn.style.fontSize = '16px';
+          closeBtn.style.fontWeight = '500';
+          closeBtn.style.color = '#333';
+          closeBtn.style.border = '1.5px solid gray';
+          closeBtn.style.borderRadius = '8px';
+          closeBtn.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
           closeBtn.style.cursor = 'pointer';
+          closeBtn.style.zIndex = '999';
           closeBtn.onclick = () => {
-            if (container.style.height !== '20px') {
-              container.style.height = '20px';
-              container.style.width = '20px';
-              closeBtn.style.position = "absolute";
-              closeBtn.style.top = "2.5px";
-              closeBtn.style.left = "-2.5px";
+            if (container.style.display == 'none') {
+              container.style.display = 'block';
             } else {
-              container.style.height = '';
-              container.style.width = '';
-              closeBtn.style.position = "";
-              closeBtn.style.top = "";
-              closeBtn.style.left = "";
+              container.style.display = 'none';
             }
           };
-          container.appendChild(closeBtn);
+          document.getElementById('map').appendChild(closeBtn);
         }
 
         navMode = false;
@@ -1557,6 +1559,9 @@
         navModeBtn.textContent = "ナビ開始(車のみ)";
         currentDestination = null;
         userSelectedRoute = false;
+
+        const closeBtn = document.querySelector('.leaflet-routing-close');
+        if (closeBtn) closeBtn.remove();
 
         if (marker) {
           const currentLatLng = marker.getLatLng();
