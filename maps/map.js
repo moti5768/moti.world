@@ -264,6 +264,7 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
         if (div) {
             const curHead = fromHeading + delta * e;
             div.style.transform = `rotate(${curHead}deg)`;
+            div.style.background = accColor; // ← ここで毎フレーム色を反映
         }
 
         if (t < 1) {
