@@ -666,7 +666,7 @@
       if (delta > 180) delta -= 360;
       if (delta < -180) delta += 360;
 
-      const duration = 600; // ms（見た目の好みで 300-800 に調整可）
+      const duration = 400; // ms（見た目の好みで 300-800 に調整可）
       const startTime = performance.now();
 
       function step(now) {
@@ -888,9 +888,9 @@
     let lastRouteUpdate = 0;
     let lastRoutePoint = null;
     let lastAddressTime = 0;
-    const MIN_ACCURACY = 10; // 精度10m以上は無視
+    const MIN_ACCURACY = 40; // 精度40m以上は無視
     let firstPositionReceived = false; // 初回位置フラグ
-    const SMOOTHING_COUNT = 3; // 平滑化点数
+    const SMOOTHING_COUNT = 2; // 平滑化点数
     let smoothBuffer = [];
 
     async function handlePosition(pos) {
@@ -949,7 +949,7 @@
         if (marker) {
           const prevMarkerPos = [marker.getLatLng().lat, marker.getLatLng().lng];
           const d = haversine(prevMarkerPos, smoothed);
-          const MAX_STEP = Math.max(5, acc);
+          const MAX_STEP = Math.max(5, acc / 2); // ← 歩行レベルの動きを自然に反映
           if (d > MAX_STEP) {
             const ratio = MAX_STEP / d;
             smoothed = [
@@ -960,7 +960,7 @@
         }
 
         const smoothDist = prev ? haversine(prev, smoothed) : Infinity;
-        const threshold = Math.max(3, acc);
+        const threshold = Math.max(1.5, acc / 2); // ← 小移動（2〜3m）でも更新される
 
         if (!marker || !prev || smoothDist > threshold || isFirst) {
           let lastSegment = pathSegments[pathSegments.length - 1];
@@ -971,6 +971,13 @@
           lastSegment.push(smoothed);
           yellowgreenrawPolylines();
           updateMarker(smoothed[0], smoothed[1], heading, accColor, speed);
+
+          //自動追尾ONなら現在地を中心にマップも追尾します。
+          if (follow && map && !userInteracting) {
+            programMoving = true;
+            map.panTo(smoothed, { animate: true, duration: 0.5 });
+            map.once('moveend', () => programMoving = false);
+          }
 
           // 初回だけマップ中心をセット
           if (isFirst && map) {
@@ -1074,7 +1081,7 @@
       watchId = navigator.geolocation.watchPosition(
         pos => handlePosition(pos),
         err => console.warn('追跡取得エラー', err),
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     }
 
