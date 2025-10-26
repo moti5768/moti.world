@@ -1204,7 +1204,7 @@ document.getElementById('stopBtn').addEventListener('click', () => {
         watchId = null;
 
         // 新しい線を作成
-        pathSegments.push([]);
+        // pathSegments.push([]);
 
         // 平滑化バッファをクリア（再開時に古い位置に引きずられないようにする）
         smoothBuffer = [];
