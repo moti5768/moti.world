@@ -397,6 +397,7 @@
     let startMarker = null;
     let userInteracting = false;
     let programMoving = false; // 追加
+    let currentLabel = null;
 
     // ログUI
     const logToggleBtn = document.getElementById('logToggleBtn');
@@ -477,6 +478,10 @@
       map.on('dragstart zoomstart', () => {
         if (!programMoving) { // プログラム移動中は無視
           userInteracting = true;
+        }
+        if (currentLabel) {
+          currentLabel.remove();
+          currentLabel = null;
         }
       });
 
@@ -595,6 +600,16 @@
         marker._animId = null;
         marker._lastHeading = (typeof heading === 'number') ? heading : 0;
         marker._lastPos = marker.getLatLng();
+
+        marker.on("click", e => {
+          showMarkerLabelLeaflet(e, "現在地");
+        });
+        map.on("click", () => {
+          if (currentLabel) {
+            currentLabel.remove();
+            currentLabel = null;
+          }
+        });
         return;
       }
 
@@ -653,6 +668,34 @@
       }
 
       marker._animId = requestAnimationFrame(step);
+    }
+
+    function showMarkerLabelLeaflet(e, text) {
+      // 既存ラベル削除
+      if (currentLabel) {
+        currentLabel.remove();
+        currentLabel = null;
+      }
+
+      // Leaflet のマップ座標 → DOM 座標
+      const point = map.mouseEventToContainerPoint(e.originalEvent);
+
+      const label = document.createElement('div');
+      label.textContent = text;
+      label.style.position = 'absolute';
+      label.style.background = 'rgba(0,0,0,0.7)';
+      label.style.color = 'white';
+      label.style.padding = '2px 5px';
+      label.style.borderRadius = '4px';
+      label.style.fontSize = '15px';
+      label.style.pointerEvents = 'none';
+      label.style.zIndex = 1000;
+
+      label.style.left = (point.x + 20) + 'px';
+      label.style.top = (point.y - 20) + 'px';
+
+      document.body.appendChild(label);
+      currentLabel = label;
     }
 
     // ===== 住所取得 =====
@@ -1348,6 +1391,9 @@
                 iconSize: [size, size],
                 iconAnchor: [size / 2, size / 2]
               })
+            });
+            m.on("click", e => {
+              showMarkerLabelLeaflet(e, "現在地");
             });
             if (i === 1) m.on('click', () => map.flyTo(m.getLatLng(), 17));
             return m;
