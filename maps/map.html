@@ -322,6 +322,12 @@
     .leaflet-routing-collapse-btn {
       display: none !important;
     }
+
+    .btn-pointer-none {
+      background: silver !important;
+      color: darkgray;
+      pointer-events: none;
+    }
   </style>
 </head>
 
@@ -367,13 +373,27 @@
 
       <div style="height:8px"></div>
       <div class="controls">
-        <button id="stopBtn" class="danger">観測停止</button>
-        <button id="restartBtn">再開</button>
+        <button id="stopBtn" class="danger" onclick="btn_toggle()">観測停止</button>
+        <button id="restartBtn" class="btn-pointer-none" onclick="btn_toggle()">再開</button>
         <button id="centerToggle" class="secondary">自動追尾: ON</button>
         <button id="exportJsonBtn" class="warning">JSON保存</button>
         <button id="exportCsvBtn" class="warning">CSV保存</button>
         <button id="clearBtn" class="secondary">ログ<br>経路クリア</button>
       </div>
+
+      <script>
+        function btn_toggle() {
+          const stopBtn = document.getElementById('stopBtn');
+          const restartBtn = document.getElementById('restartBtn');
+          if (stopBtn.classList.contains('btn-pointer-none')) {
+            stopBtn.classList.remove('btn-pointer-none');
+            restartBtn.classList.add('btn-pointer-none');
+          } else {
+            stopBtn.classList.add('btn-pointer-none');
+            restartBtn.classList.remove('btn-pointer-none');
+          }
+        }
+      </script>
 
       <div class="row" style="margin:8px 0;gap:12px;align-items:center">
         <div>総距離: <strong id="totalDist">0 m</strong></div>
@@ -829,8 +849,8 @@
     });
 
     // ===== 操作ボタン =====
-    document.getElementById('stopBtn').addEventListener('click', () => { if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; pathSegments.push([]); alert('観測停止'); } });
-    document.getElementById('restartBtn').addEventListener('click', () => { if (!watchId) startTracking(); alert('観測再開'); });
+    document.getElementById('stopBtn').addEventListener('click', () => { if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; pathSegments.push([]); } });
+    document.getElementById('restartBtn').addEventListener('click', () => { if (!watchId) startTracking(); });
     document.getElementById('clearBtn').addEventListener('click', () => { if (confirm('本当にクリアしますか？')) { pathSegments = [[]]; logData = []; yellowgreenrawPolylines(); document.getElementById('log').innerHTML = ''; safeSaveLocal(); updateStatsUI(); } });
     document.getElementById('centerToggle').addEventListener('click', async () => {
       follow = !follow;
