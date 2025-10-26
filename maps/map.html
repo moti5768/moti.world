@@ -277,8 +277,9 @@
     /* ルートのステップパネル */
     .leaflet-routing-container {
       display: flex;
+      font-size: 12px;
       flex-direction: column;
-      width: 220px;
+      width: 200px;
       height: auto;
       /* 高さ固定 */
       background: rgba(255, 255, 255, 0.95);
@@ -1510,38 +1511,34 @@
             document.getElementById("eta").textContent = "経路取得失敗";
           })
           .addTo(map);
-
-        // 閉じるボタン追加
         const container = routingControl.getContainer();
         container.style.zIndex = "998";
-        if (!document.querySelector('.leaflet-routing-close')) {
-          const closeBtn = document.createElement('a');
+        let closeBtn = document.querySelector('.leaflet-routing-close');
+        if (!closeBtn) {
+          closeBtn = document.createElement('a');
           closeBtn.className = 'leaflet-routing-close';
-          closeBtn.style.position = 'absolute';
-          closeBtn.style.display = 'block';
-          closeBtn.style.bottom = '12.5px';
-          closeBtn.style.right = '20px';
-          closeBtn.style.padding = '6px 16px';
-          closeBtn.style.height = '20px';
-          closeBtn.style.backgroundColor = 'darkgray';
-          closeBtn.style.fontSize = '16px';
-          closeBtn.style.fontWeight = '500';
-          closeBtn.style.color = '#333';
-          closeBtn.style.border = '1.5px solid gray';
-          closeBtn.style.borderRadius = '8px';
-          closeBtn.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
-          closeBtn.style.cursor = 'pointer';
-          closeBtn.style.zIndex = '999';
+          closeBtn.style.cssText = `
+        position:absolute;
+        bottom:12.5px;
+        right:20px;
+        padding:6px 16px;
+        height:20px;
+        background-color:darkgray;
+        font-size:16px;
+        font-weight:500;
+        color:#333;
+        border:1.5px solid gray;
+        border-radius:8px;
+        box-shadow:0 2px 6px rgba(0,0,0,0.2);
+        cursor:pointer;
+        z-index:999;
+        pointer-events:auto;`;
           closeBtn.onclick = () => {
-            if (container.style.display == 'none') {
-              container.style.display = 'block';
-            } else {
-              container.style.display = 'none';
-            }
+            const container = routingControl.getContainer();
+            container.style.display = container.style.display === 'none' ? 'block' : 'none';
           };
           document.getElementById('map').appendChild(closeBtn);
         }
-
         navMode = false;
         navModeBtn.textContent = "ナビ開始(車のみ)";
       });
