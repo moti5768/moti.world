@@ -487,6 +487,7 @@ async function handlePosition(pos) {
 
     const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
 
+    yellowgreenrawPolylines();
     // この後でマーカー更新
     updateMarker(lat, lng, heading, accColor, speedKmh);
 
