@@ -461,7 +461,7 @@
 
       // 高精細（Retina対応）タイル読み込み
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 21,
+        maxZoom: 19,
         detectRetina: false,
         attribution: '© OpenStreetMap contributors'
       }).addTo(map);
@@ -552,13 +552,13 @@
     }
 
     // ===== ポリライン =====
-    function redrawPolylines() {
+    function yellowgreenrawPolylines() {
       const lastSeg = pathSegments[pathSegments.length - 1];
       if (!lastSeg || lastSeg.length === 0) return;
 
       let lastLine = polylines[polylines.length - 1];
       if (!lastLine || lastLine.getLatLngs().length === 0) {
-        lastLine = L.polyline(lastSeg, { color: '#ff4444', weight: 4, opacity: 0.9 }).addTo(map);
+        lastLine = L.polyline(lastSeg, { color: '#9ACD32', weight: 6, opacity: 0.8 }).addTo(map);
         polylines.push(lastLine);
       } else {
         lastLine.addLatLng(lastSeg[lastSeg.length - 1]);
@@ -784,7 +784,7 @@
     // ===== 操作ボタン =====
     document.getElementById('stopBtn').addEventListener('click', () => { if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; pathSegments.push([]); alert('観測停止'); } });
     document.getElementById('restartBtn').addEventListener('click', () => { if (!watchId) startTracking(); alert('観測再開'); });
-    document.getElementById('clearBtn').addEventListener('click', () => { if (confirm('本当にクリアしますか？')) { pathSegments = [[]]; logData = []; redrawPolylines(); document.getElementById('log').innerHTML = ''; safeSaveLocal(); updateStatsUI(); } });
+    document.getElementById('clearBtn').addEventListener('click', () => { if (confirm('本当にクリアしますか？')) { pathSegments = [[]]; logData = []; yellowgreenrawPolylines(); document.getElementById('log').innerHTML = ''; safeSaveLocal(); updateStatsUI(); } });
     document.getElementById('centerToggle').addEventListener('click', async () => {
       follow = !follow;
       document.getElementById('centerToggle').textContent = `自動追尾: ${follow ? 'ON' : 'OFF'}`;
@@ -902,7 +902,7 @@
             lastSegment = pathSegments[pathSegments.length - 1];
           }
           lastSegment.push(smoothed);
-          redrawPolylines();
+          yellowgreenrawPolylines();
           updateMarker(smoothed[0], smoothed[1], heading, accColor, speed);
 
           // 初回だけマップ中心をセット
@@ -1208,7 +1208,7 @@
     window.addEventListener('load', () => {
       initMap();
       restoreLocal();
-      redrawPolylines();
+      yellowgreenrawPolylines();
       setupDeviceOrientation();
       startTracking();
 
@@ -1355,7 +1355,12 @@
           position: 'bottomright'
         })
           .on("routingstart", () => {
-            document.getElementById("eta").textContent = "計算中...";
+            // 手動操作・追尾移動中は無視
+            if (userInteracting || programMoving) return;
+            const etaElem = document.getElementById("eta");
+            // 既に計算結果が表示されている場合は維持
+            if (etaElem.textContent && etaElem.textContent !== "---" && !etaElem.textContent.includes("計算中")) return;
+            etaElem.textContent = "計算中...";
           })
           .on("routesfound", e => {
             e.routes.forEach(route => translateInstructions(route));
@@ -1364,7 +1369,7 @@
             // 各ルートのアニメーション & クリックでETA更新＆選択色
             e.routes.forEach((route, idx) => {
               const color = idx === 0 ? "#1976d2" : "#f44336";
-              const weight = idx === 0 ? 7 : 5;
+              const weight = idx === 0 ? 8 : 4;
 
               const animLine = animateRouteSmooth(route.coordinates, color, weight, 1500);
 
@@ -1374,8 +1379,8 @@
                 updateEta(route);
                 // 選択色反映（選択中：青、他：赤）
                 animatedPolylines.forEach(p => {
-                  if (p.route === route) p.polyline.setStyle({ color: "#1976d2", weight: 7 });
-                  else p.polyline.setStyle({ color: "#f44336", weight: 5 });
+                  if (p.route === route) p.polyline.setStyle({ color: "#1976d2", weight: 8 });
+                  else p.polyline.setStyle({ color: "#f44336", weight: 4 });
                 });
               });
 
