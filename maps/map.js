@@ -178,7 +178,7 @@ function yellowgreenrawPolylines() {
     }
 }
 
-// ===== マーカー更新 =====
+// ===== マーカー更新（軽量化版）=====
 function updateMarker(lat, lng, heading, accColor, speedKmh) {
     const size = speedKmh && speedKmh * 3.6 > 200 ? 20 : 16;
 
@@ -192,14 +192,11 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
         return;
     }
 
-    // イージング関数
-    function easeOutQuad(t) { return t * (2 - t); }
-
     // 初回作成
     if (!marker) {
         const icon = L.divIcon({
             className: 'custom-marker',
-            html: `<div style="width:${size}px;height:${size}px;background:${accColor};border:2px solid #fff;border-radius:50%;transform:rotate(${heading}deg)"></div>`,
+            html: `<div style="width:${size}px;height:${size}px;background:${accColor};border:2px solid #fff;border-radius:50%;transform:rotate(${heading || 0}deg)"></div>`,
             iconSize: [size, size],
             iconAnchor: [size / 2, size / 2]
         });
@@ -207,6 +204,10 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
         marker._animId = null;
         marker._lastHeading = (typeof heading === 'number') ? heading : 0;
         marker._lastPos = marker.getLatLng();
+
+        // div 要素を保持して再利用
+        const el = marker.getElement && marker.getElement();
+        marker._div = el ? el.querySelector('div') : null;
 
         marker.on("click", e => {
             showMarkerLabelLeaflet(e, "現在地");
@@ -220,16 +221,10 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
         return;
     }
 
-    // div 要素取得
-    const el = marker.getElement && marker.getElement();
-    const div = el ? el.querySelector('div') : null;
+    const div = marker._div;
 
-    // 見た目（色・サイズ）を毎フレーム更新
-    if (div) {
-        div.style.width = div.style.height = size + 'px';
-        div.style.background = accColor;
-        div.style.borderRadius = '50%';
-    }
+    // div 更新は色だけ
+    if (div) div.style.background = accColor;
 
     // 既存アニメがあればキャンセル
     if (marker._animId) {
@@ -244,26 +239,27 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
     const toLat = lat, toLng = lng;
     const toHeading = (typeof heading === 'number') ? heading : fromHeading;
 
-    // 角度差を -180..180 に正規化
-    let delta = toHeading - fromHeading;
-    if (delta > 180) delta -= 360;
-    if (delta < -180) delta += 360;
+    // 座標・角度がほぼ変わらなければ更新スキップ
+    const deltaLat = toLat - fromLat;
+    const deltaLng = toLng - fromLng;
+    const deltaHeading = ((toHeading - fromHeading + 540) % 360) - 180;
+    if (Math.abs(deltaLat) < 1e-6 && Math.abs(deltaLng) < 1e-6 && deltaHeading === 0) return;
 
     const duration = 400;
     const startTime = performance.now();
 
     function step(now) {
         const t = Math.min(1, (now - startTime) / duration);
-        const e = easeOutQuad(t);
+        const e = t * (2 - t); // easeOutQuad インライン化
 
-        const curLat = fromLat + (toLat - fromLat) * e;
-        const curLng = fromLng + (toLng - fromLng) * e;
+        const curLat = fromLat + deltaLat * e;
+        const curLng = fromLng + deltaLng * e;
         marker.setLatLng([curLat, curLng]);
 
         if (div) {
-            const curHead = fromHeading + delta * e;
+            const curHead = fromHeading + deltaHeading * e;
             div.style.transform = `rotate(${curHead}deg)`;
-            div.style.background = accColor; // ← 毎フレーム色を反映
+            div.style.background = accColor; // 色は毎フレーム反映
         }
 
         if (t < 1) {
