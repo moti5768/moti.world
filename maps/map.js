@@ -308,30 +308,57 @@ function showMarkerLabelLeaflet(e, text) {
 }
 
 // ===== 住所取得 =====
-async function fetchAddress(lat, lng) {
-    // 取得間隔制御（1秒以内は再取得しない）
-    if (now() - lastFetchTime < 1000) return '取得間隔制御中';
+// --- 改良版 fetchAddress（キャッシュ・中断対応・距離制限付き） ---
+const addrCache = new Map();              // キャッシュ: 緯度経度キー
+let lastAddressPoint = null;              // 最後に住所を取得した座標
+let currentAddressController = null;      // Abort用コントローラ
 
-    // 近接チェック（直前取得地点と近い場合は既存表示を返す）
+async function fetchAddress(lat, lng) {
+    const nowTime = Date.now();
+
+    // === 1. 取得間隔制御（1秒以内の連続呼び出しを防ぐ） ===
+    if (nowTime - lastFetchTime < 1000) return '取得間隔制御中';
+
+    // === 2. 近接チェック（15m以内ならキャッシュ／既存表示を使う） ===
     try {
-        if (marker && lastRoutePoint && haversine([lat, lng], lastRoutePoint) < 10) {
-            const curEl = document.getElementById('currentAddress') || document.getElementById('destAddress');
-            if (curEl && curEl.textContent && curEl.textContent !== '---') return curEl.textContent;
+        if (lastAddressPoint && haversine([lat, lng], lastAddressPoint) < 15) {
+            const key = `${lastAddressPoint[0].toFixed(4)},${lastAddressPoint[1].toFixed(4)}`;
+            if (addrCache.has(key)) return addrCache.get(key);
         }
     } catch (e) {
         console.warn('近接チェック例外', e);
     }
 
-    lastFetchTime = now();
+    lastFetchTime = nowTime;
+    lastAddressPoint = [lat, lng];
+
+    // === 3. キャッシュ利用（約10m精度・高速移動でも安定） ===
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`; // 10〜11m精度
+    if (addrCache.has(key)) return addrCache.get(key);
+
+    // === 4. 既存リクエスト中止（高速移動対応） ===
+    if (currentAddressController) {
+        try { currentAddressController.abort(); } catch (e) { /* ignore */ }
+    }
+    currentAddressController = new AbortController();
+    const signal = currentAddressController.signal;
 
     try {
-        // Nominatim 逆ジオコーディング
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`);
-        if (!res.ok) return '住所取得失敗';
+        // === 5. Nominatim 逆ジオコーディング ===
+        const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`,
+            { signal, headers: { 'User-Agent': 'HighSpeedMap/1.0 (compatible; fetchAddress)' } }
+        );
+
+        if (!res.ok) {
+            console.warn('住所取得HTTP失敗', res.status);
+            return '住所取得失敗';
+        }
+
         const data = await res.json();
         const a = data.address || {};
 
-        // 日本都道府県リスト
+        // === 6. 日本の都道府県判定 ===
         const jpPrefs = [
             '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
             '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
@@ -342,18 +369,15 @@ async function fetchAddress(lat, lng) {
             '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'
         ];
 
-        // address 内の全フィールド + display_name を結合
         let joined = Object.values(a).filter(Boolean).join(' ');
         if (data.display_name) joined += ' ' + data.display_name;
 
-        // 都道府県抽出
         let prefecture = '';
         const regex = new RegExp(jpPrefs.join('|'));
         const match = joined.match(regex);
         if (match) {
             prefecture = match[0];
         } else {
-            // 短縮名（東京→東京都）で検索
             for (const full of jpPrefs) {
                 const short = full.replace(/(都|道|府|県)$/, '');
                 if (short && joined.includes(short)) {
@@ -363,25 +387,23 @@ async function fetchAddress(lat, lng) {
             }
         }
 
-        // display_name から番地・建物を補完（郵便番号は除外）
+        // === 7. 番地・建物名の補完 ===
         if (!a.house_number || !a.building) {
             const parts = (data.display_name || '').split(',').map(s => s.trim());
-            // 番地補完（数字組み合わせだが郵便番号は除外）
             if (!a.house_number) {
                 const hn = parts.find(p => /\d{1,4}(-\d{1,4})*/.test(p) && !/\d{3}-\d{4}/.test(p));
                 if (hn) a.house_number = hn;
             }
-            // 建物名補完（ビル・マンションなど）
             if (!a.building) {
                 const bd = parts.find(p => /ビル|マンション|ハイツ|アパート/.test(p));
                 if (bd) a.building = bd;
             }
         }
 
-        // 返却順序：国, 郵便, 都道府県, 市町村, 町域, 道路, 番地, 建物名
+        // === 8. 出力形式 ===
         const result = [
             a.country,
-            a.postcode,      // ここは address のみ使用
+            a.postcode,
             prefecture,
             a.city || a.town || a.village,
             a.suburb || a.neighbourhood,
@@ -390,11 +412,22 @@ async function fetchAddress(lat, lng) {
             a.building
         ].filter(Boolean).join(', ');
 
-        return result || data.display_name || '住所情報なし';
+        const finalAddress = result || data.display_name || '住所情報なし';
+
+        // === 9. キャッシュ保存 ===
+        addrCache.set(key, finalAddress);
+
+        return finalAddress;
 
     } catch (err) {
+        if (err.name === 'AbortError') {
+            console.warn('住所取得中止（新しいリクエストへ切替）');
+            return '住所取得中止';
+        }
         console.warn('fetchAddress error', err);
         return '住所取得エラー';
+    } finally {
+        currentAddressController = null;
     }
 }
 
@@ -442,7 +475,8 @@ let firstPositionReceived = false; // 初回位置フラグ
 const SMOOTHING_COUNT = 3; // 平滑化点数
 let smoothBuffer = [];
 let retryAccuracyThreshold = MIN_ACCURACY;
-let lastGoodUpdateTime = Date.now();
+let lastGoodUpdate = null;
+let lastGoodUpdateTime = 0;
 
 async function handlePosition(pos) {
     if (!pos || !pos.coords) {
@@ -453,7 +487,7 @@ async function handlePosition(pos) {
     const c = pos.coords;
     const lat = c.latitude, lng = c.longitude, acc = c.accuracy || 0, alt = c.altitude;
     let speed = (c.speed >= 0) ? c.speed : null;
-    const speedKmh = speed ? speed * 3.6 : 0;     // km/hに変換
+    const speedKmh = speed ? speed * 3.6 : 0;
     let heading = (typeof c.heading === 'number') ? c.heading : null;
     const nowTime = Date.now();
 
@@ -464,37 +498,43 @@ async function handlePosition(pos) {
     const isFirst = !firstPositionReceived;
     if (isFirst) firstPositionReceived = true;
 
-    // 精度チェック + 時間経過で更新
-    let accChanged = false;
-    if (typeof lastAcc !== 'undefined' && acc !== lastAcc) {
-        accChanged = true; // 精度が変化した場合
+    // --- 外れ値除外（徒歩〜新幹線対応） ---
+    if (lastGoodUpdate) {
+        const dt = Math.max((pos.timestamp - lastGoodUpdateTime) / 1000, 0.1);
+        const dist = haversine(lastGoodUpdate, [lat, lng]);
+        const impliedSpeed = dist / dt;
+        const MAX_REALISTIC_SPEED = 140; // ≒ 504 km/h
+
+        if (impliedSpeed > MAX_REALISTIC_SPEED && acc > 50) {
+            console.warn('外れ値検出: 異常速度', impliedSpeed.toFixed(1), 'm/s, 精度', acc);
+            return;
+        }
     }
-    lastAcc = acc; // 今回の精度を保存
+    lastGoodUpdate = [lat, lng];
+    lastGoodUpdateTime = pos.timestamp;
+
+    // --- 精度チェック + 時間経過で更新 ---
+    let accChanged = false;
+    if (typeof lastAcc !== 'undefined' && acc !== lastAcc) accChanged = true;
+    lastAcc = acc;
 
     if (!isFirst) {
         if (acc <= MIN_ACCURACY) {
-            // 精度良好 → 更新OK、lastGoodUpdateTimeを更新
             lastGoodUpdateTime = Date.now();
         } else if (acc > retryAccuracyThreshold) {
-            // 精度悪い場合は時間経過で更新
-            if (Date.now() - lastGoodUpdateTime <= 5000 && !accChanged) return; // 精度変化がなければスキップ
+            if (Date.now() - lastGoodUpdateTime <= 5000 && !accChanged) return;
             console.warn('精度悪いが時間経過で更新:', acc);
         } else {
-            // 精度は悪いがretryThreshold以内 → 通常スルー
-            if (!accChanged) return; // 精度変化がなければスルー
+            if (!accChanged) return;
         }
     }
 
     const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
-
     yellowgreenrawPolylines();
-    // この後でマーカー更新
-    updateMarker(lat, lng, heading, accColor, speedKmh);
 
-
-    // 速度・方角補正
+    // --- 速度・方角補正 ---
     if (prev) {
-        const dt = Math.max((pos.timestamp - lastPosTime) / 1000, 0.1); // dt が小さい場合は0.1秒に補正
+        const dt = Math.max((pos.timestamp - lastPosTime) / 1000, 0.1);
         if (!speed) speed = haversine(prev, [lat, lng]) / dt;
         if ((heading === null || isNaN(heading)) && dt > 0) {
             heading = Math.atan2(lng - prev[1], lat - prev[0]) * 180 / Math.PI;
@@ -504,7 +544,7 @@ async function handlePosition(pos) {
     if (lastOrientation !== null) heading = lastOrientation;
     heading = (heading === null || isNaN(heading)) ? 0 : heading;
 
-    // ===== UI更新 =====
+    // --- UI更新 ---
     document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
     document.getElementById('lng').textContent = toFixedOrDash(lng, 6);
     document.getElementById('acc').textContent = `${acc.toFixed(1)} m`;
@@ -513,7 +553,7 @@ async function handlePosition(pos) {
     document.getElementById('heading').textContent = directionName(heading);
     document.getElementById('acc').style.color = accColor;
 
-    // ===== 平滑化 + 低精度補正 =====
+    // --- 平滑化 + 低精度補正 ---
     if (isFirst || acc <= MIN_ACCURACY || (prev && haversine(prev, [lat, lng]) > 5)) {
         smoothBuffer.push([lat, lng]);
         if (smoothBuffer.length > SMOOTHING_COUNT) smoothBuffer.shift();
@@ -526,18 +566,34 @@ async function handlePosition(pos) {
         if (marker) {
             const prevMarkerPos = [marker.getLatLng().lat, marker.getLatLng().lng];
             const d = haversine(prevMarkerPos, smoothed);
-            const MAX_STEP = Math.min(Math.max(5, acc / 2), 50); // ← 歩行レベルの動きを自然に反映 上限50mに制限
-            if (d > MAX_STEP) {
-                const ratio = MAX_STEP / d;
-                smoothed = [
-                    prevMarkerPos[0] + (smoothed[0] - prevMarkerPos[0]) * ratio,
-                    prevMarkerPos[1] + (smoothed[1] - prevMarkerPos[1]) * ratio
-                ];
+            const speedMs = speed || 0;
+
+            // --- 停止→再開検出 ---
+            const timeSinceLast = (nowTime - lastPosTime) / 1000;
+            const wasPaused = timeSinceLast > 3; // 3秒以上停止したら再開扱い
+
+            if (wasPaused) {
+                console.warn('再開検出: 即ジャンプで補正');
+                smoothed = [lat, lng];
+                smoothBuffer = [[lat, lng]]; // 古いデータ破棄
+            } else {
+                // --- 通常補間 ---
+                const MAX_STEP_BASE = Math.min(Math.max(5, acc / 2), 50);
+                const MAX_STEP_SPEED_FACTOR = Math.min(1 + speedMs / 5, 10);
+                const MAX_STEP = Math.min(MAX_STEP_BASE * MAX_STEP_SPEED_FACTOR, 500);
+
+                if (d > MAX_STEP) {
+                    const ratio = MAX_STEP / d;
+                    smoothed = [
+                        prevMarkerPos[0] + (smoothed[0] - prevMarkerPos[0]) * ratio,
+                        prevMarkerPos[1] + (smoothed[1] - prevMarkerPos[1]) * ratio
+                    ];
+                }
             }
         }
 
         const smoothDist = prev ? haversine(prev, smoothed) : Infinity;
-        const threshold = Math.max(1.5, acc / 2); // ← 小移動（2〜3m）でも更新される
+        const threshold = Math.max(1.5, acc / 2);
 
         if (!marker || !prev || smoothDist > threshold || isFirst) {
             let lastSegment = pathSegments[pathSegments.length - 1];
@@ -549,33 +605,27 @@ async function handlePosition(pos) {
             yellowgreenrawPolylines();
             updateMarker(smoothed[0], smoothed[1], heading, accColor, speed);
 
-            //自動追尾ONなら現在地を中心にマップも追尾します。
             if (follow && map && !userInteracting) {
                 programMoving = true;
                 map.panTo(smoothed, { animate: true, duration: 0.3 });
                 map.once('moveend', () => programMoving = false);
             }
 
-            // 初回だけマップ中心をセット
-            if (isFirst && map) {
-                map.setView(smoothed, 17);
-            }
+            if (isFirst && map) map.setView(smoothed, 17);
         }
     }
 
-    // ===== 住所更新 =====
+    // --- 住所更新 ---
     const currentAddrElem = document.getElementById('currentAddress');
     if (nowTime - lastAddressTime > 1000) {
         const addrLat = lat, addrLng = lng;
         fetchAddress(addrLat, addrLng).then(addr => {
-            if (lat === addrLat && lng === addrLng) {
-                currentAddrElem.textContent = addr; // 現在地住所のみ更新
-            }
+            if (lat === addrLat && lng === addrLng) currentAddrElem.textContent = addr;
         });
         lastAddressTime = nowTime;
     }
 
-    // ===== ログ追加 =====
+    // --- ログ追加 ---
     addLogEntry({
         time: new Date().toISOString(),
         lat, lng, accuracy: acc, altitude: alt,
@@ -585,7 +635,7 @@ async function handlePosition(pos) {
         address: currentAddrElem.textContent
     });
 
-    // ===== ナビ中ルート更新 =====
+    // --- ナビ中ルート更新 ---
     const current = [lat, lng];
     if (routingControl && currentDestination && !userSelectedRoute) {
         const distMoved = lastRoutePoint ? haversine(lastRoutePoint, current) : Infinity;
@@ -593,12 +643,10 @@ async function handlePosition(pos) {
         if (distMoved > 10 && nowTime - lastRouteUpdate > 3000 && !routingControl._routingInProgress) {
             routingControl._routingInProgress = true;
             routingControl.setWaypoints([L.latLng(lat, lng), currentDestination]);
-            // ルート完了時にフラグ解除
             routingControl.on('routesfound routingerror', () => {
                 routingControl._routingInProgress = false;
             });
 
-            // 次ステップ表示
             const route = routingControl.getPlan().getWaypoints();
             if (route?.length >= 2) {
                 const nextStep = `次: ${route[1].lat.toFixed(5)},${route[1].lng.toFixed(5)}`;
@@ -613,7 +661,6 @@ async function handlePosition(pos) {
             lastRouteUpdate = nowTime;
         }
 
-        // リアルタイムETA
         if (speed && speed > 0) {
             const distToDest = haversine(current, [currentDestination.lat, currentDestination.lng]);
             const timeSec = distToDest / speed;
@@ -628,16 +675,14 @@ async function handlePosition(pos) {
         }
     }
 
-    // ===== スタートマーカー追従 =====
+    // --- スタートマーカー追従 ---
     if (routingControl && currentDestination && startMarker) {
-        const markerPos = smoothed;
-        startMarker.setLatLng(markerPos);
+        startMarker.setLatLng(smoothed);
     }
 
     lastPosTime = pos.timestamp || now();
     document.getElementById('lastAge').textContent = '0秒前';
 }
-
 
 // ===== エラー処理 =====
 let retryTimer = null;
@@ -1202,9 +1247,6 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     if (watchId) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
-
-        // 新しい線を作成
-        // pathSegments.push([]);
 
         // 平滑化バッファをクリア（再開時に古い位置に引きずられないようにする）
         smoothBuffer = [];

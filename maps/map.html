@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>位置観測マップ</title>
+  <title>位置観測 経路記録マップ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -23,6 +23,7 @@
   <div id="app">
     <div id="map"></div>
     <div class="panel">
+      <h2>📍 位置観測 経路記録マップ</h2>
       <div style="display: flex; gap: 8px; margin-top: 8px;">
         <button id="navModeBtn" class="secondary">ナビ開始(車のみ)</button>
         <button id="cancelNavBtn" class="secondary">ナビ取り消し</button>
@@ -43,7 +44,6 @@
       </div>
 
       <div class="row small">最終更新:<span id="lastAge" style="margin-left:8px">---</span></div>
-      <h2>📍 位置観測マップ</h2>
       <div class="info-grid">
         <div class="stat">緯度: <div id="lat">---</div>
         </div>
