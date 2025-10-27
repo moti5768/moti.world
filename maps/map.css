@@ -1,310 +1,293 @@
- :root {
-     --bg: #e8f0f8;
-     --card: rgba(255, 255, 255, 0.95);
-     --muted: #555;
-     --accent: #1976d2;
-     --danger: #e53935;
-     --warning: #ff9800;
-     --marker-border: #fff;
-     --polyline-color: #ff4444;
-     --polyline-weight: 5;
- }
+:root {
+    --bg: #e8f0f8;
+    --card: rgba(255, 255, 255, 0.95);
+    --muted: #555;
+    --accent: #1976d2;
+    --danger: #e53935;
+    --warning: #ff9800;
+    --marker-border: #fff;
+    --polyline-color: #ff4444;
+    --polyline-weight: 5;
+    --shadow-light: 0 1px 5px rgba(0, 0, 0, 0.08);
+    --shadow-medium: 0 2px 6px rgba(0, 0, 0, 0.05);
+    --shadow-card: 0 4px 10px rgba(0, 0, 0, 0.2);
+    --shadow-map: 0 8px 25px rgba(0, 0, 0, 0.2);
+    --radius-card: 10px;
+    --radius-btn: 6px;
+}
 
- body {
-     margin: 0;
-     font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;
-     background: var(--bg);
-     color: #222;
- }
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial;
+    background: var(--bg);
+    color: #222;
+}
 
- #app {
-     display: grid;
-     grid-template-columns: 1fr 400px;
-     gap: 12px;
-     height: 100vh;
-     padding: 12px;
-     box-sizing: border-box;
- }
+#app {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 12px;
+    height: 100vh;
+    padding: 12px;
+    box-sizing: border-box;
+}
 
- #map {
-     height: 100%;
-     width: 100%;
-     border-radius: 18px;
-     /* iPhone風角丸 */
-     overflow: hidden;
-     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-     /* 立体感 */
-     transition: transform 0.3s ease, box-shadow 0.3s ease;
-     background: #f6f8fa;
-     /* 読み込み中背景 */
- }
+#map {
+    height: 100%;
+    width: 100%;
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: var(--shadow-map);
+    transition: transform .3s, box-shadow .3s;
+    background: #f6f8fa;
+}
 
- /* ズームボタンをApple風に */
- .leaflet-control-zoom {
-     border: none;
-     background: rgba(255, 255, 255, 0.9);
-     border-radius: 12px;
-     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
- }
+.leaflet-control-zoom {
+    border: none;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 12px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.15);
+}
 
- .leaflet-control-zoom a {
-     color: #1976d2;
-     font-weight: bold;
- }
+.leaflet-control-zoom a {
+    color: var(--accent);
+    font-weight: bold;
+}
 
- .leaflet-touch .leaflet-bar a:first-child {
-     border-top-left-radius: 10px;
-     border-top-right-radius: 10px;
- }
+.leaflet-touch .leaflet-bar a:first-child {
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+}
 
- .leaflet-touch .leaflet-bar a:last-child {
-     border-bottom-left-radius: 10px;
-     border-bottom-right-radius: 10px;
- }
+.leaflet-touch .leaflet-bar a:last-child {
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+}
 
+.panel {
+    position: relative;
+    background: var(--card);
+    padding: 14px;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    backdrop-filter: blur(5px);
+}
 
+h2 {
+    margin: 6px 0 14px;
+    font-size: 20px;
+    color: var(--accent);
+}
 
- .panel {
-     position: relative;
-     background: var(--card);
-     padding: 14px;
-     border-radius: 10px;
-     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
-     overflow: auto;
-     display: flex;
-     flex-direction: column;
-     backdrop-filter: blur(5px);
- }
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+}
 
- h2 {
-     margin: 6px 0 14px;
-     font-size: 20px;
-     color: var(--accent);
- }
+.stat {
+    background: #f9f9fb;
+    padding: 3px;
+    border-radius: 8px;
+    font-size: .95em;
+    text-align: center;
+    box-shadow: var(--shadow-medium);
+}
 
- .info-grid {
-     display: grid;
-     grid-template-columns: repeat(2, 1fr);
-     gap: 10px;
-     margin-bottom: 14px;
- }
+.stat div {
+    font-weight: 600;
+    margin-top: 4px;
+}
 
- .stat {
-     background: #f9f9fb;
-     padding: 3px;
-     border-radius: 8px;
-     font-size: 0.95em;
-     text-align: center;
-     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
- }
+.controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+}
 
- .stat div {
-     font-weight: 600;
-     margin-top: 4px;
- }
+button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 3px;
+    border-radius: var(--radius-btn);
+    cursor: pointer;
+    font-size: .95em;
+    transition: .2s;
+}
 
- .controls {
-     display: grid;
-     grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-     gap: 10px;
-     margin-bottom: 14px;
- }
+button:hover {
+    opacity: .85;
+}
 
- button {
-     background: var(--accent);
-     color: #fff;
-     border: none;
-     padding: 3px;
-     border-radius: 6px;
-     cursor: pointer;
-     font-size: 0.95em;
-     transition: 0.2s;
- }
+button.secondary {
+    background: #666;
+}
 
- button:hover {
-     opacity: 0.85;
- }
+button.warning {
+    background: var(--warning);
+}
 
- button.secondary {
-     background: #666;
- }
+button.danger {
+    background: var(--danger);
+}
 
- button.warning {
-     background: var(--warning);
- }
+.row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-size: .87em;
+}
 
- button.danger {
-     background: var(--danger);
- }
+#log-container {
+    height: 35vh;
+    min-height: 40px;
+    overflow: hidden;
+    transition: height .5s;
+}
 
- .row {
-     display: flex;
-     gap: 10px;
-     align-items: center;
-     font-size: 0.87em;
- }
+#log {
+    height: 100%;
+    overflow: auto;
+    padding: 8px;
+    background: #f3f6fa;
+    border-radius: 8px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+    opacity: 1;
+    transition: opacity .4s, padding .3s;
+}
 
- #log-container {
-     /* ログ用スペースを確保 */
-     height: 35vh;
-     /* 最大展開高さ */
-     min-height: 40px;
-     /* 折りたたんだときの最小スペース */
-     overflow: hidden;
-     transition: height 0.5s ease;
- }
+#log.collapsed {
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
 
- #log {
-     height: 100%;
-     overflow: auto;
-     padding: 8px;
-     background: #f3f6fa;
-     border-radius: 8px;
-     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
-     opacity: 1;
-     transition: opacity 0.4s ease, padding 0.3s ease;
- }
+.log-entry {
+    background: #f7f7f8;
+    margin-bottom: 6px;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: var(--shadow-light);
+}
 
- #log.collapsed {
-     opacity: 0;
-     padding-top: 0;
-     padding-bottom: 0;
- }
+.log-entry .time {
+    font-weight: 600;
+    margin-bottom: 4px;
+    font-size: .85em;
+    color: #333;
+}
 
- .log-entry {
-     background: #f7f7f8;
-     margin-bottom: 6px;
-     padding: 10px;
-     border-radius: 8px;
-     box-shadow: 0 1px 5px rgba(0, 0, 0, 0.08);
- }
+.log-entry .coords {
+    font-size: .82em;
+    color: var(--muted);
+    margin-bottom: 4px;
+}
 
- .log-entry .time {
-     font-weight: 600;
-     margin-bottom: 4px;
-     font-size: 0.85em;
-     color: #333;
- }
+.log-entry .address {
+    font-size: .87em;
+    font-weight: 500;
+    margin-bottom: 4px;
+    word-break: break-word;
+}
 
- .log-entry .coords {
-     font-size: 0.82em;
-     color: #555;
-     margin-bottom: 4px;
- }
+.log-entry .info {
+    display: flex;
+    gap: 8px;
+    font-size: .82em;
+}
 
- .log-entry .address {
-     font-size: 0.87em;
-     font-weight: 500;
-     margin-bottom: 4px;
-     word-break: break-word;
- }
+.log-entry .accuracy {
+    font-weight: 600;
+}
 
- .log-entry .info {
-     display: flex;
-     gap: 8px;
-     font-size: 0.82em;
- }
+.acc-green {
+    color: green;
+}
 
- .log-entry .accuracy {
-     font-weight: 600;
- }
+.acc-yellowgreen {
+    color: yellowgreen;
+}
 
- .acc-green {
-     color: green;
- }
+.acc-orange {
+    color: orange;
+}
 
- .acc-yellowgreen {
-     color: yellowgreen;
- }
+.acc-red {
+    color: red;
+}
 
- .acc-orange {
-     color: orange;
- }
+@media(max-width:900px) {
+    #app {
+        grid-template-columns: 1fr;
+        grid-template-rows: 65vh auto;
+    }
 
- .acc-red {
-     color: red;
- }
+    .panel {
+        max-height: calc(100vh - 65vh);
+    }
 
- @media(max-width:900px) {
-     #app {
-         grid-template-columns: 1fr;
-         grid-template-rows: 65vh auto;
-     }
+    .controls {
+        grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    }
+}
 
-     .panel {
-         max-height: calc(100vh - 65vh);
-     }
+.custom-marker div {
+    border: 2px solid var(--marker-border);
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+    border-radius: 50%;
+}
 
-     .controls {
-         grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-     }
- }
+.leaflet-left {
+    bottom: 50px;
+}
 
- .custom-marker div {
-     border: 2px solid var(--marker-border);
-     box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
-     border-radius: 50%;
- }
+.leaflet-bottom {
+    bottom: 0;
+}
 
- .leaflet-left {
-     bottom: 50px;
- }
+.leaflet-routing-container {
+    display: flex;
+    font-size: 12px;
+    flex-direction: column;
+    width: 200px;
+    height: auto;
+    background: var(--card);
+    border-radius: 8px;
+    padding: 6px;
+    box-shadow: var(--shadow-card);
+    bottom: 50px;
+    z-index: 998;
+}
 
- .leaflet-bottom {
-     bottom: 0px;
- }
+.leaflet-routing-container .leaflet-routing-header,
+.leaflet-routing-container .leaflet-routing-alternatives {
+    flex: 0 0 auto;
+}
 
- /* ルートのステップパネル */
- .leaflet-routing-container {
-     display: flex;
-     font-size: 12px;
-     flex-direction: column;
-     width: 200px;
-     height: auto;
-     /* 高さ固定 */
-     background: rgba(255, 255, 255, 0.95);
-     border-radius: 8px;
-     padding: 6px;
-     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-     bottom: 50px;
-     z-index: 998;
- }
+.leaflet-routing-container .leaflet-routing-step-container {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+}
 
- .leaflet-control-attribution {
-     font-size: 10px;
-     opacity: 0.8;
- }
+.leaflet-routing-alt-line {
+    opacity: .6;
+    stroke-dasharray: 8, 4;
+}
 
+.leaflet-routing-alt h3,
+.leaflet-routing-collapse-btn {
+    display: none !important;
+}
 
- /* ヘッダ固定 */
- .leaflet-routing-container .leaflet-routing-header,
- .leaflet-routing-container .leaflet-routing-alternatives {
-     flex: 0 0 auto;
- }
-
- /* ステップ一覧スクロール */
- .leaflet-routing-container .leaflet-routing-step-container {
-     flex: 1 1 0;
-     min-height: 0;
-     overflow-y: auto;
- }
-
- /* 代替ルートの色分け（地図上） */
- .leaflet-routing-alt-line {
-     opacity: 0.6;
-     stroke-dasharray: 8, 4;
- }
-
- .leaflet-routing-alt h3 {
-     display: none !important;
- }
-
- .leaflet-routing-collapse-btn {
-     display: none !important;
- }
-
- .btn-pointer-none {
-     background: silver !important;
-     color: darkgray;
-     pointer-events: none;
- }
+.btn-pointer-none {
+    background: silver !important;
+    color: darkgray;
+    pointer-events: none;
+}
