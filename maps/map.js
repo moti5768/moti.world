@@ -178,7 +178,7 @@ function yellowgreenrawPolylines() {
     }
 }
 
-// ===== マーカー更新 =====
+// ===== マーカー更新（軽量版） =====
 function updateMarker(lat, lng, heading, accColor, speedKmh) {
     const size = speedKmh && speedKmh * 3.6 > 200 ? 20 : 16;
 
@@ -203,34 +203,29 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
         marker._animId = null;
         marker._lastHeading = heading || 0;
         marker._lastPos = marker.getLatLng();
-        marker._lastColor = accColor; // ← 初期色を保存
+        marker._lastColor = accColor;
 
-        marker.on("click", e => {
-            showMarkerLabelLeaflet(e, "現在地");
-        });
-        map.on("click", () => {
-            if (currentLabel) {
-                currentLabel.remove();
-                currentLabel = null;
-            }
-        });
+        // クリックラベル
+        marker.on("click", e => showMarkerLabelLeaflet(e, "現在地"));
+        map.on("click", () => { if (currentLabel) { currentLabel.remove(); currentLabel = null; } });
+
         return;
     }
 
-    // div 要素取得
+    // div要素取得
     const el = marker.getElement && marker.getElement();
     const div = el ? el.querySelector('div') : null;
 
-    // 色は即時更新（前回と違う場合のみ）
-    if (div && accColor !== marker._lastColor) {
+    // 色は変わったときだけ即時更新
+    if (div && marker._lastColor !== accColor) {
         div.style.background = accColor;
         marker._lastColor = accColor;
     }
 
-    // サイズ・角丸は毎回更新しても軽量
-    if (div) {
-        div.style.width = div.style.height = size + 'px';
-        div.style.borderRadius = '50%';
+    // アニメ中に既存アニメがある場合はキャンセル
+    if (marker._animId) {
+        cancelAnimationFrame(marker._animId);
+        marker._animId = null;
     }
 
     // 補間開始値と終了値
@@ -240,6 +235,7 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
     const toLat = lat, toLng = lng;
     const toHeading = (typeof heading === 'number') ? heading : fromHeading;
 
+    // 角度差を -180..180 に正規化
     let delta = toHeading - fromHeading;
     if (delta > 180) delta -= 360;
     if (delta < -180) delta += 360;
@@ -253,10 +249,13 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
         const t = Math.min(1, (now - startTime) / duration);
         const e = easeOutQuad(t);
 
-        const curLat = fromLat + (toLat - fromLat) * e;
-        const curLng = fromLng + (toLng - fromLng) * e;
-        marker.setLatLng([curLat, curLng]);
+        // 緯度経度補間
+        marker.setLatLng([
+            fromLat + (toLat - fromLat) * e,
+            fromLng + (toLng - fromLng) * e
+        ]);
 
+        // 回転更新
         if (div) {
             const curHead = fromHeading + delta * e;
             div.style.transform = `rotate(${curHead}deg)`;
@@ -271,8 +270,14 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
         }
     }
 
-    // 既存アニメが動いていなければ開始
-    if (!marker._animId) marker._animId = requestAnimationFrame(step);
+    // アニメ開始
+    marker._animId = requestAnimationFrame(step);
+
+    // サイズも即時反映（毎回軽量）
+    if (div) {
+        div.style.width = div.style.height = size + 'px';
+        div.style.borderRadius = '50%';
+    }
 }
 
 function showMarkerLabelLeaflet(e, text) {
