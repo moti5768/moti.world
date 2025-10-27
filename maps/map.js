@@ -203,6 +203,7 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
         marker._animId = null;
         marker._lastHeading = heading || 0;
         marker._lastPos = marker.getLatLng();
+        marker._lastColor = accColor; // ← 初期色を保存
 
         marker.on("click", e => {
             showMarkerLabelLeaflet(e, "現在地");
@@ -220,11 +221,16 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
     const el = marker.getElement && marker.getElement();
     const div = el ? el.querySelector('div') : null;
 
-    // 色は変わった時だけ更新
+    // 色は即時更新（前回と違う場合のみ）
+    if (div && accColor !== marker._lastColor) {
+        div.style.background = accColor;
+        marker._lastColor = accColor;
+    }
+
+    // サイズ・角丸は毎回更新しても軽量
     if (div) {
         div.style.width = div.style.height = size + 'px';
         div.style.borderRadius = '50%';
-        if (div.style.background !== accColor) div.style.background = accColor;
     }
 
     // 補間開始値と終了値
