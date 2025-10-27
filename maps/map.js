@@ -473,23 +473,9 @@ let retryAccuracyThreshold = MIN_ACCURACY;
 let lastGoodUpdate = null;
 let lastGoodUpdateTime = 0;
 
-// UI要素キャッシュ（軽量化）
-const uiElems = {
-    lat: document.getElementById('lat'),
-    lng: document.getElementById('lng'),
-    acc: document.getElementById('acc'),
-    alt: document.getElementById('alt'),
-    speed: document.getElementById('speed'),
-    heading: document.getElementById('heading'),
-    eta: document.getElementById('eta'),
-    currentAddress: document.getElementById('currentAddress'),
-    lastAge: document.getElementById('lastAge')
-};
-
 async function handlePosition(pos) {
     if (!pos || !pos.coords) {
         updateMarker(null, null, 0, 'black', 0);
-        updateUI({ lat: null, lng: null, acc: 0, alt: null, speed: 0, heading: 0 });
         return;
     }
 
@@ -507,27 +493,39 @@ async function handlePosition(pos) {
     const isFirst = !firstPositionReceived;
     if (isFirst) firstPositionReceived = true;
 
-    // --- 外れ値除外 ---
+    // --- 外れ値除外（徒歩〜新幹線対応） ---
     if (lastGoodUpdate) {
         const dt = Math.max((pos.timestamp - lastGoodUpdateTime) / 1000, 0.1);
         const dist = haversine(lastGoodUpdate, [lat, lng]);
         const impliedSpeed = dist / dt;
         const MAX_REALISTIC_SPEED = 140; // ≒ 504 km/h
-        if (impliedSpeed > MAX_REALISTIC_SPEED && acc > 50) return;
+
+        if (impliedSpeed > MAX_REALISTIC_SPEED && acc > 50) {
+            console.warn('外れ値検出: 異常速度', impliedSpeed.toFixed(1), 'm/s, 精度', acc);
+            return;
+        }
     }
     lastGoodUpdate = [lat, lng];
     lastGoodUpdateTime = pos.timestamp;
 
-    // --- 精度チェック ---
+    // --- 精度チェック + 時間経過で更新 ---
     let accChanged = false;
     if (typeof lastAcc !== 'undefined' && acc !== lastAcc) accChanged = true;
     lastAcc = acc;
 
     if (!isFirst) {
-        if (acc <= MIN_ACCURACY) lastGoodUpdateTime = Date.now();
-        else if (acc > retryAccuracyThreshold && Date.now() - lastGoodUpdateTime <= 5000 && !accChanged) return;
-        else if (!accChanged) return;
+        if (acc <= MIN_ACCURACY) {
+            lastGoodUpdateTime = Date.now();
+        } else if (acc > retryAccuracyThreshold) {
+            if (Date.now() - lastGoodUpdateTime <= 5000 && !accChanged) return;
+            console.warn('精度悪いが時間経過で更新:', acc);
+        } else {
+            if (!accChanged) return;
+        }
     }
+
+    const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
+    yellowgreenrawPolylines();
 
     // --- 速度・方角補正 ---
     if (prev) {
@@ -541,7 +539,16 @@ async function handlePosition(pos) {
     if (lastOrientation !== null) heading = lastOrientation;
     heading = (heading === null || isNaN(heading)) ? 0 : heading;
 
-    // --- 平滑化 ---
+    // --- UI更新 ---
+    document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
+    document.getElementById('lng').textContent = toFixedOrDash(lng, 6);
+    document.getElementById('acc').textContent = `${acc.toFixed(1)} m`;
+    document.getElementById('alt').textContent = alt === null ? '---' : `${alt.toFixed(1)} m`;
+    document.getElementById('speed').textContent = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
+    document.getElementById('heading').textContent = directionName(heading);
+    document.getElementById('acc').style.color = accColor;
+
+    // --- 平滑化 + 低精度補正 ---
     if (isFirst || acc <= MIN_ACCURACY || (prev && haversine(prev, [lat, lng]) > 5)) {
         smoothBuffer.push([lat, lng]);
         if (smoothBuffer.length > SMOOTHING_COUNT) smoothBuffer.shift();
@@ -555,16 +562,21 @@ async function handlePosition(pos) {
             const prevMarkerPos = [marker.getLatLng().lat, marker.getLatLng().lng];
             const d = haversine(prevMarkerPos, smoothed);
             const speedMs = speed || 0;
+
+            // --- 停止→再開検出 ---
             const timeSinceLast = (nowTime - lastPosTime) / 1000;
             const wasPaused = timeSinceLast > 3;
 
             if (wasPaused) {
+                console.warn('再開検出: 即ジャンプで補正');
                 smoothed = [lat, lng];
                 smoothBuffer = [[lat, lng]];
             } else {
+                // --- 通常補間 ---
                 const MAX_STEP_BASE = Math.min(Math.max(5, acc / 2), 50);
                 const MAX_STEP_SPEED_FACTOR = Math.min(1 + speedMs / 5, 10);
                 const MAX_STEP = Math.min(MAX_STEP_BASE * MAX_STEP_SPEED_FACTOR, 500);
+
                 if (d > MAX_STEP) {
                     const ratio = MAX_STEP / d;
                     smoothed = [
@@ -577,6 +589,7 @@ async function handlePosition(pos) {
 
         const smoothDist = prev ? haversine(prev, smoothed) : Infinity;
         const threshold = Math.max(1.5, acc / 2);
+
         if (!marker || !prev || smoothDist > threshold || isFirst) {
             let lastSegment = pathSegments[pathSegments.length - 1];
             if (!lastSegment || lastSegment.length === 0) {
@@ -585,25 +598,24 @@ async function handlePosition(pos) {
             }
             lastSegment.push(smoothed);
             yellowgreenrawPolylines();
-            updateMarker(smoothed[0], smoothed[1], heading, accColor(acc), speed);
+            updateMarker(smoothed[0], smoothed[1], heading, accColor, speed);
 
             if (follow && map && !userInteracting) {
                 programMoving = true;
                 map.panTo(smoothed, { animate: true, duration: 0.3 });
                 map.once('moveend', () => programMoving = false);
             }
+
             if (isFirst && map) map.setView(smoothed, 17);
         }
     }
 
-    // --- UI更新を必ず最後にまとめて呼ぶ ---
-    updateUI({ lat, lng, acc, alt, speed, heading });
-
     // --- 住所更新 ---
+    const currentAddrElem = document.getElementById('currentAddress');
     if (nowTime - lastAddressTime > 1000) {
         const addrLat = lat, addrLng = lng;
         fetchAddress(addrLat, addrLng).then(addr => {
-            if (lat === addrLat && lng === addrLng) uiElems.currentAddress.textContent = addr;
+            if (lat === addrLat && lng === addrLng) currentAddrElem.textContent = addr;
         });
         lastAddressTime = nowTime;
     }
@@ -615,52 +627,43 @@ async function handlePosition(pos) {
         speedKmh: speed ? speed * 3.6 : null,
         speedText: speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---',
         headingText: directionName(heading),
-        address: uiElems.currentAddress.textContent
+        address: currentAddrElem.textContent
     });
 
-    // --- ナビ中 ETA更新 ---
+    // --- ナビ中（オートリルート無効＋ETA＆追従対応） ---
+    const current = [lat, lng];
     if (routingControl && currentDestination) {
-        const distToDest = haversine([lat, lng], [currentDestination.lat, currentDestination.lng]);
+        // --- 目的地までの距離・時間をリアルタイム更新 ---
+        const distToDest = haversine(current, [currentDestination.lat, currentDestination.lng]);
         if (speed && speed > 0) {
             const timeSec = distToDest / speed;
             const hours = Math.floor(timeSec / 3600);
             const minutes = Math.round((timeSec % 3600) / 60);
-            let timeText = hours > 0 ? `${hours}時間` : '';
+            let timeText = '';
+            if (hours > 0) timeText += `${hours}時間`;
             timeText += `${minutes}分`;
-            uiElems.eta.textContent = `${(distToDest / 1000).toFixed(2)} km / 約 ${timeText}`;
+            document.getElementById('eta').textContent =
+                `${(distToDest / 1000).toFixed(2)} km / 約 ${timeText}`;
         } else {
-            uiElems.eta.textContent = `${(distToDest / 1000).toFixed(2)} km / ---`;
+            document.getElementById('eta').textContent =
+                `${(distToDest / 1000).toFixed(2)} km / ---`;
         }
 
+        // --- スタートマーカー追従（Routing Machine内部をリアルタイム更新） ---
         try {
             const plan = routingControl.getPlan();
             if (plan && plan._waypoints && plan._waypoints[0]) {
                 plan._waypoints[0].latLng = L.latLng(smoothed[0], smoothed[1]);
-                plan._updateMarkers();
+                plan._updateMarkers(); // 内部マーカーを再描画
             }
-        } catch (err) { console.warn('スタートマーカー追従エラー:', err); }
+        } catch (err) {
+            console.warn('スタートマーカー追従エラー:', err);
+        }
     }
 
     lastPosTime = pos.timestamp || now();
-    uiElems.lastAge.textContent = '0秒前';
+    document.getElementById('lastAge').textContent = '0秒前';
 }
-
-// --- UI更新関数 ---
-function updateUI({ lat, lng, acc, alt, speed, heading }) {
-    uiElems.lat.textContent = toFixedOrDash(lat, 6);
-    uiElems.lng.textContent = toFixedOrDash(lng, 6);
-    uiElems.acc.textContent = `${acc.toFixed(1)} m`;
-    uiElems.acc.style.color = accColor(acc);
-    uiElems.alt.textContent = alt === null ? '---' : `${alt.toFixed(1)} m`;
-    uiElems.speed.textContent = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
-    uiElems.heading.textContent = directionName(heading);
-}
-
-// --- 精度カラー関数 ---
-function accColor(acc) {
-    return acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
-}
-
 
 // ===== エラー処理 =====
 let retryTimer = null;
