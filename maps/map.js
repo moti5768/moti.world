@@ -654,9 +654,15 @@ async function handlePosition(pos) {
                 `${(distToDest / 1000).toFixed(2)} km / ---`;
         }
 
-        // --- スタートマーカー追従（現在地に常に追従） ---
-        if (startMarker) {
-            startMarker.setLatLng(smoothed);
+        // --- スタートマーカー追従（Routing Machine内部をリアルタイム更新） ---
+        try {
+            const plan = routingControl.getPlan();
+            if (plan && plan._waypoints && plan._waypoints[0]) {
+                plan._waypoints[0].latLng = L.latLng(smoothed[0], smoothed[1]);
+                plan._updateMarkers(); // 内部マーカーを再描画
+            }
+        } catch (err) {
+            console.warn('スタートマーカー追従エラー:', err);
         }
     }
 
