@@ -72,7 +72,12 @@ async function initMap() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         detectRetina: false,
-        attribution: '© OpenStreetMap contributors'
+        attribution: '© OpenStreetMap contributors',
+        tileSize: 256,             // 標準タイル
+        updateWhenIdle: true,      // 移動中は更新を抑制
+        updateWhenZooming: false,  // ズーム中は更新を抑制
+        reuseTiles: true,          // すでにあるタイルを再利用
+        unloadInvisibleTiles: true // 見えなくなったタイルは破棄
     }).addTo(map);
 
     // iPhoneの右下ズームボタン風に再配置
@@ -426,25 +431,53 @@ async function fetchAddress(lat, lng) {
     }
 }
 
-// ===== ログ表示 =====
+// ===== ログ表示（バッチ化版） =====
+let pendingLogs = [];
+const MAX_LOG = 200;
+// 1秒にまとめてDOMに反映
+setInterval(() => {
+    if (pendingLogs.length === 0) return;
+
+    const logElem = document.getElementById('log');
+    const fragment = document.createDocumentFragment();
+
+    pendingLogs.forEach(e => {
+        const accClass = e.accuracy < 5 ? 'acc-green' :
+            e.accuracy < 15 ? 'acc-yellowgreen' :
+                e.accuracy < 30 ? 'acc-orange' : 'acc-red';
+
+        const div = document.createElement('div');
+        div.className = 'log-entry';
+        div.innerHTML = `
+            <div class="time">🕒 ${new Date(e.time).toLocaleString()}</div>
+            <div class="coords">(${e.lat.toFixed(6)}, ${e.lng.toFixed(6)})</div>
+            <div class="address">📍 ${e.address}</div>
+            <div class="info">
+                <div class="accuracy ${accClass}">精度:${e.accuracy.toFixed(1)}m</div>
+                <div>速度:${e.speedText}</div>
+                <div>方角:${e.headingText}</div>
+            </div>
+        `;
+        fragment.appendChild(div);
+    });
+
+    // 新しいものを上に追加
+    logElem.prepend(fragment);
+
+    // 最大200件を維持（まとめて削除）
+    while (logElem.childElementCount > MAX_LOG) {
+        logElem.removeChild(logElem.lastChild);
+    }
+
+    pendingLogs = [];
+    safeSaveLocal();
+    updateStatsUI();
+}, 1000);
+
+// addLogEntry は pendingLogs に push だけ
 function addLogEntry(e, restoreMode = false) {
     if (!restoreMode) logData.unshift(e);
-    const accClass = e.accuracy < 5 ? 'acc-green' : e.accuracy < 15 ? 'acc-yellowgreen' : e.accuracy < 30 ? 'acc-orange' : 'acc-red';
-    const html = `<div class="log-entry">
-    <div class="time">🕒 ${new Date(e.time).toLocaleString()}</div>
-    <div class="coords">(${e.lat.toFixed(6)}, ${e.lng.toFixed(6)})</div>
-    <div class="address">📍 ${e.address}</div>
-    <div class="info">
-      <div class="accuracy ${accClass}">精度:${e.accuracy.toFixed(1)}m</div>
-      <div>速度:${e.speedText}</div>
-      <div>方角:${e.headingText}</div>
-    </div>
-  </div>`;
-    const logElem = document.getElementById('log');
-    logElem.insertAdjacentHTML('afterbegin', html);
-    // while を使わず、一度に削除して高速化
-    if (logElem.childElementCount > 200) logElem.removeChild(logElem.lastChild);
-    if (!restoreMode) { safeSaveLocal(); updateStatsUI(); }
+    pendingLogs.push(e);
 }
 
 // ===== ダウンロード =====
