@@ -570,12 +570,12 @@ async function handlePosition(pos) {
 
             // --- 停止→再開検出 ---
             const timeSinceLast = (nowTime - lastPosTime) / 1000;
-            const wasPaused = timeSinceLast > 3; // 3秒以上停止したら再開扱い
+            const wasPaused = timeSinceLast > 3;
 
             if (wasPaused) {
                 console.warn('再開検出: 即ジャンプで補正');
                 smoothed = [lat, lng];
-                smoothBuffer = [[lat, lng]]; // 古いデータ破棄
+                smoothBuffer = [[lat, lng]];
             } else {
                 // --- 通常補間 ---
                 const MAX_STEP_BASE = Math.min(Math.max(5, acc / 2), 50);
@@ -635,49 +635,29 @@ async function handlePosition(pos) {
         address: currentAddrElem.textContent
     });
 
-    // --- ナビ中ルート更新 ---
+    // --- ナビ中（オートリルート無効＋ETA＆追従対応） ---
     const current = [lat, lng];
-    if (routingControl && currentDestination && !userSelectedRoute) {
-        const distMoved = lastRoutePoint ? haversine(lastRoutePoint, current) : Infinity;
-
-        if (distMoved > 10 && nowTime - lastRouteUpdate > 3000 && !routingControl._routingInProgress) {
-            routingControl._routingInProgress = true;
-            routingControl.setWaypoints([L.latLng(lat, lng), currentDestination]);
-            routingControl.on('routesfound routingerror', () => {
-                routingControl._routingInProgress = false;
-            });
-
-            const route = routingControl.getPlan().getWaypoints();
-            if (route?.length >= 2) {
-                const nextStep = `次: ${route[1].lat.toFixed(5)},${route[1].lng.toFixed(5)}`;
-                const stepDiv = document.getElementById('nextStep') || document.createElement('div');
-                stepDiv.id = 'nextStep';
-                stepDiv.style.fontWeight = '600';
-                stepDiv.textContent = nextStep;
-                document.querySelector('.panel').appendChild(stepDiv);
-            }
-
-            lastRoutePoint = current;
-            lastRouteUpdate = nowTime;
-        }
-
+    if (routingControl && currentDestination) {
+        // --- 目的地までの距離・時間をリアルタイム更新 ---
+        const distToDest = haversine(current, [currentDestination.lat, currentDestination.lng]);
         if (speed && speed > 0) {
-            const distToDest = haversine(current, [currentDestination.lat, currentDestination.lng]);
             const timeSec = distToDest / speed;
             const hours = Math.floor(timeSec / 3600);
             const minutes = Math.round((timeSec % 3600) / 60);
             let timeText = '';
             if (hours > 0) timeText += `${hours}時間`;
             timeText += `${minutes}分`;
-            document.getElementById('eta').textContent = `${(distToDest / 1000).toFixed(2)} km / 約 ${timeText}`;
+            document.getElementById('eta').textContent =
+                `${(distToDest / 1000).toFixed(2)} km / 約 ${timeText}`;
         } else {
-            document.getElementById('eta').textContent = '---';
+            document.getElementById('eta').textContent =
+                `${(distToDest / 1000).toFixed(2)} km / ---`;
         }
-    }
 
-    // --- スタートマーカー追従 ---
-    if (routingControl && currentDestination && startMarker) {
-        startMarker.setLatLng(smoothed);
+        // --- スタートマーカー追従（現在地に常に追従） ---
+        if (startMarker) {
+            startMarker.setLatLng(smoothed);
+        }
     }
 
     lastPosTime = pos.timestamp || now();
