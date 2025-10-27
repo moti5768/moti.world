@@ -183,72 +183,89 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
     const size = speedKmh && speedKmh * 3.6 > 200 ? 20 : 16;
 
     // 無効座標ならマーカー削除
+    if (lat === null || lng === null || accColor === null) accColor = 'black';
     if (lat === null || lng === null) {
-        if (marker) { try { map.removeLayer(marker); } catch (e) { } marker = null; }
+        if (marker) {
+            try { map.removeLayer(marker); } catch (e) { /* ignore */ }
+            marker = null;
+        }
         return;
     }
+
+    // イージング関数
+    function easeOutQuad(t) { return t * (2 - t); }
 
     // 初回作成
     if (!marker) {
         const icon = L.divIcon({
             className: 'custom-marker',
-            html: `<div style="width:${size}px;height:${size}px;background:${accColor};border:2px solid #fff;border-radius:50%;transform:rotate(${heading || 0}deg)"></div>`,
+            html: `<div style="width:${size}px;height:${size}px;background:${accColor};border:2px solid #fff;border-radius:50%;transform:rotate(${heading}deg)"></div>`,
             iconSize: [size, size],
             iconAnchor: [size / 2, size / 2]
         });
         marker = L.marker([lat, lng], { icon }).addTo(map);
         marker._animId = null;
-        marker._lastHeading = heading || 0;
+        marker._lastHeading = (typeof heading === 'number') ? heading : 0;
         marker._lastPos = marker.getLatLng();
-        marker._lastColor = accColor;
 
-        marker.on("click", e => showMarkerLabelLeaflet(e, "現在地"));
-        map.on("click", () => { if (currentLabel) { currentLabel.remove(); currentLabel = null; } });
+        marker.on("click", e => {
+            showMarkerLabelLeaflet(e, "現在地");
+        });
+        map.on("click", () => {
+            if (currentLabel) {
+                currentLabel.remove();
+                currentLabel = null;
+            }
+        });
         return;
     }
 
-    // div取得
+    // div 要素取得
     const el = marker.getElement && marker.getElement();
     const div = el ? el.querySelector('div') : null;
 
-    // 色だけ即時更新（アニメに関係なく）
-    if (div && marker._lastColor !== accColor) {
-        div.style.background = accColor;
-        marker._lastColor = accColor;
-    }
-
-    // サイズ更新（常に軽量）
+    // 見た目（色・サイズ）を毎フレーム更新
     if (div) {
         div.style.width = div.style.height = size + 'px';
+        div.style.background = accColor;
         div.style.borderRadius = '50%';
+    }
+
+    // 既存アニメがあればキャンセル
+    if (marker._animId) {
+        cancelAnimationFrame(marker._animId);
+        marker._animId = null;
     }
 
     // 補間開始値と終了値
     const from = marker.getLatLng();
     const fromLat = from.lat, fromLng = from.lng;
-    const fromHeading = marker._lastHeading;
+    const fromHeading = (marker._lastHeading === undefined) ? 0 : marker._lastHeading;
     const toLat = lat, toLng = lng;
     const toHeading = (typeof heading === 'number') ? heading : fromHeading;
 
+    // 角度差を -180..180 に正規化
     let delta = toHeading - fromHeading;
     if (delta > 180) delta -= 360;
     if (delta < -180) delta += 360;
 
     const duration = 400;
     const startTime = performance.now();
-    function easeOutQuad(t) { return t * (2 - t); }
 
     function step(now) {
         const t = Math.min(1, (now - startTime) / duration);
         const e = easeOutQuad(t);
-        marker.setLatLng([
-            fromLat + (toLat - fromLat) * e,
-            fromLng + (toLng - fromLng) * e
-        ]);
+
+        const curLat = fromLat + (toLat - fromLat) * e;
+        const curLng = fromLng + (toLng - fromLng) * e;
+        marker.setLatLng([curLat, curLng]);
+
         if (div) {
             const curHead = fromHeading + delta * e;
             div.style.transform = `rotate(${curHead}deg)`;
+            div.style.background = accColor; // ← 毎フレーム色を反映
         }
+
         if (t < 1) {
             marker._animId = requestAnimationFrame(step);
         } else {
@@ -258,9 +275,8 @@ function updateMarker(lat, lng, heading, accColor, speedKmh) {
         }
     }
 
-    if (!marker._animId) marker._animId = requestAnimationFrame(step);
+    marker._animId = requestAnimationFrame(step);
 }
-
 
 function showMarkerLabelLeaflet(e, text) {
     // 既存ラベル削除
