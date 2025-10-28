@@ -677,19 +677,20 @@ async function handlePosition(pos) {
     document.getElementById('lastAge').textContent = '0秒前';
 }
 
-// ===== グローバル変数 =====
+// ===== 改良版 ETAリアルタイム更新（安定＋軽量） =====
 let speedBuffer = [];
 const SPEED_BUFFER_SIZE = 5;
 const MIN_SPEED = 0.5;    // 0.5 m/s未満は停止扱い
 const MIN_MOVE_DIST = 10; // 10 m未満は移動なし扱い
 
-let displayedRemainTimeSec = null; // 補間用残時間
-let lastUpdateTime = null;         // 前回 update 時間
-let navActive = false;             // ナビ中フラグ
+let displayedRemainTimeSec = null;
+let lastUpdateTime = null;
+let lastNearestIndex = null;
+let navActive = false;
 
-// ===== ハバースイン距離計算関数 =====
+// --- ハバースイン距離計算 ---
 function haversineDistance([lat1, lon1], [lat2, lon2]) {
-    const R = 6371000; // 地球半径[m]
+    const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat / 2) ** 2 +
@@ -699,28 +700,34 @@ function haversineDistance([lat1, lon1], [lat2, lon2]) {
     return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// ===== 補間付きスムーズETA更新 =====
+// --- 残距離とETA更新 ---
 function updateEtaLive(lat, lng, speed) {
-    if (!navActive) return;
-    if (!routePath || routePath.length === 0) return;
+    if (!navActive || !routePath || routePath.length === 0) return;
 
-    const currentLatLng = L.latLng(lat, lng);
     const now = performance.now();
+    const current = [lat, lng];
 
-    // --- ルート上の最も近い点を探索 ---
+    // ===== 1. 最も近いルート点を探索 =====
     let minDist = Infinity;
     let nearestIndex = 0;
     for (let i = 0; i < routePath.length; i++) {
         const p = routePath[i];
-        const pp = Array.isArray(p) ? p : [p.lat, p.lng];
-        const d = haversineDistance([currentLatLng.lat, currentLatLng.lng], pp);
+        const coord = Array.isArray(p) ? p : [p.lat, p.lng];
+        const d = haversineDistance(current, coord);
         if (d < minDist) {
             minDist = d;
             nearestIndex = i;
         }
     }
 
-    // --- 残距離計算 ---
+    // ===== 2. 小移動時は無視（GPS誤差除外） =====
+    if (lastNearestIndex !== null && Math.abs(nearestIndex - lastNearestIndex) < 3 && minDist < MIN_MOVE_DIST) {
+        setTimeout(() => updateEtaLive(lat, lng, speed), 1000);
+        return;
+    }
+    lastNearestIndex = nearestIndex;
+
+    // ===== 3. 残距離計算 =====
     let remain = 0;
     for (let i = nearestIndex; i < routePath.length - 1; i++) {
         const a = routePath[i], b = routePath[i + 1];
@@ -729,8 +736,8 @@ function updateEtaLive(lat, lng, speed) {
         remain += haversineDistance(pa, pb);
     }
 
-    // --- 速度平均化 ---
-    if (speed !== null && speed >= 0) {
+    // ===== 4. 速度平滑化 =====
+    if (speed != null && speed >= 0) {
         speedBuffer.push(speed);
         if (speedBuffer.length > SPEED_BUFFER_SIZE) speedBuffer.shift();
     }
@@ -738,58 +745,46 @@ function updateEtaLive(lat, lng, speed) {
         ? speedBuffer.reduce((a, b) => a + b, 0) / speedBuffer.length
         : 0;
 
-    // --- 微小移動・低速補正 ---
-    let moving = true;
-    if (minDist < MIN_MOVE_DIST || avgSpeed < MIN_SPEED) {
-        avgSpeed = 0;
-        moving = false;
-    }
+    // ===== 5. 残時間算出（停止補正） =====
+    if (avgSpeed < MIN_SPEED) avgSpeed = 0; // ← 修正済み（let に変更）
 
-    // --- 残時間計算（速度未計測でも表示） ---
-    let remainTimeSec;
-    if (avgSpeed > 0) {
-        remainTimeSec = remain / avgSpeed;
-    } else if (displayedRemainTimeSec !== null) {
-        remainTimeSec = displayedRemainTimeSec; // 前回値を維持
+    let remainTimeSec = avgSpeed > 0
+        ? remain / avgSpeed
+        : displayedRemainTimeSec ?? remain / 1.0;
+
+    // ===== 6. 補間（滑らかに変化） =====
+    if (displayedRemainTimeSec == null) {
+        displayedRemainTimeSec = remainTimeSec;
     } else {
-        remainTimeSec = remain / 1.0; // 初回速度不明でも仮に 1 m/s として表示
+        const alpha = 0.2; // 低いほど滑らか
+        displayedRemainTimeSec = displayedRemainTimeSec * (1 - alpha) + remainTimeSec * alpha;
     }
 
-    if (displayedRemainTimeSec === null) displayedRemainTimeSec = remainTimeSec;
-
-    // --- 補間：移動中のみ残時間を減算 ---
-    if (lastUpdateTime !== null && moving) {
+    // ===== 7. 停止時は前回時間を維持 =====
+    const moving = avgSpeed > MIN_SPEED;
+    if (lastUpdateTime && moving) {
         const dt = (now - lastUpdateTime) / 1000;
         displayedRemainTimeSec = Math.max(0, displayedRemainTimeSec - dt);
     }
-
-    // --- 過大差補正 ---
-    if (remainTimeSec !== null && displayedRemainTimeSec !== null) {
-        if (Math.abs(displayedRemainTimeSec - remainTimeSec) > 10) {
-            displayedRemainTimeSec = remainTimeSec;
-        }
-    }
-
     lastUpdateTime = now;
 
-    // --- 表示文字列作成 ---
-    const remainDistanceText = remain >= 1000
-        ? (remain / 1000).toFixed(2) + ' km'
-        : Math.round(remain) + ' m';
+    // ===== 8. 表示更新 =====
+    const distText = remain >= 1000
+        ? (remain / 1000).toFixed(2) + " km"
+        : Math.round(remain) + " m";
 
-    let remainTimeText = '---';
-    if (displayedRemainTimeSec !== null) {
-        const hours = Math.floor(displayedRemainTimeSec / 3600);
-        const minutes = Math.floor((displayedRemainTimeSec % 3600) / 60);
-        const seconds = Math.floor(displayedRemainTimeSec % 60);
-        remainTimeText = `${hours > 0 ? hours + '時間 ' : ''}${minutes}分 ${seconds}秒`;
-    }
+    const t = Math.max(0, displayedRemainTimeSec);
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const s = Math.floor(t % 60);
+    const timeText = h > 0 ? `${h}時間 ${m}分` : `${m}分 ${s}秒`;
 
-    document.getElementById("eta").textContent = `${remainDistanceText} / 約 ${remainTimeText}`;
+    document.getElementById("eta").textContent = `${distText} / 約 ${timeText}`;
 
-    // --- 次フレームも更新 ---
-    requestAnimationFrame(() => updateEtaLive(lat, lng, speed));
+    // ===== 9. 次回更新（1秒後） =====
+    setTimeout(() => updateEtaLive(lat, lng, speed), 1000);
 }
+
 
 // ===== エラー処理 =====
 let retryTimer = null;
@@ -1135,8 +1130,7 @@ window.addEventListener('load', () => {
         document.getElementById("eta").textContent = `${remainDistanceText} / 約 ${timeText}`;
     }
 
-
-    // ===== マップクリックで目的地選択 =====
+    // ===== マップクリックで目的地選択（代替ルート対応＆翻訳安定版） =====
     map.on("click", async e => {
         if (!navMode) return;
         if (!marker) {
@@ -1144,240 +1138,202 @@ window.addEventListener('load', () => {
             return;
         }
 
+        // --- 状態リセット ---
         currentDestination = e.latlng;
         userSelectedRoute = false;
-
-        displayedRemainTimeSec = null;   // 残時間補間をリセット
-        lastUpdateTime = null;           // 前回更新時間リセット
-        speedBuffer = [];                // 速度バッファリセット
-
-        // 目的地住所更新
-        const destAddr = await fetchAddress(currentDestination.lat, currentDestination.lng);
-        document.getElementById("destAddress").textContent = destAddr;
+        displayedRemainTimeSec = null;
+        lastUpdateTime = null;
+        speedBuffer = [];
 
         const start = marker.getLatLng();
         const dest = currentDestination;
 
-        // 既存ルート削除
+        // --- 即時UI反応 ---
+        document.getElementById("destAddress").textContent = "住所取得中...";
+        document.getElementById("eta").textContent = "経路計算中...";
+        navMode = false;
+        navModeBtn.textContent = "ナビ開始(車のみ)";
+
+        // --- 住所取得（非同期バックグラウンド） ---
+        fetchAddress(dest.lat, dest.lng).then(addr => {
+            document.getElementById("destAddress").textContent = addr || "住所取得失敗";
+        });
+
+        // --- 既存ルート削除 ---
         if (routingControl) map.removeControl(routingControl);
         animatedPolylines.forEach(p => map.removeLayer(p.polyline || p));
         animatedPolylines = [];
 
-        // ルート作成（透明でアニメーション）
+        // --- Leaflet Routing Machine 初期化（代替ルートON） ---
         routingControl = L.Routing.control({
             waypoints: [start, dest],
             routeWhileDragging: false,
             addWaypoints: false,
             draggableWaypoints: false,
-            showAlternatives: true,
+            showAlternatives: true, // ✅ 複数ルート表示ON
             fitSelectedRoutes: false,
             language: "en",
             lineOptions: { styles: [{ color: "transparent", weight: 0, opacity: 0 }] },
             altLineOptions: { styles: [{ color: "transparent", weight: 0, opacity: 0 }] },
             createMarker: (i, wp) => {
-                // === スタート地点（i === 0）は現在地マーカーを使用するため、Routing Machine上ではマーカーを作らない ===
-                if (i === 0) {
-                    return null; // ← これで水色マーカーを非表示にできる
-                }
+                // === 現在地マーカーは既存を使用 ===
+                if (i === 0) return null;
 
-                // === ゴール地点（i === 1）のみ紫マーカーを表示 ===
+                // === 目的地マーカー ===
                 const size = 20;
-                const color = "#800080"; // 紫（目的地）
-
-                const m = L.marker(wp.latLng, {
+                const color = "#800080";
+                const markerDest = L.marker(wp.latLng, {
                     icon: L.divIcon({
-                        className: 'custom-marker',
+                        className: "custom-marker",
                         html: `
-                <div style="
-                    width:${size}px;
-                    height:${size}px;
-                    background:${color};
-                    border:2px solid #fff;
-                    border-radius:50%;
-                    box-shadow:0 0 5px rgba(0,0,0,0.3);
-                "></div>
-            `,
+                        <div style="
+                            width:${size}px;
+                            height:${size}px;
+                            background:${color};
+                            border:2px solid #fff;
+                            border-radius:50%;
+                            box-shadow:0 0 5px rgba(0,0,0,0.3);
+                        "></div>
+                    `,
                         iconSize: [size, size],
                         iconAnchor: [size / 2, size / 2]
                     })
                 });
 
-                // === マーカークリック時の動作（目的地情報表示） ===
-                m.on("click", e => {
-                    showMarkerLabelLeaflet(e, "目的地");
-                });
-
-                // === ゴールクリック時に地図をズーム・中心移動 ===
-                m.on("click", () => {
-                    map.flyTo(m.getLatLng(), 17);
-                });
-
-                return m;
+                // === クリックで情報＆ズーム ===
+                markerDest.on("click", e => showMarkerLabelLeaflet(e, "目的地"));
+                markerDest.on("click", () => map.flyTo(markerDest.getLatLng(), 17));
+                return markerDest;
             },
-            position: 'bottomright'
+            position: "bottomright"
         })
+
+            // --- 経路計算開始 ---
             .on("routingstart", () => {
-                // 手動操作・追尾移動中は無視
-                if (userInteracting || programMoving) return;
                 const etaElem = document.getElementById("eta");
-                // 既に計算結果が表示されている場合は維持
-                if (etaElem.textContent && etaElem.textContent !== "---" && !etaElem.textContent.includes("計算中")) return;
-                etaElem.textContent = "計算中...";
+                if (!etaElem.textContent.includes("計算中")) etaElem.textContent = "経路計算中...";
             })
 
+            // --- 経路計算完了 ---
             .on("routesfound", e => {
-                // --- 経路指示翻訳＆ETA初期化（既存処理） ---
-                e.routes.forEach(route => translateInstructions(route));
-                updateEta(e.routes[0]);
-
-                // --- ✅ ルート情報をグローバル変数に保存（リアルタイムETAで使用） ---
                 try {
-                    const best = e.routes[0];
-                    routePath = best.coordinates ? best.coordinates.slice() : [];
+                    const routes = e.routes;
+                    if (!routes || routes.length === 0) return;
+
+                    // ✅ 翻訳を最初に適用（描画前に確実反映）
+                    routes.forEach(route => translateInstructions(route));
+
+                    const best = routes[0];
+                    routePath = best.coordinates.slice();
                     routeTotalDistance = best.summary?.totalDistance || 0;
                     routeTotalTime = best.summary?.totalTime || 0;
-                } catch (err) {
-                    console.warn('ルート保存エラー', err);
-                    routePath = [];
-                    routeTotalDistance = 0;
-                    routeTotalTime = 0;
-                }
-                navActive = true;
+                    navActive = true;
 
-                // --- 各ルートのアニメーション描画（見た目は従来と同一） ---
-                e.routes.forEach((route, idx) => {
-                    const color = idx === 0 ? "#1976d2" : "#f44336";
-                    const weight = idx === 0 ? 8 : 4;
+                    // ETA初期表示
+                    updateEta(best);
 
-                    // アニメーション線
-                    const animLine = animateRouteSmooth(route.coordinates, color, weight, 1500);
+                    // --- 各ルート描画（アニメーション付） ---
+                    routes.forEach((route, idx) => {
+                        const color = idx === 0 ? "#1976d2" : "#f44336"; // メイン青、代替赤
+                        const weight = idx === 0 ? 7 : 5;
+                        const animLine = animateRouteSmooth(route.coordinates, color, weight, 800);
+                        animatedPolylines.push({ polyline: animLine, route });
 
-                    // 透明なクリック検出用ライン
-                    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-                    const touchHitWeight = isIOS ? 31 : 31;
-                    const clickLine = L.polyline(route.coordinates, {
-                        color,
-                        weight: touchHitWeight,
-                        opacity: 0.02,
-                        interactive: true,
-                    }).addTo(map);
+                        // === 経路クリックで選択 ===
+                        animLine.on("click", () => {
+                            updateEta(route);
+                            userSelectedRoute = true;
 
-                    // --- 透明ラインのスタイル補強（iOS対応） ---
-                    setTimeout(() => {
-                        try {
-                            const el = clickLine.getElement && clickLine.getElement();
-                            if (el) {
-                                el.style.pointerEvents = 'stroke';
-                                el.style.cursor = 'pointer';
-                                el.style.strokeLinecap = 'round';
-                                el.style.strokeWidth = `${touchHitWeight}px`;
-                                el.style.opacity = 0.02;
-                                el.setAttribute('stroke-linecap', 'round');
-                                el.setAttribute('stroke-width', String(touchHitWeight));
-                            }
-                        } catch { /* ignore */ }
-                    }, 0);
-
-                    // --- 経路選択イベント ---
-                    const onSelect = (ev) => {
-                        updateEta(route);
-                        userSelectedRoute = true;
-                        // 選択中ルートを青、他を赤
-                        try {
+                            // 選択中ルートだけ強調
                             animatedPolylines.forEach(p => {
-                                if (p.polyline && p.route) {
-                                    if (p.route === route)
-                                        p.polyline.setStyle({ color: "#1976d2", weight: 8 });
-                                    else
-                                        p.polyline.setStyle({ color: "#f44336", weight: 4 });
-                                }
+                                if (p.route === route)
+                                    p.polyline.setStyle({ color: "#1976d2", weight: 8 });
+                                else
+                                    p.polyline.setStyle({ color: "#f44336", weight: 4 });
                             });
-                        } catch (err) {
-                            console.warn('route style update error', err);
-                        }
-                        if (ev?.originalEvent?.stopPropagation) ev.originalEvent.stopPropagation();
-                    };
-
-                    // --- 入力イベント登録（タッチ／クリック対応） ---
-                    clickLine.on('pointerdown touchstart click', onSelect);
-                    clickLine.on('mouseover', () => clickLine.setStyle({ opacity: 0.12 }));
-                    clickLine.on('mouseout', () => clickLine.setStyle({ opacity: 0.02 }));
-
-                    // --- 内部管理用リストに保持 ---
-                    animatedPolylines.push({ polyline: animLine, route });
-                    animatedPolylines.push({ polyline: clickLine, route });
-                });
-
-                // --- ✅ ルート案内テキスト日本語化 ---
-                setTimeout(() => {
-                    document.querySelectorAll('.leaflet-routing-instruction').forEach(el => {
-                        let text = el.textContent;
-                        Object.entries(instructionMap)
-                            .sort((a, b) => b[0].length - a[0].length)
-                            .forEach(([en, ja]) => {
-                                text = text.replace(new RegExp(`\\b${en}\\b`, 'gi'), ja);
-                            });
-                        el.textContent = text;
+                        });
                     });
-                }, 100);
+
+                    // --- 翻訳安定化リトライ（念のためDOM後処理） ---
+                    const translatePanel = () => {
+                        document.querySelectorAll('.leaflet-routing-instruction').forEach(el => {
+                            let text = el.textContent;
+                            Object.entries(instructionMap)
+                                .sort((a, b) => b[0].length - a[0].length)
+                                .forEach(([en, ja]) => {
+                                    text = text.replace(new RegExp(`\\b${en}\\b`, 'gi'), ja);
+                                });
+                            el.textContent = text;
+                        });
+                    };
+                    let tries = 0;
+                    const tryTranslate = () => {
+                        tries++;
+                        const elems = document.querySelectorAll('.leaflet-routing-instruction');
+                        if (elems.length > 0) translatePanel();
+                        else if (tries < 10) setTimeout(tryTranslate, 400);
+                    };
+                    tryTranslate();
+
+                } catch (err) {
+                    console.warn("routesfound error:", err);
+                    document.getElementById("eta").textContent = "経路描画エラー";
+                }
             })
+
+            // --- 経路選択時（再選択時にも反映） ---
             .on("routeselected", e => {
                 translateInstructions(e.route);
                 updateEta(e.route);
                 userSelectedRoute = true;
-
-                // 選択色反映（選択中：青、他：赤）
                 animatedPolylines.forEach(p => {
-                    if (p.route === e.route) p.polyline.setStyle({ color: "#1976d2", weight: 7 });
-                    else p.polyline.setStyle({ color: "#f44336", weight: 5 });
+                    if (p.route === e.route)
+                        p.polyline.setStyle({ color: "#1976d2", weight: 8 });
+                    else
+                        p.polyline.setStyle({ color: "#f44336", weight: 4 });
                 });
-
-                setTimeout(() => {
-                    document.querySelectorAll('.leaflet-routing-instruction').forEach(el => {
-                        let text = el.textContent;
-                        Object.entries(instructionMap)
-                            .sort((a, b) => b[0].length - a[0].length)
-                            .forEach(([en, ja]) => { text = text.replace(new RegExp(`\\b${en}\\b`, 'gi'), ja); });
-                        el.textContent = text;
-                    });
-                }, 100);
             })
+
+            // --- エラー処理 ---
             .on("routingerror", () => {
                 document.getElementById("eta").textContent = "経路取得失敗";
             })
             .addTo(map);
+
+        // --- パネル管理 ---
         const container = routingControl.getContainer();
         container.style.zIndex = "998";
-        let closeBtn = document.querySelector('.leaflet-routing-close');
+
+        let closeBtn = document.querySelector(".leaflet-routing-close");
         if (!closeBtn) {
-            closeBtn = document.createElement('a');
-            closeBtn.className = 'leaflet-routing-close';
-            closeBtn.textContent = '案内パネル表示切替';
+            closeBtn = document.createElement("a");
+            closeBtn.className = "leaflet-routing-close";
+            closeBtn.textContent = "案内パネル表示切替";
             closeBtn.style.cssText = `
-        position:absolute;
-        bottom:10px;
-        right:10px;
-        padding:5px;
-        height:20px;
-        background-color:darkgray;
-        font-size:16px;
-        font-weight:500;
-        color:#333;
-        border:1.5px solid gray;
-        border-radius:8px;
-        box-shadow:0 2px 6px rgba(0,0,0,0.2);
-        cursor:pointer;
-        z-index:999;
-        pointer-events:auto;`;
+            position:absolute;
+            bottom:10px;
+            right:10px;
+            padding:5px 8px;
+            background-color:darkgray;
+            font-size:15px;
+            font-weight:500;
+            color:#333;
+            border:1.5px solid gray;
+            border-radius:8px;
+            box-shadow:0 2px 6px rgba(0,0,0,0.2);
+            cursor:pointer;
+            z-index:999;
+        `;
             closeBtn.onclick = () => {
-                const container = routingControl.getContainer();
-                container.style.display = container.style.display === 'none' ? 'block' : 'none';
+                const c = routingControl.getContainer();
+                c.style.display = c.style.display === "none" ? "block" : "none";
             };
-            document.getElementById('map').appendChild(closeBtn);
+            document.getElementById("map").appendChild(closeBtn);
         }
-        navMode = false;
-        navModeBtn.textContent = "ナビ開始(車のみ)";
     });
+
+
+
 
     // ===== ナビキャンセル =====
     cancelNavBtn.addEventListener("click", async () => {
