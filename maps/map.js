@@ -692,13 +692,16 @@ function haversineDistance([lat1, lon1], [lat2, lon2]) {
     const R = 6371000; // 地球半径[m]
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+    const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1 * Math.PI / 180) *
+        Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(a));
 }
 
 // ===== 補間付きスムーズETA更新 =====
 function updateEtaLive(lat, lng, speed) {
-    if (!navActive) return;                // ナビ停止中は更新しない
+    if (!navActive) return;
     if (!routePath || routePath.length === 0) return;
 
     const currentLatLng = L.latLng(lat, lng);
@@ -723,7 +726,7 @@ function updateEtaLive(lat, lng, speed) {
         const a = routePath[i], b = routePath[i + 1];
         const pa = Array.isArray(a) ? a : [a.lat, a.lng];
         const pb = Array.isArray(b) ? b : [b.lat, b.lng];
-        remain += haversine(pa, pb);
+        remain += haversineDistance(pa, pb);
     }
 
     // --- 速度平均化 ---
@@ -736,21 +739,33 @@ function updateEtaLive(lat, lng, speed) {
         : 0;
 
     // --- 微小移動・低速補正 ---
-    if (minDist < MIN_MOVE_DIST || avgSpeed < MIN_SPEED) avgSpeed = 0;
+    let moving = true;
+    if (minDist < MIN_MOVE_DIST || avgSpeed < MIN_SPEED) {
+        avgSpeed = 0;
+        moving = false;
+    }
 
-    // --- 残時間計算（停止中は前回値を補間） ---
-    let remainTimeSec = (avgSpeed > 0) ? remain / avgSpeed : displayedRemainTimeSec;
+    // --- 残時間計算（速度未計測でも表示） ---
+    let remainTimeSec;
+    if (avgSpeed > 0) {
+        remainTimeSec = remain / avgSpeed;
+    } else if (displayedRemainTimeSec !== null) {
+        remainTimeSec = displayedRemainTimeSec; // 前回値を維持
+    } else {
+        remainTimeSec = remain / 1.0; // 初回速度不明でも仮に 1 m/s として表示
+    }
 
     if (displayedRemainTimeSec === null) displayedRemainTimeSec = remainTimeSec;
 
+    // --- 補間：移動中のみ残時間を減算 ---
+    if (lastUpdateTime !== null && moving) {
+        const dt = (now - lastUpdateTime) / 1000;
+        displayedRemainTimeSec = Math.max(0, displayedRemainTimeSec - dt);
+    }
+
+    // --- 過大差補正 ---
     if (remainTimeSec !== null && displayedRemainTimeSec !== null) {
-        if (lastUpdateTime !== null) {
-            const dt = (now - lastUpdateTime) / 1000; // 秒
-            displayedRemainTimeSec = Math.max(0, displayedRemainTimeSec - dt);
-            if (Math.abs(displayedRemainTimeSec - remainTimeSec) > 10) {
-                displayedRemainTimeSec = remainTimeSec; // 過大差は補正
-            }
-        } else {
+        if (Math.abs(displayedRemainTimeSec - remainTimeSec) > 10) {
             displayedRemainTimeSec = remainTimeSec;
         }
     }
