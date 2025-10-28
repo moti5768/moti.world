@@ -488,12 +488,8 @@ function download(filename, text) {
     a.download = filename;
     a.click();
 }
+
 document.getElementById('exportJsonBtn').addEventListener('click', () => download('location_log.json', JSON.stringify({ pathSegments, logData, savedAt: new Date().toISOString() }, null, 2)));
-document.getElementById('exportCsvBtn').addEventListener('click', () => {
-    const h = ['time,lat,lng,accuracy,speed_kmh,heading,address'];
-    const rows = logData.map(e => `${JSON.stringify(e.time)},${e.lat},${e.lng},${e.accuracy},${parseFloat(e.speedKmh) || ''},${JSON.stringify(e.headingText)},${JSON.stringify(e.address)}`);
-    download('location_log.csv', h.concat(rows).join('\n'));
-});
 
 // ===== 位置更新 =====
 let lastRouteUpdate = 0;

@@ -65,7 +65,10 @@
         <button id="restartBtn" class="btn-pointer-none" onclick="btn_toggle()">再開</button>
         <button id="centerToggle" class="secondary">自動追尾: ON</button>
         <button id="exportJsonBtn" class="warning">JSON保存</button>
-        <button id="exportCsvBtn" class="warning">CSV保存</button>
+        <button style="background-color: green;"
+          onclick="if (confirm('再読み込みすると一部のデータ（ナビ中の情報など）が失われます。\nよろしいですか？')) { window.location.href = window.location.href; }">
+          ページ<br>再読み込み
+        </button>
         <button id="clearBtn" class="secondary">ログ<br>経路クリア</button>
       </div>
 
