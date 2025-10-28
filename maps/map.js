@@ -177,7 +177,7 @@ function yellowgreenrawPolylines() {
 
     let lastLine = polylines[polylines.length - 1];
     if (!lastLine || lastLine.getLatLngs().length === 0) {
-        lastLine = L.polyline(lastSeg, { color: '#9ACD32', weight: 6, opacity: 0.8 }).addTo(map);
+        lastLine = L.polyline(lastSeg, { color: '#9ACD32', weight: 8, opacity: 0.8 }).addTo(map);
         polylines.push(lastLine);
     } else {
         lastLine.addLatLng(lastSeg[lastSeg.length - 1]);
