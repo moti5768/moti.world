@@ -677,11 +677,19 @@ async function handlePosition(pos) {
     document.getElementById('lastAge').textContent = '0秒前';
 }
 
-// ===== 動的ETA更新関数 =====
+// ===== スムーズETA更新（GPS誤差対応＋補間） =====
+const speedBuffer = [];
+const SPEED_BUFFER_SIZE = 5;
+const MIN_SPEED = 0.5;       // 0.5 m/s未満は停止
+const MIN_MOVE_DIST = 10;    // 10 m未満は無視
+let displayedRemainTimeSec = null; // 表示用残時間（補間用）
+let lastUpdateTime = null;        // 前回update時間
+
 function updateEtaLive(lat, lng, speed) {
     if (!routePath || routePath.length === 0) return;
     const currentLatLng = L.latLng(lat, lng);
-    // ルート上の最も近い点を探す
+    const now = performance.now();
+    // ===== ルート上の最も近い点を探す =====
     let minDist = Infinity;
     let nearestIndex = 0;
     for (let i = 0; i < routePath.length; i++) {
@@ -693,7 +701,7 @@ function updateEtaLive(lat, lng, speed) {
             nearestIndex = i;
         }
     }
-    // 残距離を算出
+    // ===== 残距離 =====
     let remain = 0;
     for (let i = nearestIndex; i < routePath.length - 1; i++) {
         const a = routePath[i], b = routePath[i + 1];
@@ -701,24 +709,52 @@ function updateEtaLive(lat, lng, speed) {
         const pb = Array.isArray(b) ? b : [b.lat, b.lng];
         remain += haversine(pa, pb);
     }
-    // 残時間推定
-    let remainTimeSec = speed && speed > 0 ? remain / speed : null;
-    // 残距離の表示（1 km以上: km、100 m〜1 km: m、10 m未満も m）
-    let remainDistanceText;
-    if (remain >= 1000) {
-        remainDistanceText = (remain / 1000).toFixed(2) + ' km';
-    } else {
-        remainDistanceText = Math.round(remain) + ' m';
+    // ===== 速度平均化 =====
+    if (speed !== null && speed >= 0) {
+        speedBuffer.push(speed);
+        if (speedBuffer.length > SPEED_BUFFER_SIZE) speedBuffer.shift();
     }
-    // 残時間の表示（h/m/s）
+    let avgSpeed = speedBuffer.length
+        ? speedBuffer.reduce((a, b) => a + b, 0) / speedBuffer.length
+        : 0;
+    // ===== 微小移動・低速補正 =====
+    if (minDist < MIN_MOVE_DIST || avgSpeed < MIN_SPEED) avgSpeed = 0;
+    // ===== 残時間計算 =====
+    let remainTimeSec = (avgSpeed > 0) ? remain / avgSpeed : null;
+    // ===== 前回値との補間 =====
+    if (displayedRemainTimeSec === null) displayedRemainTimeSec = remainTimeSec;
+    if (remainTimeSec !== null && displayedRemainTimeSec !== null) {
+        if (lastUpdateTime !== null) {
+            const dt = (now - lastUpdateTime) / 1000; // 秒
+            // 補間：残時間は dt 秒ずつ減らすが、実際の計算値にも追従
+            displayedRemainTimeSec = Math.max(0, displayedRemainTimeSec - dt);
+            // 過大差は一気に補正
+            if (Math.abs(displayedRemainTimeSec - remainTimeSec) > 10) {
+                displayedRemainTimeSec = remainTimeSec;
+            }
+        } else {
+            displayedRemainTimeSec = remainTimeSec;
+        }
+    } else {
+        displayedRemainTimeSec = null;
+    }
+    lastUpdateTime = now;
+    // ===== 残距離表示 =====
+    const remainDistanceText = (remain >= 1000)
+        ? (remain / 1000).toFixed(2) + ' km'
+        : Math.round(remain) + ' m';
+    // ===== 残時間表示 =====
     let remainTimeText = '---';
-    if (remainTimeSec !== null) {
-        const hours = Math.floor(remainTimeSec / 3600);
-        const minutes = Math.floor((remainTimeSec % 3600) / 60);
-        const seconds = Math.floor(remainTimeSec % 60);
+    if (displayedRemainTimeSec !== null) {
+        const hours = Math.floor(displayedRemainTimeSec / 3600);
+        const minutes = Math.floor((displayedRemainTimeSec % 3600) / 60);
+        const seconds = Math.floor(displayedRemainTimeSec % 60);
         remainTimeText = `${hours > 0 ? hours + '時間 ' : ''}${minutes}分 ${seconds}秒`;
     }
+    // ===== 画面更新 =====
     document.getElementById("eta").textContent = `${remainDistanceText} / 約 ${remainTimeText}`;
+    // ===== 次フレームも更新 =====
+    requestAnimationFrame(() => updateEtaLive(lat, lng, speed));
 }
 
 // ===== エラー処理 =====
