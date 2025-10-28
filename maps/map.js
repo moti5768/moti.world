@@ -57,7 +57,7 @@ async function initMap() {
         }
     } catch (e) { console.warn('ローカル復元失敗', e); }
 
-    // ===== マップ作成（iPhoneマップ風のスタイル） =====
+    // ===== マップ作成（iPhoneマップ風のスタイル・即時更新対応） =====
     map = L.map('map', {
         zoomAnimation: true,          // ズームを滑らかに
         fadeAnimation: true,          // タイル切り替えをフェードで
@@ -68,16 +68,17 @@ async function initMap() {
         attributionControl: false,    // 著作権表記を下に移す
     }).setView([initLat, initLng], initialZoom);
 
-    // 高精細（Retina対応）タイル読み込み
+    // ===== 高精細（Retina対応）タイル読み込み（即時更新最適化） =====
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         detectRetina: false,
         attribution: '© OpenStreetMap contributors',
-        tileSize: 256,             // 標準タイル
-        updateWhenIdle: true,      // 移動中は更新を抑制
-        updateWhenZooming: false,  // ズーム中は更新を抑制
-        reuseTiles: true,          // すでにあるタイルを再利用
-        unloadInvisibleTiles: true // 見えなくなったタイルは破棄
+        tileSize: 256,
+        updateWhenIdle: false,        // パン中も更新（← 即座に反映）
+        updateWhenZooming: true,      // ズーム中も更新（← 即座に反映）
+        reuseTiles: true,             // 既存タイルを再利用して高速化
+        unloadInvisibleTiles: false,  // スクロール中に破棄しない（スムーズに）
+        keepBuffer: 4,                // 少し広めにタイルを保持（連続パンに強い）
     }).addTo(map);
 
     // iPhoneの右下ズームボタン風に再配置
