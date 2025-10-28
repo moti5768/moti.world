@@ -172,7 +172,7 @@ function restoreLocal() {
 
 // --- 軽量化ポリライン更新 ---
 let polylineUpdateCounter = 0; // 更新回数カウンタ
-const POLYLINE_UPDATE_INTERVAL = 10; // 10点ごとに更新
+const POLYLINE_UPDATE_INTERVAL = 3; // 3点ごとに更新
 
 function yellowgreenrawPolylines() {
     const lastSeg = pathSegments[pathSegments.length - 1];
