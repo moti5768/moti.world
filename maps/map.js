@@ -170,17 +170,30 @@ function restoreLocal() {
     } catch { }
 }
 
-// ===== ポリライン =====
+// --- 軽量化ポリライン更新 ---
+let polylineUpdateCounter = 0; // 更新回数カウンタ
+const POLYLINE_UPDATE_INTERVAL = 10; // 10点ごとに更新
+
 function yellowgreenrawPolylines() {
     const lastSeg = pathSegments[pathSegments.length - 1];
-    if (!lastSeg || lastSeg.length === 0) return;
-
-    let lastLine = polylines[polylines.length - 1];
-    if (!lastLine || lastLine.getLatLngs().length === 0) {
-        lastLine = L.polyline(lastSeg, { color: '#9ACD32', weight: 8, opacity: 0.8 }).addTo(map);
+    if (!lastSeg?.length) return;
+    polylineUpdateCounter++;
+    // 毎回更新せず、10点に1回のみ反映（描画負荷軽減）
+    if (polylineUpdateCounter % POLYLINE_UPDATE_INTERVAL !== 0 && lastSeg.length > 1) return;
+    // 既存ポリラインを再利用
+    let lastLine = polylines[0];
+    if (!lastLine) {
+        lastLine = L.polyline(lastSeg, {
+            color: '#9ACD32',
+            weight: 8,
+            opacity: 0.8,
+            smoothFactor: 1.5, // 線を少し滑らかに（描画軽量化）
+            noClip: true       // タイル外も描画保持
+        }).addTo(map);
         polylines.push(lastLine);
     } else {
-        lastLine.addLatLng(lastSeg[lastSeg.length - 1]);
+        // 最新セグメントを一括更新
+        lastLine.setLatLngs(lastSeg);
     }
 }
 
@@ -660,35 +673,56 @@ async function handlePosition(pos) {
         address: currentAddrElem.textContent
     });
 
-    // --- ナビ中（オートリルート無効＋ETA＆追従対応） ---
-    const current = [lat, lng];
-    if (routingControl && currentDestination) {
-        // --- 目的地までの距離・時間をリアルタイム更新 ---
-        const distToDest = haversine(current, [currentDestination.lat, currentDestination.lng]);
-        if (speed && speed > 0) {
-            const timeSec = distToDest / speed;
-            const hours = Math.floor(timeSec / 3600);
-            const minutes = Math.round((timeSec % 3600) / 60);
-            let timeText = '';
-            if (hours > 0) timeText += `${hours}時間`;
-            timeText += `${minutes}分`;
-            document.getElementById('eta').textContent =
-                `${(distToDest / 1000).toFixed(2)} km / 約 ${timeText}`;
-        } else {
-            document.getElementById('eta').textContent =
-                `${(distToDest / 1000).toFixed(2)} km / ---`;
+    // --- ✅ ナビ中：ルートに沿った残距離・残時間をリアルタイム更新（オートリルート無効） ---
+    if (routingControl && routePath && routePath.length > 0 && currentDestination) {
+        const currentLatLng = marker ? marker.getLatLng() : L.latLng(lat, lng);
+
+        // 最も近いルート上の点を探す
+        let minDist = Infinity;
+        let nearestIndex = 0;
+        for (let i = 0; i < routePath.length; i++) {
+            const p = routePath[i];
+            const pp = Array.isArray(p) ? p : [p.lat, p.lng];
+            const d = haversine([currentLatLng.lat, currentLatLng.lng], pp);
+            if (d < minDist) {
+                minDist = d;
+                nearestIndex = i;
+            }
         }
 
-        // --- スタートマーカー追従（Routing Machine内部をリアルタイム更新） ---
-        try {
-            const plan = routingControl.getPlan();
-            if (plan && plan._waypoints && plan._waypoints[0]) {
-                plan._waypoints[0].latLng = L.latLng(smoothed[0], smoothed[1]);
-                plan._updateMarkers(); // 内部マーカーを再描画
-            }
-        } catch (err) {
-            console.warn('スタートマーカー追従エラー:', err);
+        // 残り距離をルートに沿って算出
+        let remain = 0;
+        for (let i = nearestIndex; i < routePath.length - 1; i++) {
+            const a = routePath[i], b = routePath[i + 1];
+            const pa = Array.isArray(a) ? a : [a.lat, a.lng];
+            const pb = Array.isArray(b) ? b : [b.lat, b.lng];
+            remain += haversine(pa, pb);
         }
+
+        // 距離比で残り時間を推定
+        let remainTimeSec = null;
+        if (routeTotalDistance > 0 && routeTotalTime > 0) {
+            remainTimeSec = (remain / routeTotalDistance) * routeTotalTime;
+        } else if (speed && speed > 0) {
+            remainTimeSec = remain / speed;
+        }
+
+        // ETA更新
+        const remainKm = (remain / 1000).toFixed(2);
+        const remainMin = remainTimeSec ? Math.round(remainTimeSec / 60) : '---';
+        document.getElementById('eta').textContent =
+            remainTimeSec ? `${remainKm} km / 約 ${remainMin}分` : `${remainKm} km / ---`;
+    }
+
+    // --- スタートマーカー追従（内部的に現在地を更新） ---
+    try {
+        const plan = routingControl?.getPlan?.();
+        if (plan && plan._waypoints && plan._waypoints[0]) {
+            plan._waypoints[0].latLng = L.latLng(smoothed[0], smoothed[1]);
+            plan._updateMarkers();
+        }
+    } catch (err) {
+        // console.warn('スタートマーカー追従エラー:', err);
     }
 
     lastPosTime = pos.timestamp || now();
@@ -1062,20 +1096,43 @@ window.addEventListener('load', () => {
             lineOptions: { styles: [{ color: "transparent", weight: 0, opacity: 0 }] },
             altLineOptions: { styles: [{ color: "transparent", weight: 0, opacity: 0 }] },
             createMarker: (i, wp) => {
+                // === スタート地点（i === 0）は現在地マーカーを使用するため、Routing Machine上ではマーカーを作らない ===
+                if (i === 0) {
+                    return null; // ← これで水色マーカーを非表示にできる
+                }
+
+                // === ゴール地点（i === 1）のみ紫マーカーを表示 ===
                 const size = 20;
-                const color = i === 0 ? "#00BCD4" : "#800080";
+                const color = "#800080"; // 紫（目的地）
+
                 const m = L.marker(wp.latLng, {
                     icon: L.divIcon({
                         className: 'custom-marker',
-                        html: `<div style="width:${size}px;height:${size}px;background:${color};border:2px solid #fff;border-radius:50%;box-shadow:0 0 5px rgba(0,0,0,0.3);"></div>`,
+                        html: `
+                <div style="
+                    width:${size}px;
+                    height:${size}px;
+                    background:${color};
+                    border:2px solid #fff;
+                    border-radius:50%;
+                    box-shadow:0 0 5px rgba(0,0,0,0.3);
+                "></div>
+            `,
                         iconSize: [size, size],
                         iconAnchor: [size / 2, size / 2]
                     })
                 });
+
+                // === マーカークリック時の動作（目的地情報表示） ===
                 m.on("click", e => {
-                    showMarkerLabelLeaflet(e, "現在地");
+                    showMarkerLabelLeaflet(e, "目的地");
                 });
-                if (i === 1) m.on('click', () => map.flyTo(m.getLatLng(), 17));
+
+                // === ゴールクリック時に地図をズーム・中心移動 ===
+                m.on("click", () => {
+                    map.flyTo(m.getLatLng(), 17);
+                });
+
                 return m;
             },
             position: 'bottomright'
@@ -1088,76 +1145,98 @@ window.addEventListener('load', () => {
                 if (etaElem.textContent && etaElem.textContent !== "---" && !etaElem.textContent.includes("計算中")) return;
                 etaElem.textContent = "計算中...";
             })
+
             .on("routesfound", e => {
+                // --- 経路指示翻訳＆ETA初期化（既存処理） ---
                 e.routes.forEach(route => translateInstructions(route));
                 updateEta(e.routes[0]);
-                // 各ルートのアニメーション & クリックでETA更新＆選択色
+
+                // --- ✅ ルート情報をグローバル変数に保存（リアルタイムETAで使用） ---
+                try {
+                    const best = e.routes[0];
+                    routePath = best.coordinates ? best.coordinates.slice() : [];
+                    routeTotalDistance = best.summary?.totalDistance || 0;
+                    routeTotalTime = best.summary?.totalTime || 0;
+                } catch (err) {
+                    console.warn('ルート保存エラー', err);
+                    routePath = [];
+                    routeTotalDistance = 0;
+                    routeTotalTime = 0;
+                }
+
+                // --- 各ルートのアニメーション描画（見た目は従来と同一） ---
                 e.routes.forEach((route, idx) => {
                     const color = idx === 0 ? "#1976d2" : "#f44336";
                     const weight = idx === 0 ? 8 : 4;
+
+                    // アニメーション線
                     const animLine = animateRouteSmooth(route.coordinates, color, weight, 1500);
-                    // プラットフォーム判定（iPhone 向けにヒット幅を大きめに）
+
+                    // 透明なクリック検出用ライン
                     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-                    const touchHitWeight = isIOS ? 31 : 31; // iPhone はさらに広く
-                    // 透明クリック用ライン（タッチ領域を拡大）
+                    const touchHitWeight = isIOS ? 31 : 31;
                     const clickLine = L.polyline(route.coordinates, {
-                        color: color,
+                        color,
                         weight: touchHitWeight,
-                        opacity: 0.02,      // 完全透明は拾わない場合があるのでごく薄く
+                        opacity: 0.02,
                         interactive: true,
                     }).addTo(map);
-                    // 保険：要素が取れたら直接 style/属性を設定して確実に当たり判定を広げる
+
+                    // --- 透明ラインのスタイル補強（iOS対応） ---
                     setTimeout(() => {
                         try {
                             const el = clickLine.getElement && clickLine.getElement();
                             if (el) {
-                                // SVG path の strokeWidth 等を上書き（Leaflet がつけた属性より確実に効く）
                                 el.style.pointerEvents = 'stroke';
                                 el.style.cursor = 'pointer';
                                 el.style.strokeLinecap = 'round';
-                                el.style.strokeWidth = (touchHitWeight) + 'px';
-                                // iOS では opacity を微小値にしておく（表示上はほぼ透明）
+                                el.style.strokeWidth = `${touchHitWeight}px`;
                                 el.style.opacity = 0.02;
-                                // さらに属性としても設定（ブラウザ差対策）
                                 el.setAttribute('stroke-linecap', 'round');
                                 el.setAttribute('stroke-width', String(touchHitWeight));
                             }
-                        } catch (e) { /* ignore */ }
+                        } catch { /* ignore */ }
                     }, 0);
-                    // 選択処理（タッチ / クリック の両方に対応）
+
+                    // --- 経路選択イベント ---
                     const onSelect = (ev) => {
                         updateEta(route);
                         userSelectedRoute = true;
-                        // 選択色反映（選択中：青、他：赤）
+                        // 選択中ルートを青、他を赤
                         try {
                             animatedPolylines.forEach(p => {
                                 if (p.polyline && p.route) {
-                                    if (p.route === route) p.polyline.setStyle({ color: "#1976d2", weight: 8 });
-                                    else p.polyline.setStyle({ color: "#f44336", weight: 4 });
+                                    if (p.route === route)
+                                        p.polyline.setStyle({ color: "#1976d2", weight: 8 });
+                                    else
+                                        p.polyline.setStyle({ color: "#f44336", weight: 4 });
                                 }
                             });
                         } catch (err) {
                             console.warn('route style update error', err);
                         }
-                        if (ev && ev.originalEvent && ev.originalEvent.stopPropagation) ev.originalEvent.stopPropagation();
+                        if (ev?.originalEvent?.stopPropagation) ev.originalEvent.stopPropagation();
                     };
-                    // pointerdown / touchstart / click を登録（幅広くカバー）
+
+                    // --- 入力イベント登録（タッチ／クリック対応） ---
                     clickLine.on('pointerdown touchstart click', onSelect);
-                    // 任意：ホバー/タッチで少し見せるフィードバック（必要なら）
                     clickLine.on('mouseover', () => clickLine.setStyle({ opacity: 0.12 }));
                     clickLine.on('mouseout', () => clickLine.setStyle({ opacity: 0.02 }));
-                    // 元と同じ形式で配列に格納（構造は変えない）
+
+                    // --- 内部管理用リストに保持 ---
                     animatedPolylines.push({ polyline: animLine, route });
                     animatedPolylines.push({ polyline: clickLine, route });
                 });
 
-                // ルートパネル日本語化
+                // --- ✅ ルート案内テキスト日本語化 ---
                 setTimeout(() => {
                     document.querySelectorAll('.leaflet-routing-instruction').forEach(el => {
                         let text = el.textContent;
                         Object.entries(instructionMap)
                             .sort((a, b) => b[0].length - a[0].length)
-                            .forEach(([en, ja]) => { text = text.replace(new RegExp(`\\b${en}\\b`, 'gi'), ja); });
+                            .forEach(([en, ja]) => {
+                                text = text.replace(new RegExp(`\\b${en}\\b`, 'gi'), ja);
+                            });
                         el.textContent = text;
                     });
                 }, 100);
