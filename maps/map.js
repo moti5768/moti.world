@@ -1196,9 +1196,9 @@ window.addEventListener('load', () => {
             closeBtn.textContent = '案内パネル表示切替';
             closeBtn.style.cssText = `
         position:absolute;
-        bottom:12.5px;
-        right:20px;
-        padding:6px 16px;
+        bottom:10px;
+        right:10px;
+        padding:5px;
         height:20px;
         background-color:darkgray;
         font-size:16px;
