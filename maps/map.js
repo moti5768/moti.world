@@ -1274,6 +1274,7 @@ window.addEventListener('load', () => {
 
                     const best = routes[0];
                     routePath = best.coordinates.slice();
+                    currentDestination = routePath[routePath.length - 1];
                     routeTotalDistance = best.summary?.totalDistance || 0;
                     routeTotalTime = best.summary?.totalTime || 0;
                     navActive = true;
@@ -1291,6 +1292,7 @@ window.addEventListener('load', () => {
 
                         // === 経路クリックで選択 ===
                         animLine.on("click", () => {
+                            routePath = route.coordinates.slice();
                             updateEta(route);
                             userSelectedRoute = true;
 
@@ -1334,6 +1336,8 @@ window.addEventListener('load', () => {
             // --- 経路選択時（再選択時にも反映） ---
             .on("routeselected", e => {
                 translateInstructions(e.route);
+                routePath = e.route.coordinates.slice();
+                currentDestination = routePath[routePath.length - 1];
                 updateEta(e.route);
                 userSelectedRoute = true;
                 animatedPolylines.forEach(p => {
