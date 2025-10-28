@@ -771,14 +771,14 @@ function updateEtaSmart(lat, lng, speed) {
 
     // 8. 表示更新
     const distText = remain >= 1000
-        ? (remain / 1000).toFixed(2) + " km"
-        : Math.round(remain) + " m";
+        ? (remain / 1000).toFixed(2) + "km"
+        : Math.round(remain) + "m";
     const t = Math.max(0, displayedRemainTimeSec);
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
     const s = Math.floor(t % 60);
-    const timeText = h > 0 ? `${h}時間 ${m}分` : `${m}分 ${s}秒`;
-    document.getElementById("eta").textContent = `${distText} / 約 ${timeText}`;
+    const timeText = h > 0 ? `${h}時間${m}分` : `${m}分${s}秒`;
+    document.getElementById("eta").textContent = `${distText} / 約${timeText}`;
 }
 
 // 9. 外部タイマーで1秒ごとに呼ぶ
@@ -1112,9 +1112,9 @@ window.addEventListener('load', () => {
         // 残距離の表示（1 km以上: km、1 km未満は m）
         let remainDistanceText;
         if (summary.totalDistance >= 1000) {
-            remainDistanceText = (summary.totalDistance / 1000).toFixed(2) + ' km';
+            remainDistanceText = (summary.totalDistance / 1000).toFixed(2) + 'km';
         } else {
-            remainDistanceText = Math.round(summary.totalDistance) + ' m';
+            remainDistanceText = Math.round(summary.totalDistance) + 'm';
         }
 
         // 残時間の表示（h/m/s）
@@ -1124,10 +1124,10 @@ window.addEventListener('load', () => {
         const seconds = Math.floor(totalSec % 60);
 
         let timeText = '';
-        if (hours > 0) timeText += `${hours}時間 `;
-        timeText += `${minutes}分 ${seconds}秒`;
+        if (hours > 0) timeText += `${hours}時間`;
+        timeText += `${minutes}分${seconds}秒`;
 
-        document.getElementById("eta").textContent = `${remainDistanceText} / 約 ${timeText}`;
+        document.getElementById("eta").textContent = `${remainDistanceText} / 約${timeText}`;
     }
 
     // ===== マップクリックで目的地選択（代替ルート対応＆翻訳安定版） =====
