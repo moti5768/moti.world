@@ -519,11 +519,12 @@ let smoothBuffer = [];
 let retryAccuracyThreshold = MIN_ACCURACY;
 let lastGoodUpdate = null;
 let lastGoodUpdateTime = 0;
+let lastAcc = null;
 
 // ===== ETA安定化用状態 =====
 let lastNearestIndex = 0;   // 前回探索位置
 let lastRemainDistance = 0; // 前回残距離
-let lastSpeed = 0;          // 平滑化速度
+let lastSpeed = 1;          // 平滑化速度（初期1m/s）
 
 // ===== 位置更新関数 =====
 async function handlePosition(pos) {
@@ -537,7 +538,6 @@ async function handlePosition(pos) {
     let speed = (c.speed >= 0) ? c.speed : null;
     const nowTime = Date.now();
 
-    let smoothed = [lat, lng];
     const lastSegment = pathSegments[pathSegments.length - 1];
     const prev = lastSegment ? lastSegment.slice(-1)[0] : null;
     const isFirst = !firstPositionReceived;
@@ -554,11 +554,9 @@ async function handlePosition(pos) {
     lastGoodUpdateTime = pos.timestamp;
 
     // --- 精度チェック ---
-    let accChanged = (typeof lastAcc !== 'undefined' && acc !== lastAcc);
+    let accChanged = (lastAcc !== null && acc !== lastAcc);
     lastAcc = acc;
     if (!isFirst && acc > retryAccuracyThreshold && Date.now() - lastGoodUpdateTime <= 5000 && !accChanged) return;
-
-    const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
 
     // --- 速度・方角補正 ---
     if (prev) {
@@ -573,6 +571,7 @@ async function handlePosition(pos) {
     let heading = lastOrientation || 0;
 
     // --- UI更新 ---
+    const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
     document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
     document.getElementById('lng').textContent = toFixedOrDash(lng, 6);
     document.getElementById('acc').textContent = `${acc.toFixed(1)} m`;
@@ -586,12 +585,12 @@ async function handlePosition(pos) {
         smoothBuffer.push([lat, lng]);
         if (smoothBuffer.length > SMOOTHING_COUNT) smoothBuffer.shift();
 
-        smoothed = [
+        let smoothed = [
             smoothBuffer.reduce((s, p) => s + p[0], 0) / smoothBuffer.length,
             smoothBuffer.reduce((s, p) => s + p[1], 0) / smoothBuffer.length
         ];
 
-        if (marker) {
+        if (marker && prev) {
             const prevMarkerPos = [marker.getLatLng().lat, marker.getLatLng().lng];
             const d = haversine(prevMarkerPos, smoothed);
             const speedMs = speed || 0;
@@ -648,7 +647,7 @@ async function handlePosition(pos) {
     }
 
     // --- ログ追加 ---
-    addLogEntry({
+    logData.push({
         time: new Date().toISOString(),
         lat, lng, accuracy: acc, altitude: alt,
         speedKmh: speed ? speed * 3.6 : null,
@@ -659,14 +658,14 @@ async function handlePosition(pos) {
 
     // --- ✅ リアルタイム ETA更新（安定版） ---
     if (routingControl && routePath && routePath.length > 0 && currentDestination) {
-        updateEtaLiveStable(smoothed[0], smoothed[1], speed || 0);
+        updateEtaLiveStable(lat, lng, speed || 0);
     }
 
     // --- スタートマーカー追従 ---
     try {
         const plan = routingControl?.getPlan?.();
         if (plan && plan._waypoints && plan._waypoints[0]) {
-            plan._waypoints[0].latLng = L.latLng(smoothed[0], smoothed[1]);
+            plan._waypoints[0].latLng = L.latLng(lat, lng);
             plan._updateMarkers();
         }
     } catch (err) { }
@@ -680,37 +679,34 @@ function updateEtaLiveStable(lat, lng, speed) {
     if (!routePath || routePath.length < 2) return;
 
     // 速度平滑化
-    lastSpeed = speed > 0 ? 0.3 * speed + 0.7 * lastSpeed : lastSpeed || 1;
+    lastSpeed = speed > 0 ? 0.3 * speed + 0.7 * lastSpeed : lastSpeed;
 
     // 前回 index 周辺のみ探索
     const searchRange = 5;
     let start = Math.max(0, lastNearestIndex - searchRange);
     let end = Math.min(routePath.length - 1, lastNearestIndex + searchRange);
-    let minDist = Infinity;
     let nearestIndex = lastNearestIndex;
+    let minDist = Infinity;
 
     for (let i = start; i <= end; i++) {
-        const p = routePath[i];
-        const pp = Array.isArray(p) ? p : [p.lat, p.lng];
-        const d = haversine([lat, lng], pp);
+        const p = Array.isArray(routePath[i]) ? routePath[i] : [routePath[i].lat, routePath[i].lng];
+        const d = haversine([lat, lng], p);
         if (d < minDist) {
             minDist = d;
             nearestIndex = i;
         }
     }
-
     lastNearestIndex = nearestIndex;
 
     // 残距離計算
     let remain = 0;
     for (let i = nearestIndex; i < routePath.length - 1; i++) {
-        const a = routePath[i], b = routePath[i + 1];
-        const pa = Array.isArray(a) ? a : [a.lat, a.lng];
-        const pb = Array.isArray(b) ? b : [b.lat, b.lng];
-        remain += haversine(pa, pb);
+        const a = Array.isArray(routePath[i]) ? routePath[i] : [routePath[i].lat, routePath[i].lng];
+        const b = Array.isArray(routePath[i + 1]) ? routePath[i + 1] : [routePath[i + 1].lat, routePath[i + 1].lng];
+        remain += haversine(a, b);
     }
 
-    // 前回より増えすぎる場合は補正
+    // 前回より急増した場合は補正
     if (lastRemainDistance && remain > lastRemainDistance + 5) remain = lastRemainDistance;
     lastRemainDistance = remain;
 
