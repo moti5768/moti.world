@@ -949,34 +949,34 @@ window.addEventListener('load', () => {
 
     // ===== アニメーション用ポリライン管理 =====
     let animatedPolylines = []; // {polyline, route}
-    let routingControl = null;
-    let currentDestination = null;
 
     // ===== スムーズアニメーション関数 =====
     function animateRouteSmooth(latlngs, color = "#1976d2", weight = 7, duration = 2000) {
         if (!latlngs || latlngs.length < 2) return;
 
-        // ---- 軽量化：5〜10mごとにサンプリング ----
         const simplified = [latlngs[0]];
+        const segDist = [];
+        let totalDist = 0;
+        const sampleDist = 15; // ← サンプリング距離を大きめに
+
+        // 座標と距離を同時に計算
         for (let i = 1; i < latlngs.length; i++) {
             const prev = simplified[simplified.length - 1];
             const dist = map.distance(prev, latlngs[i]);
-            if (dist > 8) simplified.push(latlngs[i]); // ← 距離を短めに
+            if (dist >= sampleDist) {
+                simplified.push(latlngs[i]);
+                segDist.push(dist);
+                totalDist += dist;
+            }
         }
+
+        // 最後の区間
+        const lastDist = map.distance(simplified[simplified.length - 1], latlngs[latlngs.length - 1]);
         simplified.push(latlngs[latlngs.length - 1]);
+        segDist.push(lastDist);
+        totalDist += lastDist;
 
-        // ---- 線を追加 ----
         const polyline = L.polyline([simplified[0]], { color, weight, opacity: 1 }).addTo(map);
-
-        // 総距離
-        let totalDist = 0;
-        const segDist = [];
-        for (let i = 0; i < simplified.length - 1; i++) {
-            const d = map.distance(simplified[i], simplified[i + 1]);
-            segDist.push(d);
-            totalDist += d;
-        }
-
         let startTime = null;
 
         function step(ts) {
@@ -985,21 +985,18 @@ window.addEventListener('load', () => {
             const progress = Math.min(elapsed / duration, 1);
             const targetDist = totalDist * progress;
 
-            // 現在までの距離に応じてどこまで描くか計算
             let traveled = 0;
             const points = [simplified[0]];
 
             for (let i = 0; i < segDist.length; i++) {
                 if (traveled + segDist[i] >= targetDist) {
-                    // 区間内の補間
                     const remain = targetDist - traveled;
                     const ratio = remain / segDist[i];
                     const a = simplified[i], b = simplified[i + 1];
-                    const interp = L.latLng(
+                    points.push(L.latLng(
                         a.lat + (b.lat - a.lat) * ratio,
                         a.lng + (b.lng - a.lng) * ratio
-                    );
-                    points.push(interp);
+                    ));
                     break;
                 } else {
                     points.push(simplified[i + 1]);
@@ -1196,6 +1193,7 @@ window.addEventListener('load', () => {
         if (!closeBtn) {
             closeBtn = document.createElement('a');
             closeBtn.className = 'leaflet-routing-close';
+            closeBtn.textContent = '案内パネル表示切替';
             closeBtn.style.cssText = `
         position:absolute;
         bottom:12.5px;
