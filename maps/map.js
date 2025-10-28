@@ -1173,8 +1173,8 @@ window.addEventListener('load', () => {
             showAlternatives: true, // ✅ 複数ルート表示ON
             fitSelectedRoutes: false,
             language: "en",
-            lineOptions: { styles: [{ color: "transparent", weight: 0, opacity: 0 }] },
-            altLineOptions: { styles: [{ color: "transparent", weight: 0, opacity: 0 }] },
+            lineOptions: { styles: [{ color: "transparent", weight: 25, opacity: 0 }] },
+            altLineOptions: { styles: [{ color: "transparent", weight: 25, opacity: 0 }] },
             createMarker: (i, wp) => {
                 // === 現在地マーカーは既存を使用 ===
                 if (i === 0) return null;
