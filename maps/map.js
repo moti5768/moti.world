@@ -171,29 +171,33 @@ function restoreLocal() {
 }
 
 // --- 軽量化ポリライン更新 ---
-let polylineUpdateCounter = 0; // 更新回数カウンタ
-const POLYLINE_UPDATE_INTERVAL = 3; // 3点ごとに更新
+let polylineUpdateCounter = 0;
+const POLYLINE_UPDATE_INTERVAL = 3;
 
 function yellowgreenrawPolylines() {
     const lastSeg = pathSegments[pathSegments.length - 1];
     if (!lastSeg?.length) return;
-    polylineUpdateCounter++;
-    // 毎回更新せず、10点に1回のみ反映（描画負荷軽減）
-    if (polylineUpdateCounter % POLYLINE_UPDATE_INTERVAL !== 0 && lastSeg.length > 1) return;
-    // 既存ポリラインを再利用
     let lastLine = polylines[0];
     if (!lastLine) {
         lastLine = L.polyline(lastSeg, {
             color: '#9ACD32',
             weight: 8,
             opacity: 0.8,
-            smoothFactor: 1.5, // 線を少し滑らかに（描画軽量化）
-            noClip: true       // タイル外も描画保持
+            smoothFactor: 1.5,
+            noClip: true
         }).addTo(map);
         polylines.push(lastLine);
-    } else {
-        // 最新セグメントを一括更新
+        polylineUpdateCounter = lastSeg.length; // 初回をカウントに加算
+        return;
+    }
+    polylineUpdateCounter++;
+    // 3点ごとの一括更新（滑らか表示向け）
+    if (polylineUpdateCounter % POLYLINE_UPDATE_INTERVAL === 0) {
         lastLine.setLatLngs(lastSeg);
+    } else {
+        // 追加点だけ即時反映（パフォーマンス軽め）
+        const newPoint = lastSeg[lastSeg.length - 1];
+        lastLine.addLatLng(newPoint);
     }
 }
 
