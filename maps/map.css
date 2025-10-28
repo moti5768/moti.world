@@ -286,6 +286,10 @@ button.danger {
     display: none !important;
 }
 
+.leaflet-control-attribution {
+    font-size: x-small;
+}
+
 .btn-pointer-none {
     background: silver !important;
     color: darkgray;
