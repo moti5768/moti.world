@@ -6,6 +6,8 @@ let startMarker = null;
 let userInteracting = false;
 let programMoving = false; // 追加
 let currentLabel = null;
+let currentLatLng = null; // ← ここを追加（必須）
+let currentSpeed = 0;
 
 // ログUI
 const logToggleBtn = document.getElementById('logToggleBtn');
@@ -202,7 +204,8 @@ function yellowgreenrawPolylines() {
 }
 
 // ===== マーカー更新（軽量化版）=====
-function updateMarker(lat, lng, heading, accColor, speedKmh) {
+function updateMarker(lat, lng, heading, accColor, speed) {
+    const speedKmh = speed * 3.6; // 関数内で km/h に変換
     const size = speedKmh && speedKmh * 3.6 > 200 ? 20 : 16;
 
     // 無効座標ならマーカー削除
@@ -530,7 +533,7 @@ async function handlePosition(pos) {
     const c = pos.coords;
     const lat = c.latitude, lng = c.longitude, acc = c.accuracy || 0, alt = c.altitude;
     let speed = (c.speed >= 0) ? c.speed : null;
-    const speedKmh = speed ? speed * 3.6 : 0;
+    currentSpeed = Number.isFinite(speed) ? speed : 0;
     let heading = (typeof c.heading === 'number') ? c.heading : null;
     const nowTime = Date.now();
 
@@ -572,6 +575,8 @@ async function handlePosition(pos) {
     }
     if (lastOrientation !== null) heading = lastOrientation;
     heading = (heading === null || isNaN(heading)) ? 0 : heading;
+
+    const speedKmh = speed ? speed * 3.6 : 0;
 
     // --- UI更新 ---
     document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
@@ -652,15 +657,15 @@ async function handlePosition(pos) {
     addLogEntry({
         time: new Date().toISOString(),
         lat, lng, accuracy: acc, altitude: alt,
-        speedKmh: speed ? speed * 3.6 : null,
-        speedText: speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---',
+        speedKmh: speed ? speedKmh : null,
+        speedText: speed ? `${speedKmh.toFixed(1)} km/h` : '---',
         headingText: directionName(heading),
         address: currentAddrElem.textContent
     });
 
     // --- ✅ リアルタイム ETA更新（ポリラインや平滑化に依存せず即時更新） ---
     if (routingControl && routePath && routePath.length > 0 && currentDestination) {
-        const currentLatLng = marker ? marker.getLatLng() : L.latLng(lat, lng);
+        currentLatLng = marker ? marker.getLatLng() : L.latLng(lat, lng);
         updateEtaSmart(currentLatLng.lat, currentLatLng.lng, speed || 0);
     }
 
@@ -677,38 +682,45 @@ async function handlePosition(pos) {
     document.getElementById('lastAge').textContent = '0秒前';
 }
 
+// ======== ETAスマート計算（最新版）======== //
+
 let speedBuffer = [];
 const SPEED_BUFFER_SIZE = 5;
-const MIN_SPEED = 0.5;    // 停止判定（m/s）
-const MIN_MOVE_DIST = 10; // 10m未満は誤差扱い
-const MAX_REMAIN_TIME = 36000; // 最大10時間
-const ETA_ALPHA = 0.2;    // 補間係数
+const MIN_SPEED = 0.5;        // 停止判定（m/s）
+const MIN_MOVE_DIST = 10;     // 10m未満は誤差扱い
+const MAX_REMAIN_TIME = 36000; // 最大10時間（安全上限）
+const ETA_ALPHA = 0.15;       // 補間係数（滑らかさ）
+const ETA_UPDATE_INTERVAL = 1000; // 更新間隔（ms）
 
 let displayedRemainTimeSec = null;
 let lastNearestIndex = null;
 let lastUpdateTime = null;
 let navActive = false;
+let etaTimerRunning = false;
 
+// --- 距離計算関数（ハバースイン法） ---
 function haversineDistance([lat1, lon1], [lat2, lon2]) {
     const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 +
+    const a =
+        Math.sin(dLat / 2) ** 2 +
         Math.cos(lat1 * Math.PI / 180) *
         Math.cos(lat2 * Math.PI / 180) *
         Math.sin(dLon / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+// --- ETA更新本体 ---
 function updateEtaSmart(lat, lng, speed) {
     if (!navActive || !routePath || routePath.length === 0) return;
 
     const now = performance.now();
     const current = [lat, lng];
 
-    // 1. 最も近いルート点
+    // --- 1. 最も近いルート点を探索 ---
     let minDist = Infinity;
-    let nearestIndex = 0;
+    let nearestIndex = lastNearestIndex ?? 0;
     for (let i = 0; i < routePath.length; i++) {
         const p = routePath[i];
         const coord = Array.isArray(p) ? p : [p.lat, p.lng];
@@ -719,72 +731,109 @@ function updateEtaSmart(lat, lng, speed) {
         }
     }
 
-    // 2. 小移動・誤差は無視
-    if (lastNearestIndex !== null && Math.abs(nearestIndex - lastNearestIndex) < 3 && minDist < MIN_MOVE_DIST) {
-        nearestIndex = lastNearestIndex; // ETA補正に使用
+    // --- 2. 小移動・誤差は無視 ---
+    if (
+        lastNearestIndex !== null &&
+        Math.abs(nearestIndex - lastNearestIndex) < 3 &&
+        minDist < MIN_MOVE_DIST
+    ) {
+        nearestIndex = lastNearestIndex;
     }
     lastNearestIndex = nearestIndex;
 
-    // 3. 残距離計算
+    // --- 3. 残距離計算 ---
     let remain = 0;
     for (let i = nearestIndex; i < routePath.length - 1; i++) {
-        const a = routePath[i], b = routePath[i + 1];
+        const a = routePath[i],
+            b = routePath[i + 1];
         const pa = Array.isArray(a) ? a : [a.lat, a.lng];
         const pb = Array.isArray(b) ? b : [b.lat, b.lng];
         remain += haversineDistance(pa, pb);
     }
 
-    // 4. 速度平滑化
-    if (speed != null && speed >= 0) {
+    // --- 到着判定 ---
+    if (remain < 10) {
+        document.getElementById("eta").textContent = "目的地に到着";
+        displayedRemainTimeSec = 0;
+        return;
+    }
+
+    // --- 4. 速度平滑化 ---
+    if (Number.isFinite(speed) && speed >= 0) {
         speedBuffer.push(speed);
         if (speedBuffer.length > SPEED_BUFFER_SIZE) speedBuffer.shift();
     }
-    let avgSpeed = speedBuffer.length
-        ? speedBuffer.reduce((a, b) => a + b, 0) / speedBuffer.length
-        : 0;
+    let avgSpeed =
+        speedBuffer.length > 0
+            ? speedBuffer.reduce((a, b) => a + b, 0) / speedBuffer.length
+            : 0;
     if (avgSpeed < MIN_SPEED) avgSpeed = 0;
 
-    // 5. 残時間計算
-    let remainTimeSec = avgSpeed > 0
-        ? remain / avgSpeed
-        : displayedRemainTimeSec ?? remain / 1.0;
+    // --- 5. 残時間計算 ---
+    let remainTimeSec =
+        avgSpeed > 0
+            ? remain / avgSpeed
+            : displayedRemainTimeSec ?? remain / 1.0;
 
-    // 上限・下限補正
+    // --- 上限・下限補正 ---
     remainTimeSec = Math.min(Math.max(remainTimeSec, 0), MAX_REMAIN_TIME);
 
-    // 6. 補間で滑らかに
+    // --- 6. 補間で滑らかに更新 ---
     if (displayedRemainTimeSec == null) {
         displayedRemainTimeSec = remainTimeSec;
     } else {
-        displayedRemainTimeSec = displayedRemainTimeSec * (1 - ETA_ALPHA) + remainTimeSec * ETA_ALPHA;
+        displayedRemainTimeSec =
+            displayedRemainTimeSec * (1 - ETA_ALPHA) +
+            remainTimeSec * ETA_ALPHA;
     }
 
-    // 7. 停止中は少しずつ増加（信号待ち補正）
+    // --- 7. 信号待ち・停止補正 ---
     const dt = lastUpdateTime ? (now - lastUpdateTime) / 1000 : 0;
     const moving = avgSpeed > 0;
     if (!moving && dt > 0) {
-        displayedRemainTimeSec = Math.min(displayedRemainTimeSec + dt * 0.2, MAX_REMAIN_TIME);
+        displayedRemainTimeSec = Math.min(
+            displayedRemainTimeSec + dt * 0.2,
+            MAX_REMAIN_TIME
+        );
     } else if (moving && dt > 0) {
-        displayedRemainTimeSec = Math.max(displayedRemainTimeSec - dt, 0);
+        displayedRemainTimeSec = Math.max(
+            displayedRemainTimeSec - dt,
+            0
+        );
     }
     lastUpdateTime = now;
 
-    // 8. 表示更新
-    const distText = remain >= 1000
-        ? (remain / 1000).toFixed(2) + "km"
-        : Math.round(remain) + "m";
+    // --- 8. 表示更新 ---
+    const distText =
+        remain >= 1000
+            ? (remain / 1000).toFixed(2) + "km"
+            : Math.round(remain) + "m";
     const t = Math.max(0, displayedRemainTimeSec);
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
     const s = Math.floor(t % 60);
     const timeText = h > 0 ? `${h}時間${m}分` : `${m}分${s}秒`;
+
     document.getElementById("eta").textContent = `${distText} / 約${timeText}`;
 }
 
-// 9. 外部タイマーで1秒ごとに呼ぶ
-setInterval(() => {
-    if (currentLatLng) updateEtaSmart(currentLatLng.lat, currentLatLng.lng, currentSpeed);
-}, 1000);
+// --- 9. 安定タイマー制御（ズレ補正版） ---
+function startEtaTimer() {
+    if (etaTimerRunning) return;
+    etaTimerRunning = true;
+
+    const loop = () => {
+        if (navActive && currentLatLng) {
+            updateEtaSmart(
+                currentLatLng.lat,
+                currentLatLng.lng,
+                Number.isFinite(currentSpeed) ? currentSpeed : 0
+            );
+        }
+        setTimeout(loop, ETA_UPDATE_INTERVAL);
+    };
+    loop();
+}
 
 // ===== エラー処理 =====
 let retryTimer = null;
@@ -1228,6 +1277,7 @@ window.addEventListener('load', () => {
                     routeTotalDistance = best.summary?.totalDistance || 0;
                     routeTotalTime = best.summary?.totalTime || 0;
                     navActive = true;
+                    startEtaTimer();
 
                     // ETA初期表示
                     updateEta(best);
@@ -1365,7 +1415,6 @@ window.addEventListener('load', () => {
         if (etaContainer) etaContainer.textContent = "---";
     });
 });
-
 
 // ===== 操作ボタン =====
 document.getElementById('stopBtn').addEventListener('click', () => {
