@@ -520,6 +520,7 @@ let retryAccuracyThreshold = MIN_ACCURACY;
 let lastGoodUpdate = null;
 let lastGoodUpdateTime = 0;
 
+// ===== 位置更新関数 =====
 async function handlePosition(pos) {
     if (!pos || !pos.coords) {
         updateMarker(null, null, 0, 'black', 0);
@@ -546,33 +547,19 @@ async function handlePosition(pos) {
         const dist = haversine(lastGoodUpdate, [lat, lng]);
         const impliedSpeed = dist / dt;
         const MAX_REALISTIC_SPEED = 140; // ≒ 504 km/h
-
-        if (impliedSpeed > MAX_REALISTIC_SPEED && acc > 50) {
-            console.warn('外れ値検出: 異常速度', impliedSpeed.toFixed(1), 'm/s, 精度', acc);
-            return;
-        }
+        if (impliedSpeed > MAX_REALISTIC_SPEED && acc > 50) return;
     }
     lastGoodUpdate = [lat, lng];
     lastGoodUpdateTime = pos.timestamp;
 
     // --- 精度チェック + 時間経過で更新 ---
-    let accChanged = false;
-    if (typeof lastAcc !== 'undefined' && acc !== lastAcc) accChanged = true;
+    let accChanged = (typeof lastAcc !== 'undefined' && acc !== lastAcc);
     lastAcc = acc;
-
     if (!isFirst) {
-        if (acc <= MIN_ACCURACY) {
-            lastGoodUpdateTime = Date.now();
-        } else if (acc > retryAccuracyThreshold) {
-            if (Date.now() - lastGoodUpdateTime <= 5000 && !accChanged) return;
-            console.warn('精度悪いが時間経過で更新:', acc);
-        } else {
-            if (!accChanged) return;
-        }
+        if (acc > retryAccuracyThreshold && Date.now() - lastGoodUpdateTime <= 5000 && !accChanged) return;
     }
 
     const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
-    yellowgreenrawPolylines();
 
     // --- 速度・方角補正 ---
     if (prev) {
@@ -609,21 +596,16 @@ async function handlePosition(pos) {
             const prevMarkerPos = [marker.getLatLng().lat, marker.getLatLng().lng];
             const d = haversine(prevMarkerPos, smoothed);
             const speedMs = speed || 0;
-
-            // --- 停止→再開検出 ---
             const timeSinceLast = (nowTime - lastPosTime) / 1000;
             const wasPaused = timeSinceLast > 3;
 
             if (wasPaused) {
-                console.warn('再開検出: 即ジャンプで補正');
                 smoothed = [lat, lng];
                 smoothBuffer = [[lat, lng]];
             } else {
-                // --- 通常補間 ---
                 const MAX_STEP_BASE = Math.min(Math.max(5, acc / 2), 50);
                 const MAX_STEP_SPEED_FACTOR = Math.min(1 + speedMs / 5, 10);
                 const MAX_STEP = Math.min(MAX_STEP_BASE * MAX_STEP_SPEED_FACTOR, 500);
-
                 if (d > MAX_STEP) {
                     const ratio = MAX_STEP / d;
                     smoothed = [
@@ -652,7 +634,6 @@ async function handlePosition(pos) {
                 map.panTo(smoothed, { animate: true, duration: 0.3 });
                 map.once('moveend', () => programMoving = false);
             }
-
             if (isFirst && map) map.setView(smoothed, 17);
         }
     }
@@ -677,61 +658,60 @@ async function handlePosition(pos) {
         address: currentAddrElem.textContent
     });
 
-    // --- ✅ ナビ中：ルートに沿った残距離・残時間をリアルタイム更新（オートリルート無効） ---
+    // --- ✅ リアルタイム ETA更新（ポリラインや平滑化に依存せず即時更新） ---
     if (routingControl && routePath && routePath.length > 0 && currentDestination) {
         const currentLatLng = marker ? marker.getLatLng() : L.latLng(lat, lng);
-
-        // 最も近いルート上の点を探す
-        let minDist = Infinity;
-        let nearestIndex = 0;
-        for (let i = 0; i < routePath.length; i++) {
-            const p = routePath[i];
-            const pp = Array.isArray(p) ? p : [p.lat, p.lng];
-            const d = haversine([currentLatLng.lat, currentLatLng.lng], pp);
-            if (d < minDist) {
-                minDist = d;
-                nearestIndex = i;
-            }
-        }
-
-        // 残り距離をルートに沿って算出
-        let remain = 0;
-        for (let i = nearestIndex; i < routePath.length - 1; i++) {
-            const a = routePath[i], b = routePath[i + 1];
-            const pa = Array.isArray(a) ? a : [a.lat, a.lng];
-            const pb = Array.isArray(b) ? b : [b.lat, b.lng];
-            remain += haversine(pa, pb);
-        }
-
-        // 距離比で残り時間を推定
-        let remainTimeSec = null;
-        if (routeTotalDistance > 0 && routeTotalTime > 0) {
-            remainTimeSec = (remain / routeTotalDistance) * routeTotalTime;
-        } else if (speed && speed > 0) {
-            remainTimeSec = remain / speed;
-        }
-
-        // ETA更新
-        const remainKm = (remain / 1000).toFixed(2);
-        const remainMin = remainTimeSec ? Math.round(remainTimeSec / 60) : '---';
-        document.getElementById('eta').textContent =
-            remainTimeSec ? `${remainKm} km / 約 ${remainMin}分` : `${remainKm} km / ---`;
+        updateEtaLive(currentLatLng.lat, currentLatLng.lng, speed || 0);
     }
 
-    // --- スタートマーカー追従（内部的に現在地を更新） ---
+    // --- スタートマーカー追従 ---
     try {
         const plan = routingControl?.getPlan?.();
         if (plan && plan._waypoints && plan._waypoints[0]) {
             plan._waypoints[0].latLng = L.latLng(smoothed[0], smoothed[1]);
             plan._updateMarkers();
         }
-    } catch (err) {
-        // console.warn('スタートマーカー追従エラー:', err);
-    }
+    } catch (err) { }
 
     lastPosTime = pos.timestamp || now();
     document.getElementById('lastAge').textContent = '0秒前';
 }
+
+// ===== 動的ETA更新関数 =====
+function updateEtaLive(lat, lng, speed) {
+    if (!routePath || routePath.length === 0) return;
+    const currentLatLng = L.latLng(lat, lng);
+
+    // ルート上の最も近い点を探す
+    let minDist = Infinity;
+    let nearestIndex = 0;
+    for (let i = 0; i < routePath.length; i++) {
+        const p = routePath[i];
+        const pp = Array.isArray(p) ? p : [p.lat, p.lng];
+        const d = haversine([currentLatLng.lat, currentLatLng.lng], pp);
+        if (d < minDist) {
+            minDist = d;
+            nearestIndex = i;
+        }
+    }
+
+    // 残距離を算出
+    let remain = 0;
+    for (let i = nearestIndex; i < routePath.length - 1; i++) {
+        const a = routePath[i], b = routePath[i + 1];
+        const pa = Array.isArray(a) ? a : [a.lat, a.lng];
+        const pb = Array.isArray(b) ? b : [b.lat, b.lng];
+        remain += haversine(pa, pb);
+    }
+
+    // 残時間推定
+    let remainTimeSec = speed && speed > 0 ? remain / speed : null;
+    const remainKm = (remain / 1000).toFixed(2);
+    const remainMin = remainTimeSec ? Math.round(remainTimeSec / 60) : '---';
+    document.getElementById("eta").textContent =
+        remainTimeSec ? `${remainKm} km / 約 ${remainMin}分` : `${remainKm} km / ---`;
+}
+
 
 // ===== エラー処理 =====
 let retryTimer = null;
