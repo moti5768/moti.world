@@ -1147,6 +1147,10 @@ window.addEventListener('load', () => {
         currentDestination = e.latlng;
         userSelectedRoute = false;
 
+        displayedRemainTimeSec = null;   // 残時間補間をリセット
+        lastUpdateTime = null;           // 前回更新時間リセット
+        speedBuffer = [];                // 速度バッファリセット
+
         // 目的地住所更新
         const destAddr = await fetchAddress(currentDestination.lat, currentDestination.lng);
         document.getElementById("destAddress").textContent = destAddr;
