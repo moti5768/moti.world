@@ -681,7 +681,6 @@ async function handlePosition(pos) {
 function updateEtaLive(lat, lng, speed) {
     if (!routePath || routePath.length === 0) return;
     const currentLatLng = L.latLng(lat, lng);
-
     // ルート上の最も近い点を探す
     let minDist = Infinity;
     let nearestIndex = 0;
@@ -694,7 +693,6 @@ function updateEtaLive(lat, lng, speed) {
             nearestIndex = i;
         }
     }
-
     // 残距離を算出
     let remain = 0;
     for (let i = nearestIndex; i < routePath.length - 1; i++) {
@@ -703,15 +701,25 @@ function updateEtaLive(lat, lng, speed) {
         const pb = Array.isArray(b) ? b : [b.lat, b.lng];
         remain += haversine(pa, pb);
     }
-
     // 残時間推定
     let remainTimeSec = speed && speed > 0 ? remain / speed : null;
-    const remainKm = (remain / 1000).toFixed(2);
-    const remainMin = remainTimeSec ? Math.round(remainTimeSec / 60) : '---';
-    document.getElementById("eta").textContent =
-        remainTimeSec ? `${remainKm} km / 約 ${remainMin}分` : `${remainKm} km / ---`;
+    // 残距離の表示（1 km以上: km、100 m〜1 km: m、10 m未満も m）
+    let remainDistanceText;
+    if (remain >= 1000) {
+        remainDistanceText = (remain / 1000).toFixed(2) + ' km';
+    } else {
+        remainDistanceText = Math.round(remain) + ' m';
+    }
+    // 残時間の表示（h/m/s）
+    let remainTimeText = '---';
+    if (remainTimeSec !== null) {
+        const hours = Math.floor(remainTimeSec / 3600);
+        const minutes = Math.floor((remainTimeSec % 3600) / 60);
+        const seconds = Math.floor(remainTimeSec % 60);
+        remainTimeText = `${hours > 0 ? hours + '時間 ' : ''}${minutes}分 ${seconds}秒`;
+    }
+    document.getElementById("eta").textContent = `${remainDistanceText} / 約 ${remainTimeText}`;
 }
-
 
 // ===== エラー処理 =====
 let retryTimer = null;
@@ -1035,15 +1043,28 @@ window.addEventListener('load', () => {
         if (!route || !route.summary) return;
         const summary = route.summary;
         if (!summary.totalDistance || !summary.totalTime) return;
-        const distKm = (summary.totalDistance / 1000).toFixed(2);
-        let totalSec = summary.totalTime;
+
+        // 残距離の表示（1 km以上: km、1 km未満は m）
+        let remainDistanceText;
+        if (summary.totalDistance >= 1000) {
+            remainDistanceText = (summary.totalDistance / 1000).toFixed(2) + ' km';
+        } else {
+            remainDistanceText = Math.round(summary.totalDistance) + ' m';
+        }
+
+        // 残時間の表示（h/m/s）
+        const totalSec = summary.totalTime;
         const hours = Math.floor(totalSec / 3600);
-        const minutes = Math.round((totalSec % 3600) / 60);
+        const minutes = Math.floor((totalSec % 3600) / 60);
+        const seconds = Math.floor(totalSec % 60);
+
         let timeText = '';
-        if (hours > 0) timeText += `${hours}時間`;
-        timeText += `${minutes}分`;
-        document.getElementById("eta").textContent = `${distKm} km / 約 ${timeText}`;
+        if (hours > 0) timeText += `${hours}時間 `;
+        timeText += `${minutes}分 ${seconds}秒`;
+
+        document.getElementById("eta").textContent = `${remainDistanceText} / 約 ${timeText}`;
     }
+
 
     // ===== マップクリックで目的地選択 =====
     map.on("click", async e => {
