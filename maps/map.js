@@ -713,11 +713,10 @@ function haversineDistance([lat1, lon1], [lat2, lon2]) {
     return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// ======== スマートETA更新 ========
+// ======== スマートETA更新（最新版） ========
 function updateEtaSmart(lat, lng, speed) {
     if (!navActive || !routePath || routePath.length === 0) return;
 
-    const now = performance.now();
     const current = [lat, lng];
 
     // --- 最も近いルート点を探索 ---
@@ -755,7 +754,7 @@ function updateEtaSmart(lat, lng, speed) {
         remain += haversineDistance(pa, pb);
     }
 
-    if (remain < 10) {
+    if (remain < 5) {
         document.getElementById("eta").textContent = "目的地に到着";
         displayedRemainTimeSec = 0;
         lastLatLng = current;
@@ -770,12 +769,16 @@ function updateEtaSmart(lat, lng, speed) {
     let avgSpeed = speedBuffer.length > 0 ? speedBuffer.reduce((a, b) => a + b, 0) / speedBuffer.length : 0;
     if (avgSpeed < MIN_SPEED) avgSpeed = 0;
 
-    // --- 残時間計算 ---
-    // 現在地が動いている場合は速度0でもETAを減らす
+    // --- 残時間計算（速度未定義・0でも更新） ---
     const movedDist = lastLatLng ? haversineDistance(current, lastLatLng) : 0;
-    let remainTimeSec = avgSpeed > 0 || movedDist > 0
-        ? remain / (avgSpeed > 0 ? avgSpeed : 1.0)
-        : displayedRemainTimeSec ?? remain / 1.0;
+    let effectiveSpeed;
+    if (!Number.isFinite(speed) || speed <= 0) {
+        effectiveSpeed = 0.1; // 未定義 or 0 の場合は仮速度で計算
+    } else {
+        effectiveSpeed = avgSpeed > 0 ? avgSpeed : 0.1;
+    }
+
+    let remainTimeSec = remain / effectiveSpeed;
     remainTimeSec = Math.min(Math.max(remainTimeSec, 0), MAX_REMAIN_TIME);
 
     // --- 補間更新 ---
@@ -794,6 +797,7 @@ function updateEtaSmart(lat, lng, speed) {
 
     document.getElementById("eta").textContent = `${distText} / 約${timeText}`;
 }
+
 
 // ======== 自動再ルート ========
 function rerouteFromCurrent(resetETA = true) {
