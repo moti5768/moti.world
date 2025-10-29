@@ -1084,7 +1084,17 @@ window.addEventListener('load', () => {
     // ナビモード切替
     navModeBtn.addEventListener("click", () => {
         navMode = !navMode;
-        navModeBtn.textContent = navMode ? "地図クリックで目的地を選択中…" : "ナビ開始(車のみ)";
+        navModeBtn.textContent = navMode
+            ? "地図クリックで目的地を選択中…"
+            : "ナビ開始(車のみ)";
+
+        if (navMode) {
+            // ナビ開始時にETAリセット
+            displayedRemainTimeSec = null; // 補間値リセット
+            lastNearestIndex = null;       // 最近点インデックスリセット
+            lastUpdateTime = null;         // 時間基準リセット
+            speedBuffer = [];              // 速度バッファリセット
+        }
     });
 
     // ===== アニメーション用ポリライン管理 =====
@@ -1293,8 +1303,13 @@ window.addEventListener('load', () => {
                         // === 経路クリックで選択 ===
                         animLine.on("click", () => {
                             routePath = route.coordinates.slice();
-                            updateEta(route);
                             userSelectedRoute = true;
+                            displayedRemainTimeSec = null; // 補間値リセット
+                            lastNearestIndex = null;       // 最近点インデックスもリセット
+                            lastUpdateTime = null;
+                            speedBuffer = [];
+                            updateEta(route);
+
 
                             // 選択中ルートだけ強調
                             animatedPolylines.forEach(p => {
@@ -1338,6 +1353,10 @@ window.addEventListener('load', () => {
                 translateInstructions(e.route);
                 routePath = e.route.coordinates.slice();
                 currentDestination = routePath[routePath.length - 1];
+                displayedRemainTimeSec = null; // 補間値リセット
+                lastNearestIndex = null;       // 最近点インデックスもリセット
+                lastUpdateTime = null;
+                speedBuffer = [];
                 updateEta(e.route);
                 userSelectedRoute = true;
                 animatedPolylines.forEach(p => {
@@ -1403,6 +1422,12 @@ window.addEventListener('load', () => {
         navModeBtn.textContent = "ナビ開始(車のみ)";
         currentDestination = null;
         userSelectedRoute = false;
+
+        // --- ETAリセット ---
+        displayedRemainTimeSec = null; // 補間値リセット
+        lastNearestIndex = null;       // 最近点インデックスリセット
+        lastUpdateTime = null;         // 時間基準リセット
+        speedBuffer = [];              // 速度バッファリセット
 
         const closeBtn = document.querySelector('.leaflet-routing-close');
         if (closeBtn) closeBtn.remove();
