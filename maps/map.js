@@ -682,16 +682,16 @@ async function handlePosition(pos) {
     document.getElementById('lastAge').textContent = '0秒前';
 }
 
-// ======== ETAスマート計算＆自動再ルート統合版（修正版） ======== //
+// ======== ETAスマート計算＆自動再ルート統合版（停止中ETA固定版） ======== //
 
 let speedBuffer = [];
-const SPEED_BUFFER_SIZE = 7;    // 平均化点数を増やして安定
-const MIN_SPEED = 0.5;          // 停止判定（m/s）
-const MIN_MOVE_DIST = 10;       // 誤差判定
-const MAX_REMAIN_TIME = 36000;  // 最大10時間
-const ETA_ALPHA = 0.08;         // 補間係数を小さくして滑らか
+const SPEED_BUFFER_SIZE = 7;
+const MIN_SPEED = 0.5;
+const MIN_MOVE_DIST = 10;
+const MAX_REMAIN_TIME = 36000;
+const ETA_ALPHA = 0.08;
 const ETA_UPDATE_INTERVAL = 1000;
-const MAX_DEVIATION = 50;       // ETA & 再ルート共通：50m以上で逸脱扱い
+const MAX_DEVIATION = 50;
 
 let displayedRemainTimeSec = null;
 let lastNearestIndex = null;
@@ -769,15 +769,26 @@ function updateEtaSmart(lat, lng, speed) {
     let avgSpeed = speedBuffer.length > 0
         ? speedBuffer.reduce((a, b) => a + b, 0) / speedBuffer.length
         : 0;
-    if (avgSpeed < MIN_SPEED) avgSpeed = 0;
+
+    // --- 完全停止判定 ---
+    const isStopped = avgSpeed < MIN_SPEED;
 
     // --- 残時間計算 ---
-    let remainTimeSec = avgSpeed > 0 ? remain / avgSpeed : displayedRemainTimeSec ?? remain / 1.0;
+    let remainTimeSec = isStopped
+        ? displayedRemainTimeSec ?? remain / 1.0 // 停止中はETA固定
+        : remain / (avgSpeed > 0 ? avgSpeed : 1.0);
+
     remainTimeSec = Math.min(Math.max(remainTimeSec, 0), MAX_REMAIN_TIME);
 
-    // --- 補間更新（増加・減少とも反映） ---
-    if (displayedRemainTimeSec == null) displayedRemainTimeSec = remainTimeSec;
-    else displayedRemainTimeSec = displayedRemainTimeSec * (1 - ETA_ALPHA) + remainTimeSec * ETA_ALPHA;
+    // --- 補間更新（停止中は補間せず） ---
+    if (!isStopped) {
+        if (displayedRemainTimeSec == null) displayedRemainTimeSec = remainTimeSec;
+        else displayedRemainTimeSec = displayedRemainTimeSec * (1 - ETA_ALPHA) + remainTimeSec * ETA_ALPHA;
+
+        // --- 経過時間による減少 ---
+        const dt = lastUpdateTime ? (now - lastUpdateTime) / 1000 : 0;
+        if (dt > 0) displayedRemainTimeSec = Math.max(displayedRemainTimeSec - dt, 0);
+    }
 
     lastUpdateTime = now;
 
@@ -838,7 +849,6 @@ function startEtaTimer() {
     loop();
 }
 
-
 // --- ルート逸脱チェック（3秒ごと） ---
 setInterval(() => {
     if (!navActive || !routePath || !marker) return;
@@ -851,6 +861,7 @@ setInterval(() => {
     });
     if (minDist > MAX_DEVIATION) rerouteFromCurrent();
 }, 3000);
+
 
 
 // ===== エラー処理 =====
