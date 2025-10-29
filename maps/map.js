@@ -782,9 +782,6 @@ function updateEtaSmart(lat, lng, speed) {
     if (displayedRemainTimeSec == null) displayedRemainTimeSec = remainTimeSec;
     else displayedRemainTimeSec = displayedRemainTimeSec * (1 - ETA_ALPHA) + remainTimeSec * ETA_ALPHA;
 
-    const dt = lastUpdateTime ? (now - lastUpdateTime) / 1000 : 0;
-    if (dt > 0) displayedRemainTimeSec = Math.max(displayedRemainTimeSec - dt, 0);
-    lastUpdateTime = now;
     lastLatLng = current;
 
     // --- 表示 ---
