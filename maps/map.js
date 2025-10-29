@@ -769,18 +769,20 @@ function updateEtaSmart(lat, lng, speed) {
     let avgSpeed = speedBuffer.length > 0 ? speedBuffer.reduce((a, b) => a + b, 0) / speedBuffer.length : 0;
     if (avgSpeed < MIN_SPEED) avgSpeed = 0;
 
-    // --- 残時間計算（速度未定義・0でも更新） ---
+    // --- 仮速度判定 ---
     let effectiveSpeed;
     if (!Number.isFinite(speed) || speed <= 0) {
-        effectiveSpeed = 0.1; // 未定義 or 0 の場合は仮速度で計算
+        // 速度が 0 または --- の場合
+        effectiveSpeed = 1;
     } else {
-        effectiveSpeed = avgSpeed > 0 ? avgSpeed : 0.1;
+        effectiveSpeed = avgSpeed > 0 ? avgSpeed : 1;
     }
 
+    // --- 残時間計算 ---
     let remainTimeSec = remain / effectiveSpeed;
     remainTimeSec = Math.min(Math.max(remainTimeSec, 0), MAX_REMAIN_TIME);
 
-    // --- 補間更新 ---
+    // --- 補間更新（必ず行う） ---
     if (displayedRemainTimeSec == null) displayedRemainTimeSec = remainTimeSec;
     else displayedRemainTimeSec = displayedRemainTimeSec * (1 - ETA_ALPHA) + remainTimeSec * ETA_ALPHA;
 
