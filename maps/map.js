@@ -682,7 +682,7 @@ async function handlePosition(pos) {
     document.getElementById('lastAge').textContent = '0秒前';
 }
 
-// ======== ETAスマート計算＆自動再ルート統合版（停止中ETA固定版） ======== //
+// ======== ETAスマート計算＆自動再ルート統合版（停止中ETA固定＆初回対応版） ======== //
 
 let speedBuffer = [];
 const SPEED_BUFFER_SIZE = 7;
@@ -770,14 +770,20 @@ function updateEtaSmart(lat, lng, speed) {
         ? speedBuffer.reduce((a, b) => a + b, 0) / speedBuffer.length
         : 0;
 
-    // --- 完全停止判定 ---
     const isStopped = avgSpeed < MIN_SPEED;
 
-    // --- 残時間計算 ---
-    let remainTimeSec = isStopped
-        ? displayedRemainTimeSec ?? remain / 1.0 // 停止中はETA固定
-        : remain / (avgSpeed > 0 ? avgSpeed : 1.0);
-
+    // --- 残時間計算（初回クリックでもETA表示可能） ---
+    let remainTimeSec;
+    if (displayedRemainTimeSec == null) {
+        // 初回表示: 停止中でも残距離 ÷ 仮速度で算出
+        remainTimeSec = remain / (avgSpeed > 0 ? avgSpeed : 1.0);
+    } else if (isStopped) {
+        // 停止中はETA固定
+        remainTimeSec = displayedRemainTimeSec;
+    } else {
+        // 通常時
+        remainTimeSec = remain / avgSpeed;
+    }
     remainTimeSec = Math.min(Math.max(remainTimeSec, 0), MAX_REMAIN_TIME);
 
     // --- 補間更新（停止中は補間せず） ---
@@ -861,8 +867,6 @@ setInterval(() => {
     });
     if (minDist > MAX_DEVIATION) rerouteFromCurrent();
 }, 3000);
-
-
 
 // ===== エラー処理 =====
 let retryTimer = null;
