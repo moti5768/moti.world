@@ -687,9 +687,8 @@ const MAX_DEVIATION = 50;       // ルート逸脱判定[m]
 const SPEED_BUFFER_SIZE = 7;     // 速度平滑化バッファサイズ
 const MIN_SPEED = 0.5;           // 停止判定速度[m/s]
 const MIN_MOVE_DIST = 10;        // 小移動無視距離[m]
-const MAX_REMAIN_TIME = 36000;   // 最大ETA[秒]
 const ETA_ALPHA = 0.08;          // 補間係数
-const ETA_UPDATE_INTERVAL = 1000; // ETA更新間隔[ms]
+const ETA_UPDATE_INTERVAL = 500; // ETA更新間隔[ms]
 
 // ======== グローバル変数 ========
 let speedBuffer = [];
@@ -713,7 +712,7 @@ function haversineDistance([lat1, lon1], [lat2, lon2]) {
     return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// ======== スマートETA更新（最新版） ========
+// ======== スマートETA更新 ========
 function updateEtaSmart(lat, lng, speed) {
     if (!navActive || !routePath || routePath.length === 0) return;
 
@@ -770,19 +769,12 @@ function updateEtaSmart(lat, lng, speed) {
     if (avgSpeed < MIN_SPEED) avgSpeed = 0;
 
     // --- 仮速度判定 ---
-    let effectiveSpeed;
-    if (!Number.isFinite(speed) || speed <= 0) {
-        // 速度が 0 または --- の場合
-        effectiveSpeed = 1;
-    } else {
-        effectiveSpeed = avgSpeed > 0 ? avgSpeed : 1;
-    }
+    let effectiveSpeed = (!Number.isFinite(speed) || speed <= 0) ? 1 : (avgSpeed > 0 ? avgSpeed : 1);
 
     // --- 残時間計算 ---
     let remainTimeSec = remain / effectiveSpeed;
-    remainTimeSec = Math.min(Math.max(remainTimeSec, 0), MAX_REMAIN_TIME);
 
-    // --- 補間更新（必ず行う） ---
+    // --- 補間更新（制限なし） ---
     if (displayedRemainTimeSec == null) displayedRemainTimeSec = remainTimeSec;
     else displayedRemainTimeSec = displayedRemainTimeSec * (1 - ETA_ALPHA) + remainTimeSec * ETA_ALPHA;
 
@@ -794,11 +786,12 @@ function updateEtaSmart(lat, lng, speed) {
     const h = Math.floor(t / 3600);
     const m = Math.floor((t % 3600) / 60);
     const s = Math.floor(t % 60);
-    const timeText = h > 0 ? `${h}時間${m}分` : `${m}分${s}秒`;
+    const timeText = h > 0
+        ? `${h}時間${m.toString().padStart(2, '0')}分`
+        : `${m}分${s.toString().padStart(2, '0')}秒`;
 
     document.getElementById("eta").textContent = `${distText} / 約${timeText}`;
 }
-
 
 // ======== 自動再ルート ========
 function rerouteFromCurrent(resetETA = true) {
