@@ -770,7 +770,6 @@ function updateEtaSmart(lat, lng, speed) {
     if (avgSpeed < MIN_SPEED) avgSpeed = 0;
 
     // --- 残時間計算（速度未定義・0でも更新） ---
-    const movedDist = lastLatLng ? haversineDistance(current, lastLatLng) : 0;
     let effectiveSpeed;
     if (!Number.isFinite(speed) || speed <= 0) {
         effectiveSpeed = 0.1; // 未定義 or 0 の場合は仮速度で計算
