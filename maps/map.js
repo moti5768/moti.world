@@ -682,7 +682,7 @@ async function handlePosition(pos) {
     document.getElementById('lastAge').textContent = '0秒前';
 }
 
-// ======== ETAスマート計算＆自動再ルート統合版 ======== //
+// ======== ETAスマート計算＆自動再ルート統合版（修正版） ======== //
 
 let speedBuffer = [];
 const SPEED_BUFFER_SIZE = 7;    // 平均化点数を増やして安定
@@ -734,11 +734,8 @@ function updateEtaSmart(lat, lng, speed) {
 
     // --- ルート逸脱チェック ---
     if (minDist > MAX_DEVIATION) {
-        // ETA微増
         if (displayedRemainTimeSec != null) displayedRemainTimeSec += 5;
         document.getElementById("eta").textContent = "ルート修正中…";
-
-        // 自動再ルート実行
         rerouteFromCurrent();
         return;
     }
@@ -778,13 +775,10 @@ function updateEtaSmart(lat, lng, speed) {
     let remainTimeSec = avgSpeed > 0 ? remain / avgSpeed : displayedRemainTimeSec ?? remain / 1.0;
     remainTimeSec = Math.min(Math.max(remainTimeSec, 0), MAX_REMAIN_TIME);
 
-    // --- 補間更新 ---
+    // --- 補間更新（増加・減少とも反映） ---
     if (displayedRemainTimeSec == null) displayedRemainTimeSec = remainTimeSec;
     else displayedRemainTimeSec = displayedRemainTimeSec * (1 - ETA_ALPHA) + remainTimeSec * ETA_ALPHA;
 
-    // --- 移動中は減らす ---
-    const dt = lastUpdateTime ? (now - lastUpdateTime) / 1000 : 0;
-    if (avgSpeed > 0 && dt > 0) displayedRemainTimeSec = Math.max(displayedRemainTimeSec - dt, 0);
     lastUpdateTime = now;
 
     // --- 表示 ---
@@ -843,6 +837,7 @@ function startEtaTimer() {
     };
     loop();
 }
+
 
 // --- ルート逸脱チェック（3秒ごと） ---
 setInterval(() => {
