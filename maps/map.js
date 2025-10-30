@@ -41,23 +41,18 @@ logToggleBtn.addEventListener('click', () => {
     logtoggle();
 });
 function logtoggle() {
-    if (log.classList.contains('collapsed')) {
-        logContainer.style.minHeight = '40px';
-        logContainer.style.height = '40px';
-        logToggleBtn.textContent = '▲';
-    } else {
-        logContainer.style.height = '';
-        logContainer.style.minHeight = '20vh';
-        logToggleBtn.textContent = '▼';
-        panel.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' });
-    }
+    const collapsed = log.classList.contains('collapsed');
+    logContainer.style.minHeight = collapsed ? '40px' : '20vh';
+    logContainer.style.height = collapsed ? '40px' : '';
+    logToggleBtn.textContent = collapsed ? '▲' : '▼';
+    if (!collapsed) requestAnimationFrame(() => panel.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' }));
 }
 // ログ初期読み込み
 log.classList.add('collapsed');
 logtoggle();
 
 // ===== マップ・トラッキング初期化 =====
-let map, marker, watchId = null, pathSegments = [[]], polylines = [], logData = [];
+let map, marker, watchId = null, pathSegments = [], polylines = [], logData = [];
 let lastFetchTime = 0, lastPosTime = 0, follow = true, lastOrientation = null;
 const LS_KEYS = { PATH: 'hp_map_path_v3', LOG: 'hp_map_log_v3' };
 
@@ -192,12 +187,37 @@ function updateStatsUI() {
 }
 
 // ===== 保存・復元 =====
+let saveTimer = null;
+let isSaving = false;
+
 function safeSaveLocal() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+        if (isSaving) return;
+        isSaving = true;
+        try {
+            const paths = JSON.stringify([...pathSegments]);
+            const logs = JSON.stringify([...logData]);
+            localStorage.setItem(LS_KEYS.PATH, paths);
+            localStorage.setItem(LS_KEYS.LOG, logs);
+            console.log("localStorage 保存完了");
+        } catch (e) {
+            console.warn("ローカル保存失敗", e);
+        } finally {
+            isSaving = false;
+        }
+    }, 1500);
+}
+
+// ページ閉じる前にも確実に保存
+window.addEventListener("beforeunload", () => {
+    alert()
     try {
         localStorage.setItem(LS_KEYS.PATH, JSON.stringify(pathSegments));
         localStorage.setItem(LS_KEYS.LOG, JSON.stringify(logData));
     } catch { }
-}
+});
+
 function restoreLocal() {
     try {
         const rawP = localStorage.getItem(LS_KEYS.PATH);
@@ -1064,7 +1084,24 @@ restartBtn.addEventListener('click', () => {
     }
 });
 
-document.getElementById('clearBtn').addEventListener('click', () => { if (confirm('本当にクリアしますか？')) { pathSegments = [[]]; logData = []; yellowgreenrawPolylines(); log.innerHTML = ''; safeSaveLocal(); updateStatsUI(); } });
+document.getElementById('clearBtn').addEventListener('click', () => {
+    if (!confirm('本当にクリアしますか？')) return;
+    // --- ポリライン削除 ---
+    if (window.polylines?.length) {
+        polylines.forEach(line => map.removeLayer(line));
+        polylines = [];
+    }
+    // --- データ初期化 ---
+    pathSegments = [];
+    logData = [];
+    log.innerHTML = '';
+    // --- 保存・再描画 ---
+    safeSaveLocal();
+    updateStatsUI();
+    yellowgreenrawPolylines();
+    console.log("経路・ログをすべてクリアしました");
+});
+
 centerToggle.addEventListener('click', async () => {
     follow = !follow;
     centerToggle.textContent = `自動追尾: ${follow ? 'ON' : 'OFF'}`;

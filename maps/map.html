@@ -4,7 +4,9 @@
 <head>
   <meta charset="utf-8">
   <title>位置観測 経路記録マップ</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="description" content="リアルタイム位置観測 経路記録ウェブアプリ">
+  <meta name="theme-color" content="#1976d2">
 
   <!-- ===== ファビコン（1024x1024 PNG固定） ===== -->
   <link rel="icon" type="image/png" sizes="1024x1024" href="icon/map.png">
@@ -12,15 +14,19 @@
   <link rel="shortcut icon" href="icon/map.png">
 
   <!-- ===== Leaflet CSS ===== -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+  <link rel="preload" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" as="style"
+    onload="this.rel='stylesheet'">
+  <link rel="preload"
+    href="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.css" as="style"
+    onload="this.rel='stylesheet'">
 
   <!-- ===== 自作CSS ===== -->
   <link rel="stylesheet" href="map.css">
 
   <!-- ===== Leaflet JS ===== -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+  <script
+    src="https://cdn.jsdelivr.net/npm/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
 
   <!-- ===== 自作JS ===== -->
   <script src="map.js" defer></script>
@@ -35,22 +41,19 @@
         <button id="navModeBtn" class="secondary">ナビ開始(車のみ)</button>
         <button id="cancelNavBtn" class="secondary">ナビ取り消し</button>
       </div>
-      <div class="row" style="font-size: medium;">目的地までの所要時間:<span id="eta">---</span></div>
-      <div class="row small address-row"
-        style="flex-direction: column; align-items: flex-start; gap:2px; margin:0; padding:0; font-size: medium;">
-        <span style="font-weight:500; color:blue; line-height:1;">
+      <div class="row medium bold">目的地までの所要時間:<span id="eta">---</span></div>
+      <div class="row medium address-row bold">
+        <span style="color: blue;">
           現在地住所:
-          <span id="currentAddress"
-            style="font-weight:600; word-break: break-word; line-height:1.2; color:blue;">---</span>
+          <span id="currentAddress">---</span>
         </span>
-        <span style="font-weight:500; color:#e53935; line-height:1; margin-top:4px;">
+        <span style="color: red;">
           目的地住所:
-          <span id="destAddress"
-            style="font-weight:600; word-break: break-word; line-height:1.2; color:#e53935;">---</span>
+          <span id="destAddress">---</span>
         </span>
       </div>
 
-      <div class="row small">最終更新:<span id="lastAge" style="margin-left:8px">---</span></div>
+      <div class="row small">最終更新:<span id="lastAge">---</span></div>
       <div class="info-grid">
         <div class="stat">緯度: <div id="lat">---</div>
         </div>
@@ -66,7 +69,6 @@
         </div>
       </div>
 
-      <div style="height:8px"></div>
       <div class="controls">
         <button id="stopBtn" class="danger" onclick="btn_toggle()">観測停止</button>
         <button id="restartBtn" class="btn-pointer-none" onclick="btn_toggle()">再開</button>
@@ -79,21 +81,20 @@
         <button id="clearBtn" class="secondary">ログ<br>経路クリア</button>
       </div>
 
-      <div class="row" style="margin:4px 0;gap:12px;align-items:center; font-size: medium;">
+      <div class="row item-center medium">
         <div>総距離: <strong id="totalDist">0 m</strong></div>
         <div>平均速度: <strong id="avgSpeed">0 km/h</strong></div>
       </div>
 
-      <label id="logToggleLabel"
-        style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+      <label id="logToggleLabel">
         過去の位置情報ログ
-        <button id="logToggleBtn" class="secondary" style="font-size:0.8em; padding:2px 6px;">▼</button>
+        <button id="logToggleBtn" class="secondary">▼</button>
       </label>
       <div id="log-container">
         <div id="log"></div>
       </div>
 
-      <div style="margin-top:10px" class="small">※位置の取得は1秒以上間隔を空けています。</div>
+      <div class="small">※位置の取得は1秒以上間隔を空けています。</div>
     </div>
   </div>
 
