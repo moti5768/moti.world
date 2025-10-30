@@ -9,16 +9,35 @@ let currentLabel = null;
 let currentLatLng = null; // ← ここを追加（必須）
 let currentSpeed = 0;
 
+// ====== よく使う要素 ======
+const panel = document.querySelector('.panel');
+const navModeBtn = document.getElementById("navModeBtn");
+const elEta = document.getElementById("eta");
+const elCurrentAddr = document.getElementById("currentAddress");
+const elDestAddr = document.getElementById("destAddress");
+const elTotalDist = document.getElementById("totalDist");
+const elAvgSpeed = document.getElementById("avgSpeed");
+const lastAge = document.getElementById('lastAge');
+
+const centerToggle = document.getElementById('centerToggle');
+const stopBtn = document.getElementById('stopBtn');
+const restartBtn = document.getElementById('restartBtn');
+
+const elLat = document.getElementById('lat');
+const elLng = document.getElementById('lng');
+const elAcc = document.getElementById('acc');
+const elAlt = document.getElementById('alt');
+const elSpeed = document.getElementById('speed');
+const elHeading = document.getElementById('heading');
+
 // ログUI
 const logToggleBtn = document.getElementById('logToggleBtn');
-const logContainer = document.getElementById('log');
+const log = document.getElementById('log');
+const logContainer = document.getElementById('log-container');
 
 // ===== ログ折りたたみ =====
 logToggleBtn.addEventListener('click', () => {
-    const logContainer = document.getElementById('log-container');
-    const log = document.getElementById('log');
     log.classList.toggle('collapsed');
-
     if (log.classList.contains('collapsed')) {
         logContainer.style.minHeight = '40px';
         logContainer.style.height = '40px';
@@ -28,8 +47,6 @@ logToggleBtn.addEventListener('click', () => {
         logContainer.style.minHeight = '20vh';
         logToggleBtn.textContent = '▼';
     }
-
-    const panel = document.querySelector('.panel');
     panel.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' });
 });
 
@@ -105,7 +122,7 @@ async function initMap() {
     map.on('dragend zoomend', () => {
         if (userInteracting) {
             follow = false;
-            document.getElementById('centerToggle').textContent = '自動追尾: OFF';
+            centerToggle.textContent = '自動追尾: OFF';
             userInteracting = false;
         }
     });
@@ -122,37 +139,56 @@ async function initMap() {
     }
 }
 
-
 // ===== ユーティリティ =====
-const toFixedOrDash = (v, d = 6) => typeof v === 'number' ? v.toFixed(d) : '---';
+function toFixedOrDash(v, d = 6) {
+    return (v !== null && Number.isFinite(v))
+        ? (Math.round(v * 10 ** d) / 10 ** d).toString()
+        : '---';
+}
 const now = () => Date.now();
-const haversine = (a, b) => {
-    const R = 6371e3, toRad = d => d * Math.PI / 180;
-    const φ1 = toRad(a[0]), φ2 = toRad(b[0]);
-    const Δφ = toRad(b[0] - a[0]), Δλ = toRad(b[1] - a[1]);
-    const aa = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+function haversine(a, b) {
+    const R = 6371000;
+    const toRad = Math.PI / 180;
+    const φ1 = a[0] * toRad, φ2 = b[0] * toRad;
+    const Δφ = (b[0] - a[0]) * toRad;
+    const Δλ = (b[1] - a[1]) * toRad;
+    const sinΔφ = Math.sin(Δφ / 2);
+    const sinΔλ = Math.sin(Δλ / 2);
+    const aa = sinΔφ * sinΔφ + Math.cos(φ1) * Math.cos(φ2) * sinΔλ * sinΔλ;
     return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
-};
-const directionName = deg => {
-    if (deg === null || isNaN(deg)) return '---';
+}
+function directionName(deg) {
+    if (!(deg >= 0) && !(deg <= 360)) return '---';
     const dirs = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
-    return `${dirs[Math.round(deg / 45) % 8]} (${deg.toFixed(0)}°)`;
-};
-
+    const idx = Math.round(deg / 45) & 7; // mod 8より高速
+    return dirs[idx] + ' (' + (deg | 0) + '°)';
+}
 // ===== 距離・速度計算 =====
 function calcTotalDistance() {
-    return pathSegments.flatMap(seg => seg.slice(1).map((_, i) => haversine(seg[i], seg[i + 1]))).reduce((a, b) => a + b, 0);
+    let total = 0;
+    for (const seg of pathSegments) {
+        for (let i = 1; i < seg.length; i++) {
+            total += haversine(seg[i - 1], seg[i]);
+        }
+    }
+    return total;
 }
 function calcAvgSpeed() {
-    if (logData.length < 2) return 0;
-    const first = new Date(logData[logData.length - 1]?.time || now()).getTime();
-    const last = new Date(logData[0]?.time || now()).getTime();
-    const dt = Math.abs(last - first) / 1000;
-    return dt <= 0 ? 0 : (calcTotalDistance() / dt) * 3.6;
+    const len = logData.length;
+    if (len < 2) return 0;
+    const firstTime = logData[len - 1]?.time;
+    const lastTime = logData[0]?.time;
+    const t1 = firstTime ? new Date(firstTime).getTime() : now();
+    const t2 = lastTime ? new Date(lastTime).getTime() : now();
+    const dt = Math.abs(t2 - t1) / 1000;
+    if (dt <= 0) return 0;
+    return (calcTotalDistance() / dt) * 3.6;
 }
 function updateStatsUI() {
-    document.getElementById('totalDist').textContent = (calcTotalDistance() / 1000).toFixed(3) + ' km';
-    document.getElementById('avgSpeed').textContent = calcAvgSpeed().toFixed(2) + ' km/h';
+    const distKm = calcTotalDistance() / 1000;
+    const avg = calcAvgSpeed();
+    elTotalDist.textContent = distKm.toFixed(3) + ' km';
+    elAvgSpeed.textContent = avg.toFixed(2) + ' km/h';
 }
 
 // ===== 保存・復元 =====
@@ -203,100 +239,59 @@ function yellowgreenrawPolylines() {
     }
 }
 
-// ===== マーカー更新（軽量化版）=====
+// ===== マーカー更新（軽量安定版）=====
 function updateMarker(lat, lng, heading, accColor, speed) {
-    const speedKmh = speed * 3.6; // 関数内で km/h に変換
-    const size = speedKmh && speedKmh * 3.6 > 200 ? 20 : 16;
-
-    // 無効座標ならマーカー削除
-    if (lat === null || lng === null || accColor === null) accColor = 'black';
-    if (lat === null || lng === null) {
+    const speedKmh = speed * 3.6;
+    const size = (speedKmh > 200 ? 20 : 16);
+    if (lat == null || lng == null) {
         if (marker) {
-            try { map.removeLayer(marker); } catch (e) { /* ignore */ }
+            map.removeLayer(marker);
             marker = null;
         }
         return;
     }
-
-    // 初回作成
     if (!marker) {
         const icon = L.divIcon({
             className: 'custom-marker',
-            html: `<div style="width:${size}px;height:${size}px;background:${accColor};border:2px solid #fff;border-radius:50%;transform:rotate(${heading || 0}deg)"></div>`,
+            html: `<div style="width:${size}px;height:${size}px;background:${accColor};
+                    border:2px solid #fff;border-radius:50%;
+                    transform:rotate(${heading || 0}deg)"></div>`,
             iconSize: [size, size],
             iconAnchor: [size / 2, size / 2]
         });
         marker = L.marker([lat, lng], { icon }).addTo(map);
+        marker._div = marker.getElement()?.querySelector('div') || null;
+        marker._lastHeading = heading || 0;
         marker._animId = null;
-        marker._lastHeading = (typeof heading === 'number') ? heading : 0;
         marker._lastPos = marker.getLatLng();
-
-        // div 要素を保持して再利用
-        const el = marker.getElement && marker.getElement();
-        marker._div = el ? el.querySelector('div') : null;
-
-        marker.on("click", e => {
-            showMarkerLabelLeaflet(e, "現在地");
-        });
-        map.on("click", () => {
-            if (currentLabel) {
-                currentLabel.remove();
-                currentLabel = null;
-            }
-        });
         return;
     }
-
     const div = marker._div;
-
-    // div 更新は色だけ
-    if (div) div.style.background = accColor;
-
-    // 既存アニメがあればキャンセル
-    if (marker._animId) {
-        cancelAnimationFrame(marker._animId);
-        marker._animId = null;
-    }
-
-    // 補間開始値と終了値
-    const from = marker.getLatLng();
+    const from = marker._lastPos;
     const fromLat = from.lat, fromLng = from.lng;
-    const fromHeading = (marker._lastHeading === undefined) ? 0 : marker._lastHeading;
     const toLat = lat, toLng = lng;
-    const toHeading = (typeof heading === 'number') ? heading : fromHeading;
-
-    // 座標・角度がほぼ変わらなければ更新スキップ
-    const deltaLat = toLat - fromLat;
-    const deltaLng = toLng - fromLng;
-    const deltaHeading = ((toHeading - fromHeading + 540) % 360) - 180;
-    if (Math.abs(deltaLat) < 1e-6 && Math.abs(deltaLng) < 1e-6 && deltaHeading === 0) return;
-
-    const duration = 400;
-    const startTime = performance.now();
-
+    const dLat = toLat - fromLat, dLng = toLng - fromLng;
+    const dist = Math.hypot(dLat, dLng) * 111000; // 近似[m]
+    if (dist < 0.5 && Math.abs((heading - marker._lastHeading + 540) % 360 - 180) < 1)
+        return; // 停止時スキップ
+    const fromHead = marker._lastHeading;
+    const toHead = (typeof heading === 'number') ? heading : fromHead;
+    const deltaHead = ((toHead - fromHead + 540) % 360) - 180;
+    if (div && div.style.background !== accColor) div.style.background = accColor;
+    const start = performance.now(), duration = 400;
     function step(now) {
-        const t = Math.min(1, (now - startTime) / duration);
-        const e = t * (2 - t); // easeOutQuad インライン化
-
-        const curLat = fromLat + deltaLat * e;
-        const curLng = fromLng + deltaLng * e;
-        marker.setLatLng([curLat, curLng]);
-
-        if (div) {
-            const curHead = fromHeading + deltaHeading * e;
-            div.style.transform = `rotate(${curHead}deg)`;
-            div.style.background = accColor; // 色は毎フレーム反映
-        }
-
-        if (t < 1) {
-            marker._animId = requestAnimationFrame(step);
-        } else {
+        const t = Math.min(1, (now - start) / duration);
+        const e = t * (2 - t); // easeOutQuad
+        marker.setLatLng([fromLat + dLat * e, fromLng + dLng * e]);
+        if (div) div.style.transform = `rotate(${fromHead + deltaHead * e}deg)`;
+        if (t < 1) marker._animId = requestAnimationFrame(step);
+        else {
             marker._animId = null;
-            marker._lastHeading = toHeading;
+            marker._lastHeading = toHead;
             marker._lastPos = marker.getLatLng();
         }
     }
-
+    cancelAnimationFrame(marker._animId);
     marker._animId = requestAnimationFrame(step);
 }
 
@@ -459,7 +454,6 @@ const MAX_LOG = 200;
 setInterval(() => {
     if (pendingLogs.length === 0) return;
 
-    const logElem = document.getElementById('log');
     const fragment = document.createDocumentFragment();
 
     pendingLogs.forEach(e => {
@@ -483,11 +477,11 @@ setInterval(() => {
     });
 
     // 新しいものを上に追加
-    logElem.prepend(fragment);
+    log.prepend(fragment);
 
     // 最大200件を維持（まとめて削除）
-    while (logElem.childElementCount > MAX_LOG) {
-        logElem.removeChild(logElem.lastChild);
+    while (log.childElementCount > MAX_LOG) {
+        log.removeChild(log.lastChild);
     }
 
     pendingLogs = [];
@@ -579,13 +573,13 @@ async function handlePosition(pos) {
     const speedKmh = speed ? speed * 3.6 : 0;
 
     // --- UI更新 ---
-    document.getElementById('lat').textContent = toFixedOrDash(lat, 6);
-    document.getElementById('lng').textContent = toFixedOrDash(lng, 6);
-    document.getElementById('acc').textContent = `${acc.toFixed(1)} m`;
-    document.getElementById('alt').textContent = alt === null ? '---' : `${alt.toFixed(1)} m`;
-    document.getElementById('speed').textContent = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
-    document.getElementById('heading').textContent = directionName(heading);
-    document.getElementById('acc').style.color = accColor;
+    elLat.textContent = toFixedOrDash(lat, 6);
+    elLng.textContent = toFixedOrDash(lng, 6);
+    elAcc.textContent = `${acc.toFixed(1)} m`;
+    elAlt.textContent = alt === null ? '---' : `${alt.toFixed(1)} m`;
+    elSpeed.textContent = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
+    elHeading.textContent = directionName(heading);
+    elAcc.style.color = accColor;
 
     // --- 平滑化 + 低精度補正 ---
     if (isFirst || acc <= MIN_ACCURACY || (prev && haversine(prev, [lat, lng]) > 5)) {
@@ -644,11 +638,10 @@ async function handlePosition(pos) {
     }
 
     // --- 住所更新 ---
-    const currentAddrElem = document.getElementById('currentAddress');
     if (nowTime - lastAddressTime > 1000) {
         const addrLat = lat, addrLng = lng;
         fetchAddress(addrLat, addrLng).then(addr => {
-            if (lat === addrLat && lng === addrLng) currentAddrElem.textContent = addr;
+            if (lat === addrLat && lng === addrLng) elCurrentAddr.textContent = addr;
         });
         lastAddressTime = nowTime;
     }
@@ -660,7 +653,7 @@ async function handlePosition(pos) {
         speedKmh: speed ? speedKmh : null,
         speedText: speed ? `${speedKmh.toFixed(1)} km/h` : '---',
         headingText: directionName(heading),
-        address: currentAddrElem.textContent
+        address: elCurrentAddr.textContent
     });
 
     // --- ✅ リアルタイム ETA更新（ポリラインや平滑化に依存せず即時更新） ---
@@ -679,7 +672,7 @@ async function handlePosition(pos) {
     } catch (err) { }
 
     lastPosTime = pos.timestamp || now();
-    document.getElementById('lastAge').textContent = '0秒前';
+    lastAge.textContent = '0秒前';
 }
 
 // ======== グローバル定数 ========
@@ -751,7 +744,7 @@ function updateEtaSmart(lat, lng, speed) {
     }
 
     if (remain < 5) {
-        document.getElementById("eta").textContent = "目的地に到着";
+        elEta.textContent = "目的地に到着";
         displayedRemainTimeSec = 0;
         lastLatLng = current;
         return;
@@ -787,7 +780,7 @@ function updateEtaSmart(lat, lng, speed) {
         ? `${h}時間${m.toString().padStart(2, '0')}分`
         : `${m}分${s.toString().padStart(2, '0')}秒`;
 
-    document.getElementById("eta").textContent = `${distText} / 約${timeText}`;
+    elEta.textContent = `${distText} / 約${timeText}`;
 }
 
 // ======== ETA タイマー ========
@@ -822,7 +815,7 @@ setInterval(async () => {
 
     if (minDist > MAX_DEVIATION && currentDestination) {
         rerouting = true;
-        document.getElementById("eta").textContent = "ルート修正中…";
+        elEta.textContent = "ルート修正中…";
         try {
             await generateNavigationRoute(current, currentDestination, animatedPolylines);
         } catch (err) {
@@ -885,7 +878,7 @@ setInterval(() => {
         if (h > 0) text += `${h}時間`;
         if (m > 0 || h > 0) text += `${m}分`;
         text += `${s}秒前`;
-        document.getElementById('lastAge').textContent = text;
+        lastAge.textContent = text;
     }
 }, 1000);
 
@@ -896,7 +889,7 @@ async function setupDeviceOrientation() {
         btn.textContent = 'コンパス許可';
         btn.className = 'warning';
         btn.style.margin = '6px';
-        document.querySelector('.panel').appendChild(btn);
+        panel.appendChild(btn);
         btn.addEventListener('click', async () => {
             const perm = await DeviceOrientationEvent.requestPermission();
             if (perm === 'granted') { window.addEventListener('deviceorientationabsolute', onDeviceOrientation); btn.remove(); } else alert('拒否');
@@ -906,7 +899,7 @@ async function setupDeviceOrientation() {
 function onDeviceOrientation(e) {
     if (e && typeof e.alpha === 'number') {
         lastOrientation = (360 - e.alpha) % 360;
-        document.getElementById('heading').textContent = directionName(lastOrientation);
+        elHeading.textContent = directionName(lastOrientation);
         if (marker && marker.getElement()) {
             const div = marker.getElement().querySelector('div');
             if (div) div.style.transform = `rotate(${lastOrientation}deg)`;
@@ -1077,8 +1070,6 @@ window.addEventListener('load', () => {
     setupDeviceOrientation();
     startTracking();
 
-    const navModeBtn = document.getElementById("navModeBtn");
-
     // ナビモード切替
     navModeBtn.addEventListener("click", () => {
         navMode = !navMode;
@@ -1145,18 +1136,16 @@ window.addEventListener('load', () => {
         if (marker) {
             const currentLatLng = marker.getLatLng();
             const address = await fetchAddress(currentLatLng.lat, currentLatLng.lng);
-            document.getElementById("currentAddress").textContent = address;
+            elCurrentAddr.textContent = address;
         }
 
-        const destElem = document.getElementById("destAddress");
-        if (destElem) destElem.textContent = "---";
-        const etaContainer = document.getElementById("eta");
-        if (etaContainer) etaContainer.textContent = "---";
+        if (elDestAddr) elDestAddr.textContent = "---";
+        if (elEta) elEta.textContent = "---";
     });
 });
 
 // ===== 操作ボタン =====
-document.getElementById('stopBtn').addEventListener('click', () => {
+stopBtn.addEventListener('click', () => {
     if (watchId) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
@@ -1166,7 +1155,7 @@ document.getElementById('stopBtn').addEventListener('click', () => {
     }
 });
 
-document.getElementById('restartBtn').addEventListener('click', () => {
+restartBtn.addEventListener('click', () => {
     if (!watchId) {
         // 平滑化バッファをクリアして再開（念のため）
         smoothBuffer = [];
@@ -1174,10 +1163,10 @@ document.getElementById('restartBtn').addEventListener('click', () => {
     }
 });
 
-document.getElementById('clearBtn').addEventListener('click', () => { if (confirm('本当にクリアしますか？')) { pathSegments = [[]]; logData = []; yellowgreenrawPolylines(); document.getElementById('log').innerHTML = ''; safeSaveLocal(); updateStatsUI(); } });
-document.getElementById('centerToggle').addEventListener('click', async () => {
+document.getElementById('clearBtn').addEventListener('click', () => { if (confirm('本当にクリアしますか？')) { pathSegments = [[]]; logData = []; yellowgreenrawPolylines(); log.innerHTML = ''; safeSaveLocal(); updateStatsUI(); } });
+centerToggle.addEventListener('click', async () => {
     follow = !follow;
-    document.getElementById('centerToggle').textContent = `自動追尾: ${follow ? 'ON' : 'OFF'}`;
+    centerToggle.textContent = `自動追尾: ${follow ? 'ON' : 'OFF'}`;
 
     if (follow && marker) {
         const pos = marker.getLatLng();
@@ -1195,7 +1184,7 @@ document.getElementById('centerToggle').addEventListener('click', async () => {
 
         // 現在地の住所を更新
         const addr = await fetchAddress(pos.lat, pos.lng);
-        document.getElementById('currentAddress').textContent = addr;
+        elCurrentAddr.textContent = addr;
 
         // 追尾中はユーザー操作でズーム・パン可能
         map.dragging.enable();
@@ -1208,8 +1197,6 @@ document.getElementById('centerToggle').addEventListener('click', async () => {
 });
 
 function btn_toggle() {
-    const stopBtn = document.getElementById('stopBtn');
-    const restartBtn = document.getElementById('restartBtn');
     if (stopBtn.classList.contains('btn-pointer-none')) {
         stopBtn.classList.remove('btn-pointer-none');
         restartBtn.classList.add('btn-pointer-none');
@@ -1291,15 +1278,14 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
     navActive = false;
 
     // --- UI更新 ---
-    document.getElementById("destAddress").textContent = "住所取得中...";
-    document.getElementById("eta").textContent = "経路計算中...";
+    elDestAddr.textContent = "住所取得中...";
+    elEta.textContent = "経路計算中...";
     navMode = false; // ← 分離前と同様にナビモード解除
-    const navModeBtn = document.getElementById("navModeBtn");
     if (navModeBtn) navModeBtn.textContent = "ナビ開始(車のみ)";
 
     // --- 住所取得（非同期） ---
     fetchAddress(dest.lat, dest.lng).then(addr => {
-        document.getElementById("destAddress").textContent = addr || "住所取得失敗";
+        elDestAddr.textContent = addr || "住所取得失敗";
     });
 
     // --- 既存ルート削除 ---
@@ -1340,8 +1326,7 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
 
             // --- 経路計算開始 ---
             .on("routingstart", () => {
-                const etaElem = document.getElementById("eta");
-                if (!etaElem.textContent.includes("計算中")) etaElem.textContent = "経路計算中...";
+                if (!elEta.textContent.includes("計算中")) elEta.textContent = "経路計算中...";
             })
 
             // --- 経路計算完了 ---
@@ -1439,7 +1424,7 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
 
             // --- 経路エラー ---
             .on("routingerror", () => {
-                document.getElementById("eta").textContent = "経路取得失敗";
+                elEta.textContent = "経路取得失敗";
             })
             .addTo(map);
 
