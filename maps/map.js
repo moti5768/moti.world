@@ -264,6 +264,15 @@ function updateMarker(lat, lng, heading, accColor, speed) {
         marker._lastHeading = heading || 0;
         marker._animId = null;
         marker._lastPos = marker.getLatLng();
+        marker.on("click", e => {
+            showMarkerLabelLeaflet(e, "現在地");
+        });
+        map.on("click", () => {
+            if (currentLabel) {
+                currentLabel.remove();
+                currentLabel = null;
+            }
+        });
         return;
     }
     const div = marker._div;
@@ -296,29 +305,23 @@ function updateMarker(lat, lng, heading, accColor, speed) {
 }
 
 function showMarkerLabelLeaflet(e, text) {
-    // 既存ラベル削除
-    if (currentLabel) {
-        currentLabel.remove();
-        currentLabel = null;
-    }
-
-    // Leaflet のマップ座標 → DOM 座標
-    const point = map.mouseEventToContainerPoint(e.originalEvent);
-
-    const label = document.createElement('div');
-    label.textContent = text;
-    label.style.position = 'absolute';
-    label.style.background = 'rgba(0,0,0,0.7)';
-    label.style.color = 'white';
-    label.style.padding = '2px 5px';
-    label.style.borderRadius = '4px';
-    label.style.fontSize = '15px';
-    label.style.pointerEvents = 'none';
-    label.style.zIndex = 1000;
-
-    label.style.left = (point.x + 20) + 'px';
-    label.style.top = (point.y - 20) + 'px';
-
+    currentLabel?.remove();
+    const { x, y } = map.mouseEventToContainerPoint(e.originalEvent);
+    const label = Object.assign(document.createElement('div'), {
+        textContent: text,
+        style: `
+            position:absolute;
+            left:${x + 20}px;
+            top:${y - 20}px;
+            background:rgba(0,0,0,0.7);
+            color:white;
+            padding:2px 5px;
+            border-radius:4px;
+            font-size:15px;
+            pointer-events:none;
+            z-index:1000;
+        `
+    });
     document.body.appendChild(label);
     currentLabel = label;
 }
