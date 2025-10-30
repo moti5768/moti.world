@@ -87,7 +87,6 @@ async function initMap() {
         attributionControl: false,    // 著作権表記を下に移す
     }).setView([initLat, initLng], initialZoom);
 
-    // ===== 高精細（Retina対応）タイル読み込み（即時更新最適化） =====
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         detectRetina: false,
@@ -100,12 +99,8 @@ async function initMap() {
         keepBuffer: 4,                // 少し広めにタイルを保持（連続パンに強い）
     }).addTo(map);
 
-    // iPhoneの右下ズームボタン風に再配置
     L.control.zoom({ position: 'topleft' }).addTo(map);
-
-    // 下部にスッキリと著作権表記
     L.control.attribution({ position: 'bottomleft' }).addTo(map);
-
 
     // ドラッグやズーム開始時にユーザー操作フラグを立てる
     map.on('dragstart zoomstart', () => {
@@ -132,7 +127,6 @@ async function initMap() {
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(pos => {
                 const { latitude, longitude } = pos.coords;
-                // 初回だけズームレベル17で表示
                 map.setView([latitude, longitude], 17);
             });
         }
@@ -160,7 +154,7 @@ function haversine(a, b) {
 function directionName(deg) {
     if (!(deg >= 0) && !(deg <= 360)) return '---';
     const dirs = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
-    const idx = Math.round(deg / 45) & 7; // mod 8より高速
+    const idx = Math.round(deg / 45) & 7;
     return dirs[idx] + ' (' + (deg | 0) + '°)';
 }
 // ===== 距離・速度計算 =====
@@ -229,11 +223,9 @@ function yellowgreenrawPolylines() {
         return;
     }
     polylineUpdateCounter++;
-    // 3点ごとの一括更新（滑らか表示向け）
     if (polylineUpdateCounter % POLYLINE_UPDATE_INTERVAL === 0) {
         lastLine.setLatLngs(lastSeg);
     } else {
-        // 追加点だけ即時反映（パフォーマンス軽め）
         const newPoint = lastSeg[lastSeg.length - 1];
         lastLine.addLatLng(newPoint);
     }
@@ -280,9 +272,9 @@ function updateMarker(lat, lng, heading, accColor, speed) {
     const fromLat = from.lat, fromLng = from.lng;
     const toLat = lat, toLng = lng;
     const dLat = toLat - fromLat, dLng = toLng - fromLng;
-    const dist = Math.hypot(dLat, dLng) * 111000; // 近似[m]
+    const dist = Math.hypot(dLat, dLng) * 111000;
     if (dist < 0.5 && Math.abs((heading - marker._lastHeading + 540) % 360 - 180) < 1)
-        return; // 停止時スキップ
+        return;
     const fromHead = marker._lastHeading;
     const toHead = (typeof heading === 'number') ? heading : fromHead;
     const deltaHead = ((toHead - fromHead + 540) % 360) - 180;
@@ -290,7 +282,7 @@ function updateMarker(lat, lng, heading, accColor, speed) {
     const start = performance.now(), duration = 400;
     function step(now) {
         const t = Math.min(1, (now - start) / duration);
-        const e = t * (2 - t); // easeOutQuad
+        const e = t * (2 - t);
         marker.setLatLng([fromLat + dLat * e, fromLng + dLng * e]);
         if (div) div.style.transform = `rotate(${fromHead + deltaHead * e}deg)`;
         if (t < 1) marker._animId = requestAnimationFrame(step);
@@ -326,18 +318,15 @@ function showMarkerLabelLeaflet(e, text) {
     currentLabel = label;
 }
 
-// ===== 住所取得 =====
-// --- 改良版 fetchAddress（キャッシュ・中断対応・距離制限付き） ---
+// --- 住所取得 fetchAddress（キャッシュ・中断対応・距離制限付き） ---
 const addrCache = new Map();              // キャッシュ: 緯度経度キー
 let lastAddressPoint = null;              // 最後に住所を取得した座標
 let currentAddressController = null;      // Abort用コントローラ
 
 async function fetchAddress(lat, lng) {
     const nowTime = Date.now();
-
     // === 1. 取得間隔制御（1秒以内の連続呼び出しを防ぐ） ===
     if (nowTime - lastFetchTime < 1000) return '取得間隔制御中';
-
     // === 2. 近接チェック（15m以内ならキャッシュ／既存表示を使う） ===
     try {
         if (lastAddressPoint && haversine([lat, lng], lastAddressPoint) < 15) {
@@ -347,36 +336,29 @@ async function fetchAddress(lat, lng) {
     } catch (e) {
         console.warn('近接チェック例外', e);
     }
-
     lastFetchTime = nowTime;
     lastAddressPoint = [lat, lng];
-
     // === 3. キャッシュ利用（約10m精度・高速移動でも安定） ===
     const key = `${lat.toFixed(4)},${lng.toFixed(4)}`; // 10〜11m精度
     if (addrCache.has(key)) return addrCache.get(key);
-
     // === 4. 既存リクエスト中止（高速移動対応） ===
     if (currentAddressController) {
         try { currentAddressController.abort(); } catch (e) { /* ignore */ }
     }
     currentAddressController = new AbortController();
     const signal = currentAddressController.signal;
-
     try {
         // === 5. Nominatim 逆ジオコーディング ===
         const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`,
             { signal, headers: { 'User-Agent': 'HighSpeedMap/1.0 (compatible; fetchAddress)' } }
         );
-
         if (!res.ok) {
             console.warn('住所取得HTTP失敗', res.status);
             return '住所取得失敗';
         }
-
         const data = await res.json();
         const a = data.address || {};
-
         // === 6. 日本の都道府県判定 ===
         const jpPrefs = [
             '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
@@ -387,10 +369,8 @@ async function fetchAddress(lat, lng) {
             '徳島県', '香川県', '愛媛県', '高知県',
             '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'
         ];
-
         let joined = Object.values(a).filter(Boolean).join(' ');
         if (data.display_name) joined += ' ' + data.display_name;
-
         let prefecture = '';
         const regex = new RegExp(jpPrefs.join('|'));
         const match = joined.match(regex);
@@ -405,7 +385,6 @@ async function fetchAddress(lat, lng) {
                 }
             }
         }
-
         // === 7. 番地・建物名の補完 ===
         if (!a.house_number || !a.building) {
             const parts = (data.display_name || '').split(',').map(s => s.trim());
@@ -418,7 +397,6 @@ async function fetchAddress(lat, lng) {
                 if (bd) a.building = bd;
             }
         }
-
         // === 8. 出力形式 ===
         const result = [
             a.country,
@@ -430,14 +408,10 @@ async function fetchAddress(lat, lng) {
             a.house_number,
             a.building
         ].filter(Boolean).join(', ');
-
         const finalAddress = result || data.display_name || '住所情報なし';
-
         // === 9. キャッシュ保存 ===
         addrCache.set(key, finalAddress);
-
         return finalAddress;
-
     } catch (err) {
         if (err.name === 'AbortError') {
             console.warn('住所取得中止（新しいリクエストへ切替）');
@@ -456,14 +430,11 @@ const MAX_LOG = 200;
 // 1秒にまとめてDOMに反映
 setInterval(() => {
     if (pendingLogs.length === 0) return;
-
     const fragment = document.createDocumentFragment();
-
     pendingLogs.forEach(e => {
         const accClass = e.accuracy < 5 ? 'acc-green' :
             e.accuracy < 15 ? 'acc-yellowgreen' :
                 e.accuracy < 30 ? 'acc-orange' : 'acc-red';
-
         const div = document.createElement('div');
         div.className = 'log-entry';
         div.innerHTML = `
@@ -478,15 +449,12 @@ setInterval(() => {
         `;
         fragment.appendChild(div);
     });
-
     // 新しいものを上に追加
     log.prepend(fragment);
-
     // 最大200件を維持（まとめて削除）
     while (log.childElementCount > MAX_LOG) {
         log.removeChild(log.lastChild);
     }
-
     pendingLogs = [];
     safeSaveLocal();
     updateStatsUI();
@@ -526,21 +494,17 @@ async function handlePosition(pos) {
         updateMarker(null, null, 0, 'black', 0);
         return;
     }
-
     const c = pos.coords;
     const lat = c.latitude, lng = c.longitude, acc = c.accuracy || 0, alt = c.altitude;
     let speed = (c.speed >= 0) ? c.speed : null;
     currentSpeed = Number.isFinite(speed) ? speed : 0;
     let heading = (typeof c.heading === 'number') ? c.heading : null;
     const nowTime = Date.now();
-
     let smoothed = [lat, lng];
-
     const lastSegment = pathSegments[pathSegments.length - 1];
     const prev = lastSegment ? lastSegment.slice(-1)[0] : null;
     const isFirst = !firstPositionReceived;
     if (isFirst) firstPositionReceived = true;
-
     // --- 外れ値除外（徒歩〜新幹線対応） ---
     if (lastGoodUpdate) {
         const dt = Math.max((pos.timestamp - lastGoodUpdateTime) / 1000, 0.1);
@@ -551,16 +515,13 @@ async function handlePosition(pos) {
     }
     lastGoodUpdate = [lat, lng];
     lastGoodUpdateTime = pos.timestamp;
-
     // --- 精度チェック + 時間経過で更新 ---
     let accChanged = (typeof lastAcc !== 'undefined' && acc !== lastAcc);
     lastAcc = acc;
     if (!isFirst) {
         if (acc > retryAccuracyThreshold && Date.now() - lastGoodUpdateTime <= 5000 && !accChanged) return;
     }
-
     const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
-
     // --- 速度・方角補正 ---
     if (prev) {
         const dt = Math.max((pos.timestamp - lastPosTime) / 1000, 0.1);
@@ -572,9 +533,7 @@ async function handlePosition(pos) {
     }
     if (lastOrientation !== null) heading = lastOrientation;
     heading = (heading === null || isNaN(heading)) ? 0 : heading;
-
     const speedKmh = speed ? speed * 3.6 : 0;
-
     // --- UI更新 ---
     elLat.textContent = toFixedOrDash(lat, 6);
     elLng.textContent = toFixedOrDash(lng, 6);
@@ -583,24 +542,20 @@ async function handlePosition(pos) {
     elSpeed.textContent = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
     elHeading.textContent = directionName(heading);
     elAcc.style.color = accColor;
-
     // --- 平滑化 + 低精度補正 ---
     if (isFirst || acc <= MIN_ACCURACY || (prev && haversine(prev, [lat, lng]) > 5)) {
         smoothBuffer.push([lat, lng]);
         if (smoothBuffer.length > SMOOTHING_COUNT) smoothBuffer.shift();
-
         smoothed = [
             smoothBuffer.reduce((s, p) => s + p[0], 0) / smoothBuffer.length,
             smoothBuffer.reduce((s, p) => s + p[1], 0) / smoothBuffer.length
         ];
-
         if (marker) {
             const prevMarkerPos = [marker.getLatLng().lat, marker.getLatLng().lng];
             const d = haversine(prevMarkerPos, smoothed);
             const speedMs = speed || 0;
             const timeSinceLast = (nowTime - lastPosTime) / 1000;
             const wasPaused = timeSinceLast > 3;
-
             if (wasPaused) {
                 smoothed = [lat, lng];
                 smoothBuffer = [[lat, lng]];
@@ -617,10 +572,8 @@ async function handlePosition(pos) {
                 }
             }
         }
-
         const smoothDist = prev ? haversine(prev, smoothed) : Infinity;
         const threshold = Math.max(1.5, acc / 2);
-
         if (!marker || !prev || smoothDist > threshold || isFirst) {
             let lastSegment = pathSegments[pathSegments.length - 1];
             if (!lastSegment || lastSegment.length === 0) {
@@ -630,7 +583,6 @@ async function handlePosition(pos) {
             lastSegment.push(smoothed);
             yellowgreenrawPolylines();
             updateMarker(smoothed[0], smoothed[1], heading, accColor, speed);
-
             if (follow && map && !userInteracting) {
                 programMoving = true;
                 map.panTo(smoothed, { animate: true, duration: 0.3 });
@@ -639,7 +591,6 @@ async function handlePosition(pos) {
             if (isFirst && map) map.setView(smoothed, 17);
         }
     }
-
     // --- 住所更新 ---
     if (nowTime - lastAddressTime > 1000) {
         const addrLat = lat, addrLng = lng;
@@ -648,7 +599,6 @@ async function handlePosition(pos) {
         });
         lastAddressTime = nowTime;
     }
-
     // --- ログ追加 ---
     addLogEntry({
         time: new Date().toISOString(),
@@ -658,13 +608,11 @@ async function handlePosition(pos) {
         headingText: directionName(heading),
         address: elCurrentAddr.textContent
     });
-
     // --- ✅ リアルタイム ETA更新（ポリラインや平滑化に依存せず即時更新） ---
     if (routingControl && routePath && routePath.length > 0 && currentDestination) {
         currentLatLng = marker ? marker.getLatLng() : L.latLng(lat, lng);
         updateEtaSmart(currentLatLng.lat, currentLatLng.lng, speed || 0);
     }
-
     // --- スタートマーカー追従 ---
     try {
         const plan = routingControl?.getPlan?.();
@@ -673,13 +621,12 @@ async function handlePosition(pos) {
             plan._updateMarkers();
         }
     } catch (err) { }
-
     lastPosTime = pos.timestamp || now();
     lastAge.textContent = '0秒前';
 }
 
 // ======== グローバル定数 ========
-const MAX_DEVIATION = 50;       // ルート逸脱判定[m]
+const MAX_DEVIATION = 30;       // ルート逸脱判定[m]
 const SPEED_BUFFER_SIZE = 7;    // 速度平滑化バッファサイズ
 const MIN_SPEED = 0.5;          // 停止判定速度[m/s]
 const MIN_MOVE_DIST = 10;       // 小移動無視距離[m]
@@ -715,9 +662,7 @@ function haversineDistance([lat1, lon1], [lat2, lon2]) {
 // ======== スマートETA更新 ========
 function updateEtaSmart(lat, lng, speed) {
     if (!navActive || rerouting || !routePath || routePath.length === 0) return;
-
     const current = [lat, lng];
-
     // --- 最も近いルート点を探索 ---
     let minDist = Infinity;
     let nearestIndex = lastNearestIndex ?? 0;
@@ -730,13 +675,11 @@ function updateEtaSmart(lat, lng, speed) {
             nearestIndex = i;
         }
     }
-
     // --- 小移動・誤差無視 ---
     if (lastNearestIndex !== null && Math.abs(nearestIndex - lastNearestIndex) < 3 && minDist < MIN_MOVE_DIST) {
         nearestIndex = lastNearestIndex;
     }
     lastNearestIndex = nearestIndex;
-
     // --- 残距離計算 ---
     let remain = 0;
     for (let i = nearestIndex; i < routePath.length - 1; i++) {
@@ -745,14 +688,12 @@ function updateEtaSmart(lat, lng, speed) {
         const pb = Array.isArray(b) ? b : [b.lat, b.lng];
         remain += haversineDistance(pa, pb);
     }
-
-    if (remain < 5) {
+    if (remain < 3) {
         elEta.textContent = "目的地に到着";
         displayedRemainTimeSec = 0;
         lastLatLng = current;
         return;
     }
-
     // --- 速度平滑化 ---
     if (Number.isFinite(speed) && speed >= 0) {
         speedBuffer.push(speed);
@@ -760,19 +701,14 @@ function updateEtaSmart(lat, lng, speed) {
     }
     let avgSpeed = speedBuffer.length > 0 ? speedBuffer.reduce((a, b) => a + b, 0) / speedBuffer.length : 0;
     if (avgSpeed < MIN_SPEED) avgSpeed = 0;
-
     // --- 仮速度判定 ---
     let effectiveSpeed = (!Number.isFinite(speed) || speed <= 0) ? 1 : (avgSpeed > 0 ? avgSpeed : 1);
-
     // --- 残時間計算 ---
     let remainTimeSec = remain / effectiveSpeed;
-
     // --- 補間更新 ---
     if (displayedRemainTimeSec == null) displayedRemainTimeSec = remainTimeSec;
     else displayedRemainTimeSec = displayedRemainTimeSec * (1 - ETA_ALPHA) + remainTimeSec * ETA_ALPHA;
-
     lastLatLng = current;
-
     // --- 表示 ---
     const distText = remain >= 1000 ? (remain / 1000).toFixed(2) + "km" : Math.round(remain) + "m";
     const t = Math.max(0, displayedRemainTimeSec);
@@ -782,7 +718,6 @@ function updateEtaSmart(lat, lng, speed) {
     const timeText = h > 0
         ? `${h}時間${m.toString().padStart(2, '0')}分`
         : `${m}分${s.toString().padStart(2, '0')}秒`;
-
     elEta.textContent = `${distText} / 約${timeText}`;
 }
 
@@ -790,7 +725,6 @@ function updateEtaSmart(lat, lng, speed) {
 function startEtaTimer() {
     if (etaTimerRunning) return;
     etaTimerRunning = true;
-
     const loop = () => {
         if (navActive && currentLatLng) {
             updateEtaSmart(
@@ -807,7 +741,6 @@ function startEtaTimer() {
 // ======== 3秒ごとのルート逸脱チェック ========
 setInterval(async () => {
     if (rerouting || routingInProgress || !navActive || !marker || !routePath?.length) return;
-
     const current = marker.getLatLng();
     let minDist = Infinity;
     routePath.forEach(p => {
@@ -815,7 +748,6 @@ setInterval(async () => {
         const d = map.distance(current, point);
         if (d < minDist) minDist = d;
     });
-
     if (minDist > MAX_DEVIATION && currentDestination) {
         rerouting = true;
         elEta.textContent = "ルート修正中…";
@@ -849,7 +781,6 @@ async function startTracking() {
         alert('位置情報未対応');
         return;
     }
-
     // 初回取得（低精度で即時表示）
     navigator.geolocation.getCurrentPosition(
         pos => {
@@ -859,7 +790,6 @@ async function startTracking() {
         err => handleError(err),
         { enableHighAccuracy: false, timeout: 5000, maximumAge: 5000 }
     );
-
     // 継続追跡（高精度）
     watchId = navigator.geolocation.watchPosition(
         pos => {
@@ -937,42 +867,33 @@ const patterns = [
     { re: /^Enter roundabout/i, replace: "ロータリーに入る" },
     { re: /^Exit roundabout/i, replace: "ロータリーを出る" },
     { re: /^Roundabout with (\d+) exits/i, replace: (m) => `ロータリー（${m[1]}出口）` },
-
     // Turn + direction + onto + road
     { re: /^Turn (?:the )?(left|right) onto (.+)/i, replace: (m) => `${m[2]} に${m[1].toLowerCase() === "left" ? "左折" : "右折"}で合流` },
-
     // right/left onto 単体対応（Turnなし）
     { re: /^(?:the )?(left|right) onto (.+)/i, replace: (m) => `${m[2]} に${m[1].toLowerCase() === "left" ? "左折" : "右折"}で合流` },
-
     // Make a + Sharp/Slight + direction
     { re: /make a sharp left/i, replace: "鋭角に左折" },
     { re: /make a sharp right/i, replace: "鋭角に右折" },
     { re: /make a slight left/i, replace: "やや左方向" },
     { re: /make a slight right/i, replace: "やや右方向" },
-
     // 左右折単体
     { re: /^Turn (left|right)/i, replace: (m) => m[1].toLowerCase() === "left" ? "左折" : "右折" },
     { re: /^Slight (left|right)/i, replace: (m) => "やや" + (m[1].toLowerCase() === "left" ? "左" : "右") + "方向" },
     { re: /^Sharp (left|right)/i, replace: (m) => "鋭角に" + (m[1].toLowerCase() === "left" ? "左" : "右") + "折" },
     { re: /^Keep (left|right)/i, replace: (m) => m[1].toLowerCase() === "left" ? "左側を維持" : "右側を維持" },
-
     // Take the ramp / Take the exit
     { re: /^Take (?:the )?ramp(?: to (.+))?/i, replace: (m) => m[1] ? `${m[1]} にランプで合流` : "ランプで合流" },
     { re: /^Take (?:the )?exit (\d+)(?: to (.+))?/i, replace: (m) => m[2] ? `${m[2]} に${m[1]}出口で合流` : `${m[1]}出口で合流` },
-
     // 分岐点
     { re: /at the fork/i, replace: "分岐点で" },
-
     // 進行方向・head対応
     { re: /^head (\w+)/i, replace: (m) => `${m[1]} 方向に進む` },
     { re: /^Head (\w+)/i, replace: (m) => `${m[1]} 方向に進む` },
     { re: /heading (\w+)/i, replace: (m) => `${m[1]} 方向に進む` },
-
     // 進行方向単体
     { re: /^Continue/i, replace: "直進" },
     { re: /Go straight/i, replace: "直進" },
     { re: /Proceed/i, replace: "直進" },
-
     // 信号・交差点
     { re: /At traffic light/i, replace: "信号で" },
     { re: /At intersection/i, replace: "交差点で" },
@@ -981,27 +902,20 @@ const patterns = [
 
 function translateInstructions(route) {
     if (!route.instructions) return;
-
     route.instructions.forEach(instr => {
         let text = instr.text;
-
         // 文章をフレーズに分割
         const parts = text.split(/,|then|and/i).map(p => p.trim()).filter(p => p);
-
         const translatedParts = parts.map(part => {
             let t = part;
-
             // 目的地到着
             if (/You have arrived at your/i.test(t)) return "目的地に到着です";
-
             // right/left onto 単体対応（Turnなし）
             let match = t.match(/^(?:the )?(left|right) onto (.+)/i);
             if (match) return `${match[2]}に${match[1].toLowerCase() === "left" ? "左折" : "右折"}してください`;
-
             // Turn + left/right onto
             match = t.match(/^Turn (?:the )?(left|right) onto (.+)/i);
             if (match) return `${match[2]}に${match[1].toLowerCase() === "left" ? "左折" : "右折"}してください`;
-
             // Take the ramp（入口）
             match = t.match(/^Take (?:the )?ramp(?: to (.+))?/i);
             if (match) {
@@ -1012,7 +926,6 @@ function translateInstructions(route) {
                 if (/Prefectural Road/i.test(road)) return `県道${road.replace(/\D/g, '')}号に入ります`;
                 return `${road}に入ります`; // 一般道路
             }
-
             // Take the exit（出口）
             match = t.match(/^Take (?:the )?exit (\d+)(?: to (.+))?/i);
             if (match) {
@@ -1024,11 +937,9 @@ function translateInstructions(route) {
                 if (/Prefectural Road/i.test(road)) return `${exitNum}番出口で降りて県道${road.replace(/\D/g, '')}号に入ります`;
                 return `${exitNum}番出口で降りて${road}に入ります`; // 一般道路
             }
-
             // Enter + 道路名
             match = t.match(/^Enter (.+)/i);
             if (match) return `${match[1]}に入ります`;
-
             // head / heading + 方角
             match = t.match(/^(head|Head|heading) (\w+)/i);
             if (match) {
@@ -1036,10 +947,8 @@ function translateInstructions(route) {
                 const dirJa = dirMap[match[2].toLowerCase()] || match[2];
                 return `${dirJa}方向に進みます`;
             }
-
             // straight ahead
             if (/straight ahead/i.test(t)) return "直進してください";
-
             // パターンルール
             for (const p of patterns) {
                 const m = t.match(p.re);
@@ -1048,7 +957,6 @@ function translateInstructions(route) {
                     return replaced.replace(/方向$/, "方向に進みます");
                 }
             }
-
             // 単語置換
             Object.entries(instructionMap)
                 .sort((a, b) => b[0].length - a[0].length)
@@ -1059,7 +967,6 @@ function translateInstructions(route) {
 
             return t;
         });
-
         // 自然な接続語で結合
         instr.text = translatedParts.join("。次に、");
     });
@@ -1072,14 +979,12 @@ window.addEventListener('load', () => {
     yellowgreenrawPolylines();
     setupDeviceOrientation();
     startTracking();
-
     // ナビモード切替
     navModeBtn.addEventListener("click", () => {
         navMode = !navMode;
         navModeBtn.textContent = navMode
             ? "地図クリックで目的地を選択中…"
             : "ナビ開始(車のみ)";
-
         if (navMode) {
             // ナビ開始時にETAリセット
             displayedRemainTimeSec = null; // 補間値リセット
@@ -1088,7 +993,6 @@ window.addEventListener('load', () => {
             speedBuffer = [];              // 速度バッファリセット
         }
     });
-
     // ===== マップクリックで目的地選択（代替ルート対応＆翻訳安定版） =====
     map.on("click", async e => {
         if (!navMode) return;
@@ -1096,19 +1000,15 @@ window.addEventListener('load', () => {
             alert("現在地を取得中です。位置が確定したらもう一度クリックしてください。");
             return;
         }
-
         currentDestination = e.latlng;
         userSelectedRoute = false;
         displayedRemainTimeSec = null;
         lastUpdateTime = null;
         speedBuffer = [];
-
         const start = marker.getLatLng();
         const dest = currentDestination;
-
         navMode = false;
         navModeBtn.textContent = "ナビ開始(車のみ)";
-
         await generateNavigationRoute(start, dest, animatedPolylines);
     });
 
@@ -1120,28 +1020,23 @@ window.addEventListener('load', () => {
         }
         animatedPolylines.forEach(p => map.removeLayer(p.polyline || p));
         animatedPolylines = [];
-
         navMode = false;
         navActive = false;         // ETAループ停止
         navModeBtn.textContent = "ナビ開始(車のみ)";
         currentDestination = null;
         userSelectedRoute = false;
-
         // --- ETAリセット ---
         displayedRemainTimeSec = null; // 補間値リセット
         lastNearestIndex = null;       // 最近点インデックスリセット
         lastUpdateTime = null;         // 時間基準リセット
         speedBuffer = [];              // 速度バッファリセット
-
         const closeBtn = document.querySelector('.leaflet-routing-close');
         if (closeBtn) closeBtn.remove();
-
         if (marker) {
             const currentLatLng = marker.getLatLng();
             const address = await fetchAddress(currentLatLng.lat, currentLatLng.lng);
             elCurrentAddr.textContent = address;
         }
-
         if (elDestAddr) elDestAddr.textContent = "---";
         if (elEta) elEta.textContent = "---";
     });
@@ -1152,15 +1047,12 @@ stopBtn.addEventListener('click', () => {
     if (watchId) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
-
-        // 平滑化バッファをクリア（再開時に古い位置に引きずられないようにする）
         smoothBuffer = [];
     }
 });
 
 restartBtn.addEventListener('click', () => {
     if (!watchId) {
-        // 平滑化バッファをクリアして再開（念のため）
         smoothBuffer = [];
         startTracking();
     }
@@ -1170,25 +1062,19 @@ document.getElementById('clearBtn').addEventListener('click', () => { if (confir
 centerToggle.addEventListener('click', async () => {
     follow = !follow;
     centerToggle.textContent = `自動追尾: ${follow ? 'ON' : 'OFF'}`;
-
     if (follow && marker) {
         const pos = marker.getLatLng();
-
         // プログラム移動中フラグON
         programMoving = true;
-
         // 現在地にアニメーションで移動＆ズーム
         map.flyTo(pos, 17, { animate: true, duration: 1.2 });
-
         // flyToアニメーション終了後にフラグを解除
         map.once('moveend', () => {
             programMoving = false;
         });
-
         // 現在地の住所を更新
         const addr = await fetchAddress(pos.lat, pos.lng);
         elCurrentAddr.textContent = addr;
-
         // 追尾中はユーザー操作でズーム・パン可能
         map.dragging.enable();
         map.touchZoom.enable();
@@ -1212,12 +1098,10 @@ function btn_toggle() {
 // ===== スムーズアニメーション関数 =====
 function animateRouteSmooth(latlngs, color = "#1976d2", weight = 7, duration = 2000) {
     if (!latlngs || latlngs.length < 2) return;
-
     const simplified = [latlngs[0]];
     const segDist = [];
     let totalDist = 0;
     const sampleDist = 15; // ← サンプリング距離を大きめに
-
     // 座標と距離を同時に計算
     for (let i = 1; i < latlngs.length; i++) {
         const prev = simplified[simplified.length - 1];
@@ -1228,25 +1112,20 @@ function animateRouteSmooth(latlngs, color = "#1976d2", weight = 7, duration = 2
             totalDist += dist;
         }
     }
-
     // 最後の区間
     const lastDist = map.distance(simplified[simplified.length - 1], latlngs[latlngs.length - 1]);
     simplified.push(latlngs[latlngs.length - 1]);
     segDist.push(lastDist);
     totalDist += lastDist;
-
     const polyline = L.polyline([simplified[0]], { color, weight, opacity: 1 }).addTo(map);
     let startTime = null;
-
     function step(ts) {
         if (!startTime) startTime = ts;
         const elapsed = ts - startTime;
         const progress = Math.min(elapsed / duration, 1);
         const targetDist = totalDist * progress;
-
         let traveled = 0;
         const points = [simplified[0]];
-
         for (let i = 0; i < segDist.length; i++) {
             if (traveled + segDist[i] >= targetDist) {
                 const remain = targetDist - traveled;
@@ -1262,40 +1141,32 @@ function animateRouteSmooth(latlngs, color = "#1976d2", weight = 7, duration = 2
                 traveled += segDist[i];
             }
         }
-
         polyline.setLatLngs(points);
         if (progress < 1) requestAnimationFrame(step);
     }
-
     requestAnimationFrame(step);
     return polyline;
 }
-
 
 // ======== ナビルート生成関数（分離前と完全同等動作） ========
 async function generateNavigationRoute(start, dest, animatedPolylines) {
     if (routingInProgress) return;
     routingInProgress = true;
-
     rerouting = true;
     navActive = false;
-
     // --- UI更新 ---
     elDestAddr.textContent = "住所取得中...";
     elEta.textContent = "経路計算中...";
     navMode = false; // ← 分離前と同様にナビモード解除
     if (navModeBtn) navModeBtn.textContent = "ナビ開始(車のみ)";
-
     // --- 住所取得（非同期） ---
     fetchAddress(dest.lat, dest.lng).then(addr => {
         elDestAddr.textContent = addr || "住所取得失敗";
     });
-
     // --- 既存ルート削除 ---
     if (routingControl) map.removeControl(routingControl);
     animatedPolylines.forEach(p => map.removeLayer(p.polyline || p));
     animatedPolylines.length = 0;
-
     try {
         routingControl = L.Routing.control({
             waypoints: [start, dest],
@@ -1326,42 +1197,34 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
             },
             position: "bottomright"
         })
-
             // --- 経路計算開始 ---
             .on("routingstart", () => {
                 if (!elEta.textContent.includes("計算中")) elEta.textContent = "経路計算中...";
             })
-
             // --- 経路計算完了 ---
             .on("routesfound", e => {
                 const routes = e.routes;
                 if (!routes || routes.length === 0) return;
-
                 // 翻訳適用
                 routes.forEach(route => translateInstructions(route));
-
                 // --- メインルート設定 ---
                 const best = routes[0];
                 routePath = best.coordinates.slice();
                 currentDestination = routePath[routePath.length - 1];
                 routeTotalDistance = best.summary?.totalDistance || 0;
                 routeTotalTime = best.summary?.totalTime || 0;
-
                 userSelectedRoute = false;
                 navActive = true;
                 startEtaTimer();
-
                 // ETA初期更新
                 const startPos = marker.getLatLng();
                 updateEtaSmart(startPos.lat, startPos.lng, Number.isFinite(currentSpeed) ? currentSpeed : 0);
-
                 // --- 各ルート描画（クリック選択可能） ---
                 routes.forEach((route, idx) => {
                     const color = idx === 0 ? "#1976d2" : "#f44336";
                     const weight = idx === 0 ? 7 : 5;
                     const animLine = animateRouteSmooth(route.coordinates, color, weight, 800);
                     animatedPolylines.push({ polyline: animLine, route });
-
                     animLine.on("click", () => {
                         routePath = route.coordinates.slice();
                         userSelectedRoute = true;
@@ -1369,10 +1232,8 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
                         lastNearestIndex = null;
                         lastUpdateTime = null;
                         speedBuffer = [];
-
                         const pos = marker.getLatLng();
                         updateEtaSmart(pos.lat, pos.lng, Number.isFinite(currentSpeed) ? currentSpeed : 0);
-
                         animatedPolylines.forEach(p =>
                             p.polyline.setStyle(p.route === route
                                 ? { color: "#1976d2", weight: 8 }
@@ -1380,7 +1241,6 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
                         );
                     });
                 });
-
                 // --- 翻訳安定化再試行 ---
                 let tries = 0;
                 const translatePanel = () => {
@@ -1402,21 +1262,17 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
                 };
                 tryTranslate();
             })
-
             // --- 経路再選択（LRMパネルでクリック） ---
             .on("routeselected", e => {
                 translateInstructions(e.route);
                 routePath = e.route.coordinates.slice();
                 currentDestination = routePath[routePath.length - 1];
-
                 displayedRemainTimeSec = null;
                 lastNearestIndex = null;
                 lastUpdateTime = null;
                 speedBuffer = [];
-
                 const pos = marker.getLatLng();
                 updateEtaSmart(pos.lat, pos.lng, Number.isFinite(currentSpeed) ? currentSpeed : 0);
-
                 userSelectedRoute = true;
                 animatedPolylines.forEach(p =>
                     p.polyline.setStyle(p.route === e.route
@@ -1424,17 +1280,14 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
                         : { color: "#f44336", weight: 4 })
                 );
             })
-
             // --- 経路エラー ---
             .on("routingerror", () => {
                 elEta.textContent = "経路取得失敗";
             })
             .addTo(map);
-
         // --- パネル制御 ---
         const container = routingControl.getContainer();
         container.style.zIndex = "998";
-
         if (!document.querySelector(".leaflet-routing-close")) {
             const closeBtn = document.createElement("a");
             closeBtn.className = "leaflet-routing-close";
