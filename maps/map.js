@@ -38,6 +38,9 @@ const logContainer = document.getElementById('log-container');
 // ===== ログ折りたたみ =====
 logToggleBtn.addEventListener('click', () => {
     log.classList.toggle('collapsed');
+    logtoggle();
+});
+function logtoggle() {
     if (log.classList.contains('collapsed')) {
         logContainer.style.minHeight = '40px';
         logContainer.style.height = '40px';
@@ -46,9 +49,12 @@ logToggleBtn.addEventListener('click', () => {
         logContainer.style.height = '';
         logContainer.style.minHeight = '20vh';
         logToggleBtn.textContent = '▼';
+        panel.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' });
     }
-    panel.scrollTo({ top: panel.scrollHeight, behavior: 'smooth' });
-});
+}
+// ログ初期読み込み
+log.classList.add('collapsed');
+logtoggle();
 
 // ===== マップ・トラッキング初期化 =====
 let map, marker, watchId = null, pathSegments = [[]], polylines = [], logData = [];
