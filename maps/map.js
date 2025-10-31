@@ -211,7 +211,6 @@ function safeSaveLocal() {
 
 // ページ閉じる前にも確実に保存
 window.addEventListener("beforeunload", () => {
-    alert()
     try {
         localStorage.setItem(LS_KEYS.PATH, JSON.stringify(pathSegments));
         localStorage.setItem(LS_KEYS.LOG, JSON.stringify(logData));
