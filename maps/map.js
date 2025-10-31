@@ -256,10 +256,23 @@ let polylineUpdateCounter = 0;
 const POLYLINE_UPDATE_INTERVAL = 3;
 
 function yellowgreenrawPolylines() {
+    // --- 空データ（全削除時）対応 ---
+    if (!pathSegments?.length) {
+        if (polylines?.length) {
+            polylines.forEach(line => {
+                try { map.removeLayer(line); } catch (e) { console.warn(e); }
+            });
+            polylines = [];
+        }
+        polylineUpdateCounter = 0; // カウンタもリセット
+        return;
+    }
+    // --- 通常更新処理 ---
     const lastSeg = pathSegments[pathSegments.length - 1];
     if (!lastSeg?.length) return;
     let lastLine = polylines[0];
     if (!lastLine) {
+        // 初回ポリライン生成
         lastLine = L.polyline(lastSeg, {
             color: '#9ACD32',
             weight: 8,
@@ -271,10 +284,13 @@ function yellowgreenrawPolylines() {
         polylineUpdateCounter = lastSeg.length; // 初回をカウントに加算
         return;
     }
+    // --- 軽量化アップデート ---
     polylineUpdateCounter++;
     if (polylineUpdateCounter % POLYLINE_UPDATE_INTERVAL === 0) {
+        // 一定回数ごとに全体を再設定（軽量化）
         lastLine.setLatLngs(lastSeg);
     } else {
+        // 普段は末尾だけ追加
         const newPoint = lastSeg[lastSeg.length - 1];
         lastLine.addLatLng(newPoint);
     }
