@@ -91,13 +91,13 @@ async function initMap() {
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         detectRetina: false,
-        attribution: '© OpenStreetMap contributors',
         tileSize: 256,
         updateWhenIdle: false,        // パン中も更新（← 即座に反映）
         updateWhenZooming: true,      // ズーム中も更新（← 即座に反映）
         reuseTiles: true,             // 既存タイルを再利用して高速化
         unloadInvisibleTiles: false,  // スクロール中に破棄しない（スムーズに）
-        keepBuffer: 4,                // 少し広めにタイルを保持（連続パンに強い）
+        keepBuffer: 3,                // 少し広めにタイルを保持（連続パンに強い）
+        attribution: '© OpenStreetMap contributors',
     }).addTo(map);
 
     L.control.zoom({ position: 'topleft' }).addTo(map);
