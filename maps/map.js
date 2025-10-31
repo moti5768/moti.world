@@ -363,7 +363,21 @@ function updateMarker(lat, lng, heading, accColor, speed) {
 
 function showMarkerLabelLeaflet(e, text) {
     currentLabel?.remove();
-    const { x, y } = map.mouseEventToContainerPoint(e.originalEvent);
+    // マップ座標を取得
+    const point = map.mouseEventToContainerPoint(e.originalEvent);
+    // map要素の位置とscaleを取得
+    const mapEl = map.getContainer();
+    const rect = mapEl.getBoundingClientRect();
+    let scale = 1;
+    const transform = window.getComputedStyle(mapEl).transform;
+    if (transform && transform !== 'none') {
+        // matrix(a, b, c, d, e, f) の a が scaleX
+        const match = transform.match(/matrix\(([^,]+),/);
+        if (match) scale = parseFloat(match[1]);
+    }
+    // scaleに応じて座標を補正
+    const x = rect.left + point.x * scale;
+    const y = rect.top + point.y * scale;
     const label = Object.assign(document.createElement('div'), {
         textContent: text,
         style: `
@@ -1409,4 +1423,152 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
         rerouting = false;
         navActive = true;
     }
+}
+
+//camera
+const preview = document.getElementById('preview');
+const photoBtn = document.getElementById('photoBtn');
+const videoBtn = document.getElementById('videoBtn');
+const togglePreviewBtn = document.getElementById('togglePreview');
+const snapshot = document.getElementById('snapshot');
+const camera_area = document.getElementById('camera_area');
+const mapEl = document.getElementById('map');
+
+let mediaStream = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let recording = false;
+let previewVisible = false;
+
+// カメラアクセス＆プレビュー開始
+async function startCamera() {
+    try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+            audio: true
+        });
+        preview.srcObject = mediaStream;
+        preview.style.display = 'block';
+        previewVisible = true;
+        // パネル非表示＆マップ縮小
+        panel.style.display = 'none';
+        camera_area.style.display = 'block';
+        mapEl.classList.add('test');
+    } catch (err) {
+        alert('カメラアクセスが許可されませんでした');
+    }
+}
+
+// カメラプレビュー終了して戻る
+function stopCamera() {
+    // メディアストリーム停止
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+    }
+    // 表示切替
+    panel.style.display = 'block';
+    camera_area.style.display = 'none';
+    mapEl.classList.remove('test');
+    preview.style.display = 'none';
+}
+
+// カメラ撮影ボタン
+togglePreviewBtn.addEventListener('click', async () => {
+    if (!mediaStream) {
+        await startCamera();
+    } else {
+        // すでに起動している場合は表示切替
+        previewVisible = !previewVisible;
+        preview.style.display = previewVisible ? 'block' : 'none';
+    }
+});
+
+// 戻るボタン
+document.getElementById('videoreturn').addEventListener('click', stopCamera);
+
+// 写真撮影
+let firstSnapshotPosition = null; // 初回写真の右下を基準に保持
+let snapshotCount = 0;
+photoBtn.addEventListener('click', () => {
+    if (!mediaStream) return alert('カメラが有効になっていません');
+    // キャンバスに映像を描画
+    const canvas = document.createElement('canvas');
+    canvas.width = preview.videoWidth;
+    canvas.height = preview.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(preview, 0, 0, canvas.width, canvas.height);
+    const dataURL = canvas.toDataURL('image/png');
+    const snapshotImg = document.createElement('img');
+    snapshotImg.src = dataURL;
+    snapshotImg.alt = 'Captured Image';
+    snapshotImg.style.position = 'absolute';
+    snapshotImg.style.width = '100px';
+    snapshotImg.style.height = 'auto';
+    snapshotImg.style.border = 'solid 2px white';
+    snapshotImg.style.borderRadius = '8px';
+    if (!firstSnapshotPosition) {
+        const firstPhoto = document.querySelector('#map.test');
+        const rect = firstPhoto.getBoundingClientRect();
+        const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
+        const scrollTop = window.scrollY || document.documentElement.scrollTop;
+        // 初回写真の右端を #map.test の右端に揃える
+        const left = rect.right + scrollLeft - 100; // 200 = snapshotImg の幅
+        const top = rect.bottom + scrollTop + 20;        // 下端を基準
+        snapshotImg.style.left = `${left}px`;
+        snapshotImg.style.top = `${top}px`;
+        firstSnapshotPosition = { left, top };
+    } else {
+        // 2枚目以降は左斜め下にずらす
+        const offsetX = -10 * snapshotCount;
+        const offsetY = 10 * snapshotCount;
+        snapshotImg.style.left = `${firstSnapshotPosition.left + offsetX}px`;
+        snapshotImg.style.top = `${firstSnapshotPosition.top + offsetY}px`;
+    }
+    snapshotImg.style.zIndex = `${100 + snapshotCount}`;
+    document.body.appendChild(snapshotImg);
+    snapshotCount++;
+    // 3秒後に削除
+    setTimeout(() => {
+        snapshotImg.remove();
+        snapshotCount--;
+        if (snapshotCount === 0) firstSnapshotPosition = null;
+    }, 3000);
+    // ダウンロードリンク
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = 'photo.png';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => link.remove(), 3000);
+});
+
+// 動画録画
+videoBtn.addEventListener('click', () => {
+    if (!mediaStream) return alert('カメラが有効になっていません');
+    if (!recording) startRecording();
+    else stopRecording();
+});
+
+function startRecording() {
+    recordedChunks = [];
+    mediaRecorder = new MediaRecorder(mediaStream);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'video.webm';
+        link.click();
+    };
+    mediaRecorder.start();
+    recording = true;
+    videoBtn.classList.add('recording');
+}
+
+function stopRecording() {
+    mediaRecorder.stop();
+    recording = false;
+    videoBtn.classList.remove('recording');
 }

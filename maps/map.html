@@ -37,6 +37,7 @@
     <div id="map"></div>
     <div class="panel">
       <h2>📍 位置観測 経路記録マップ</h2>
+      <button id="togglePreview" style="width: 100px;">カメラ撮影</button>
       <div style="display: flex; gap: 8px; margin-top: 8px;">
         <button id="navModeBtn" class="secondary">ナビ開始(車のみ)</button>
         <button id="cancelNavBtn" class="secondary">ナビ取り消し</button>
@@ -93,9 +94,18 @@
       <div id="log-container">
         <div id="log"></div>
       </div>
-
       <div class="small">※位置の取得は1秒以上間隔を空けています。</div>
     </div>
+
+    <div id="camera_area">
+      <video id="preview" autoplay playsinline muted></video>
+      <div id="controls">
+        <button id="photoBtn" class="btns">📸</button>
+        <button id="videoBtn" class="btns">●</button>
+        <button id="videoreturn" class="btns">戻る</button>
+      </div>
+    </div>
+
   </div>
 
 </body>
