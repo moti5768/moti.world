@@ -58,13 +58,11 @@ const LS_KEYS = { PATH: 'hp_map_path_v3', LOG: 'hp_map_log_v3' };
 
 // ===== マップ初期化 =====
 async function initMap() {
-    // 仮の初期座標（東京駅など）を用意
+    // 仮の初期座標（東京駅など）
     let initLat = 35.6812, initLng = 139.7671;
-    let initialZoom = 17; // 初回ロード時のズーム
-
+    let initialZoom = 17;
     let lastPath = null;
-
-    // ローカルストレージに保存された最後の位置があればそれを使う
+    // ローカルストレージに保存された最後の位置があれば使用
     try {
         lastPath = JSON.parse(localStorage.getItem(LS_KEYS.PATH));
         if (lastPath && lastPath.length && lastPath[lastPath.length - 1].length) {
@@ -72,40 +70,68 @@ async function initMap() {
             if (lastPoint) {
                 initLat = lastPoint[0];
                 initLng = lastPoint[1];
-                initialZoom = 17; // ローカル復元でも初回ズーム
+                initialZoom = 17;
             }
         }
     } catch (e) { console.warn('ローカル復元失敗', e); }
-
-    // ===== マップ作成（iPhoneマップ風のスタイル・即時更新対応） =====
+    // ===== マップ作成（iPhoneマップ風・即時更新対応） =====
     map = L.map('map', {
-        zoomAnimation: true,          // ズームを滑らかに
-        fadeAnimation: true,          // タイル切り替えをフェードで
-        markerZoomAnimation: true,    // マーカー拡大縮小アニメ
-        inertia: true,                // スワイプ慣性
-        inertiaDeceleration: 2500,    // 慣性の減衰（iPhoneっぽく）
-        zoomControl: false,           // デフォルトズームUIを隠す
-        attributionControl: false,    // 著作権表記を下に移す
+        zoomAnimation: true,
+        fadeAnimation: true,
+        markerZoomAnimation: true,
+        inertia: true,
+        inertiaDeceleration: 2500,
+        zoomControl: false,
+        attributionControl: false,
     }).setView([initLat, initLng], initialZoom);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // --- タイルレイヤー定義 ---
+    const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         detectRetina: false,
         tileSize: 256,
-        updateWhenIdle: false,        // パン中も更新（← 即座に反映）
-        updateWhenZooming: true,      // ズーム中も更新（← 即座に反映）
-        reuseTiles: true,             // 既存タイルを再利用して高速化
-        unloadInvisibleTiles: false,  // スクロール中に破棄しない（スムーズに）
-        keepBuffer: 3,                // 少し広めにタイルを保持（連続パンに強い）
+        updateWhenIdle: false,
+        updateWhenZooming: true,
+        reuseTiles: true,
+        unloadInvisibleTiles: false,
+        keepBuffer: 3,
         attribution: '© OpenStreetMap contributors',
-    }).addTo(map);
-
+    });
+    const terrainLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        maxZoom: 17,
+        detectRetina: false,
+        tileSize: 256,
+        updateWhenIdle: false,
+        updateWhenZooming: true,
+        reuseTiles: true,
+        unloadInvisibleTiles: false,
+        keepBuffer: 3,
+        attribution: '© OpenTopoMap contributors',
+    });
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 20,
+        detectRetina: false,
+        tileSize: 256,
+        updateWhenIdle: false,
+        updateWhenZooming: true,
+        reuseTiles: true,
+        unloadInvisibleTiles: false,
+        keepBuffer: 3,
+        attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+    });
+    // 初期表示は標準OSM
+    osmLayer.addTo(map);
+    // レイヤー切替コントロール追加（右上）
+    L.control.layers(
+        { "標準": osmLayer, "地形": terrainLayer, "衛星": satelliteLayer },
+        null,
+        { position: 'topright' }
+    ).addTo(map);
+    // ズーム・著作権コントロール
     L.control.zoom({ position: 'topleft' }).addTo(map);
     L.control.attribution({ position: 'bottomleft' }).addTo(map);
-
-    // ドラッグやズーム開始時にユーザー操作フラグを立てる
+    // ドラッグ・ズーム開始時にユーザー操作フラグを立てる
     map.on('dragstart zoomstart', () => {
-        if (!programMoving) { // プログラム移動中は無視
+        if (!programMoving) {
             userInteracting = true;
         }
         if (currentLabel) {
@@ -113,8 +139,7 @@ async function initMap() {
             currentLabel = null;
         }
     });
-
-    // ドラッグやズーム終了時にユーザー操作ならOFF
+    // ドラッグ・ズーム終了時にユーザー操作ならOFF
     map.on('dragend zoomend', () => {
         if (userInteracting) {
             follow = false;
@@ -122,7 +147,6 @@ async function initMap() {
             userInteracting = false;
         }
     });
-
     // ローカル座標がなければ現在地取得して初回表示
     if (!lastPath || !lastPath.length) {
         if (navigator.geolocation) {
