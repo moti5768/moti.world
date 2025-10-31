@@ -489,14 +489,18 @@ async function fetchAddress(lat, lng) {
     }
 }
 
-// ===== ログ表示（バッチ化版） =====
+// ===== ログ表示（軽量バッチ版・最新安定） =====
 let pendingLogs = [];
 const MAX_LOG = 200;
-// 1秒にまとめてDOMに反映
-setInterval(() => {
+const LOG_UPDATE_INTERVAL = 800; // 更新間隔(ms)
+let lastLogFlush = 0;
+function flushLogs() {
     if (pendingLogs.length === 0) return;
+    const now = performance.now();
+    if (now - lastLogFlush < LOG_UPDATE_INTERVAL) return;
+    lastLogFlush = now;
     const fragment = document.createDocumentFragment();
-    pendingLogs.forEach(e => {
+    for (const e of pendingLogs) {
         const accClass = e.accuracy < 5 ? 'acc-green' :
             e.accuracy < 15 ? 'acc-yellowgreen' :
                 e.accuracy < 30 ? 'acc-orange' : 'acc-red';
@@ -513,17 +517,21 @@ setInterval(() => {
             </div>
         `;
         fragment.appendChild(div);
-    });
-    // 新しいものを上に追加
-    log.prepend(fragment);
-    // 最大200件を維持（まとめて削除）
-    while (log.childElementCount > MAX_LOG) {
-        log.removeChild(log.lastChild);
     }
-    pendingLogs = [];
+    // 一括追加（新しいものを上に）
+    log.prepend(fragment);
+    pendingLogs.length = 0;
+    // 古いログ削除（まとめて削除）
+    const excess = log.childElementCount - MAX_LOG;
+    if (excess > 0) {
+        for (let i = 0; i < excess; i++) log.removeChild(log.lastChild);
+    }
+    // 必要な関数呼び出し
     safeSaveLocal();
     updateStatsUI();
-}, 1000);
+}
+// 定期更新（軽量タイマー）
+setInterval(flushLogs, LOG_UPDATE_INTERVAL);
 
 // addLogEntry は pendingLogs に push だけ
 function addLogEntry(e, restoreMode = false) {
@@ -905,7 +913,6 @@ function onDeviceOrientation(e) {
     }
 }
 
-
 const instructionMap = {
     "Destination": "目的地",
     "Arrive at destination": "目的地に到着",
@@ -1177,54 +1184,63 @@ function btn_toggle() {
     }
 }
 
-// ===== スムーズアニメーション関数 =====
+// ===== スムーズアニメーション関数（軽量最適化版） =====
 function animateRouteSmooth(latlngs, color = "#1976d2", weight = 7, duration = 2000) {
-    if (!latlngs || latlngs.length < 2) return;
+    if (!Array.isArray(latlngs) || latlngs.length < 2) return null;
+    // --- サンプリングを簡略化 ---
     const simplified = [latlngs[0]];
     const segDist = [];
     let totalDist = 0;
-    const sampleDist = 15; // ← サンプリング距離を大きめに
-    // 座標と距離を同時に計算
+    const sampleDist = 15; // サンプリング間隔[m]
     for (let i = 1; i < latlngs.length; i++) {
         const prev = simplified[simplified.length - 1];
         const dist = map.distance(prev, latlngs[i]);
-        if (dist >= sampleDist) {
+        if (dist >= sampleDist || i === latlngs.length - 1) {
             simplified.push(latlngs[i]);
             segDist.push(dist);
             totalDist += dist;
         }
     }
-    // 最後の区間
-    const lastDist = map.distance(simplified[simplified.length - 1], latlngs[latlngs.length - 1]);
-    simplified.push(latlngs[latlngs.length - 1]);
-    segDist.push(lastDist);
-    totalDist += lastDist;
-    const polyline = L.polyline([simplified[0]], { color, weight, opacity: 1 }).addTo(map);
+    // --- ポリライン生成 ---
+    const polyline = L.polyline([simplified[0]], {
+        color,
+        weight,
+        opacity: 1
+    }).addTo(map);
+    // --- アニメーション制御 ---
+    const segCount = segDist.length;
+    const speedPerMs = totalDist / duration; // 距離あたり速度[m/ms]
     let startTime = null;
+    let currentSeg = 0;
+    let traveled = 0;
+    const points = [simplified[0]];
     function step(ts) {
         if (!startTime) startTime = ts;
         const elapsed = ts - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        const targetDist = totalDist * progress;
-        let traveled = 0;
-        const points = [simplified[0]];
-        for (let i = 0; i < segDist.length; i++) {
-            if (traveled + segDist[i] >= targetDist) {
-                const remain = targetDist - traveled;
-                const ratio = remain / segDist[i];
-                const a = simplified[i], b = simplified[i + 1];
-                points.push(L.latLng(
+        const targetDist = Math.min(totalDist, elapsed * speedPerMs);
+        // 進行に応じて次の座標を計算
+        while (currentSeg < segCount && traveled + segDist[currentSeg] < targetDist) {
+            traveled += segDist[currentSeg];
+            points.push(simplified[++currentSeg]);
+        }
+        if (currentSeg < segCount) {
+            const remain = targetDist - traveled;
+            const ratio = remain / segDist[currentSeg];
+            const a = simplified[currentSeg];
+            const b = simplified[currentSeg + 1];
+            if (a && b) {
+                points[points.length - 1] = L.latLng(
                     a.lat + (b.lat - a.lat) * ratio,
                     a.lng + (b.lng - a.lng) * ratio
-                ));
-                break;
-            } else {
-                points.push(simplified[i + 1]);
-                traveled += segDist[i];
+                );
             }
         }
         polyline.setLatLngs(points);
-        if (progress < 1) requestAnimationFrame(step);
+        if (elapsed < duration) {
+            requestAnimationFrame(step);
+        } else {
+            polyline.setLatLngs(simplified);
+        }
     }
     requestAnimationFrame(step);
     return polyline;
