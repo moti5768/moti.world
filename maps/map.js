@@ -177,10 +177,10 @@ function haversine(a, b) {
     return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
 }
 function directionName(deg) {
-    if (!(deg >= 0) && !(deg <= 360)) return '---';
+    if (deg == null || isNaN(deg) || deg < 0 || deg > 360) return '---';
     const dirs = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
     const idx = Math.round(deg / 45) & 7;
-    return dirs[idx] + ' (' + (deg | 0) + '°)';
+    return `${dirs[idx]} (${Math.round(deg)}°)`;
 }
 // ===== 距離・速度計算 =====
 function calcTotalDistance() {
@@ -195,8 +195,8 @@ function calcTotalDistance() {
 function calcAvgSpeed() {
     const len = logData.length;
     if (len < 2) return 0;
-    const firstTime = logData[len - 1]?.time;
-    const lastTime = logData[0]?.time;
+    const firstTime = logData[0]?.time;
+    const lastTime = logData[len - 1]?.time;
     const t1 = firstTime ? new Date(firstTime).getTime() : now();
     const t2 = lastTime ? new Date(lastTime).getTime() : now();
     const dt = Math.abs(t2 - t1) / 1000;
@@ -538,7 +538,11 @@ function flushLogs() {
     // 古いログ削除（まとめて削除）
     const excess = log.childElementCount - MAX_LOG;
     if (excess > 0) {
-        for (let i = 0; i < excess; i++) log.removeChild(log.lastChild);
+        let removed = 0;
+        while (removed < excess && log.lastChild) {
+            log.removeChild(log.lastChild);
+            removed++;
+        }
     }
     // 必要な関数呼び出し
     safeSaveLocal();
@@ -868,6 +872,11 @@ async function startTracking() {
         alert('位置情報未対応');
         return;
     }
+    // 既存の監視をクリア（再追跡時の多重防止）
+    if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+    }
     // 初回取得（低精度で即時表示）
     navigator.geolocation.getCurrentPosition(
         pos => {
@@ -880,7 +889,6 @@ async function startTracking() {
     // 継続追跡（高精度）
     watchId = navigator.geolocation.watchPosition(
         pos => {
-            // 成功したらリトライ精度閾値リセット
             retryAccuracyThreshold = MIN_ACCURACY;
             handlePosition(pos);
         },
@@ -1215,6 +1223,8 @@ function animateRouteSmooth(latlngs, color = "#1976d2", weight = 7, duration = 2
             totalDist += dist;
         }
     }
+    // 末尾の範囲チェック追加
+    if (simplified.length < 2) return null;
     // --- ポリライン生成 ---
     const polyline = L.polyline([simplified[0]], {
         color,
