@@ -1434,6 +1434,8 @@ const snapshot = document.getElementById('snapshot');
 const camera_area = document.getElementById('camera_area');
 const mapEl = document.getElementById('map');
 
+camera_area.style.pointerEvents = "none";
+
 let mediaStream = null;
 let mediaRecorder = null;
 let recordedChunks = [];
@@ -1454,6 +1456,7 @@ async function startCamera() {
         panel.style.display = 'none';
         camera_area.style.display = 'block';
         mapEl.classList.add('test');
+        camera_area.style.pointerEvents = "";
     } catch (err) {
         alert('カメラアクセスが許可されませんでした');
     }
@@ -1471,6 +1474,7 @@ function stopCamera() {
     camera_area.style.display = 'none';
     mapEl.classList.remove('test');
     preview.style.display = 'none';
+    camera_area.style.pointerEvents = "none";
 }
 
 // カメラ撮影ボタン
