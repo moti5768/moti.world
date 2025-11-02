@@ -412,7 +412,6 @@ video#preview {
     object-fit: cover;
     z-index: 0;
     display: none;
-    /* 初期非表示 */
 }
 
 #controls {

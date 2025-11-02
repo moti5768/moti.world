@@ -1460,6 +1460,7 @@ async function startCamera() {
             audio: true
         });
         preview.srcObject = mediaStream;
+        await preview.play().catch(() => { }); // ✅ スマホで映像が止まる対策
         preview.style.display = 'block';
         previewVisible = true;
         panel.style.display = 'none';
@@ -1478,6 +1479,7 @@ function stopCamera() {
         mediaStream.getTracks().forEach(track => track.stop());
         mediaStream = null;
     }
+    preview.srcObject = null; // ✅ 映像リセット（白画面対策）
     panel.style.display = 'block';
     camera_area.style.display = 'none';
     mapEl.classList.remove('test');
@@ -1526,8 +1528,8 @@ photoBtn.addEventListener('click', () => {
         const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
         const scrollTop = window.scrollY || document.documentElement.scrollTop;
         // 初回写真の右端を #map.test の右端に揃える
-        const left = rect.right + scrollLeft - 100; // 200 = snapshotImg の幅
-        const top = rect.bottom + scrollTop + 20;        // 下端を基準
+        const left = rect.right + scrollLeft - 100;
+        const top = rect.bottom + scrollTop + 20;
         snapshotImg.style.left = `${left}px`;
         snapshotImg.style.top = `${top}px`;
         firstSnapshotPosition = { left, top };
@@ -1547,13 +1549,13 @@ photoBtn.addEventListener('click', () => {
         snapshotCount--;
         if (snapshotCount === 0) firstSnapshotPosition = null;
     }, 3000);
-    // ダウンロードリンク
+    // ✅ スマホで安全にダウンロード（白画面防止）
     const link = document.createElement('a');
     link.href = dataURL;
     link.download = 'photo.png';
     document.body.appendChild(link);
-    link.click();
-    setTimeout(() => link.remove(), 3000);
+    setTimeout(() => link.click(), 100); // タップ扱い
+    setTimeout(() => link.remove(), 1000);
 });
 
 // 動画録画
@@ -1573,7 +1575,12 @@ function startRecording() {
         const link = document.createElement('a');
         link.href = url;
         link.download = 'video.webm';
-        link.click();
+        document.body.appendChild(link);
+        setTimeout(() => link.click(), 100); // ✅ スマホでの遷移防止
+        setTimeout(() => {
+            link.remove();
+            URL.revokeObjectURL(url); // ✅ メモリ解放
+        }, 1500);
     };
     mediaRecorder.start();
     recording = true;
@@ -1581,7 +1588,9 @@ function startRecording() {
 }
 
 function stopRecording() {
-    mediaRecorder.stop();
-    recording = false;
-    videoBtn.classList.remove('recording');
+    if (mediaRecorder && recording) {
+        mediaRecorder.stop();
+        recording = false;
+        videoBtn.classList.remove('recording');
+    }
 }
