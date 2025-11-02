@@ -1462,11 +1462,11 @@ async function startCamera() {
         preview.srcObject = mediaStream;
         preview.style.display = 'block';
         previewVisible = true;
-        // パネル非表示＆マップ縮小
         panel.style.display = 'none';
         camera_area.style.display = 'block';
         mapEl.classList.add('test');
         camera_area.style.pointerEvents = "";
+        document.getElementById('controls').style.display = 'flex';
     } catch (err) {
         alert('カメラアクセスが許可されませんでした');
     }
@@ -1474,17 +1474,16 @@ async function startCamera() {
 
 // カメラプレビュー終了して戻る
 function stopCamera() {
-    // メディアストリーム停止
     if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
         mediaStream = null;
     }
-    // 表示切替
     panel.style.display = 'block';
     camera_area.style.display = 'none';
     mapEl.classList.remove('test');
     preview.style.display = 'none';
     camera_area.style.pointerEvents = "none";
+    document.getElementById('controls').style.display = 'none';
 }
 
 // カメラ撮影ボタン

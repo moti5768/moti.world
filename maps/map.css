@@ -27,22 +27,31 @@
     --fs-xxlarge: xx-large;
 }
 
+/* ===== 全体 ===== */
+html,
 body {
+    width: 100%;
+    height: 100%;
     margin: 0;
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial;
+    padding: 0;
+    overflow-x: hidden;
+    box-sizing: border-box;
     background-color: var(--bg);
     color: #222;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial;
 }
 
+/* ===== アプリ全体 ===== */
 #app {
     display: grid;
     grid-template-columns: 1fr 400px;
     gap: 12px;
-    height: 100vh;
+    height: 100dvh;
     padding: 12px;
     box-sizing: border-box;
 }
 
+/* ===== マップ ===== */
 #map {
     width: 100%;
     height: 100%;
@@ -52,7 +61,6 @@ body {
     transition: transform .3s, box-shadow .3s;
     background: #f6f8fa;
     position: relative;
-    /* 追加 */
 }
 
 #map.test {
@@ -64,7 +72,7 @@ body {
     transform-origin: top left;
 }
 
-/* Leafletコントロール */
+/* ===== Leafletコントロール ===== */
 .leaflet-control-zoom {
     border: none;
     background: rgba(255, 255, 255, 0.9);
@@ -102,7 +110,7 @@ body {
     font-size: var(--fs-medium);
 }
 
-/* パネル */
+/* ===== パネル ===== */
 .panel {
     position: relative;
     display: flex;
@@ -124,7 +132,7 @@ h2 {
     color: var(--accent);
 }
 
-/* グリッド表示 */
+/* ===== グリッド表示 ===== */
 .info-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -132,7 +140,7 @@ h2 {
     margin-bottom: 14px;
 }
 
-/* ステータス表示 */
+/* ===== ステータス表示 ===== */
 .stat {
     background: #f4f4f4;
     padding: 2px;
@@ -146,7 +154,7 @@ h2 {
     margin-top: 4px;
 }
 
-/* コントロールボタン */
+/* ===== コントロールボタン ===== */
 .controls {
     display: grid;
     gap: 10px;
@@ -182,7 +190,7 @@ button.danger {
     background: var(--danger);
 }
 
-/* ユーティリティ */
+/* ===== ユーティリティ ===== */
 .row {
     display: flex;
     gap: 10px;
@@ -219,7 +227,7 @@ button.danger {
     font-size: var(--fs-xxlarge);
 }
 
-/* ログ */
+/* ===== ログ ===== */
 #log-container {
     height: 35vh;
     min-height: 40px;
@@ -305,15 +313,15 @@ button.danger {
     color: red;
 }
 
-/* レスポンシブ */
+/* ===== レスポンシブ ===== */
 @media(max-width:900px) {
     #app {
         grid-template-columns: 1fr;
-        grid-template-rows: 65vh auto;
+        grid-template-rows: 65dvh auto;
     }
 
     .panel {
-        max-height: calc(100vh - 65vh);
+        max-height: calc(100dvh - 65dvh);
     }
 
     .controls {
@@ -321,14 +329,14 @@ button.danger {
     }
 }
 
-/* カスタムマーカー */
+/* ===== カスタムマーカー ===== */
 .custom-marker div {
     border: 2px solid var(--marker-border);
     border-radius: 50%;
     box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
 }
 
-/* Leaflet Routing */
+/* ===== Leaflet Routing ===== */
 .leaflet-left {
     bottom: 50px;
 }
@@ -372,24 +380,22 @@ button.danger {
     display: none !important;
 }
 
-/* その他 */
+/* ===== その他 ===== */
 .btn-pointer-none {
     background: silver !important;
     color: darkgray;
     pointer-events: none;
 }
 
-/* camera */
-
+/* ===== カメラエリア ===== */
 #camera_area {
+    position: fixed;
+    inset: 0;
     margin: 0;
     padding: 0;
-    height: 100vh;
-    display: flex;
-    position: absolute;
-    top: 0;
-    left: 0;
+    height: 100dvh;
     width: 100%;
+    display: flex;
     flex-direction: column;
     justify-content: flex-end;
     align-items: center;
@@ -400,8 +406,7 @@ button.danger {
 
 video#preview {
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -412,17 +417,13 @@ video#preview {
 
 #controls {
     position: absolute;
-    /* 相対位置を絶対位置に変更 */
     bottom: 50px;
-    /* 下から50px上げる */
     left: 50%;
     transform: translateX(-50%);
-    /* 横中央に配置 */
     z-index: 1;
-    display: flex;
+    display: none;
     justify-content: center;
     gap: 30px;
-    /* ボタン間の隙間 */
 }
 
 #controls .btns {
@@ -448,8 +449,8 @@ video#preview {
 }
 
 #snapshot {
-    position: absolute;
-    bottom: 150px;
+    position: fixed;
+    bottom: calc(150px + env(safe-area-inset-bottom));
     width: 120px;
     border: 2px solid #fff;
     border-radius: 8px;
