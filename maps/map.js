@@ -1114,7 +1114,7 @@ window.addEventListener('load', () => {
         await generateNavigationRoute(start, dest, animatedPolylines);
     });
 
-    // ===== ナビキャンセル（改良版・ルート残り防止） =====
+    // ===== ナビキャンセル（現在地マーカー保持＋ルート完全削除） =====
     cancelNavBtn.addEventListener("click", async () => {
         try {
             // --- 経路描画中でも強制停止 ---
@@ -1128,28 +1128,32 @@ window.addEventListener('load', () => {
                 }
                 routingControl = null;
             }
-            // --- 残留ルート線（Leaflet Routing Machineの内部線も含む）を完全除去 ---
+            // --- 残留ルート線（Leaflet Routing Machine内部線も含む）を完全除去 ---
             map.eachLayer(layer => {
                 if (layer instanceof L.Polyline) {
-                    // animatedPolylines以外の残留ルート線を特定
                     const col = layer.options?.color;
                     if (col === "#1976d2" || col === "#f44336" || col === "transparent") {
                         map.removeLayer(layer);
                     }
                 }
             });
-            // --- アニメーション線を削除 ---
+            // --- アニメーション線削除 ---
             if (window.animatedPolylines?.length) {
                 animatedPolylines.forEach(p => {
                     try { map.removeLayer(p.polyline || p); } catch { }
                 });
             }
             animatedPolylines = [];
-            // --- 目的地マーカー削除（クリック後に残るケース対応） ---
+            // --- 目的地マーカー削除（現在地マーカー除外） ---
             map.eachLayer(layer => {
-                if (layer instanceof L.Marker &&
-                    layer.options.icon?.options?.className === "custom-marker") {
-                    map.removeLayer(layer);
+                if (layer instanceof L.Marker) {
+                    const iconClass = layer.options.icon?.options?.className || "";
+                    // 現在地マーカー（userIconなど）を除外
+                    if (layer === marker || iconClass.includes("user") || iconClass.includes("current")) return;
+                    // 目的地マーカーだけ削除
+                    if (iconClass.includes("custom-marker") || iconClass.includes("destination")) {
+                        map.removeLayer(layer);
+                    }
                 }
             });
             // --- 状態リセット ---
@@ -1166,13 +1170,13 @@ window.addEventListener('load', () => {
             const closeBtn = document.querySelector(".leaflet-routing-close");
             if (closeBtn) closeBtn.remove();
             if (marker) {
-                const currentLatLng = marker.getLatLng();
-                const address = await fetchAddress(currentLatLng.lat, currentLatLng.lng);
+                const { lat, lng } = marker.getLatLng();
+                const address = await fetchAddress(lat, lng);
                 elCurrentAddr.textContent = address;
             }
             if (elDestAddr) elDestAddr.textContent = "---";
             if (elEta) elEta.textContent = "---";
-            console.log("✅ ナビキャンセル完了：全ルート削除済み");
+            console.log("✅ ナビキャンセル完了：ルート削除");
         } catch (err) {
             console.error("ナビキャンセル処理中エラー:", err);
         }
