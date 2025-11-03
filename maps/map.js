@@ -506,10 +506,18 @@ async function fetchAddress(lat, lng) {
 // ===== ログ表示（軽量バッチ版・最新安定） =====
 let pendingLogs = [];
 const MAX_LOG = 200;
-const LOG_UPDATE_INTERVAL = 800; // 更新間隔(ms)
+const LOG_UPDATE_INTERVAL = 1500; // 更新間隔(ms)
 let lastLogFlush = 0;
 function flushLogs() {
     if (pendingLogs.length === 0) return;
+    if (log.classList && log.classList.contains('collapsed')) {
+        // 表示折りたたみ中はログデータにだけ追加して保存・統計更新に留める
+        logData.unshift(...pendingLogs);
+        pendingLogs.length = 0;
+        safeSaveLocal();
+        updateStatsUI();
+        return;
+    }
     const now = performance.now();
     if (now - lastLogFlush < LOG_UPDATE_INTERVAL) return;
     lastLogFlush = now;
@@ -722,7 +730,7 @@ const SPEED_BUFFER_SIZE = 7;    // 速度平滑化バッファサイズ
 const MIN_SPEED = 0.5;          // 停止判定速度[m/s]
 const MIN_MOVE_DIST = 10;       // 小移動無視距離[m]
 const ETA_ALPHA = 0.08;         // 補間係数
-const ETA_UPDATE_INTERVAL = 500; // ETA更新間隔[ms]
+const ETA_UPDATE_INTERVAL = 1000; // ETA更新間隔[ms]
 
 // ===== アニメーション用ポリライン管理 =====
 let animatedPolylines = []; // {polyline, route}
