@@ -241,14 +241,21 @@ window.addEventListener("beforeunload", () => {
     } catch { }
 });
 
+// ===== 復元関数（空チェック付き） =====
 function restoreLocal() {
     try {
         const rawP = localStorage.getItem(LS_KEYS.PATH);
         const rawL = localStorage.getItem(LS_KEYS.LOG);
-        if (rawP) pathSegments = JSON.parse(rawP);
-        if (rawL) logData = JSON.parse(rawL);
-        logData.slice(0, 200).forEach(e => addLogEntry(e, true));
-    } catch { }
+        // 空配列または無効データなら復元しない
+        if (!rawP || rawP === "[]" || rawP === "{}" || rawP.length < 5) return;
+        pathSegments = JSON.parse(rawP);
+        logData = rawL ? JSON.parse(rawL) : [];
+        if (logData.length) {
+            logData.slice(0, 200).forEach(e => addLogEntry(e, true));
+        }
+    } catch (e) {
+        console.warn("復元エラー", e);
+    }
 }
 
 // --- 軽量化ポリライン更新 ---
@@ -1203,17 +1210,26 @@ document.getElementById('clearBtn').addEventListener('click', () => {
     if (!confirm('本当にクリアしますか？')) return;
     // --- ポリライン削除 ---
     if (window.polylines?.length) {
-        polylines.forEach(line => map.removeLayer(line));
+        polylines.forEach(line => {
+            try { map.removeLayer(line); } catch (e) { console.warn(e); }
+        });
         polylines = [];
     }
     // --- データ初期化 ---
     pathSegments = [];
     logData = [];
     log.innerHTML = '';
-    // --- 保存・再描画 ---
-    safeSaveLocal();
-    updateStatsUI();
+    // --- localStorage 即時クリア保存（遅延なし）---
+    try {
+        localStorage.setItem(LS_KEYS.PATH, "[]");
+        localStorage.setItem(LS_KEYS.LOG, "[]");
+        console.log("✅ localStorage 即時クリア完了");
+    } catch (e) {
+        console.warn("⚠️ クリア保存失敗", e);
+    }
+    // --- 再描画・UI更新 ---
     yellowgreenrawPolylines();
+    updateStatsUI();
     console.log("経路・ログをすべてクリアしました");
 });
 
