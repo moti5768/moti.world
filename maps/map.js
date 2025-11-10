@@ -62,6 +62,7 @@ async function initMap() {
     let initLat = 35.6812, initLng = 139.7671;
     let initialZoom = 17;
     let lastPath = null;
+
     // ローカルストレージに保存された最後の位置があれば使用
     try {
         lastPath = JSON.parse(localStorage.getItem(LS_KEYS.PATH));
@@ -74,6 +75,7 @@ async function initMap() {
             }
         }
     } catch (e) { console.warn('ローカル復元失敗', e); }
+
     // ===== マップ作成（iPhoneマップ風・即時更新対応） =====
     map = L.map('map', {
         zoomAnimation: true,
@@ -84,6 +86,7 @@ async function initMap() {
         zoomControl: false,
         attributionControl: false,
     }).setView([initLat, initLng], initialZoom);
+
     // --- タイルレイヤー定義 ---
     const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
@@ -96,6 +99,7 @@ async function initMap() {
         keepBuffer: 3,
         attribution: '© OpenStreetMap contributors',
     });
+
     const terrainLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
         maxZoom: 17,
         detectRetina: false,
@@ -107,6 +111,7 @@ async function initMap() {
         keepBuffer: 3,
         attribution: '© OpenTopoMap contributors',
     });
+
     const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 20,
         detectRetina: false,
@@ -118,28 +123,93 @@ async function initMap() {
         keepBuffer: 3,
         attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
     });
+
+    // ダークモード用（標準のみ）
+    const darkOSMLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        detectRetina: false,
+        tileSize: 256,
+        updateWhenIdle: false,
+        updateWhenZooming: true,
+        reuseTiles: true,
+        unloadInvisibleTiles: false,
+        keepBuffer: 3,
+        attribution: '© CartoDB',
+        opacity: 0.92,
+    });
+
     // 初期表示は標準OSM
     osmLayer.addTo(map);
+
     // レイヤー切替コントロール追加（右上）
     L.control.layers(
         { "標準": osmLayer, "地形": terrainLayer, "衛星": satelliteLayer },
         null,
         { position: 'topright' }
     ).addTo(map);
-    // ズーム・著作権コントロール
+
+    // ===== ダークモード制御（安定・維持対応） =====
+    const darkModeToggle = document.getElementById("darkModeToggle");
+    let darkMode = false;
+    let currentBase = "標準"; // 現在のベースレイヤー名
+    // モード適用関数（remove/add競合を回避）
+    function applyMapTheme() {
+        const mapEl = document.getElementById("map");
+
+        // 標準レイヤー
+        if (currentBase === "標準") {
+            const targetLayer = darkMode ? darkOSMLayer : osmLayer;
+
+            // 必ず正しいレイヤーだけ残す
+            [osmLayer, darkOSMLayer].forEach(l => {
+                if (l !== targetLayer && map.hasLayer(l)) map.removeLayer(l);
+            });
+
+            // targetLayer が未追加なら追加
+            if (!map.hasLayer(targetLayer)) targetLayer.addTo(map);
+
+            mapEl.style.filter = ""; // 標準は filter 不要
+        }
+        // 地形レイヤー
+        else if (currentBase === "地形") {
+            if (!map.hasLayer(terrainLayer)) terrainLayer.addTo(map);
+            mapEl.style.filter = darkMode ? "brightness(0.78) contrast(1.05)" : "";
+        }
+        // 衛星レイヤー
+        else if (currentBase === "衛星") {
+            if (!map.hasLayer(satelliteLayer)) satelliteLayer.addTo(map);
+            mapEl.style.filter = darkMode ? "brightness(0.78) contrast(1.05)" : "";
+        }
+    }
+    // ベースレイヤー変更時は必ず適用
+    map.on("baselayerchange", (e) => {
+        currentBase = e.name;
+        applyMapTheme();
+    });
+    // ダークモードトグル
+    darkModeToggle?.addEventListener("click", () => {
+        darkMode = !darkMode;
+        document.body.classList.toggle("dark-mode", darkMode);
+        document.querySelector('.leaflet-control-zoom').classList.toggle("dark-mode", darkMode);
+        document.querySelector('.leaflet-control-layers-toggle').classList.toggle("dark-mode", darkMode);
+        darkModeToggle.textContent = darkMode ? "ライトモード" : "ダークモード";
+        applyMapTheme();
+    });
+
+    // ===== コントロール =====
     L.control.zoom({ position: 'topleft' }).addTo(map);
     L.control.attribution({ position: 'bottomleft' }).addTo(map);
-    // ドラッグ・ズーム開始時にユーザー操作フラグを立てる
+
+    // ===== ドラッグ・ズーム開始時にユーザー操作フラグを立てる =====
     map.on('dragstart zoomstart', () => {
-        if (!programMoving) {
-            userInteracting = true;
-        }
+        if (!programMoving) userInteracting = true;
         if (currentLabel) {
             currentLabel.remove();
             currentLabel = null;
         }
     });
-    // ドラッグ・ズーム終了時にユーザー操作ならOFF
+
+    // ===== ドラッグ・ズーム終了時にユーザー操作ならOFF =====
     map.on('dragend zoomend', () => {
         if (userInteracting) {
             follow = false;
@@ -147,7 +217,8 @@ async function initMap() {
             userInteracting = false;
         }
     });
-    // ローカル座標がなければ現在地取得して初回表示
+
+    // ===== ローカル座標がなければ現在地取得して初回表示 =====
     if (!lastPath || !lastPath.length) {
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(pos => {

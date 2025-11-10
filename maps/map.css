@@ -27,6 +27,74 @@
     --fs-xxlarge: xx-large;
 }
 
+/* ===== ダークモード（テーマ変数切り替え）===== */
+body.dark-mode {
+    --bg: #111;
+    --card: rgba(30, 30, 30, 0.92);
+    --muted: #aaa;
+    --accent: #64b5f6;
+    --danger: #ef5350;
+    --warning: #ffa726;
+    --marker-border: #222;
+    --polyline-color: #42a5f5;
+    color: #e0e0e0;
+    background-color: var(--bg);
+}
+
+/* パネル・テキスト・ボタンの色反転 */
+body.dark-mode .panel {
+    background: var(--card);
+    color: var(--muted);
+}
+
+body.dark-mode h2 {
+    color: var(--accent);
+}
+
+body.dark-mode button.secondary {
+    background: #444;
+}
+
+body.dark-mode #map {
+    filter: brightness(1.5) contrast(1);
+}
+
+/* ログ・ステータスなど */
+body.dark-mode .stat {
+    background: #222;
+    color: #ddd;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+body.dark-mode #log {
+    background: #1c1c1c;
+}
+
+body.dark-mode .log-entry {
+    background: #2a2a2a;
+    color: #ddd;
+}
+
+.dark-mode .leaflet-control-zoom a {
+    background: #2a2a2a;
+    color: #ddd;
+}
+
+.dark-mode .leaflet-control-zoom span {
+    color: var(--accent);
+}
+
+.dark-mode .leaflet-control-layers-toggle {
+    background-color: #2a2a2a;
+}
+
+.dark-mode .leaflet-control-layers-base {
+    padding: 10px;
+    font-size: var(--fs-medium);
+    background-color: #2a2a2a;
+    color: white;
+}
+
 /* ===== 全体 ===== */
 html,
 body {
