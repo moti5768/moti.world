@@ -95,6 +95,10 @@ body.dark-mode .log-entry {
     color: white;
 }
 
+.dark-mode .leaflet-routing-alt tr:hover {
+    background-color: blue;
+}
+
 /* ===== 全体 ===== */
 html,
 body {
