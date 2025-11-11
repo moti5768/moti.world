@@ -915,16 +915,25 @@ function startEtaTimer() {
     loop();
 }
 
-// ======== 3秒ごとのルート逸脱チェック ========
+// ======== 5秒ごとのルート逸脱チェック ========
 setInterval(async () => {
+    // --- ナビ状態を確認 ---
     if (rerouting || routingInProgress || !navActive || !marker || !routePath?.length) return;
     const current = marker.getLatLng();
+    const acc = lastAcc || 0; // 最新の精度（handlePositionで更新）
+    // --- GPS精度が悪いときはスキップ ---
+    if (acc > 50) { // 50m以上の誤差なら再ルート禁止
+        console.log("⚠️ 精度低下中のため再ルートをスキップ (精度:", acc.toFixed(1), "m)");
+        return;
+    }
+    // --- 現在地とルート上の最も近い点の距離を算出 ---
     let minDist = Infinity;
     routePath.forEach(p => {
         const point = Array.isArray(p) ? L.latLng(p[0], p[1]) : p;
         const d = map.distance(current, point);
         if (d < minDist) minDist = d;
     });
+    // --- 一定距離以上外れた場合のみ再ルート ---
     if (minDist > MAX_DEVIATION && currentDestination) {
         rerouting = true;
         elEta.textContent = "ルート修正中…";
@@ -936,7 +945,7 @@ setInterval(async () => {
             rerouting = false;
         }
     }
-}, 3000);
+}, 5000);
 
 // ===== エラー処理 =====
 let retryTimer = null;
