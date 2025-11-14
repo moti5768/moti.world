@@ -869,6 +869,12 @@ function updateEtaSmart(lat, lng, speed) {
         elEta.textContent = "目的地に到着";
         displayedRemainTimeSec = 0;
         lastLatLng = current;
+        // --- 自動ナビキャンセル ---
+        if (navActive) {
+            setTimeout(() => {
+                cancelNavigation();
+            }, 1000);
+        }
         return;
     }
     // --- 速度平滑化 ---
@@ -1200,76 +1206,82 @@ window.addEventListener('load', () => {
         navModeBtn.textContent = "ナビ開始(車のみ)";
         await generateNavigationRoute(start, dest, animatedPolylines);
     });
-
-    // ===== ナビキャンセル（現在地マーカー保持＋ルート完全削除） =====
-    cancelNavBtn.addEventListener("click", async () => {
-        try {
-            // --- 経路描画中でも強制停止 ---
-            if (routingControl) {
-                try {
-                    const container = routingControl.getContainer?.();
-                    if (container && container.parentNode) container.remove();
-                    map.removeControl(routingControl);
-                } catch (err) {
-                    console.warn("routingControl削除時エラー:", err);
-                }
-                routingControl = null;
-            }
-            // --- 残留ルート線（Leaflet Routing Machine内部線も含む）を完全除去 ---
-            map.eachLayer(layer => {
-                if (layer instanceof L.Polyline) {
-                    const col = layer.options?.color;
-                    if (col === "#1976d2" || col === "#f44336" || col === "transparent") {
-                        map.removeLayer(layer);
-                    }
-                }
-            });
-            // --- アニメーション線削除 ---
-            if (window.animatedPolylines?.length) {
-                animatedPolylines.forEach(p => {
-                    try { map.removeLayer(p.polyline || p); } catch { }
-                });
-            }
-            animatedPolylines = [];
-            // --- 目的地マーカー削除（現在地マーカー除外） ---
-            map.eachLayer(layer => {
-                if (layer instanceof L.Marker) {
-                    const iconClass = layer.options.icon?.options?.className || "";
-                    // 現在地マーカー（userIconなど）を除外
-                    if (layer === marker || iconClass.includes("user") || iconClass.includes("current")) return;
-                    // 目的地マーカーだけ削除
-                    if (iconClass.includes("custom-marker") || iconClass.includes("destination")) {
-                        map.removeLayer(layer);
-                    }
-                }
-            });
-            // --- 状態リセット ---
-            navMode = false;
-            navActive = false; // ETAループ停止
-            navModeBtn.textContent = "ナビ開始(車のみ)";
-            currentDestination = null;
-            userSelectedRoute = false;
-            displayedRemainTimeSec = null;
-            lastNearestIndex = null;
-            lastUpdateTime = null;
-            speedBuffer = [];
-            // --- UIリセット ---
-            const closeBtn = document.querySelector(".leaflet-routing-close");
-            if (closeBtn) closeBtn.remove();
-            if (marker) {
-                const { lat, lng } = marker.getLatLng();
-                const address = await fetchAddress(lat, lng);
-                elCurrentAddr.textContent = address;
-            }
-            if (elDestAddr) elDestAddr.textContent = "---";
-            if (elEta) elEta.textContent = "---";
-            console.log("✅ ナビキャンセル完了：ルート削除");
-        } catch (err) {
-            console.error("ナビキャンセル処理中エラー:", err);
-        }
-    });
+    cancelNavBtn.addEventListener("click", cancelNavigation);
 });
 
+async function cancelNavigation() {
+    try {
+        // --- 経路描画中でも強制停止 ---
+        if (routingControl) {
+            try {
+                const container = routingControl.getContainer?.();
+                if (container && container.parentNode) container.remove();
+                map.removeControl(routingControl);
+            } catch (err) {
+                console.warn("routingControl削除時エラー:", err);
+            }
+            routingControl = null;
+        }
+
+        // --- 残留ルート線（Leaflet Routing Machine内部線も含む）を完全除去 ---
+        map.eachLayer(layer => {
+            if (layer instanceof L.Polyline) {
+                const col = layer.options?.color;
+                if (col === "#1976d2" || col === "#f44336" || col === "transparent") {
+                    map.removeLayer(layer);
+                }
+            }
+        });
+
+        // --- アニメーション線削除 ---
+        if (window.animatedPolylines?.length) {
+            animatedPolylines.forEach(p => {
+                try { map.removeLayer(p.polyline || p); } catch { }
+            });
+        }
+        animatedPolylines = [];
+
+        // --- 目的地マーカー削除（現在地マーカー除外） ---
+        map.eachLayer(layer => {
+            if (layer instanceof L.Marker) {
+                const iconClass = layer.options.icon?.options?.className || "";
+                if (layer === marker || iconClass.includes("user") || iconClass.includes("current")) return;
+                if (iconClass.includes("custom-marker") || iconClass.includes("destination")) {
+                    map.removeLayer(layer);
+                }
+            }
+        });
+
+        // --- 状態リセット ---
+        navMode = false;
+        navActive = false;
+        navModeBtn.textContent = "ナビ開始(車のみ)";
+        currentDestination = null;
+        userSelectedRoute = false;
+        displayedRemainTimeSec = null;
+        lastNearestIndex = null;
+        lastUpdateTime = null;
+        speedBuffer = [];
+
+        // --- UIリセット ---
+        const closeBtn = document.querySelector(".leaflet-routing-close");
+        if (closeBtn) closeBtn.remove();
+
+        if (marker) {
+            const { lat, lng } = marker.getLatLng();
+            const address = await fetchAddress(lat, lng);
+            elCurrentAddr.textContent = address;
+        }
+
+        if (elDestAddr) elDestAddr.textContent = "---";
+        if (elEta) elEta.textContent = "---";
+
+        console.log("✅ ナビキャンセル完了：ルート削除");
+
+    } catch (err) {
+        console.error("ナビキャンセル処理中エラー:", err);
+    }
+}
 // ===== 操作ボタン =====
 stopBtn.addEventListener('click', () => {
     if (watchId) {
@@ -1464,7 +1476,8 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
         })
             // --- 経路計算開始 ---
             .on("routingstart", () => {
-                if (!elEta.textContent.includes("計算中")) elEta.textContent = "経路計算中...";
+                if (navActive) return; // ナビ中は無視
+                elEta.textContent = "経路計算中...";
             })
             // --- 経路計算完了 ---
             .on("routesfound", e => {
