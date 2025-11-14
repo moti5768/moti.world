@@ -1468,8 +1468,8 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
                         iconAnchor: [size / 2, size / 2]
                     })
                 });
+                markerDest.on("click", () => map.flyTo(markerDest.getLatLng(), 17, { animate: true, duration: 1.2 }));
                 markerDest.on("click", e => showMarkerLabelLeaflet(e, "目的地"));
-                markerDest.on("click", () => map.flyTo(markerDest.getLatLng(), 17));
                 return markerDest;
             },
             position: "bottomright"
