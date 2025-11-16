@@ -275,9 +275,22 @@ function calcAvgSpeed() {
     return (calcTotalDistance() / dt) * 3.6;
 }
 function updateStatsUI() {
-    const distKm = calcTotalDistance() / 1000;
+    const dist = calcTotalDistance(); // メートル
     const avg = calcAvgSpeed();
-    elTotalDist.textContent = distKm.toFixed(3) + ' km';
+    let distText;
+    if (dist < 1000) {
+        // 1km未満 → m（小数1桁）
+        distText = dist.toFixed(1) + ' m';
+    }
+    else if (dist < 10000) {
+        // 1〜10 km → 小数2桁
+        distText = (dist / 1000).toFixed(2) + ' km';
+    }
+    else {
+        // 10km以上 → 小数1桁
+        distText = (dist / 1000).toFixed(1) + ' km';
+    }
+    elTotalDist.textContent = distText;
     elAvgSpeed.textContent = avg.toFixed(2) + ' km/h';
 }
 
@@ -556,7 +569,6 @@ async function fetchAddress(lat, lng) {
         }
         // === 8. 出力形式 ===
         const result = [
-            a.country,
             a.postcode,
             prefecture,
             a.city || a.town || a.village,
