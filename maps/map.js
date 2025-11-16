@@ -8,6 +8,9 @@ let programMoving = false; // 追加
 let currentLabel = null;
 let currentLatLng = null; // ← ここを追加（必須）
 let currentSpeed = 0;
+// ===== マップ中心の市町村を表示 =====
+let lastCenterFetch = 0;
+let currentCenterController = null; // 中断用
 
 // ====== よく使う要素 ======
 const panel = document.querySelector('.panel');
@@ -217,6 +220,8 @@ async function initMap() {
             userInteracting = false;
         }
     });
+
+    map.on("moveend", updateCenterLocation);
 
     // ===== ローカル座標がなければ現在地取得して初回表示 =====
     if (!lastPath || !lastPath.length) {
@@ -777,6 +782,7 @@ async function handlePosition(pos) {
                 map.panTo(smoothed, { animate: true, duration: 0.3 });
                 map.once('moveend', () => programMoving = false);
             }
+            updateCenterLocation();
             if (isFirst && map) map.setView(smoothed, 17);
         }
     }
@@ -1600,6 +1606,33 @@ async function generateNavigationRoute(start, dest, animatedPolylines) {
         routingInProgress = false;
         rerouting = false;
         navActive = true;
+    }
+}
+
+async function updateCenterLocation() {
+    if (!map) return;
+    const now = Date.now();
+    if (now - lastCenterFetch < 1500) return;
+    lastCenterFetch = now;
+    const { lat, lng } = map.getCenter();
+    currentCenterController?.abort();
+    currentCenterController = new AbortController();
+    try {
+        const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja&zoom=10`,
+            { headers: { "User-Agent": "MapCenterLookup/1.0" }, signal: currentCenterController.signal }
+        );
+        if (!res.ok) throw new Error(res.status);
+        const a = (await res.json()).address || {};
+        const city = a.city || a.town || a.village || a.county || "位置取得中...";
+        document.getElementById("centerLocation").textContent = city;
+    } catch (err) {
+        if (err.name !== "AbortError") {
+            console.warn("マップ中心位置の住所取得失敗", err);
+            document.getElementById("centerLocation").textContent = "位置取得失敗";
+        }
+    } finally {
+        currentCenterController = null;
     }
 }
 
