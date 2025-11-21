@@ -670,26 +670,35 @@ function download(filename, text) {
 
 document.getElementById('exportJsonBtn').addEventListener('click', () => download('location_log.json', JSON.stringify({ pathSegments, logData, savedAt: new Date().toISOString() }, null, 2)));
 
-// ===== 位置更新 =====
+// ==========================================================
+// 位置情報関連 変数定義
+// ==========================================================
 let lastRouteUpdate = 0;
 let lastRoutePoint = null;
 let lastAddressTime = 0;
 const MIN_ACCURACY = 40; // 精度40m以上は無視
-let firstPositionReceived = false; // 初回位置フラグ
+let firstPositionReceived = false; // 初回フラグ
 const SMOOTHING_COUNT = 3; // 平滑化点数
-let smoothBuffer = [];
+let smoothBuffer = [];     // 平滑化バッファ
 let retryAccuracyThreshold = MIN_ACCURACY;
 let lastGoodUpdate = null;
 let lastGoodUpdateTime = 0;
-
-// ===== 位置更新関数 =====
+let lastAcc; // 最後の精度値
+// ==========================================================
+// 位置更新メイン関数
+// ==========================================================
 async function handlePosition(pos) {
+    // ---------- 無効データ防御 ----------
     if (!pos || !pos.coords) {
         updateMarker(null, null, 0, 'black', 0);
         return;
     }
+    // ---------- 基本値取得 ----------
     const c = pos.coords;
-    const lat = c.latitude, lng = c.longitude, acc = c.accuracy || 0, alt = c.altitude;
+    const lat = c.latitude;
+    const lng = c.longitude;
+    const acc = c.accuracy || 0;
+    const alt = c.altitude;
     let speed = (c.speed >= 0) ? c.speed : null;
     currentSpeed = Number.isFinite(speed) ? speed : 0;
     let heading = (typeof c.heading === 'number') ? c.heading : null;
@@ -699,24 +708,42 @@ async function handlePosition(pos) {
     const prev = lastSegment ? lastSegment.slice(-1)[0] : null;
     const isFirst = !firstPositionReceived;
     if (isFirst) firstPositionReceived = true;
-    // --- 外れ値除外（徒歩〜新幹線対応） ---
+    // ==========================================================
+    // 外れ値除外（徒歩〜新幹線まで対応）
+    // ==========================================================
     if (lastGoodUpdate) {
         const dt = Math.max((pos.timestamp - lastGoodUpdateTime) / 1000, 0.1);
         const dist = haversine(lastGoodUpdate, [lat, lng]);
         const impliedSpeed = dist / dt;
-        const MAX_REALISTIC_SPEED = 140; // ≒ 504 km/h
-        if (impliedSpeed > MAX_REALISTIC_SPEED && acc > 50) return;
+
+        const MAX_REALISTIC_SPEED = 140; // ≈504 km/h
+
+        if (impliedSpeed > MAX_REALISTIC_SPEED && acc > 50) {
+            return;
+        }
     }
     lastGoodUpdate = [lat, lng];
     lastGoodUpdateTime = pos.timestamp;
-    // --- 精度チェック + 時間経過で更新 ---
-    let accChanged = (typeof lastAcc !== 'undefined' && acc !== lastAcc);
+    // ==========================================================
+    // 精度チェック
+    // ==========================================================
+    const accChanged = (typeof lastAcc !== 'undefined' && acc !== lastAcc);
     lastAcc = acc;
     if (!isFirst) {
-        if (acc > retryAccuracyThreshold && Date.now() - lastGoodUpdateTime <= 5000 && !accChanged) return;
+        const recentlyUpdated = Date.now() - lastGoodUpdateTime <= 5000;
+        if (acc > retryAccuracyThreshold && recentlyUpdated && !accChanged) {
+            return;
+        }
     }
-    const accColor = acc < 5 ? 'green' : acc < 15 ? 'yellowgreen' : acc < 30 ? 'orange' : 'red';
-    // --- 速度・方角補正 ---
+    // 精度に応じた色
+    const accColor =
+        acc < 5 ? 'green'
+            : acc < 15 ? 'yellowgreen'
+                : acc < 30 ? 'orange'
+                    : 'red';
+    // ==========================================================
+    // 速度・方角補正
+    // ==========================================================
     if (prev) {
         const dt = Math.max((pos.timestamp - lastPosTime) / 1000, 0.1);
         if (!speed) speed = haversine(prev, [lat, lng]) / dt;
@@ -725,28 +752,48 @@ async function handlePosition(pos) {
             if (heading < 0) heading += 360;
         }
     }
+    // デバイスコンパス優先
     if (lastOrientation !== null) heading = lastOrientation;
     heading = (heading === null || isNaN(heading)) ? 0 : heading;
     const speedKmh = speed ? speed * 3.6 : 0;
-    // --- UI更新 ---
+    // ==========================================================
+    // UI更新
+    // ==========================================================
     elLat.textContent = toFixedOrDash(lat, 6);
     elLng.textContent = toFixedOrDash(lng, 6);
     elAcc.textContent = `${acc.toFixed(1)} m`;
     elAlt.textContent = alt === null ? '---' : `${alt.toFixed(1)} m`;
-    elSpeed.textContent = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '---';
+    elSpeed.textContent = speed ? `${speedKmh.toFixed(1)} km/h` : '---';
     elHeading.textContent = directionName(heading);
     elAcc.style.color = accColor;
-    // --- 平滑化 + 低精度補正 ---
+    // ==========================================================
+    // 平滑化＋低精度補正
+    // ==========================================================
     if (isFirst || acc <= MIN_ACCURACY || (prev && haversine(prev, [lat, lng]) > 5)) {
+        // ---- バッファ追加 ----
         smoothBuffer.push([lat, lng]);
         if (smoothBuffer.length > SMOOTHING_COUNT) smoothBuffer.shift();
+        const prevMarkerPos = marker
+            ? [marker.getLatLng().lat, marker.getLatLng().lng]
+            : [lat, lng];
+        // ---- ワープ検知（80m） ----
+        const jumpDist = haversine(prevMarkerPos, [lat, lng]);
+        if (jumpDist > 80) {
+            smoothed = [lat, lng];
+            smoothBuffer = [[lat, lng]];
+            updateMarker(lat, lng, heading, accColor, speed, false);
+            if (follow && map) map.setView([lat, lng]);
+            return;
+        }
+        // ---- 平滑化平均 ----
         smoothed = [
             smoothBuffer.reduce((s, p) => s + p[0], 0) / smoothBuffer.length,
             smoothBuffer.reduce((s, p) => s + p[1], 0) / smoothBuffer.length
         ];
+        // ---- マーカー移動制限 ----
         if (marker) {
-            const prevMarkerPos = [marker.getLatLng().lat, marker.getLatLng().lng];
-            const d = haversine(prevMarkerPos, smoothed);
+            const prevMarker = [marker.getLatLng().lat, marker.getLatLng().lng];
+            const d = haversine(prevMarker, smoothed);
             const speedMs = speed || 0;
             const timeSinceLast = (nowTime - lastPosTime) / 1000;
             const wasPaused = timeSinceLast > 3;
@@ -760,41 +807,48 @@ async function handlePosition(pos) {
                 if (d > MAX_STEP) {
                     const ratio = MAX_STEP / d;
                     smoothed = [
-                        prevMarkerPos[0] + (smoothed[0] - prevMarkerPos[0]) * ratio,
-                        prevMarkerPos[1] + (smoothed[1] - prevMarkerPos[1]) * ratio
+                        prevMarker[0] + (smoothed[0] - prevMarker[0]) * ratio,
+                        prevMarker[1] + (smoothed[1] - prevMarker[1]) * ratio
                     ];
                 }
             }
         }
+        // ---- 経路追加 ----
         const smoothDist = prev ? haversine(prev, smoothed) : Infinity;
         const threshold = Math.max(1.5, acc / 2);
         if (!marker || !prev || smoothDist > threshold || isFirst) {
-            let lastSegment = pathSegments[pathSegments.length - 1];
-            if (!lastSegment || lastSegment.length === 0) {
+            let seg = pathSegments[pathSegments.length - 1];
+            if (!seg || seg.length === 0) {
                 pathSegments.push([]);
-                lastSegment = pathSegments[pathSegments.length - 1];
+                seg = pathSegments[pathSegments.length - 1];
             }
-            lastSegment.push(smoothed);
+            seg.push(smoothed);
             yellowgreenrawPolylines();
             updateMarker(smoothed[0], smoothed[1], heading, accColor, speed);
             if (follow && map && !userInteracting) {
                 programMoving = true;
                 map.panTo(smoothed, { animate: true, duration: 0.3 });
-                map.once('moveend', () => programMoving = false);
+                map.once('moveend', () => (programMoving = false));
             }
             updateCenterLocation();
             if (isFirst && map) map.setView(smoothed, 17);
         }
     }
-    // --- 住所更新 ---
+    // ==========================================================
+    // 住所更新（1秒間隔）
+    // ==========================================================
     if (nowTime - lastAddressTime > 1000) {
         const addrLat = lat, addrLng = lng;
         fetchAddress(addrLat, addrLng).then(addr => {
-            if (lat === addrLat && lng === addrLng) elCurrentAddr.textContent = addr;
+            if (lat === addrLat && lng === addrLng) {
+                elCurrentAddr.textContent = addr;
+            }
         });
         lastAddressTime = nowTime;
     }
-    // --- ログ追加 ---
+    // ==========================================================
+    // ログ追加
+    // ==========================================================
     addLogEntry({
         time: new Date().toISOString(),
         lat, lng, accuracy: acc, altitude: alt,
@@ -803,12 +857,16 @@ async function handlePosition(pos) {
         headingText: directionName(heading),
         address: elCurrentAddr.textContent
     });
-    // --- ✅ リアルタイム ETA更新（ポリラインや平滑化に依存せず即時更新） ---
+    // ==========================================================
+    // ルート中のリアルタイム ETA更新
+    // ==========================================================
     if (routingControl && routePath && routePath.length > 0 && currentDestination) {
         currentLatLng = marker ? marker.getLatLng() : L.latLng(lat, lng);
         updateEtaSmart(currentLatLng.lat, currentLatLng.lng, speed || 0);
     }
-    // --- スタートマーカー追従 ---
+    // ==========================================================
+    // スタート地点マーカーの追従（Routing Machine）
+    // ==========================================================
     try {
         const plan = routingControl?.getPlan?.();
         if (plan && plan._waypoints && plan._waypoints[0]) {
@@ -819,6 +877,7 @@ async function handlePosition(pos) {
     lastPosTime = pos.timestamp || now();
     lastAge.textContent = '0秒前';
 }
+
 
 // ======== グローバル定数 ========
 const MAX_DEVIATION = 30;       // ルート逸脱判定[m]
