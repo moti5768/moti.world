@@ -1704,6 +1704,7 @@ const camera_area = document.getElementById('camera_area');
 const mapEl = document.getElementById('map');
 const controls = document.getElementById('controls');
 camera_area.style.pointerEvents = "none";
+
 // ===== 状態 =====
 let mediaStream = null;
 let mediaRecorder = null;
@@ -1712,18 +1713,25 @@ let recording = false;
 let previewVisible = false;
 let firstSnapshotPosition = null;
 let snapshotCount = 0;
+
 // ===== 共通関数 =====
 const setDisplay = (el, value) => el && (el.style.display = value);
 const togglePointer = (el, enable) => el && (el.style.pointerEvents = enable ? "" : "none");
-const downloadDataURL = (dataURL, filename) => {
+
+// ブラウザ遷移させずに自動ダウンロード
+const downloadBlob = (blob, filename) => {
     const link = document.createElement('a');
-    link.href = dataURL;
+    link.href = URL.createObjectURL(blob);
     link.download = filename;
     document.body.appendChild(link);
-    setTimeout(() => link.click(), 100);
-    setTimeout(() => link.remove(), 1000);
+    // 非同期で click を呼ぶ
+    setTimeout(() => {
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+    }, 100);
 };
-const downloadBlob = (blob, filename) => downloadDataURL(URL.createObjectURL(blob), filename);
+
 // ===== カメラ制御 =====
 async function startCamera() {
     try {
@@ -1744,6 +1752,7 @@ async function startCamera() {
         alert('カメラアクセスが許可されませんでした');
     }
 }
+
 function stopCamera() {
     mediaStream?.getTracks().forEach(track => track.stop());
     mediaStream = null;
@@ -1755,6 +1764,7 @@ function stopCamera() {
     mapEl.classList.remove('test');
     togglePointer(camera_area, false);
 }
+
 // ===== 写真撮影 =====
 function displaySnapshot(dataURL) {
     const img = document.createElement('img');
@@ -1768,6 +1778,7 @@ function displaySnapshot(dataURL) {
         borderRadius: '8px',
         zIndex: `${100 + snapshotCount}`
     });
+
     if (!firstSnapshotPosition) {
         const rect = mapEl.getBoundingClientRect();
         const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
@@ -1781,48 +1792,63 @@ function displaySnapshot(dataURL) {
     const offsetY = 10 * snapshotCount;
     img.style.left = `${firstSnapshotPosition.left + offsetX}px`;
     img.style.top = `${firstSnapshotPosition.top + offsetY}px`;
+
     document.body.appendChild(img);
     snapshotCount++;
+
     setTimeout(() => {
         img.remove();
         snapshotCount--;
         if (snapshotCount === 0) firstSnapshotPosition = null;
     }, 3000);
 }
+
 function capturePhoto() {
     if (!mediaStream) return alert('カメラが有効になっていません');
     const canvas = document.createElement('canvas');
     canvas.width = preview.videoWidth;
     canvas.height = preview.videoHeight;
     canvas.getContext('2d').drawImage(preview, 0, 0, canvas.width, canvas.height);
-    const dataURL = canvas.toDataURL('image/png');
-    displaySnapshot(dataURL);
-    downloadDataURL(dataURL, 'photo.png');
+
+    canvas.toBlob(blob => {
+        const blobUrl = URL.createObjectURL(blob);
+        displaySnapshot(blobUrl);
+        downloadBlob(blob, 'photo.png');
+    }, 'image/png');
 }
+
 // ===== 録画 =====
 function toggleRecording() {
     if (!mediaStream) return alert('カメラが有効になっていません');
     recording ? stopRecording() : startRecording();
 }
+
 function startRecording() {
     recordedChunks = [];
     mediaRecorder = new MediaRecorder(mediaStream);
     mediaRecorder.ondataavailable = e => e.data.size && recordedChunks.push(e.data);
-    mediaRecorder.onstop = () => downloadBlob(new Blob(recordedChunks, { type: 'video/webm' }), 'video.webm');
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        downloadBlob(blob, 'video.webm');
+        recordedChunks = [];
+    };
     mediaRecorder.start();
     recording = true;
     videoBtn.classList.add('recording');
 }
+
 function stopRecording() {
     mediaRecorder?.stop();
     recording = false;
     videoBtn.classList.remove('recording');
 }
+
 // ===== イベント =====
 togglePreviewBtn.addEventListener('click', async () => {
     if (!mediaStream) await startCamera();
     else preview.style.display = (previewVisible = !previewVisible) ? 'block' : 'none';
 });
+
 photoBtn.addEventListener('click', capturePhoto);
 videoBtn.addEventListener('click', toggleRecording);
 document.getElementById('videoreturn').addEventListener('click', stopCamera);
