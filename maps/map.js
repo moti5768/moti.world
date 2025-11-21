@@ -1695,24 +1695,36 @@ async function updateCenterLocation() {
     }
 }
 
-//camera
+// ===== DOM camera =====
 const preview = document.getElementById('preview');
 const photoBtn = document.getElementById('photoBtn');
 const videoBtn = document.getElementById('videoBtn');
 const togglePreviewBtn = document.getElementById('togglePreview');
-const snapshot = document.getElementById('snapshot');
 const camera_area = document.getElementById('camera_area');
 const mapEl = document.getElementById('map');
-
+const controls = document.getElementById('controls');
 camera_area.style.pointerEvents = "none";
-
+// ===== 状態 =====
 let mediaStream = null;
 let mediaRecorder = null;
 let recordedChunks = [];
 let recording = false;
 let previewVisible = false;
-
-// カメラアクセス＆プレビュー開始
+let firstSnapshotPosition = null;
+let snapshotCount = 0;
+// ===== 共通関数 =====
+const setDisplay = (el, value) => el && (el.style.display = value);
+const togglePointer = (el, enable) => el && (el.style.pointerEvents = enable ? "" : "none");
+const downloadDataURL = (dataURL, filename) => {
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = filename;
+    document.body.appendChild(link);
+    setTimeout(() => link.click(), 100);
+    setTimeout(() => link.remove(), 1000);
+};
+const downloadBlob = (blob, filename) => downloadDataURL(URL.createObjectURL(blob), filename);
+// ===== カメラ制御 =====
 async function startCamera() {
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -1720,137 +1732,97 @@ async function startCamera() {
             audio: true
         });
         preview.srcObject = mediaStream;
-        await preview.play().catch(() => { }); // ✅ スマホで映像が止まる対策
-        preview.style.display = 'block';
+        await preview.play().catch(() => { }); // スマホで映像停止対策
         previewVisible = true;
-        panel.style.display = 'none';
-        camera_area.style.display = 'block';
+        setDisplay(preview, 'block');
+        setDisplay(panel, 'none');
+        setDisplay(camera_area, 'block');
+        setDisplay(controls, 'flex');
         mapEl.classList.add('test');
-        camera_area.style.pointerEvents = "";
-        document.getElementById('controls').style.display = 'flex';
-    } catch (err) {
+        togglePointer(camera_area, true);
+    } catch {
         alert('カメラアクセスが許可されませんでした');
     }
 }
-
-// カメラプレビュー終了して戻る
 function stopCamera() {
-    if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop());
-        mediaStream = null;
-    }
-    preview.srcObject = null; // ✅ 映像リセット（白画面対策）
-    panel.style.display = 'block';
-    camera_area.style.display = 'none';
+    mediaStream?.getTracks().forEach(track => track.stop());
+    mediaStream = null;
+    preview.srcObject = null;
+    setDisplay(preview, 'none');
+    setDisplay(panel, 'block');
+    setDisplay(camera_area, 'none');
+    setDisplay(controls, 'none');
     mapEl.classList.remove('test');
-    preview.style.display = 'none';
-    camera_area.style.pointerEvents = "none";
-    document.getElementById('controls').style.display = 'none';
+    togglePointer(camera_area, false);
 }
-
-// カメラ撮影ボタン
-togglePreviewBtn.addEventListener('click', async () => {
-    if (!mediaStream) {
-        await startCamera();
-    } else {
-        // すでに起動している場合は表示切替
-        previewVisible = !previewVisible;
-        preview.style.display = previewVisible ? 'block' : 'none';
-    }
-});
-
-// 戻るボタン
-document.getElementById('videoreturn').addEventListener('click', stopCamera);
-
-// 写真撮影
-let firstSnapshotPosition = null; // 初回写真の右下を基準に保持
-let snapshotCount = 0;
-photoBtn.addEventListener('click', () => {
-    if (!mediaStream) return alert('カメラが有効になっていません');
-    // キャンバスに映像を描画
-    const canvas = document.createElement('canvas');
-    canvas.width = preview.videoWidth;
-    canvas.height = preview.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(preview, 0, 0, canvas.width, canvas.height);
-    const dataURL = canvas.toDataURL('image/png');
-    const snapshotImg = document.createElement('img');
-    snapshotImg.src = dataURL;
-    snapshotImg.alt = 'Captured Image';
-    snapshotImg.style.position = 'absolute';
-    snapshotImg.style.width = '100px';
-    snapshotImg.style.height = 'auto';
-    snapshotImg.style.border = 'solid 2px white';
-    snapshotImg.style.borderRadius = '8px';
+// ===== 写真撮影 =====
+function displaySnapshot(dataURL) {
+    const img = document.createElement('img');
+    img.src = dataURL;
+    img.alt = 'Captured Image';
+    Object.assign(img.style, {
+        position: 'absolute',
+        width: '100px',
+        height: 'auto',
+        border: '2px solid white',
+        borderRadius: '8px',
+        zIndex: `${100 + snapshotCount}`
+    });
     if (!firstSnapshotPosition) {
-        const firstPhoto = document.querySelector('#map.test');
-        const rect = firstPhoto.getBoundingClientRect();
+        const rect = mapEl.getBoundingClientRect();
         const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
         const scrollTop = window.scrollY || document.documentElement.scrollTop;
-        // 初回写真の右端を #map.test の右端に揃える
-        const left = rect.right + scrollLeft - 100;
-        const top = rect.bottom + scrollTop + 20;
-        snapshotImg.style.left = `${left}px`;
-        snapshotImg.style.top = `${top}px`;
-        firstSnapshotPosition = { left, top };
-    } else {
-        // 2枚目以降は左斜め下にずらす
-        const offsetX = -10 * snapshotCount;
-        const offsetY = 10 * snapshotCount;
-        snapshotImg.style.left = `${firstSnapshotPosition.left + offsetX}px`;
-        snapshotImg.style.top = `${firstSnapshotPosition.top + offsetY}px`;
+        firstSnapshotPosition = {
+            left: rect.right + scrollLeft - 100,
+            top: rect.bottom + scrollTop + 20
+        };
     }
-    snapshotImg.style.zIndex = `${100 + snapshotCount}`;
-    document.body.appendChild(snapshotImg);
+    const offsetX = -10 * snapshotCount;
+    const offsetY = 10 * snapshotCount;
+    img.style.left = `${firstSnapshotPosition.left + offsetX}px`;
+    img.style.top = `${firstSnapshotPosition.top + offsetY}px`;
+    document.body.appendChild(img);
     snapshotCount++;
-    // 3秒後に削除
     setTimeout(() => {
-        snapshotImg.remove();
+        img.remove();
         snapshotCount--;
         if (snapshotCount === 0) firstSnapshotPosition = null;
     }, 3000);
-    // ✅ スマホで安全にダウンロード（白画面防止）
-    const link = document.createElement('a');
-    link.href = dataURL;
-    link.download = 'photo.png';
-    document.body.appendChild(link);
-    setTimeout(() => link.click(), 100); // タップ扱い
-    setTimeout(() => link.remove(), 1000);
-});
-
-// 動画録画
-videoBtn.addEventListener('click', () => {
+}
+function capturePhoto() {
     if (!mediaStream) return alert('カメラが有効になっていません');
-    if (!recording) startRecording();
-    else stopRecording();
-});
-
+    const canvas = document.createElement('canvas');
+    canvas.width = preview.videoWidth;
+    canvas.height = preview.videoHeight;
+    canvas.getContext('2d').drawImage(preview, 0, 0, canvas.width, canvas.height);
+    const dataURL = canvas.toDataURL('image/png');
+    displaySnapshot(dataURL);
+    downloadDataURL(dataURL, 'photo.png');
+}
+// ===== 録画 =====
+function toggleRecording() {
+    if (!mediaStream) return alert('カメラが有効になっていません');
+    recording ? stopRecording() : startRecording();
+}
 function startRecording() {
     recordedChunks = [];
     mediaRecorder = new MediaRecorder(mediaStream);
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-    mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'video.webm';
-        document.body.appendChild(link);
-        setTimeout(() => link.click(), 100); // ✅ スマホでの遷移防止
-        setTimeout(() => {
-            link.remove();
-            URL.revokeObjectURL(url); // ✅ メモリ解放
-        }, 1500);
-    };
+    mediaRecorder.ondataavailable = e => e.data.size && recordedChunks.push(e.data);
+    mediaRecorder.onstop = () => downloadBlob(new Blob(recordedChunks, { type: 'video/webm' }), 'video.webm');
     mediaRecorder.start();
     recording = true;
     videoBtn.classList.add('recording');
 }
-
 function stopRecording() {
-    if (mediaRecorder && recording) {
-        mediaRecorder.stop();
-        recording = false;
-        videoBtn.classList.remove('recording');
-    }
+    mediaRecorder?.stop();
+    recording = false;
+    videoBtn.classList.remove('recording');
 }
+// ===== イベント =====
+togglePreviewBtn.addEventListener('click', async () => {
+    if (!mediaStream) await startCamera();
+    else preview.style.display = (previewVisible = !previewVisible) ? 'block' : 'none';
+});
+photoBtn.addEventListener('click', capturePhoto);
+videoBtn.addEventListener('click', toggleRecording);
+document.getElementById('videoreturn').addEventListener('click', stopCamera);
