@@ -1247,9 +1247,9 @@ function translateInstructions(route) {
 window.addEventListener('load', () => {
     initMap();
     restoreLocal();
-    yellowgreenrawPolylines();
     setupDeviceOrientation();
     startTracking();
+    yellowgreenrawPolylines();
     // ナビモード切替
     navModeBtn.addEventListener("click", () => {
         navMode = !navMode;
