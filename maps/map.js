@@ -349,7 +349,6 @@ function restoreLocal() {
 // --- 軽量化ポリライン更新 ---
 let polylineUpdateCounter = 0;
 const POLYLINE_UPDATE_INTERVAL = 3;
-
 function yellowgreenrawPolylines() {
     // --- 空データ（全削除時）対応 ---
     if (!pathSegments?.length) {
@@ -367,8 +366,9 @@ function yellowgreenrawPolylines() {
     if (!lastSeg?.length) return;
     let lastLine = polylines[0];
     if (!lastLine) {
-        // 初回ポリライン生成
-        lastLine = L.polyline(lastSeg, {
+        // --- 初回ポリライン生成（全ルート復元対応） ---
+        const allPoints = pathSegments.flat();  // ★ 全ルートを1本に結合
+        lastLine = L.polyline(allPoints, {
             color: '#9ACD32',
             weight: 8,
             opacity: 0.8,
@@ -376,7 +376,7 @@ function yellowgreenrawPolylines() {
             noClip: true
         }).addTo(map);
         polylines.push(lastLine);
-        polylineUpdateCounter = lastSeg.length; // 初回をカウントに加算
+        polylineUpdateCounter = allPoints.length; // 全体の長さをカウントに
         return;
     }
     // --- 軽量化アップデート ---
