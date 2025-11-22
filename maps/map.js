@@ -302,15 +302,14 @@ function updateStatsUI() {
 // ===== 保存・復元 =====
 let saveTimer = null;
 let isSaving = false;
-
 function safeSaveLocal() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
         if (isSaving) return;
         isSaving = true;
         try {
-            const paths = JSON.stringify([...pathSegments]);
-            const logs = JSON.stringify([...logData]);
+            const paths = JSON.stringify(pathSegments);
+            const logs = JSON.stringify(logData);
             localStorage.setItem(LS_KEYS.PATH, paths);
             localStorage.setItem(LS_KEYS.LOG, logs);
             console.log("localStorage 保存完了");
