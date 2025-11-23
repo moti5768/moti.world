@@ -15,6 +15,7 @@ let currentCenterController = null; // 中断用
 // ====== よく使う要素 ======
 const panel = document.querySelector('.panel');
 const navModeBtn = document.getElementById("navModeBtn");
+const cancelNavBtn = document.getElementById("cancelNavBtn");
 const elEta = document.getElementById("eta");
 const elCurrentAddr = document.getElementById("currentAddress");
 const elDestAddr = document.getElementById("destAddress");
@@ -236,9 +237,15 @@ async function initMap() {
 
 // ===== ユーティリティ =====
 function toFixedOrDash(v, d = 6) {
-    return (v !== null && Number.isFinite(v))
-        ? (Math.round(v * 10 ** d) / 10 ** d).toString()
-        : '---';
+    if (!Number.isFinite(v)) return '---';
+    // 0〜20 に制限（toFixed 仕様の安全範囲）
+    const digits = Math.max(0, Math.min(20, Math.floor(d)));
+    let s = Number(v).toFixed(digits);
+    // -0 / -0.000 を "0" / "0.000" に修正
+    if (/^-0(\.0+)?$/.test(s)) {
+        s = s.replace('-', '');
+    }
+    return s;
 }
 const now = () => Date.now();
 function haversine(a, b) {
@@ -457,37 +464,40 @@ function updateMarker(lat, lng, heading, accColor, speed) {
 }
 
 function showMarkerLabelLeaflet(e, text) {
-    currentLabel?.remove();
-    // マップ座標を取得
+    // 古いラベルを消す
+    if (currentLabel) {
+        currentLabel.remove();
+        currentLabel = null;
+    }
+    // マップ座標
     const point = map.mouseEventToContainerPoint(e.originalEvent);
-    // map要素の位置とscaleを取得
     const mapEl = map.getContainer();
     const rect = mapEl.getBoundingClientRect();
-    let scale = 1;
+    // transform の安全取得（null / none 対策）
     const transform = window.getComputedStyle(mapEl).transform;
-    if (transform && transform !== 'none') {
-        // matrix(a, b, c, d, e, f) の a が scaleX
-        const match = transform.match(/matrix\(([^,]+),/);
-        if (match) scale = parseFloat(match[1]);
+    let scale = 1;
+    const match = (transform && transform !== 'none')
+        ? transform.match(/matrix\(([^,]+),/)
+        : null;
+    if (match) {
+        const parsed = parseFloat(match[1]);
+        if (!isNaN(parsed)) scale = parsed;
     }
-    // scaleに応じて座標を補正
+    // scale 補正後の座標
     const x = rect.left + point.x * scale;
     const y = rect.top + point.y * scale;
-    const label = Object.assign(document.createElement('div'), {
-        textContent: text,
-        style: `
-            position:absolute;
-            left:${x + 20}px;
-            top:${y - 20}px;
-            background:rgba(0,0,0,0.7);
-            color:white;
-            padding:2px 5px;
-            border-radius:4px;
-            font-size:15px;
-            pointer-events:none;
-            z-index:1000;
-        `
-    });
+    const label = document.createElement('div');
+    label.textContent = text;
+    label.style.position = 'absolute';
+    label.style.left = `${x + 20}px`;
+    label.style.top = `${y - 20}px`;
+    label.style.background = 'rgba(0,0,0,0.7)';
+    label.style.color = 'white';
+    label.style.padding = '2px 5px';
+    label.style.borderRadius = '4px';
+    label.style.fontSize = '15px';
+    label.style.pointerEvents = 'none';
+    label.style.zIndex = 1000;
     document.body.appendChild(label);
     currentLabel = label;
 }
@@ -640,10 +650,8 @@ function flushLogs() {
     // 古いログ削除（まとめて削除）
     const excess = log.childElementCount - MAX_LOG;
     if (excess > 0) {
-        let removed = 0;
-        while (removed < excess && log.lastChild) {
-            log.removeChild(log.lastChild);
-            removed++;
+        for (let i = 0; i < excess; i++) {
+            if (log.lastChild) log.lastChild.remove();
         }
     }
     // 必要な関数呼び出し
