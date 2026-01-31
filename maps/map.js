@@ -8,8 +8,6 @@ let programMoving = false;
 let currentLabel = null;
 let currentLatLng = null;
 let currentSpeed = 0;
-const reqLat = lat;
-const reqLng = lng;
 // ===== マップ中心の市町村を表示 =====
 let lastCenterFetch = 0;
 let currentCenterController = null; // 中断用
@@ -235,6 +233,26 @@ async function initMap() {
             });
         }
     }
+
+    // 初期表示座標で住所を一度更新する
+    const center = map.getCenter();
+    fetchAddress(center.lat, center.lng).then(addr => {
+        elCurrentAddr.textContent = addr;
+    });
+
+    // ===== ローカル座標がなければ現在地取得して初回表示 =====
+    if (!lastPath || !lastPath.length) {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(async pos => {
+                const { latitude, longitude } = pos.coords;
+                map.setView([latitude, longitude], 17);
+                // 現在地を取得した際にも住所を更新
+                const addr = await fetchAddress(latitude, longitude);
+                elCurrentAddr.textContent = addr;
+            });
+        }
+    }
+
 }
 
 // ===== ユーティリティ =====
@@ -860,9 +878,7 @@ async function handlePosition(pos) {
             haversine(lastAddressPoint, [lat, lng]) > 30) // ★ 30m以上移動
     ) {
         fetchAddress(lat, lng).then(addr => {
-            if (reqLat === lat && reqLng === lng) {
-                elCurrentAddr.textContent = addr;
-            }
+            elCurrentAddr.textContent = addr;
         });
         lastAddressTime = nowTime;
     }
