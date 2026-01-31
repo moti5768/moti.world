@@ -4,10 +4,12 @@ let currentDestination = null;    // 目的地を保持
 let userSelectedRoute = null;     // ユーザーが代替ルートを選択した場合に保持
 let startMarker = null;
 let userInteracting = false;
-let programMoving = false; // 追加
+let programMoving = false;
 let currentLabel = null;
-let currentLatLng = null; // ← ここを追加（必須）
+let currentLatLng = null;
 let currentSpeed = 0;
+const reqLat = lat;
+const reqLng = lng;
 // ===== マップ中心の市町村を表示 =====
 let lastCenterFetch = 0;
 let currentCenterController = null; // 中断用
@@ -834,7 +836,15 @@ async function handlePosition(pos) {
             updateMarker(smoothed[0], smoothed[1], heading, accColor, speed);
             if (follow && map && !userInteracting) {
                 programMoving = true;
-                map.panTo(smoothed, { animate: true, duration: 0.3 });
+                const center = map.getCenter();
+                const d = haversine(
+                    [center.lat, center.lng],
+                    smoothed
+                );
+                map.panTo(smoothed, {
+                    animate: d > 10,      // ★ 10m以上のみアニメ
+                    duration: d > 10 ? 0.3 : 0
+                });
                 map.once('moveend', () => (programMoving = false));
             }
             updateCenterLocation();
@@ -842,12 +852,15 @@ async function handlePosition(pos) {
         }
     }
     // ==========================================================
-    // 住所更新（1秒間隔）
+    // 住所更新（3秒間隔）
     // ==========================================================
-    if (nowTime - lastAddressTime > 1000) {
-        const addrLat = lat, addrLng = lng;
-        fetchAddress(addrLat, addrLng).then(addr => {
-            if (lat === addrLat && lng === addrLng) {
+    if (
+        nowTime - lastAddressTime > 3000 &&   // ★ 3秒以上
+        (!lastAddressPoint ||
+            haversine(lastAddressPoint, [lat, lng]) > 30) // ★ 30m以上移動
+    ) {
+        fetchAddress(lat, lng).then(addr => {
+            if (reqLat === lat && reqLng === lng) {
                 elCurrentAddr.textContent = addr;
             }
         });
@@ -993,7 +1006,11 @@ function startEtaTimer() {
     if (etaTimerRunning) return;
     etaTimerRunning = true;
     const loop = () => {
-        if (navActive && currentLatLng) {
+        if (!navActive) {
+            etaTimerRunning = false;
+            return;
+        }
+        if (currentLatLng) {
             updateEtaSmart(
                 currentLatLng.lat,
                 currentLatLng.lng,
@@ -1052,38 +1069,45 @@ function handleError(err) {
 }
 
 // ===== 追跡開始 =====
-async function startTracking() {
+function startTracking() {
     if (!navigator.geolocation) {
         alert('位置情報未対応');
         return;
     }
-    // 既存の監視をクリア（再追跡時の多重防止）
+
     if (watchId) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
     }
-    // 初回取得（低精度で即時表示）
+
+    // 初回は低精度
     navigator.geolocation.getCurrentPosition(
         pos => {
-            retryAccuracyThreshold = MIN_ACCURACY; // 成功したら閾値リセット
+            retryAccuracyThreshold = MIN_ACCURACY;
             handlePosition(pos);
         },
         err => handleError(err),
         { enableHighAccuracy: false, timeout: 5000, maximumAge: 5000 }
     );
-    // 継続追跡（高精度）
+
+    // 継続監視（動いている時だけ高精度）
     watchId = navigator.geolocation.watchPosition(
         pos => {
             retryAccuracyThreshold = MIN_ACCURACY;
             handlePosition(pos);
         },
         err => handleError(err),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        {
+            enableHighAccuracy: currentSpeed > 1.5,
+            timeout: 15000,
+            maximumAge: currentSpeed > 1.5 ? 1000 : 5000
+        }
     );
 }
 
 // ===== 更新時間表示 =====
 setInterval(() => {
+    if (document.hidden) return;
     if (lastPosTime) {
         const deltaSec = Math.floor((now() - lastPosTime) / 1000);
         const h = Math.floor(deltaSec / 3600), m = Math.floor((deltaSec % 3600) / 60), s = deltaSec % 60;
