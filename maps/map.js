@@ -522,15 +522,18 @@ function showMarkerLabelLeaflet(e, text) {
     currentLabel = label;
 }
 
-// --- 住所取得 fetchAddress（キャッシュ・中断対応・距離制限付き） ---
+// --- 住所取得 fetchAddress（キャッシュ・中断対応・距離制限・リトライ対応） ---
 const addrCache = new Map();              // キャッシュ: 緯度経度キー
 let lastAddressPoint = null;              // 最後に住所を取得した座標
 let currentAddressController = null;      // Abort用コントローラ
 
 async function fetchAddress(lat, lng) {
     const nowTime = Date.now();
+    const MAX_RETRIES = 2; // リトライ回数
+
     // === 1. 取得間隔制御（1秒以内の連続呼び出しを防ぐ） ===
     if (nowTime - lastFetchTime < 1000) return '取得間隔制御中';
+
     // === 2. 近接チェック（15m以内ならキャッシュ／既存表示を使う） ===
     try {
         if (lastAddressPoint && haversine([lat, lng], lastAddressPoint) < 15) {
@@ -540,90 +543,109 @@ async function fetchAddress(lat, lng) {
     } catch (e) {
         console.warn('近接チェック例外', e);
     }
+
     lastFetchTime = nowTime;
     lastAddressPoint = [lat, lng];
-    // === 3. キャッシュ利用（約10m精度・高速移動でも安定） ===
-    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`; // 10〜11m精度
+
+    // === 3. キャッシュ利用（約10m精度） ===
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
     if (addrCache.has(key)) return addrCache.get(key);
-    // === 4. 既存リクエスト中止（高速移動対応） ===
-    if (currentAddressController) {
-        try { currentAddressController.abort(); } catch (e) { /* ignore */ }
-    }
-    currentAddressController = new AbortController();
-    const signal = currentAddressController.signal;
-    try {
-        // === 5. Nominatim 逆ジオコーディング ===
-        const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`,
-            { signal, headers: { 'User-Agent': 'HighSpeedMap/1.0 (compatible; fetchAddress)' } }
-        );
-        if (!res.ok) {
-            console.warn('住所取得HTTP失敗', res.status);
-            return '住所取得失敗';
+
+    // === 4. リトライループの開始 ===
+    let retries = 0;
+    while (retries <= MAX_RETRIES) {
+
+        // 既存リクエストがあれば中止
+        if (currentAddressController) {
+            try { currentAddressController.abort(); } catch (e) { /* ignore */ }
         }
-        const data = await res.json();
-        const a = data.address || {};
-        // === 6. 日本の都道府県判定 ===
-        const jpPrefs = [
-            '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
-            '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
-            '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県',
-            '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県',
-            '鳥取県', '島根県', '岡山県', '広島県', '山口県',
-            '徳島県', '香川県', '愛媛県', '高知県',
-            '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'
-        ];
-        let joined = Object.values(a).filter(Boolean).join(' ');
-        if (data.display_name) joined += ' ' + data.display_name;
-        let prefecture = '';
-        const regex = new RegExp(jpPrefs.join('|'));
-        const match = joined.match(regex);
-        if (match) {
-            prefecture = match[0];
-        } else {
-            for (const full of jpPrefs) {
-                const short = full.replace(/(都|道|府|県)$/, '');
-                if (short && joined.includes(short)) {
-                    prefecture = full;
-                    break;
+        currentAddressController = new AbortController();
+        const signal = currentAddressController.signal;
+
+        try {
+            // === 5. Nominatim 逆ジオコーディング ===
+            const res = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`,
+                { signal, headers: { 'User-Agent': 'HighSpeedMap/1.0 (compatible; fetchAddress)' } }
+            );
+
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+            const data = await res.json();
+            const a = data.address || {};
+
+            // === 6. 日本の都道府県判定 ===
+            const jpPrefs = [
+                '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
+                '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
+                '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県',
+                '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県',
+                '鳥取県', '島根県', '岡山県', '広島県', '山口県',
+                '徳島県', '香川県', '愛媛県', '高知県',
+                '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'
+            ];
+            let joined = Object.values(a).filter(Boolean).join(' ');
+            if (data.display_name) joined += ' ' + data.display_name;
+            let prefecture = '';
+            const regex = new RegExp(jpPrefs.join('|'));
+            const match = joined.match(regex);
+            if (match) {
+                prefecture = match[0];
+            } else {
+                for (const full of jpPrefs) {
+                    const short = full.replace(/(都|道|府|県)$/, '');
+                    if (short && joined.includes(short)) {
+                        prefecture = full;
+                        break;
+                    }
                 }
             }
-        }
-        // === 7. 番地・建物名の補完 ===
-        if (!a.house_number || !a.building) {
-            const parts = (data.display_name || '').split(',').map(s => s.trim());
-            if (!a.house_number) {
-                const hn = parts.find(p => /\d{1,4}(-\d{1,4})*/.test(p) && !/\d{3}-\d{4}/.test(p));
-                if (hn) a.house_number = hn;
+
+            // === 7. 番地・建物名の補完 ===
+            if (!a.house_number || !a.building) {
+                const parts = (data.display_name || '').split(',').map(s => s.trim());
+                if (!a.house_number) {
+                    const hn = parts.find(p => /\d{1,4}(-\d{1,4})*/.test(p) && !/\d{3}-\d{4}/.test(p));
+                    if (hn) a.house_number = hn;
+                }
+                if (!a.building) {
+                    const bd = parts.find(p => /ビル|マンション|ハイツ|アパート/.test(p));
+                    if (bd) a.building = bd;
+                }
             }
-            if (!a.building) {
-                const bd = parts.find(p => /ビル|マンション|ハイツ|アパート/.test(p));
-                if (bd) a.building = bd;
+
+            // === 8. 出力形式 ===
+            const result = [
+                a.postcode, prefecture, a.city || a.town || a.village,
+                a.suburb || a.neighbourhood, a.road, a.house_number, a.building
+            ].filter(Boolean).join(', ');
+
+            const finalAddress = result || data.display_name || '住所情報なし';
+
+            // === 9. キャッシュ保存して終了 ===
+            addrCache.set(key, finalAddress);
+            return finalAddress;
+
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                console.warn('住所取得中止');
+                return '住所取得中止';
+            }
+
+            retries++;
+            if (retries <= MAX_RETRIES) {
+                console.warn(`住所取得リトライ中 (${retries}/${MAX_RETRIES})`, err);
+                // 1秒待機して再試行（API負荷軽減）
+                await new Promise(r => setTimeout(r, 1000));
+            } else {
+                console.warn('住所取得エラー（リトライ上限到達）', err);
+                return '住所取得エラー';
+            }
+        } finally {
+            if (currentAddressController?.signal === signal) {
+                currentAddressController = null;
             }
         }
-        // === 8. 出力形式 ===
-        const result = [
-            a.postcode,
-            prefecture,
-            a.city || a.town || a.village,
-            a.suburb || a.neighbourhood,
-            a.road,
-            a.house_number,
-            a.building
-        ].filter(Boolean).join(', ');
-        const finalAddress = result || data.display_name || '住所情報なし';
-        // === 9. キャッシュ保存 ===
-        addrCache.set(key, finalAddress);
-        return finalAddress;
-    } catch (err) {
-        if (err.name === 'AbortError') {
-            console.warn('住所取得中止（新しいリクエストへ切替）');
-            return '住所取得中止';
-        }
-        console.warn('fetchAddress error', err);
-        return '住所取得エラー';
-    } finally {
-        currentAddressController = null;
     }
 }
 
