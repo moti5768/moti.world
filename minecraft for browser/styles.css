@@ -56,16 +56,20 @@ canvas {
 /* FPS表示 */
 #fpsCounter {
     position: fixed;
-    top: 0;
-    left: 0;
-    background: rgba(0, 0, 0, 0.5);
-    color: #0f0;
-    padding: 2.5px;
+    top: 5px;
+    left: 5px;
+    color: #fff;
     font-family: monospace;
+    font-size: 12px;
+    padding: 5px;
+    z-index: 10000;
+    pointer-events: none;
 }
 
-#fpsCounter>* {
-    margin: 2px;
+/* 文字に影をつけて視認性をアップさせる */
+#fpsCounter span {
+    text-shadow: 1px 1px 0px #000;
+    line-height: 1.4;
     display: inline-block;
 }
 
@@ -271,4 +275,43 @@ canvas {
 
 .overzindex * {
     z-index: 999999;
+}
+
+
+
+
+
+
+/* --- チャットログのスタイル --- */
+#chat-container {
+    position: fixed;
+    bottom: 80px;
+    /* ホットバーの上 */
+    left: 10px;
+    width: 350px;
+    height: 160px;
+    z-index: 50;
+    /* タッチUIやホットバーの邪魔にならない程度 */
+    pointer-events: none;
+    /* クリックをゲーム画面に透過させる */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    font-family: monospace;
+    font-size: 14px;
+    overflow: hidden;
+}
+
+.chat-message {
+    background: rgba(0, 0, 0, 0.4);
+    color: white;
+    padding: 2px 6px;
+    margin-top: 1px;
+    width: max-content;
+    max-width: 100%;
+    word-break: break-all;
+    border-radius: 2px;
+    text-shadow: 1px 1px 0px #000;
+    transition: opacity 1s ease-out;
+    /* フェードアウト用 */
 }

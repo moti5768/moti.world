@@ -1,10 +1,20 @@
-import * as THREE from "./build/three.module.js";
 "use strict";
+import * as THREE from "./build/three.module.js";
 
 let cloudTiles = new Map();
 const tileSize = 500;
 const gridRadius = 6;
 let cloudTexture = null;
+
+// ==========================================
+// 💡 軽量化用の共有変数・キャッシュ
+// ==========================================
+const _neededKeys = new Set(); // 毎フレームの new Set() によるメモリ確保を排除
+
+// 座標 (x, z) を 32bit の数値1つに圧縮するハッシュ関数 (文字列キーを排除)
+function getTileHash(x, z) {
+    return ((x + 20000) << 16) | ((z + 20000) & 0xFFFF);
+}
 
 /**
  * クラウドテクスチャを読み込み、黒背景を透明化＋パディング
@@ -21,17 +31,22 @@ function loadCloudTexture(callback) {
             const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = false;
             ctx.drawImage(img, b, b);
-            // 上下左右の境界コピーをまとめて処理
-            [
+
+            const edgeData = [
                 [0, 0, w, 1, b, 0, w, 1],
                 [0, h - 1, w, 1, b, h + b, w, 1],
                 [0, 0, 1, h, 0, b, 1, h],
                 [w - 1, 0, 1, h, w + b, b, 1, h]
-            ].forEach(a => ctx.drawImage(img, ...a));
+            ];
+            for (let i = 0; i < edgeData.length; i++) {
+                ctx.drawImage(img, ...edgeData[i]);
+            }
 
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imageData.data;
-            for (let i = 0; i < data.length; i += 4) {
+            const len = data.length;
+
+            for (let i = 0; i < len; i += 4) {
                 if (!(data[i] | data[i + 1] | data[i + 2])) data[i + 3] = 0;
             }
             ctx.putImageData(imageData, 0, 0);
@@ -39,10 +54,14 @@ function loadCloudTexture(callback) {
             const tex = new THREE.CanvasTexture(canvas);
             tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
             tex.repeat.set(0.06, 0.06);
-            tex.magFilter = tex.minFilter = THREE.NearestFilter;
+
+            // 🌟 連鎖代入をやめ、個別に代入して確実にピクセルアート設定を適用 🌟
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+
             tex.generateMipmaps = false;
-            tex.anisotropy = 4;
-            tex.offset.set(0, 0); // 初期 offset を0に固定
+            tex.anisotropy = 1; // 💡 遠くがボケる場合、異方性フィルタを 1 (無効) にするとよりクッキリします
+            tex.offset.set(0, 0);
             tex.needsUpdate = true;
 
             cloudTexture = tex;
@@ -84,7 +103,6 @@ function addCloudTile(scene, gridX, gridZ) {
         map: cloudTexture,
         transparent: true,
         opacity: 1,
-        alphaTest: 1,
         depthWrite: false,
         depthTest: true,
         side: THREE.DoubleSide,
@@ -92,8 +110,6 @@ function addCloudTile(scene, gridX, gridZ) {
     });
 
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.material.opacity = 0;        // 初期透明化
-    mesh.userData.fadeFactor = 0;     // フェード用フラグ
     const px = gridX * tileSize + tileSize / 2;
     const pz = gridZ * tileSize + tileSize / 2;
     mesh.position.set(px, 256, pz);
@@ -102,8 +118,9 @@ function addCloudTile(scene, gridX, gridZ) {
     const uvScale = 1 / tileSize;
     const pos = geo.attributes.position.array;
     const uvs = geo.attributes.uv.array;
-    for (let i = 0, j = 0; j < uvs.length; i += 3, j += 2) {
-        // 元のスナップ方式でUV計算
+    const uvLen = uvs.length; // 配列長のキャッシュ
+
+    for (let i = 0, j = 0; j < uvLen; i += 3, j += 2) {
         uvs[j] = Math.floor((px + pos[i]) * uvScale * texW) / texW;
         uvs[j + 1] = Math.floor((pz + pos[i + 2]) * uvScale * texW) / texW;
     }
@@ -116,14 +133,18 @@ function addCloudTile(scene, gridX, gridZ) {
  * プレイヤー位置に基づき雲タイルを更新
  */
 function updateCloudGrid(scene, playerPos) {
+    if (!cloudTexture) return;
+
     const gx = Math.floor(playerPos.x / tileSize);
     const gz = Math.floor(playerPos.z / tileSize);
-    const needed = new Set();
+
+    _neededKeys.clear(); // 既存の Set を再利用
 
     for (let x = gx - gridRadius; x <= gx + gridRadius; x++) {
         for (let z = gz - gridRadius; z <= gz + gridRadius; z++) {
-            const key = `${x},${z}`;
-            needed.add(key);
+            const key = getTileHash(x, z); // 数値ハッシュ化
+            _neededKeys.add(key);
+
             if (!cloudTiles.has(key)) {
                 const tile = addCloudTile(scene, x, z);
                 if (tile) {
@@ -133,9 +154,10 @@ function updateCloudGrid(scene, playerPos) {
             }
         }
     }
+
     // 不要タイル削除
     for (const [key, tile] of cloudTiles) {
-        if (!needed.has(key)) {
+        if (!_neededKeys.has(key)) {
             scene.remove(tile);
             tile.geometry.dispose();
             tile.material.dispose();
@@ -157,17 +179,21 @@ function updateCloudTiles(delta) {
  * 距離に応じた雲の不透明度更新
  */
 function updateCloudOpacity(playerPos) {
-    const nearD2 = 2000 ** 2;
-    const farD2 = 6000 ** 2;
+    const nearD2 = 4000000;  // 2000 ** 2 をあらかじめ定数化
+    const farD2 = 36000000; // 6000 ** 2 をあらかじめ定数化
+
     cloudTiles.forEach(tile => {
         const dist2 = tile.position.distanceToSquared(playerPos);
         let baseOpacity = 1;
+
         if (dist2 > nearD2 && dist2 < farD2) {
+            // 平方根（重い計算）は範囲内に入った時だけ行う
             baseOpacity = 1 - ((Math.sqrt(dist2) - 2000) / 4000);
         } else if (dist2 >= farD2) {
             baseOpacity = 0;
         }
-        tile.userData.fadeFactor = Math.min((tile.userData.fadeFactor ?? 0) + 0.05, 1); // フェードイン
+
+        tile.userData.fadeFactor = Math.min((tile.userData.fadeFactor ?? 0) + 0.05, 1);
         tile.material.opacity = baseOpacity * tile.userData.fadeFactor;
     });
 }
@@ -177,8 +203,18 @@ function updateCloudOpacity(playerPos) {
  */
 function adjustCloudLayerDepth(tile, camera) {
     const above = camera.position.y >= tile.position.y;
-    tile.renderOrder = above ? 1000 : 0;
-    tile.material.depthTest = !above;
+
+    if (above) {
+        tile.renderOrder = 0;
+        tile.material.depthTest = true;
+        tile.material.depthWrite = false;
+    } else {
+        tile.renderOrder = -100;
+        tile.material.depthTest = true;
+        tile.material.depthWrite = false;
+    }
+
+    tile.material.needsUpdate = true;
 }
 
 // グローバル公開

@@ -1,7 +1,6 @@
+"use strict";
 import * as THREE from "./build/three.module.js";
 import { BufferGeometryUtils } from './jsm/utils/BufferGeometryUtils.js';
-
-"use strict";
 
 // ================================================
 // ② ブロック定義 (BLOCK_CONFIG) の拡張
@@ -54,7 +53,11 @@ const defaultBlockConfig = {
     // 指定しない場合は「map を持たないマテリアル（defaultColor 表示）」になります
     fallbackTexture: "textures/missing_texture.png",
     // map を持たない場合に表示したい色（0xffffff など）。未指定なら白
-    defaultColor: 0xffffff
+    defaultColor: 0xffffff,
+
+    // 👇 【追加】アウトライン（黒枠）用のデフォルト設定（1x1x1 のブロックの標準位置）
+    selectionSize: { x: 1, y: 1, z: 1 },
+    selectionOffset: { x: 0.5, y: 0.5, z: 0.5 }
 };
 
 // ── ユーティリティ：深いマージ（必要なら） ──
@@ -63,13 +66,14 @@ function createBlockConfig(customConfig) {
 }
 
 // ── 個別ブロック設定 ──
-const BLOCK_CONFIG = {
+export const BLOCK_CONFIG = {
     SKY: createBlockConfig({
         id: 0,
         itemdisplay: false,
         collision: false,
         geometryType: "none", // 描画しない
         transparent: false,
+        opacity: 1,
         overwrite: true,
         screenFill: false,
         textures: {}
@@ -136,12 +140,15 @@ const BLOCK_CONFIG = {
         customCollision: () => getCustomCollision("slab"),
         cullAdjacentFaces: false,
         screenFill: false,
-        hardness: 1.5
+        hardness: 1.5,
+        selectionSize: { x: 1, y: 0.5, z: 1 },
+        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 }
     }),
     GLASS: createBlockConfig({
         id: 12,
         textures: { all: "textures/glass.png" },
         transparent: true,
+        geometryType: "cube",
         screenFill: false
     }),
     FLOWER: createBlockConfig({
@@ -153,7 +160,9 @@ const BLOCK_CONFIG = {
         customCollision: () => getCustomCollision("cross"),
         cullAdjacentFaces: false,
         screenFill: false,
-        previewType: "2D"
+        previewType: "2D",
+        selectionSize: { x: 0.4, y: 0.6, z: 0.4 },
+        selectionOffset: { x: 0.5, y: 0.3, z: 0.5 }
     }),
     FLOWER_ROSE: createBlockConfig({
         id: 14,
@@ -164,7 +173,9 @@ const BLOCK_CONFIG = {
         customCollision: () => getCustomCollision("cross"),
         cullAdjacentFaces: false,
         screenFill: false,
-        previewType: "2D"
+        previewType: "2D",
+        selectionSize: { x: 0.4, y: 0.6, z: 0.4 },
+        selectionOffset: { x: 0.5, y: 0.3, z: 0.5 }
     }),
     TALLGRASS: createBlockConfig({
         id: 15,
@@ -175,7 +186,9 @@ const BLOCK_CONFIG = {
         customCollision: () => getCustomCollision("cross"),
         cullAdjacentFaces: false,
         screenFill: false,
-        previewType: "2D"
+        previewType: "2D",
+        selectionSize: { x: 0.8, y: 0.8, z: 0.8 },
+        selectionOffset: { x: 0.5, y: 0.4, z: 0.5 }
     }),
     LEAVES: createBlockConfig({
         id: 16,
@@ -193,13 +206,16 @@ const BLOCK_CONFIG = {
         customCollision: () => getCustomCollision("carpet"),
         Gamma: 0.8,
         cullAdjacentFaces: false,
-        screenFill: false
+        screenFill: false,
+        selectionSize: { x: 1, y: 0.0625, z: 1 },
+        selectionOffset: { x: 0.5, y: 0.03125, z: 0.5 }
     }),
     WATER: createBlockConfig({
         id: 18,
         textures: { all: "textures/water.png" },
         collision: false,
         transparent: true,
+        opacity: 0.8,
         targetblock: false,
         overwrite: true,
         geometryType: "water",
@@ -265,8 +281,19 @@ function cachedLoadTexture(path, fallback = null) {
                     placeholder.needsUpdate = true;
                 }
             } else {
-                // フォールバック無し：placeholder は空のままにしておく（map無し扱いに近い）
-                // 既に返した placeholder を空のままにすることで、描画はマテリアルの color 等で代替される
+                // 💡 【改善】フォールバックすら無い or 失敗した場合の最終防衛ライン
+                // メモリ上で 1x1 のマゼンタ色（テクスチャ紛失カラー）の仮画像を生成して即時適用する
+                const canvas = document.createElement('canvas');
+                canvas.width = 1;
+                canvas.height = 1;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ff00ff'; // マゼンタ色
+                ctx.fillRect(0, 0, 1, 1);
+
+                placeholder.image = canvas;
+                placeholder.magFilter = THREE.NearestFilter;
+                placeholder.minFilter = THREE.NearestFilter;
+                placeholder.needsUpdate = true;
             }
         }
     );
@@ -275,63 +302,72 @@ function cachedLoadTexture(path, fallback = null) {
 }
 
 // グローバルキャッシュ
+// グローバルキャッシュ
 const materialCache = new Map();      // ブロック構成ごとのキャッシュ
 const textureMaterialCache = new Map(); // テクスチャ単位のキャッシュ
+
+// --- blocks.js の createMaterialsFromBlockConfig 関数 ---
+
+// blocks.js の createMaterialsFromBlockConfig 内を以下に差し替え
 
 function createMaterialsFromBlockConfig(blockConfig) {
     const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
     const { geometryType, transparent, textures } = blockConfig;
 
-    const cacheKey = blockConfig;
+    const cacheKey = blockConfig.id;
     if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
+
+    const opacity = (blockConfig.opacity !== undefined) ? blockConfig.opacity : 1.0;
 
     const isStairsOrSlab = geometryType === "stairs" || geometryType === "slab";
     const isCross = geometryType === "cross" || geometryType === "leaves";
     const isWater = geometryType === "water";
+    // ID:12 をガラスとする（もしくは config.id === 12）
+    const isGlass = blockConfig.id === 12;
 
-    const opacity = (isStairsOrSlab || isCross) ? 1 : (transparent ? 0.7 : 1);
-    const isTransparent = isStairsOrSlab ? false : (isCross ? true : transparent);
-    const side = isCross ? THREE.DoubleSide : THREE.FrontSide;
-    const vertexColors = (!isStairsOrSlab && !isCross && !isWater) ? THREE.VertexColors : false;
+    // 💡 マイクラの描画ロジックに合わせる
+    // - 水 (半透明ブレンド): transparent=true, alphaTest=0, depthWrite=false
+    // - ガラス・草・花 (カットアウト透過): transparent=false, alphaTest=0.5, depthWrite=true
+    const isBlendTransparent = isWater;
+    const isAlphaCutout = transparent === true && !isWater;
 
-    // 面ごとの優先順位：textures.all -> textures[face] -> textures.side -> blockConfig.fallbackTexture -> null（空）
+    const side = (isCross || isWater) ? THREE.DoubleSide : THREE.FrontSide;
+    const useVertexColors = (!isStairsOrSlab && !isCross && !isWater);
+
     function resolveTexturePath(face) {
         if (textures && textures.all) return textures.all;
         if (textures && textures[face]) return textures[face];
         if (textures && textures.side) return textures.side;
-        // ここで返るのは文字列か null。null の場合は cachedLoadTexture が共有空テクスチャを返す。
         return blockConfig.fallbackTexture || null;
     }
 
     function getMat(texPathOrNone) {
-        // texPathOrNone が falsy の場合は map を持たないマテリアルを返す（色で表示）
-        if (!texPathOrNone || texPathOrNone === "none") {
-            // 警告は出すが、派手な色は使わない（ユーザー要望に合わせる）
-            if (!getMat.warned) {
-                console.warn("Texture not set or invalid path detected for a face; using material without map.");
-                getMat.warned = true;
-            }
-            return new THREE.MeshLambertMaterial({
-                color: (blockConfig.defaultColor !== undefined) ? blockConfig.defaultColor : 0xffffff,
-                transparent: isTransparent,
-                opacity,
-                vertexColors,
-                side,
-                alphaTest: isCross ? 0.5 : 0,
-            });
+        const materialOptions = {
+            color: (blockConfig.defaultColor !== undefined) ? blockConfig.defaultColor : 0xffffff,
+            transparent: isBlendTransparent, // 👈 水だけを true にする
+            opacity: opacity,
+            vertexColors: useVertexColors,
+            side: side,
+            depthWrite: !isBlendTransparent, // 👈 カットアウト(ガラス等)は深度を書き込む！
+            alphaTest: isAlphaCutout ? 0.5 : 0, // 👈 0.5以下のアルファピクセルは描画処理を破棄
+        };
+
+        if (texPathOrNone && texPathOrNone !== "none") {
+            materialOptions.map = cachedLoadTexture(texPathOrNone, blockConfig.fallbackTexture || null);
         }
 
-        // ブロック個別の fallbackTexture を渡す（なければ null）
-        const map = cachedLoadTexture(texPathOrNone, blockConfig.fallbackTexture || null);
+        const mat = new THREE.MeshLambertMaterial(materialOptions);
 
-        return new THREE.MeshLambertMaterial({
-            map,
-            transparent: isTransparent,
-            opacity,
-            vertexColors,
-            side,
-            alphaTest: isCross ? 0.5 : 0,
-        });
+        mat.userData = {
+            realTransparent: isBlendTransparent,
+            realDepthWrite: !isBlendTransparent,
+            realOpacity: opacity,
+            isAlphaCutout: isAlphaCutout,
+            isWater: isWater,
+            isGlass: isGlass
+        };
+
+        return mat;
     }
 
     const materials = (textures && textures.all)
