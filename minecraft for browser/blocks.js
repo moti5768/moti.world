@@ -223,11 +223,14 @@ export const BLOCK_CONFIG = {
     })
 };
 
-// ── 後方互換用エイリアスの自動生成 ──
-// Object.entries と Object.fromEntries でシンプルに
 const BLOCK_TYPES = Object.fromEntries(
     Object.entries(BLOCK_CONFIG).map(([key, cfg]) => [key, cfg.id])
 );
+for (const cfg of Object.values(BLOCK_CONFIG)) {
+    if (typeof cfg.customCollision === "function") {
+        cfg._cachedCollision = cfg.customCollision();
+    }
+}
 
 const textureLoader = new THREE.TextureLoader();
 const textureCache = new Map();
@@ -302,9 +305,7 @@ function cachedLoadTexture(path, fallback = null) {
 }
 
 // グローバルキャッシュ
-// グローバルキャッシュ
 const materialCache = new Map();      // ブロック構成ごとのキャッシュ
-const textureMaterialCache = new Map(); // テクスチャ単位のキャッシュ
 
 // --- blocks.js の createMaterialsFromBlockConfig 関数 ---
 
@@ -370,17 +371,21 @@ function createMaterialsFromBlockConfig(blockConfig) {
         return mat;
     }
 
-    const materials = (textures && textures.all)
-        ? Array(6).fill(getMat(textures.all))
-        : FACE_ORDER.map(f => getMat(resolveTexturePath(f)));
+    if (textures && textures.all) {
+        const mat = getMat(textures.all);   // 1回だけ生成
+        const arr = [mat, mat, mat, mat, mat, mat];
+        materialCache.set(cacheKey, arr);
+        return arr;
+    }
 
+    const materials = FACE_ORDER.map(f => getMat(resolveTexturePath(f)));
     materialCache.set(cacheKey, materials);
     return materials;
 }
 
 
 // マテリアルのキャッシュ（ブロックIDごと）
-const BLOCK_MATERIALS_CACHE = {};
+const BLOCK_MATERIALS_CACHE = new Map();
 
 /**
  * 指定ブロックタイプのマテリアル配列を返す。  
@@ -392,8 +397,8 @@ function getBlockMaterials(blockType) {
     const bType = Number(blockType);
 
     // キャッシュがあれば即返す
-    if (BLOCK_MATERIALS_CACHE[bType]) {
-        return BLOCK_MATERIALS_CACHE[bType];
+    if (BLOCK_MATERIALS_CACHE.has(bType)) {
+        return BLOCK_MATERIALS_CACHE.get(bType);
     }
 
     // O(1) で設定取得
@@ -405,7 +410,7 @@ function getBlockMaterials(blockType) {
 
     // マテリアル生成＆キャッシュ保存
     const materials = createMaterialsFromBlockConfig(config);
-    BLOCK_MATERIALS_CACHE[bType] = materials;
+    BLOCK_MATERIALS_CACHE.set(bType, materials);
     return materials;
 }
 
@@ -419,8 +424,7 @@ const cachedCustomGeometries = {};
 
 // BLOCK_CONFIG から各ブロック設定を高速に取得するためのルックアップテーブル
 const blockConfigLookup = {};
-for (const key in BLOCK_CONFIG) {
-    const cfg = BLOCK_CONFIG[key];
+for (const cfg of Object.values(BLOCK_CONFIG)) {
     blockConfigLookup[cfg.id] = cfg;
 }
 
@@ -464,6 +468,7 @@ function adjustSideUVsForCarpet(geom, scaleY = 0.0625) {
  * @param {object} [config] - ブロック設定。カスタムジオメトリ用の customGeometry プロパティ等を含む
  * @returns {THREE.BufferGeometry}
  */
+const SHARED_PLANE = new THREE.PlaneGeometry(1, 1);
 function getBlockGeometry(type, config) {
     // カスタムジオメトリがあればキャッシュ
     if (config?.customGeometry) {
@@ -511,10 +516,12 @@ function getBlockGeometry(type, config) {
         }
 
         case "cross": {
-            const p1 = new THREE.PlaneGeometry(1, 1);
+            const p1 = SHARED_PLANE.clone();
             p1.rotateY(THREE.MathUtils.degToRad(45));
-            const p2 = new THREE.PlaneGeometry(1, 1);
+
+            const p2 = SHARED_PLANE.clone();
             p2.rotateY(THREE.MathUtils.degToRad(-45));
+
             geom = BufferGeometryUtils.mergeBufferGeometries([p1, p2], true);
             geom.computeBoundingBox();
             const center = new THREE.Vector3();
@@ -596,7 +603,8 @@ function createBlockMesh(blockType, pos, rotation) {
     // カスタム衝突判定のBox3をキャッシュから取得・clone＆座標調整
     if (typeof config.customCollision === "function") {
         if (!mesh.userData.localCollisionBoxes) {
-            mesh.userData.localCollisionBoxes = config.customCollision() || [];
+            mesh.userData.localCollisionBoxes = config._cachedCollision || [];
+            mesh.userData.collisionBoxes = config._cachedCollision.map(box => box.clone());
         }
         if (!mesh.userData.collisionBoxes) {
             mesh.userData.collisionBoxes = mesh.userData.localCollisionBoxes.map(box => box.clone());
@@ -625,19 +633,30 @@ function createBlockMesh(blockType, pos, rotation) {
  * @param {THREE.Vector3} pos - ブロック設置位置（セルの左下隅）
  * @returns {THREE.Box3[]} - 当たり判定ボックスの配列
  */
+// 関数の外側に1つだけ置いておく
+const _sharedCollisionBox = new THREE.Box3();
+const _sharedCollisionMax = new THREE.Vector3();
+
 function getBlockCollisionBoxes(blockType, pos) {
     const config = getBlockConfiguration(blockType);
     if (!config || !config.collision) return [];
+
     if (typeof config.customCollision === "function") {
-        return config.customCollision(pos).map(localBox => {
-            const worldBox = localBox.clone();
+        return config.customCollision().map(localBox => {
+            const worldBox = localBox.clone(); // 既存の仕様を維持
             worldBox.min.add(pos);
             worldBox.max.add(pos);
             return worldBox;
         });
     }
+
     const height = (config.geometryType === "slab") ? 0.5 : 1;
-    return [new THREE.Box3(pos.clone(), new THREE.Vector3(pos.x + 1, pos.y + height, pos.z + 1))];
+
+    // 💡 既存の Box3 の器の中身だけを書き換えて、配列に入れて返す
+    _sharedCollisionMax.set(pos.x + 1, pos.y + height, pos.z + 1);
+    _sharedCollisionBox.set(pos, _sharedCollisionMax);
+
+    return [_sharedCollisionBox]; // 👈 毎回 new しない！
 }
 
 /**

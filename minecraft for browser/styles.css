@@ -232,6 +232,15 @@ canvas {
 
 #inventory-container {
     display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.4);
+    /* マイクラのインベントリ背景のような半透明の黒 */
+    z-index: 5000;
+    /* 他のどのUIよりも手前に配置 */
 }
 
 #inventory-container span {
