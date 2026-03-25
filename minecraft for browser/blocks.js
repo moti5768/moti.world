@@ -220,7 +220,14 @@ export const BLOCK_CONFIG = {
         overwrite: true,
         geometryType: "water",
         previewType: "2D"
-    })
+    }),
+    GLOWSTONE: createBlockConfig({
+        id: 19, // 重複しない新しいID
+        textures: { all: "textures/glowstone.png" }, // 使用するテクスチャパス
+        geometryType: "cube",
+        isLightSource: true, // 💡 光源判定フラグ
+        hardness: 1.0
+    }),
 };
 
 const BLOCK_TYPES = Object.fromEntries(
@@ -323,14 +330,16 @@ function createMaterialsFromBlockConfig(blockConfig) {
     const isStairsOrSlab = geometryType === "stairs" || geometryType === "slab";
     const isCross = geometryType === "cross" || geometryType === "leaves";
     const isWater = geometryType === "water";
-    // ID:12 をガラスとする（もしくは config.id === 12）
     const isGlass = blockConfig.id === 12;
 
+    // 💡 【1. 追加】 光源ブロックのフラグをチェック
+    const isLightSource = blockConfig.isLightSource === true;
+
     // 💡 マイクラの描画ロジックに合わせる
-    // - 水 (半透明ブレンド): transparent=true, alphaTest=0, depthWrite=false
-    // - ガラス・草・花 (カットアウト透過): transparent=false, alphaTest=0.5, depthWrite=true
     const isBlendTransparent = isWater;
-    const isAlphaCutout = transparent === true && !isWater;
+
+    // 💡 【2. 修正】 光源ブロックであれば、カットアウト(透過破棄)の対象外にする
+    const isAlphaCutout = transparent === true && !isWater && !isLightSource;
 
     const side = (isCross || isWater) ? THREE.DoubleSide : THREE.FrontSide;
     const useVertexColors = (!isStairsOrSlab && !isCross && !isWater);
@@ -345,12 +354,12 @@ function createMaterialsFromBlockConfig(blockConfig) {
     function getMat(texPathOrNone) {
         const materialOptions = {
             color: (blockConfig.defaultColor !== undefined) ? blockConfig.defaultColor : 0xffffff,
-            transparent: isBlendTransparent, // 👈 水だけを true にする
+            transparent: isBlendTransparent,
             opacity: opacity,
             vertexColors: useVertexColors,
             side: side,
-            depthWrite: !isBlendTransparent, // 👈 カットアウト(ガラス等)は深度を書き込む！
-            alphaTest: isAlphaCutout ? 0.5 : 0, // 👈 0.5以下のアルファピクセルは描画処理を破棄
+            depthWrite: !isBlendTransparent,
+            alphaTest: isAlphaCutout ? 0.5 : 0,
         };
 
         if (texPathOrNone && texPathOrNone !== "none") {
@@ -365,14 +374,15 @@ function createMaterialsFromBlockConfig(blockConfig) {
             realOpacity: opacity,
             isAlphaCutout: isAlphaCutout,
             isWater: isWater,
-            isGlass: isGlass
+            isGlass: isGlass,
+            isLightSource: isLightSource // 💡 【3. 追加】
         };
 
         return mat;
     }
 
     if (textures && textures.all) {
-        const mat = getMat(textures.all);   // 1回だけ生成
+        const mat = getMat(textures.all);
         const arr = [mat, mat, mat, mat, mat, mat];
         materialCache.set(cacheKey, arr);
         return arr;

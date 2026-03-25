@@ -466,7 +466,8 @@ function getCurrentPlayerHeight() {
 // フォグの色を定義（背景色とも合わせます）
 const fogColor = 0xbfd1e5;
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(fogColor, 1000, 5000);
+// 💡 32マス先から霧が始まり、128マス（8チャンク程度）先で完全に霧で見えなくする
+scene.fog = new THREE.Fog(fogColor, 32, 128);
 setMinecraftSky(scene);
 
 loadCloudTexture(() => {
@@ -1434,6 +1435,9 @@ function refreshChunkAt(cx, cz) {
     // 1. 文字列を一切介さない、既存の BigInt エンコードを使用
     const key = encodeChunkKey(cx, cz);
 
+    // ▼▼▼ ライトマップのキャッシュを破棄して再計算を促す ▼▼▼
+    chunkLightCache.delete(key);
+
     // 2. Map からメッシュを取得 (Object[key] は内部で文字列化されるため廃止)
     const oldChunk = loadedChunks.get(key);
     if (!oldChunk) return;
@@ -1596,15 +1600,23 @@ function processChunkQueue(deadline) {
 }
 /**
  * 保留中のチャンク更新要求を処理する関数
- * 集められたキーをデコードして、各チャンクに対して refreshChunkAt を呼び出す
+ * 時間計測(Time Budgeting)により、フリーズしない限界まで即座に処理する。
  */
-// バッチ処理（batchSize = 2 がデフォルト）
 function processPendingChunkUpdates(batchSize = 1) {
     if (pendingChunkUpdates.size === 0) return;
 
+    const startTime = performance.now();
+    const FRAME_BUDGET = 10; // ⏳ 10ミリ秒（これを超えたら重くなる前に一旦打ち切る）
+
     let processed = 0;
     while (pendingChunkUpdates.size > 0 && processed < batchSize) {
-        // Set.values().next() で安全に取り出す
+
+        // 🔥 【ここが最大のキモ】
+        // 10ミリ秒を超えそうなら、枚数が batchSize に達していなくてもループを抜けてフリーズを防ぐ！
+        if (performance.now() - startTime > FRAME_BUDGET) {
+            break;
+        }
+
         const key = pendingChunkUpdates.values().next().value;
         if (!key) break;
 
@@ -1623,12 +1635,16 @@ function processPendingChunkUpdates(batchSize = 1) {
         processed++;
     }
 
-    // 残っている場合は再スケジュール
+    // 残っている場合は再スケジュール (requestAnimationFrameや自前のタイマーなど)
     if (pendingChunkUpdates.size > 0) {
-        scheduleChunkUpdate();
+        if (typeof scheduleChunkUpdate === "function") {
+            scheduleChunkUpdate();
+        } else {
+            // スケジューラーがない場合のフォールバック（ブラウザの次の描画タイミングに逃がす）
+            requestAnimationFrame(() => processPendingChunkUpdates(Infinity));
+        }
     }
 }
-
 
 /* ======================================================
    【チャンクの管理】
@@ -2052,23 +2068,12 @@ const TOP_SHADOW_OFFSETS = { LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1] 
 // ==========================================
 const blockConfigCache = new Map();
 const configCache = new Map();
-const subterraneanAreaCache = new Map();
-const topShadowCache = new Map();
-const sideShadowCache = new Map();
-const ceilingCache = new Map();
 
 const clearCaches = () => {
     blockConfigCache.clear();
     configCache.clear();
-    subterraneanAreaCache.clear();
-    topShadowCache.clear();
-    sideShadowCache.clear();
-    ceilingCache.clear();
 };
 
-// ==========================================
-// 3. コンフィグ取得（キャッシュ統合）
-// ==========================================
 const getConfigCached = id => {
     if (!configCache.has(id)) {
         if (!blockConfigCache.has(id)) blockConfigCache.set(id, getBlockConfiguration(id));
@@ -2077,157 +2082,246 @@ const getConfigCached = id => {
     return configCache.get(id);
 };
 
-// ==========================================
-// 4. 各種ユーティリティ
-// ==========================================
-
-function getFaceHash(wx, wy, wz, faceIndex = 0) {
-    const ox = Math.floor(wx) + 30000;
-    const oz = Math.floor(wz) + 30000;
-    const oy = Math.floor(wy);
-    // 元の正確な53ビット以内ハッシュロジックを維持
-    return (ox * 100000000) + (oz * 10000) + (oy * 10) + faceIndex;
+/* ======================================================
+   【新・15段階 マイクラ準拠 ライティングエンジン (SkyLight)】
+   ====================================================== */
+const LIGHT_LEVEL_FACTORS = new Float32Array(16);
+for (let i = 0; i <= 15; i++) {
+    LIGHT_LEVEL_FACTORS[i] = Math.max(0.04, Math.pow(0.8, 15 - i));
 }
 
-const getBlockHeights = id => {
-    const type = getConfigCached(id)?.geometryType;
-    return { slab: [0.5], stairs: [0.5, 1], cross: [1], water: [0.88], carpet: [0.0625] }[type] || [1];
-};
+const chunkLightCache = new Map();
+const neighborUnlightRequests = [];
+/* ======================================================
+   【超限界軽量化】スリム・スカイライト伝播エンジン
+   ====================================================== */
 
-// ==========================================
-// 5. メインロジック
-// ==========================================
+// 1次元インデックス上での「6方向へのオフセット差分」を定数化してGC・計算を排除
+const CS = CHUNK_SIZE;
+const CH = CHUNK_HEIGHT;
+const CS_CH = CS * CH; // 16 * 256 = 4096
 
-// --- 地下判定 ---
-const isInSubterraneanArea = (wx, wy, wz) => {
-    const key = getVoxelHash(wx, wy, wz);
-    if (subterraneanAreaCache.has(key)) return subterraneanAreaCache.get(key);
+// 1次元配列上のオフセット [+X, -X, +Y, -Y, +Z, -Z]
+const MOVE_OFFSETS = new Int32Array([CS_CH, -CS_CH, 1, -1, CH, -CH]);
 
-    const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
-    for (let y = wy + 1; y < maxY; y++) {
-        const id = getVoxelAtWorld(wx, y, wz);
-        if (id && id !== BLOCK_TYPES.SKY && !(getConfigCached(id)?.transparent)) {
-            subterraneanAreaCache.set(key, true);
-            return true;
-        }
-    }
-    subterraneanAreaCache.set(key, false);
-    return false;
-};
+function generateChunkLightMap(chunkKey, voxelData) {
+    const TOTAL_CELLS = CS * CH * CS;
 
-// --- 不透明判定 ---
-const isFaceOpaque = (id, worldPos) => {
-    if (!id || id === BLOCK_TYPES.SKY) return false;
-    const cfg = getConfigCached(id);
-    if (!cfg || cfg.transparent) return false;
-
-    if (cfg.geometryType !== "cube") return false;
-
-    if (cfg.customGeometry && worldPos) {
-        const boxes = cfg.customCollision(worldPos);
-        return boxes?.some(b => b.max.y - b.min.y > 0.01) || false;
-    }
-    return true;
-};
-
-// --- 天井チェック ---
-const hasCeilingAbove = (wx, wy, wz) => {
-    const key = getVoxelHash(wx, 0, wz);
-    if (ceilingCache.has(key)) return ceilingCache.get(key);
-
-    const maxY = BEDROCK_LEVEL + CHUNK_HEIGHT;
-    for (let y = wy + 1; y < maxY; y++) {
-        const id = getVoxelAtWorld(wx, y, wz);
-        if (id && id !== BLOCK_TYPES.SKY && !(getConfigCached(id)?.transparent)) {
-            ceilingCache.set(key, true);
-            return true;
-        }
-    }
-    ceilingCache.set(key, false);
-    return false;
-};
-
-// --- 下影 ---
-const computeBottomShadowFactor = (wx, wy, wz) => {
-    const id = getVoxelAtWorld(wx, wy, wz);
-    const cfg = getConfigCached(id);
-
-    if (cfg?.transparent) return hasCeilingAbove(wx, wy, wz) ? 0.4 : 1.0;
-    if (isInSubterraneanArea(wx, wy, wz)) return 0.4;
-
-    const belowId = getVoxelAtWorld(wx, wy - 1, wz);
-    return isFaceOpaque(belowId, [wx, wy - 1, wz]) ? 0.55 : 0.45;
-};
-
-// --- 側面影 ---
-const computeSideShadowFactor = (wx, wy, wz, face, baseX, baseZ) => {
-    const faceIdx = FACE_INDICES[face] ?? 0;
-    const key = getFaceHash(baseX + wx, wy, baseZ + wz, faceIdx);
-    if (sideShadowCache.has(key)) return sideShadowCache.get(key);
-
-    const o = SIDE_SHADOW_OFFSETS[face];
-    if (!o) return 1;
-
-    let [checkX, checkY, checkZ] = [baseX + wx + o[0], wy + o[1], baseZ + wz + o[2]];
-    const cacheKey = getVoxelHash(checkX, checkY, checkZ);
-    if (ceilingCache.has(cacheKey)) {
-        const factor = ceilingCache.get(cacheKey) ? 0.4 : 1;
-        sideShadowCache.set(key, factor);
-        return factor;
+    let lightData = chunkLightCache.get(chunkKey);
+    if (!lightData) {
+        lightData = new Uint8Array(TOTAL_CELLS);
     }
 
-    while (checkY < BEDROCK_LEVEL + CHUNK_HEIGHT) {
-        if (isFaceOpaque(getVoxelAtWorld(checkX, checkY, checkZ), [checkX, checkY, checkZ])) {
-            ceilingCache.set(cacheKey, true);
-            return sideShadowCache.set(key, 0.4).get(key);
-        }
-        checkY++;
-    }
+    // 通常の光伝播(Relight)用1次元インデックスキュー (x,y,z の分解を排除)
+    const queue = new Int32Array(TOTAL_CELLS);
+    let head = 0, tail = 0;
 
-    ceilingCache.set(cacheKey, false);
-    return sideShadowCache.set(key, 1).get(key);
-};
+    // お化けライト消去(Unlight)用キュー [index, oldLight]
+    const unlightQueue = new Int32Array(TOTAL_CELLS * 2);
+    let unhead = 0, untail = 0;
 
-// --- 上面影 ---
-const computeTopShadowFactorForCorner = (wx, wy, wz, corner, blockId) => {
-    const cornerIdx = CORNER_INDICES[corner] ?? 0;
+    // --- STEP 0: 設置された不透過ブロックによる既存光の強制減衰判定 ---
+    for (let i = 0; i < TOTAL_CELLS; i++) {
+        const type = voxelData[i];
+        if (type === BLOCK_TYPES.SKY) continue;
 
-    // 💡 32ビット数値のパッキングハッシュ。Mapのキー探索を最も高速にします
-    const lx = Math.floor(wx) & 15;
-    const lz = Math.floor(wz) & 15;
-    const ly = Math.floor(wy) & 255;
-    const key = (lx << 18) | (lz << 14) | (ly << 6) | (cornerIdx << 4) | (blockId & 15);
-
-    if (topShadowCache.has(key)) return topShadowCache.get(key);
-
-    const offset = TOP_SHADOW_OFFSETS[corner];
-    if (!offset) return 1;
-
-    let minShade = getConfigCached(blockId)?.Gamma ?? 1;
-    for (const h of getBlockHeights(blockId)) {
-        const [dx, dz] = offset;
-        const id1 = getVoxelAtWorld(wx + dx, wy + h, wz);
-        const id2 = getVoxelAtWorld(wx, wy + h, wz + dz);
-        const cfg1 = id1 && id1 !== BLOCK_TYPES.SKY ? getConfigCached(id1) : null;
-        const cfg2 = id2 && id2 !== BLOCK_TYPES.SKY ? getConfigCached(id2) : null;
-
-        let shade = isInSubterraneanArea(wx, wy, wz) ? 0.4 :
-            (cfg1 && !cfg1.transparent && cfg2 && !cfg2.transparent ? 0.4 :
-                (cfg1 && !cfg1.transparent || cfg2 && !cfg2.transparent ? 0.7 : 1));
-
-        if (shade < minShade) minShade = shade;
-
-        // 💡 早期リターン。すでにこれ以上影が濃くならない(0.4)場合は、
-        // ハーフブロック等の残りの高さループを走らせずに直ちに返します。
-        if (minShade <= 0.4) {
-            topShadowCache.set(key, 0.4);
-            return 0.4;
+        const cfg = _blockConfigFastArray[type];
+        if (cfg && !cfg.transparent && lightData[i] > 0) {
+            unlightQueue[untail++] = i;
+            unlightQueue[untail++] = lightData[i];
+            lightData[i] = 0;
         }
     }
 
-    topShadowCache.set(key, minShade);
-    return minShade;
-};
+    // --- STEP 1: 空からの直射日光を降らせる (デクリメント高速走査) ---
+    for (let x = 0; x < CS; x++) {
+        const xBase = CS_CH * x;
+        for (let z = 0; z < CS; z++) {
+            let currentLight = 15;
+            let idx = (CH - 1) + CH * z + xBase;
+
+            for (let y = CH - 1; y >= 0; y--) {
+                const type = voxelData[idx];
+                const oldLight = lightData[idx];
+
+                if (currentLight === 15) {
+                    const cfg = _blockConfigFastArray[type];
+                    if (type !== BLOCK_TYPES.SKY && cfg && !cfg.transparent) {
+                        currentLight = 0;
+                    }
+                }
+
+                if (currentLight < oldLight) {
+                    unlightQueue[untail++] = idx;
+                    unlightQueue[untail++] = oldLight;
+                    lightData[idx] = currentLight;
+                } else if (currentLight > oldLight) {
+                    lightData[idx] = currentLight;
+                    queue[tail++] = idx;
+                } else if (currentLight === 15) {
+                    queue[tail++] = idx;
+                }
+                idx--;
+            }
+        }
+    }
+
+    // --- STEP 2: 自ら光るブロックの探索 ---
+    for (let i = 0; i < TOTAL_CELLS; i++) {
+        const type = voxelData[i];
+        if (type === BLOCK_TYPES.SKY) continue;
+
+        const cfg = _blockConfigFastArray[type];
+        if (cfg && cfg.isLightSource) {
+            if (lightData[i] < 15) {
+                lightData[i] = 15;
+                queue[tail++] = i;
+            }
+        }
+    }
+
+    // --- STEP 3: 隣接チャンクからの光の輸入 ---
+    // (※ 境界の同期は現状のままで十分高速なので、既存ロジックを1次元インデックスに置き換えたものを内部で保持します)
+    const [cx, cz] = decodeChunkKey(chunkKey);
+    const neighborOffsets = [
+        { dx: -1, dz: 0, fromX: CS - 1, toX: 0 },
+        { dx: 1, dz: 0, fromX: 0, toX: CS - 1 },
+        { dx: 0, dz: -1, fromZ: CS - 1, toZ: 0 },
+        { dx: 0, dz: 1, fromZ: 0, toZ: CS - 1 }
+    ];
+
+    for (let o = 0; o < 4; o++) {
+        const offset = neighborOffsets[o];
+        const nMap = chunkLightCache.get(encodeChunkKey(cx + offset.dx, cz + offset.dz));
+        if (!nMap) continue;
+
+        for (let y = 0; y < CH; y++) {
+            for (let i = 0; i < CS; i++) {
+                const lx = offset.fromX !== undefined ? offset.fromX : i;
+                const lz = offset.fromZ !== undefined ? offset.fromZ : i;
+                const myX = offset.toX !== undefined ? offset.toX : i;
+                const myZ = offset.toZ !== undefined ? offset.toZ : i;
+
+                const nIdx = y + CH * (lz + CS * lx);
+                const nLight = nMap[nIdx];
+                if (nLight <= 1) continue;
+
+                const myIdx = y + CH * (myZ + CS * myX);
+                const targetLight = nLight - 1;
+
+                if (lightData[myIdx] < targetLight) {
+                    const myBlock = voxelData[myIdx];
+                    const myCfg = _blockConfigFastArray[myBlock];
+                    if (myBlock === BLOCK_TYPES.SKY || (myCfg && myCfg.transparent)) {
+                        lightData[myIdx] = targetLight;
+                        queue[tail++] = myIdx;
+                    }
+                }
+            }
+        }
+    }
+
+
+    // --- STEP 4: お化けライト減衰 BFS (Unlight) ---
+    while (unhead < untail) {
+        const idx = unlightQueue[unhead++];
+        const oldVal = unlightQueue[unhead++];
+
+        // 1次元インデックスから、その場の y, z, x を数学的に逆算（境界チェック用）
+        const y = idx % CH;
+        const rem = (idx / CH) | 0;
+        const z = rem % CS;
+        const x = (rem / CS) | 0;
+
+        for (let i = 0; i < 6; i++) {
+            const offset = MOVE_OFFSETS[i];
+            const nIdx = idx + offset;
+
+            // 分岐予測をビット演算で突破（上下の限界チェック）
+            if (i === 2 && y === CH - 1) continue; // +Y 天井
+            if (i === 3 && y === 0) continue;      // -Y 底
+
+            // チャンク境界チェック (はみ出し)
+            if ((i === 0 && x === CS - 1) || (i === 1 && x === 0) ||
+                (i === 4 && z === CS - 1) || (i === 5 && z === 0)) {
+
+                // 既存の「隣接チャンクのお化けライト消去リクエスト」へ飛ばす
+                let nLx = x, nLz = z, nCx = cx, nCz = cz;
+                if (i === 0) { nCx++; nLx = 0; }
+                if (i === 1) { nCx--; nLx = CS - 1; }
+                if (i === 4) { nCz++; nLz = 0; }
+                if (i === 5) { nCz--; nLz = CS - 1; }
+
+                const nKey = encodeChunkKey(nCx, nCz);
+                const nMap = chunkLightCache.get(nKey);
+                if (nMap) {
+                    const neighborIdx = y + CH * (nLz + CS * nLx);
+                    const nLight = nMap[neighborIdx];
+                    if (nLight > 0 && nLight < oldVal) {
+                        neighborUnlightRequests.push({ cx: nCx, cz: nCz, lx: nLx, ly: y, lz: nLz, oldLight: nLight });
+                        nMap[neighborIdx] = 0;
+                    } else if (nLight >= oldVal) {
+                        queue[tail++] = idx; // 隣の方が明るければそこを再伝播の起点に
+                    }
+                }
+                continue;
+            }
+
+            // --- 自チャンク内部 ---
+            const nLight = lightData[nIdx];
+            if (nLight !== 0 && nLight < oldVal) {
+                unlightQueue[untail++] = nIdx;
+                unlightQueue[untail++] = nLight;
+                lightData[nIdx] = 0;
+            } else if (nLight >= oldVal) {
+                queue[tail++] = nIdx;
+            }
+        }
+    }
+
+    // --- STEP 5: 光の再伝播 BFS (Flood Fill / Relight) ---
+    while (head < tail) {
+        const idx = queue[head++];
+        const currentLight = lightData[idx];
+        if (currentLight <= 1) continue;
+
+        const nextLight = currentLight - 1;
+
+        const y = idx % CH;
+        const rem = (idx / CH) | 0;
+        const z = rem % CS;
+        const x = (rem / CS) | 0;
+
+        for (let i = 0; i < 6; i++) {
+            const offset = MOVE_OFFSETS[i];
+            const nIdx = idx + offset;
+
+            if (i === 2 && y === CH - 1) continue;
+            if (i === 3 && y === 0) continue;
+            if ((i === 0 && x === CS - 1) || (i === 1 && x === 0) ||
+                (i === 4 && z === CS - 1) || (i === 5 && z === 0)) {
+                continue; // 隣接チャンクへの伝播は境界同期に任せる
+            }
+
+            if (lightData[nIdx] >= nextLight) continue;
+
+            const type = voxelData[nIdx];
+            if (type === BLOCK_TYPES.SKY) {
+                lightData[nIdx] = nextLight;
+                queue[tail++] = nIdx;
+            } else {
+                const cfg = _blockConfigFastArray[type];
+                if (cfg && cfg.transparent) {
+                    lightData[nIdx] = nextLight;
+                    queue[tail++] = nIdx;
+                }
+            }
+        }
+    }
+
+    chunkLightCache.set(chunkKey, lightData);
+    return lightData;
+}
 
 // ---------------------------------------
 // CHUNK MESH GENERATION (軽量化版)
@@ -2298,6 +2392,12 @@ for (let i = 0; i < 256; i++) {
     _blockConfigFastArray[i] = getBlockConfiguration(i);
 }
 
+// =======================================================
+// 💡 関数の外（ファイルスコープ）で定義し、使い回して GC を防止する定数
+// =======================================================
+const _sharedVec3Zero = new THREE.Vector3(0, 0, 0); // 👈 追加
+const _sharedFaceShadeCache = { px: 0, nx: 0, py: 0, ny: 0, pz: 0, nz: 0 }; // 👈 追加
+
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     const baseX = cx * CHUNK_SIZE, baseZ = cz * CHUNK_SIZE;
     const idx = (x, y, z) => ChunkSaveManager.getBlockIndex(x, y, z);
@@ -2323,7 +2423,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 const worldZ = baseZ + z;
 
                 const caveInfo = getCaveTubeInfo(worldX, worldZ);
-                const caveY = caveInfo[0]; // 配列の0番目が Y
+                const caveY = caveInfo[0];
                 const caveRadiusSq = caveInfo[1] * caveInfo[1];
 
                 for (let y = 0; y < CHUNK_HEIGHT; y++) {
@@ -2347,7 +2447,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
     // --- 2. 最高高度の特定 ＆ 空っぽチャンクの早期スキップ（★効率化） ---
     let maxModifiedHeight = 0;
-    let hasAnySolidBlock = false; // 👈 描画すべきブロックが1つでもあるか判定
+    let hasAnySolidBlock = false;
 
     for (let i = voxelData.length - 1; i >= 0; i--) {
         if (voxelData[i] !== BLOCK_TYPES.SKY) {
@@ -2357,13 +2457,13 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         }
     }
 
-    // 💡 完全に空気だけのチャンクなら、下のクソ重い 3重ループを回さずに即終了（超軽量化！）
     if (!hasAnySolidBlock) {
         return container;
     }
 
     const activeHeight = Math.min(CHUNK_HEIGHT, Math.max(1, maxModifiedHeight));
 
+    // --- 3. ボクセル取得ヘルパー ---
     // --- 3. ボクセル取得ヘルパー ---
     const get = (x, y, z) => {
         if (y < 0 || y >= CHUNK_HEIGHT) return BLOCK_TYPES.SKY;
@@ -2375,6 +2475,59 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
         return getVoxelAtWorld(wx, wy, wz, globalTerrainCache, { raw: true });
     };
+
+    // ▼▼▼ ここを追加 ▼▼▼
+    let lightMap = chunkLightCache.get(chunkKey);
+    if (!lightMap || isNewChunk) {
+        lightMap = generateChunkLightMap(chunkKey, voxelData);
+    }
+
+    const getLightLevel = (lx, ly, lz) => {
+        // 1. 完全に範囲外（高さ y が上下に突き抜けた場合）
+        if (ly < 0) return 0;
+        if (ly >= CHUNK_HEIGHT) return 15; // 空の上は常に明るい
+
+        // 2. チャンク内部
+        // ※ ビット演算で判定するとJITコンパイラが最適化しやすい
+        if ((lx | (CHUNK_SIZE - 1 - lx) | lz | (CHUNK_SIZE - 1 - lz)) >= 0) {
+            return lightMap[ly + CHUNK_HEIGHT * (lz + CHUNK_SIZE * lx)];
+        }
+
+        // 3. 境界外（隣のチャンク）の場合：隣のチャンクの「実際のライトマップ」を取りに行く！
+        const wx = baseX + lx;
+        const wz = baseZ + lz;
+
+        const nCx = wx >> 4;
+        const nCz = wz >> 4;
+        const nKey = encodeChunkKey(nCx, nCz);
+
+        const neighborLightMap = chunkLightCache.get(nKey);
+        if (neighborLightMap) {
+            const nLx = wx & 15;
+            const nLz = wz & 15;
+            return neighborLightMap[ly + CHUNK_HEIGHT * (nLz + CHUNK_SIZE * nLx)];
+        }
+
+        // 4. 💡 安全装置(フォールバック)の遅延・軽量化・影漏れ防止
+        const surfaceHeight = getTerrainHeight(wx, wz);
+        if (ly >= surfaceHeight) {
+            return 15; // 地表以上なら無条件で15を返して、重い getVoxelAtWorld をスキップ！
+        }
+
+        // --- ⚠️ 改善ポイント：未ロードの隣チャンク「地下」の処理 ---
+
+        // 地下（ly < surfaceHeight）かつ、隣のライトマップ未生成の場合：
+        // 1. 無理に getVoxelAtWorld を呼ぶと「まだブロックを掘ったという情報」を反映できない。
+        // 2. さらに、毎回 getVoxelAtWorld を呼ぶと未ロード境界のメッシュ生成が激重になる。
+        // 
+        // 💡 解決策：
+        // 「未ロードの隣の地下」は、基本的には環境光「0」にするのがお化けライト残留を防ぐ意味でも安全。
+        // ただし、ブロックを壊したとき「隣のチャンクを強制再描画(全方位同期)」させることで、
+        // getVoxelAtWorld に頼らない正確な解決を行います。
+
+        return 0;
+    };
+    // ▲▲▲ ここまで ▲▲▲
 
     _globalVisCache.fill(0);
     const visCache = _globalVisCache;
@@ -2406,7 +2559,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 const type = voxelData[idx(x, y, z)];
                 if (type === BLOCK_TYPES.SKY) continue;
 
-                // 💡 blocks.js のルックアップを関数なしで O(1) 配列直引き（★効率化）
                 const cfg = _blockConfigFastArray[type];
                 if (!cfg) continue;
 
@@ -2416,7 +2568,8 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 // 🌿 A. カスタムジオメトリ（草・花・階段など）
                 if (cfg.customGeometry || cfg.geometryType !== 'cube') {
                     if (!customGeomCache.has(type)) {
-                        const mesh = createCustomBlockMesh(type, new THREE.Vector3(), null);
+                        // 💡 new THREE.Vector3() の生成を使い回し変数に変更
+                        const mesh = createCustomBlockMesh(type, _sharedVec3Zero, null);
                         if (mesh) customGeomCache.set(type, mesh.geometry.clone());
                     }
                     const template = customGeomCache.get(type);
@@ -2429,10 +2582,12 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                         const subGeo = new THREE.BufferGeometry();
                         extractGroupGeometry(template, group, subGeo);
 
-                        // 💡 外部で1回定義した _tmpMat を再利用して new を防止
                         subGeo.applyMatrix4(_tmpMat.makeTranslation(wx, wy, wz));
                         return subGeo;
                     });
+
+                    // 💡 filteredが空の場合の早期スキップを追加
+                    if (filtered.length === 0) continue;
 
                     if (filtered.length) {
                         if (!customGeomBatches.has(type)) customGeomBatches.set(type, []);
@@ -2449,27 +2604,27 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                             for (let i = 0; i < posAttr.count; i++) yMin = Math.min(yMin, posAttr.getY(i));
                             yMin = Math.floor(yMin) - BEDROCK_LEVEL;
 
-                            let shade = 1.0;
-                            for (let yCheck = yMin + 1; yCheck < CHUNK_HEIGHT; yCheck++) {
-                                const aboveType = get(centerX, yCheck, centerZ);
-                                const aboveCfg = _blockConfigFastArray[aboveType];
-                                if (aboveType && aboveCfg && aboveCfg.transparent !== true) { shade = 0.2; break; }
+                            let lightLevel = getLightLevel(centerX, yMin, centerZ);
+                            let shade = LIGHT_LEVEL_FACTORS[lightLevel];
+
+                            for (let i = 0; i < posAttr.count; i++) {
+                                colors.set([shade, shade, shade], i * 3);
                             }
-                            colors.fill(shade);
                         } else {
-                            const faceShadeCache = {};
                             for (let i = 0; i < posAttr.count; i++) {
                                 const ny = normalAttr.getY(i), nx = normalAttr.getX(i), nz = normalAttr.getZ(i);
-                                let shade = 1.0;
-                                if (ny > 0.9) shade = computeTopShadowFactorForCorner(wx, wy, wz, ["LL", "LR", "UR", "UL"][i % 4], type);
-                                else if (ny < -0.9) shade = computeBottomShadowFactor(wx, wy, wz);
-                                else {
-                                    const face = nx > 0.9 ? "px" : nx < -0.9 ? "nx" : nz > 0.9 ? "pz" : nz < -0.9 ? "nz" : null;
-                                    if (face) {
-                                        if (!faceShadeCache[face]) faceShadeCache[face] = computeSideShadowFactor(x, y, z, face, baseX, baseZ);
-                                        shade = faceShadeCache[face];
-                                    }
-                                }
+
+                                let targetX = x + (nx > 0.9 ? 1 : nx < -0.9 ? -1 : 0);
+                                let targetY = y + (ny > 0.9 ? 1 : ny < -0.9 ? -1 : 0);
+                                let targetZ = z + (nz > 0.9 ? 1 : nz < -0.9 ? -1 : 0);
+
+                                let lightLevel = getLightLevel(targetX, targetY, targetZ);
+                                let shade = LIGHT_LEVEL_FACTORS[lightLevel];
+
+                                if (nx > 0.9 || nx < -0.9) shade *= 0.8;
+                                if (nz > 0.9 || nz < -0.9) shade *= 0.8;
+                                if (ny < -0.9) shade *= 0.6;
+
                                 colors.set([shade, shade, shade], i * 3);
                             }
                         }
@@ -2484,7 +2639,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 if (!visMask) continue;
 
                 if (useInstancing) {
-                    // (現状維持)
                     if (!faceGeoms.has(type)) faceGeoms.set(type, new Map());
                     const matMap = faceGeoms.get(type);
 
@@ -2511,18 +2665,25 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
                     const batch = matMap.get(matIdx);
 
-                    // 💡 1. 座標を直接足し算して配列に push するだけ（クローンはしない！）
                     const baseVerts = CUBE_VERTICES[face];
-                    for (let v = 0; v < 12; v += 3) {
-                        batch.positions.push(baseVerts[v] + wx, baseVerts[v + 1] + wy, baseVerts[v + 2] + wz);
-                    }
+                    batch.positions.push(
+                        baseVerts[0] + wx, baseVerts[1] + wy, baseVerts[2] + wz,
+                        baseVerts[3] + wx, baseVerts[4] + wy, baseVerts[5] + wz,
+                        baseVerts[6] + wx, baseVerts[7] + wy, baseVerts[8] + wz,
+                        baseVerts[9] + wx, baseVerts[10] + wy, baseVerts[11] + wz
+                    );
 
-                    // 💡 2. 陰影（Shade）の計算
                     for (let v = 0; v < 4; v++) {
-                        let shade = 1.0;
-                        if (face === "py") shade = computeTopShadowFactorForCorner(wx, wy, wz, ["LL", "LR", "UR", "UL"][v], type);
-                        else if (face === "ny") shade = computeBottomShadowFactor(wx, wy, wz);
-                        else shade = computeSideShadowFactor(x, y, z, face, baseX, baseZ);
+                        let targetX = x + (face === "px" ? 1 : face === "nx" ? -1 : 0);
+                        let targetY = y + (face === "py" ? 1 : face === "ny" ? -1 : 0);
+                        let targetZ = z + (face === "pz" ? 1 : face === "nz" ? -1 : 0);
+
+                        let lightLevel = getLightLevel(targetX, targetY, targetZ);
+                        let shade = LIGHT_LEVEL_FACTORS[lightLevel];
+
+                        if (face === "px" || face === "nx") shade *= 0.8;
+                        if (face === "pz" || face === "nz") shade *= 0.8;
+                        if (face === "ny") shade *= 0.6;
 
                         batch.colors.push(shade, shade, shade);
                     }
@@ -2553,7 +2714,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 container.add(mesh);
             }
         } else {
-            // 💡 数値配列から、ダイレクトに一括 BufferGeometry を生成する爆速マージ
             let totalFaces = 0;
             for (const matData of group.values()) {
                 totalFaces += matData.positions.length / 12;
@@ -2617,7 +2777,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
             const mesh = new THREE.Mesh(finalGeom, fadeReadyMats);
             mesh.castShadow = mesh.receiveShadow = true;
-            mesh.frustumCulled = false;
+            mesh.frustumCulled = true;
 
             mesh.userData.finalizeFade = function () {
                 if (!Array.isArray(mesh.material)) return;
@@ -2658,12 +2818,11 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
         const isChunkZero = typeof CHUNK_VISIBLE_DISTANCE !== "undefined" && CHUNK_VISIBLE_DISTANCE === 0;
 
-        // 💡 修正ポイント: 共有マテリアルをベースにしつつ、メッシュごとにクローンして点滅(巻き込み)を防ぐ
         const sharedFadeMat = getOrCreateCustomFadeMaterial(baseMat, isCutout, isWater, isGlass);
-        const fadeReadyMat = sharedFadeMat.clone(); // 👈 ここでクローン！
+        const fadeReadyMat = sharedFadeMat.clone();
 
         fadeReadyMat.userData = {
-            originMat: baseMat, // 👈 フェード完了後に元に戻せるように保持
+            originMat: baseMat,
             realTransparent: isWater || isGlass,
             realDepthWrite: !isWater && !isGlass,
             realOpacity: targetOpacity,
@@ -2675,12 +2834,12 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         const mesh = new THREE.Mesh(merged, fadeReadyMat);
 
         if (isChunkZero) {
-            fadeReadyMat.opacity = targetOpacity; // 即時描画
+            fadeReadyMat.opacity = targetOpacity;
         }
 
         mesh.castShadow = !isCutout;
         mesh.receiveShadow = !isCutout;
-        mesh.frustumCulled = false;
+        mesh.frustumCulled = true;
 
         if (isWater) {
             mesh.renderOrder = 10;
@@ -2690,12 +2849,11 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             mesh.renderOrder = 0;
         }
 
-        // 💡 修正ポイント: フェードインが終わった際、一時マテリアルを破棄してメモリリークを防ぐ
         mesh.userData.finalizeFade = function () {
             if (mesh.material && mesh.material.userData?.originMat) {
                 const origin = mesh.material.userData.originMat;
-                mesh.material.dispose(); // クローンした一時フェード用マテリアルをGPUからメモリ解放
-                mesh.material = origin;  // 本来の静的マテリアルに差し戻し
+                mesh.material.dispose();
+                mesh.material = origin;
             }
             mesh.userData.finalizeFade = null;
         };
@@ -2738,7 +2896,7 @@ function createCustomBlockMesh(type, position, rotation) {
     if (rotation) mesh.rotation.copy(rotation);
     mesh.castShadow = mesh.receiveShadow = true;
     // ✅ 単体配置される特殊ブロックも、視点による非表示化バグを無効化する
-    mesh.frustumCulled = false;
+    mesh.frustumCulled = true;
 
     if (!collisionCache.has(type)) {
         const boxes = typeof config.customCollision === "function"
@@ -2894,54 +3052,89 @@ function processChunkUpdates() {
 }
 
 /**
- * updateAffectedChunks は、ブロック操作によって影響を受けるチャンク（自分自身や隣接チャンク）を
- * 計算し、更新要求を発行します。チャンク座標の算出や、ローカル座標から隣接チャンクを知る方法は、
- * CHUNK_SIZE が 2の冪である前提でビット演算を使用しています。
- *
- * @param {{x: number, y: number, z: number}} blockPos - 操作対象のブロックワールド座標
+ * ブロック操作によって影響を受けるチャンクを特定し、更新を要求する
+ * お化けライトの隣接チャンクへの消去（Unlight）の伝播同期もここで行います。
  */
 function updateAffectedChunks(blockPos, forceImmediate = true) {
     const cx = getChunkCoord(blockPos.x);
     const cz = getChunkCoord(blockPos.z);
+    const myKey = encodeChunkKey(cx, cz);
 
-    // 自分のチャンクキー
-    const keys = [encodeChunkKey(cx, cz)];
+    // ======================================================
+    // 1. 自チャンクのライトマップ再計算（地形データは get でキャッシュから安全取得）
+    // ======================================================
+    const myVoxelData = ChunkSaveManager.modifiedChunks.get(myKey)
+        || ChunkSaveManager.captureBaseChunkData(cx, cz);
 
+    generateChunkLightMap(myKey, myVoxelData);
+
+    // ======================================================
+    // 2. お化けライトの連鎖伝播（配列のメモリ再確保を排除して高速化）
+    // ======================================================
+    pendingChunkUpdates.add(myKey);
+
+    // 💡 配列の shift() は重いため、インデックス走査（リングバッファ風）で GC を抑制
+    const lightQueue = [];
+    let head = 0;
+
+    while (neighborUnlightRequests.length > 0) {
+        const req = neighborUnlightRequests.pop(); // pop() は shift() より圧倒的に高速
+        const nKey = encodeChunkKey(req.cx, req.cz);
+        if (loadedChunks.has(nKey)) {
+            lightQueue.push({ key: nKey, cx: req.cx, cz: req.cz });
+        }
+    }
+
+    while (head < lightQueue.length) {
+        const current = lightQueue[head++];
+
+        // 💡 修正：captureBaseChunkData を呼ばず、既存データがない（まだ誰も弄ってない）ならスキップ！
+        // 未変更チャンクの光は、地形生成時に自動計算されるため、今無理やり作る必要はありません。
+        const nVoxelData = ChunkSaveManager.modifiedChunks.get(current.key);
+        if (!nVoxelData) continue;
+
+        generateChunkLightMap(current.key, nVoxelData);
+        pendingChunkUpdates.add(current.key); // 光が変わったので描画リストへ
+
+        while (neighborUnlightRequests.length > 0) {
+            const nextReq = neighborUnlightRequests.pop();
+            const nextKey = encodeChunkKey(nextReq.cx, nextReq.cz);
+
+            if (loadedChunks.has(nextKey) && !pendingChunkUpdates.has(nextKey)) {
+                lightQueue.push({ key: nextKey, cx: nextReq.cx, cz: nextReq.cz });
+            }
+        }
+    }
+
+    // ======================================================
+    // 3. メッシュ再生成の登録（本当に境界に近いときだけ隣接を更新）
+    // ======================================================
     const localX = blockPos.x & (CHUNK_SIZE - 1);
     const localZ = blockPos.z & (CHUNK_SIZE - 1);
 
-    // 隣接チャンクのキーをまとめて作成
-    const neighbors = [];
-    if (localX === 0) neighbors.push([cx - 1, cz]);
-    else if (localX === CHUNK_SIZE - 1) neighbors.push([cx + 1, cz]);
+    // ブロックがチャンクの「真ん中」にあるなら、隣のメッシュ（見た目）を作り直す必要はない！
+    const isMinX = (localX <= 1);
+    const isMaxX = (localX >= CHUNK_SIZE - 2);
+    const isMinZ = (localZ <= 1);
+    const isMaxZ = (localZ >= CHUNK_SIZE - 2);
 
-    if (localZ === 0) neighbors.push([cx, cz - 1]);
-    else if (localZ === CHUNK_SIZE - 1) neighbors.push([cx, cz + 1]);
+    if (isMinX) pendingChunkUpdates.add(encodeChunkKey(cx - 1, cz));
+    if (isMaxX) pendingChunkUpdates.add(encodeChunkKey(cx + 1, cz));
+    if (isMinZ) pendingChunkUpdates.add(encodeChunkKey(cx, cz - 1));
+    if (isMaxZ) pendingChunkUpdates.add(encodeChunkKey(cx, cz + 1));
 
-    // pendingChunkUpdates に追加（重複は追加しない）
-    for (const [nx, nz] of neighbors) {
-        const k = encodeChunkKey(nx, nz);
-        if (!pendingChunkUpdates.has(k)) keys.push(k);
-    }
+    if (isMinX && isMinZ) pendingChunkUpdates.add(encodeChunkKey(cx - 1, cz - 1));
+    if (isMinX && isMaxZ) pendingChunkUpdates.add(encodeChunkKey(cx - 1, cz + 1));
+    if (isMaxX && isMinZ) pendingChunkUpdates.add(encodeChunkKey(cx + 1, cz - 1));
+    if (isMaxX && isMaxZ) pendingChunkUpdates.add(encodeChunkKey(cx + 1, cz + 1));
 
-    for (const k of keys) pendingChunkUpdates.add(k);
-
+    // ======================================================
+    // 4. 即時反映（時間計測ブレーキに任せる）
+    // ======================================================
     if (forceImmediate) {
-        // 即時処理：処理済みキーを除きつつバッチ
-        const batchSize = Math.min(pendingChunkUpdates.size, 4);
-        processPendingChunkUpdates(batchSize);
-        // Set は残すので同フレームで追加更新可能
-    } else {
-        // デバウンス：タイマーセット
-        if (!updateTimeout) {
-            updateTimeout = setTimeout(() => {
-                processChunkUpdates();
-                updateTimeout = null;
-            }, 16);
-        }
+        processPendingChunkUpdates(Infinity);
     }
 }
-
 /**
  * ブロックの AABB とプレイヤーの AABB が交差しているかを判定する
  * ※ tolerance は数値の余裕（例えば 0.001 や 0.05 など）を与え、
@@ -3589,9 +3782,9 @@ const sharedCamera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
 sharedCamera.position.set(2, 2, 2);
 sharedCamera.lookAt(0, 0, 0);
 
-// 3Dプレビュー作成（レンダラーは共有、戻り値は描画結果をコピーした2D canvas）
+// 3Dプレビュー作成
 const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) => {
-    const hashKey = getPreviewHash(id, size, 1); // 1 = 3D
+    const hashKey = getPreviewHash(id, size, 1);
 
     if (previewCache.has(hashKey)) {
         const cached = previewCache.get(hashKey);
@@ -3656,17 +3849,25 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
     sharedCamera.lookAt(0, 0, 0);
     sharedCamera.updateProjectionMatrix();
 
-    // 不要な子要素の処分
-    while (sharedScene.children.length > 2) {
-        const old = sharedScene.children[2];
+    // 💡 修正ポイント：配列を後ろから安全に回し、古いプレビューをメモリごと捨てる
+    for (let i = sharedScene.children.length - 1; i >= 2; i--) {
+        const old = sharedScene.children[i];
         sharedScene.remove(old);
-        if (old.geometry) old.geometry.dispose();
+
+        if (old.geometry) {
+            old.geometry.dispose();
+        }
+
         if (old.material) {
             const disposeMaterial = m => {
                 if (m.map) m.map.dispose();
                 m.dispose();
             };
-            Array.isArray(old.material) ? old.material.forEach(disposeMaterial) : disposeMaterial(old.material);
+            if (Array.isArray(old.material)) {
+                old.material.forEach(disposeMaterial);
+            } else {
+                disposeMaterial(old.material);
+            }
         }
     }
 
@@ -4312,16 +4513,26 @@ const updateBlockParticles = delta => {
             p.quaternion.copy(camera.quaternion);
 
             if (ud.elapsed >= ud.lifetime) {
+                // 💡 [修正①] 次の描画に影響が出ないよう、マテリアルの色を白色（RGB 1.0）に戻してプールへ
+                if (p.material && p.material.color) {
+                    p.material.color.setRGB(1.0, 1.0, 1.0);
+                }
+
                 releasePooledParticle(p);
                 group.remove(p);
             }
-        }
+        } // (piループの終わり)
 
         if (group.children.length === 0) {
+            // 💡 [修正②] クローンした専用マテリアルを破棄してメモリリーク（VRAM枯渇）を回避
+            if (group.userData && typeof group.userData.dispose === "function") {
+                group.userData.dispose();
+            }
+
             scene.remove(group);
             ag.splice(gi, 1);
         }
-    }
+    } // (giループの終わり)
 };
 /**
  * プレイヤーの AABB（当たり判定）の下半身サンプルによる水中判定
@@ -4540,8 +4751,11 @@ function animate() {
     updateChunks();
 
     chunkUpdateFrameTimer += delta;
-    if (chunkUpdateFrameTimer > 0.016) {
-        processPendingChunkUpdates(1);
+    if (chunkUpdateFrameTimer > 0.016) { // 約 60fps ごと
+        if (pendingChunkUpdates.size > 0) {
+            // 💡 修正：固定の「1枚」ではなく、時間計測ブレーキの「限界まで」働く設定に変更！
+            processPendingChunkUpdates(Infinity);
+        }
         chunkUpdateFrameTimer = 0;
     }
 
