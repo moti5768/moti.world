@@ -221,8 +221,20 @@ export const BLOCK_CONFIG = {
         geometryType: "water",
         previewType: "2D"
     }),
+    LAVA: createBlockConfig({
+        id: 19,
+        textures: { all: "textures/lava.png" },
+        collision: false,
+        transparent: true,
+        opacity: 1,
+        targetblock: false,
+        overwrite: true,
+        geometryType: "water",
+        isLightSource: true,
+        previewType: "2D"
+    }),
     GLOWSTONE: createBlockConfig({
-        id: 19, // 重複しない新しいID
+        id: 20, // 重複しない新しいID
         textures: { all: "textures/glowstone.png" }, // 使用するテクスチャパス
         geometryType: "cube",
         isLightSource: true, // 💡 光源判定フラグ
@@ -313,11 +325,6 @@ function cachedLoadTexture(path, fallback = null) {
 
 // グローバルキャッシュ
 const materialCache = new Map();      // ブロック構成ごとのキャッシュ
-
-// --- blocks.js の createMaterialsFromBlockConfig 関数 ---
-
-// blocks.js の createMaterialsFromBlockConfig 内を以下に差し替え
-
 function createMaterialsFromBlockConfig(blockConfig) {
     const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
     const { geometryType, transparent, textures } = blockConfig;
@@ -332,15 +339,15 @@ function createMaterialsFromBlockConfig(blockConfig) {
     const isWater = geometryType === "water";
     const isGlass = blockConfig.id === 12;
 
-    // 💡 【1. 追加】 光源ブロックのフラグをチェック
     const isLightSource = blockConfig.isLightSource === true;
 
-    // 💡 マイクラの描画ロジックに合わせる
-    const isBlendTransparent = isWater;
+    // 💡 【修正】 透過ブレンド（半透明）にするのは、純粋な「水（ID: 18）」の時だけにする！
+    const isBlendTransparent = (blockConfig.id === 18);
 
-    // 💡 【2. 修正】 光源ブロックであれば、カットアウト(透過破棄)の対象外にする
-    const isAlphaCutout = transparent === true && !isWater && !isLightSource;
+    // 💡 【修正】 光源や、透過ブレンドする水以外の「透明フラグ付きブロック」をカットアウト対象にする
+    const isAlphaCutout = transparent === true && !isBlendTransparent && !isLightSource;
 
+    // 水と溶岩（geometryType === "water"）は両面描画(DoubleSide)にしておく
     const side = (isCross || isWater) ? THREE.DoubleSide : THREE.FrontSide;
     const useVertexColors = (!isStairsOrSlab && !isCross && !isWater);
 
@@ -354,11 +361,11 @@ function createMaterialsFromBlockConfig(blockConfig) {
     function getMat(texPathOrNone) {
         const materialOptions = {
             color: (blockConfig.defaultColor !== undefined) ? blockConfig.defaultColor : 0xffffff,
-            transparent: isBlendTransparent,
+            transparent: isBlendTransparent, // 溶岩なら false になる
             opacity: opacity,
             vertexColors: useVertexColors,
             side: side,
-            depthWrite: !isBlendTransparent,
+            depthWrite: !isBlendTransparent, // 溶岩なら true になり、奥のブロックを隠す（正常な描画順になる）
             alphaTest: isAlphaCutout ? 0.5 : 0,
         };
 
@@ -373,9 +380,9 @@ function createMaterialsFromBlockConfig(blockConfig) {
             realDepthWrite: !isBlendTransparent,
             realOpacity: opacity,
             isAlphaCutout: isAlphaCutout,
-            isWater: isWater,
+            isWater: (blockConfig.id === 18), // userData内も水かどうかで判定を分ける
             isGlass: isGlass,
-            isLightSource: isLightSource // 💡 【3. 追加】
+            isLightSource: isLightSource
         };
 
         return mat;
@@ -603,8 +610,8 @@ function createBlockMesh(blockType, pos, rotation) {
 
     // 位置・影設定
     mesh.position.copy(pos);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
 
     if (rotation) {
         mesh.rotation.copy(rotation);

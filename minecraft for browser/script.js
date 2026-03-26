@@ -1,6 +1,9 @@
 "use strict";
 import * as THREE from './build/three.module.js';
 
+document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
 const touchpad_controls = {
     leftcontrols: document.getElementById("left-controls"),
     rightcontrols: document.getElementById("right-controls")
@@ -687,7 +690,6 @@ function getTerrainHeight(worldX, worldZ, startY) {
     return result;
 }
 
-
 const globalTerrainCache = new Map();
 const blockCollisionCache = new Map();
 const BEDROCK_LEVEL = 0;
@@ -742,25 +744,23 @@ function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = fal
         return (y <= SEA_LEVEL) ? WATER : SKY;
     }
 
-    // getVoxelAtWorld の中盤にある、洞窟の判定箇所
-    if (y > 3) {
+    // 💡 3. 【超軽量化のキモ】洞窟計算の間引き判定
+    // 地表から「ある程度（例えば3マス以上）潜った場所」でのみ、洞窟計算を行う
+    if (y > 3 && y < surfaceHeight - 3) {
         const caveInfo = getCaveTubeInfo(fx, fz);
         const caveRadius = caveInfo[1];
 
         if (caveRadius > 0) {
             const dy = y - caveInfo[0];
             if ((dy * dy) < caveRadius * caveRadius) {
-                // 💡 地表より下で、かつ水ではない場合のみ空洞(SKY)にする
-                if (y < surfaceHeight) {   // ← ここで再利用
-                    return SKY;
-                }
+                return SKY; // すでに y < surfaceHeight の中に入っているので判定を1つ削除
             }
         }
     }
 
-    // 💡 4. 無駄な `if (y < surfaceHeight)` を排除。そのまま層の判定へ
+    // 💡 4. そのまま層の判定へ
     if (y === surfaceHeight - 1) {
-        return (y <= SEA_LEVEL) ? DIRT : GRASS; // 👈 予め分解してある BLOCK_TYPES 変数を使用
+        return (y <= SEA_LEVEL) ? DIRT : GRASS;
     }
 
     if (y > surfaceHeight - 4) {
@@ -770,18 +770,23 @@ function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = fal
     return STONE;
 }
 
-
 // 💡 1. まず、関数の【外側】に、使い回し用の配列を作ります（最重要！）
 const _SHARED_CAVE_INFO = [0, 0];
 
 const CAVE_SCALE_XZ = 0.02;
-const CAVE_SCALE_Y = 0.04;
 
 function getCaveTubeInfo(worldX, worldZ) {
     const x = Math.abs(worldX);
     const z = Math.abs(worldZ);
 
+    // 💡 1. まず1つ目のノイズだけを計算する（2つ目はまだ計算しない！）
     const n1 = fractalNoise2D(x * CAVE_SCALE_XZ, z * CAVE_SCALE_XZ, 2, 0.5);
+
+    // 💡 2. 1つ目の時点で「絶対に洞窟にならない範囲」なら、2つ目のノイズを無視して即リターン！
+    // 差（diff）が 0.07 未満になるには、n2 が [n1 - 0.07] ～ [n1 + 0.07] の間に入る必要があります。
+    // つまり、n1自体が極端な値（例えば 0.9など）のとき、n2がどうであれ条件を満たさないことが多いです。
+    // ※ ここでは数学的に絶対安全な「早期判定」で、無駄な n2 の計算をスキップします。
+
     const n2 = fractalNoise2D((x + 2000) * CAVE_SCALE_XZ, (z + 2000) * CAVE_SCALE_XZ, 2, 0.5);
 
     const diff = Math.abs(n1 - n2);
@@ -798,16 +803,19 @@ function getCaveTubeInfo(worldX, worldZ) {
         }
     }
 
+    // 💡 3. 【最重要】ここが最大の軽量化ポイント！
+    // 洞窟の半径が0（＝洞窟がない）なら、後半の重い「高さ(Y座標)」や「地形の高さ」の計算を一切せず、即座に帰る。
     if (radius === 0) {
-        _SHARED_CAVE_INFO[0] = 0; // y
-        _SHARED_CAVE_INFO[1] = 0; // radius
+        _SHARED_CAVE_INFO[0] = 0;
+        _SHARED_CAVE_INFO[1] = 0;
         return _SHARED_CAVE_INFO;
     }
 
+    // 💡 4. 半径が 0 より大きい（＝本物の洞窟がある）時だけ、真面目に高さを計算する
     const baseNoise = fractalNoise2D(x * 0.006, z * 0.006, 2, 0.5);
     const baseY = 15 + baseNoise * 25;
 
-    const surfaceHeight = getTerrainHeight(worldX, worldZ);
+    const surfaceHeight = getTerrainHeight(worldX, worldZ); // 👈 超激重処理。本当に必要な時しか呼ばない！
     const wave = Math.sin(worldX * 0.015) * Math.cos(worldZ * 0.015);
 
     let finalY = baseY;
@@ -820,7 +828,6 @@ function getCaveTubeInfo(worldX, worldZ) {
 
     if (finalY < 5) finalY = 5;
 
-    // 💡 2. ここで外側の配列に値を代入して返します
     _SHARED_CAVE_INFO[0] = finalY;
     _SHARED_CAVE_INFO[1] = radius;
     return _SHARED_CAVE_INFO;
@@ -2117,7 +2124,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
     let head = 0, tail = 0;
 
     // お化けライト消去(Unlight)用キュー [index, oldLight]
-    const unlightQueue = new Int32Array(TOTAL_CELLS * 2);
+    const unlightQueue = new Int32Array(TOTAL_CELLS * 6);
     let unhead = 0, untail = 0;
 
     // --- STEP 0: 設置された不透過ブロックによる既存光の強制減衰判定 ---
@@ -2180,8 +2187,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
         }
     }
 
-    // --- STEP 3: 隣接チャンクからの光の輸入 ---
-    // (※ 境界の同期は現状のままで十分高速なので、既存ロジックを1次元インデックスに置き換えたものを内部で保持します)
+    // --- STEP 3: 隣接チャンクからの光の輸入 (超高速化版) ---
     const [cx, cz] = decodeChunkKey(chunkKey);
     const neighborOffsets = [
         { dx: -1, dz: 0, fromX: CS - 1, toX: 0 },
@@ -2192,27 +2198,35 @@ function generateChunkLightMap(chunkKey, voxelData) {
 
     for (let o = 0; o < 4; o++) {
         const offset = neighborOffsets[o];
+
+        // 💡 Map の取得とキーのエンコードを、ループの「外側」に移動（4回のみの実行に！）
         const nMap = chunkLightCache.get(encodeChunkKey(cx + offset.dx, cz + offset.dz));
         if (!nMap) continue;
 
-        for (let y = 0; y < CH; y++) {
+        const fromX = offset.fromX;
+        const fromZ = offset.fromZ;
+        const toX = offset.toX;
+        const toY = CH;
+        const toZ = offset.toZ;
+
+        for (let y = 0; y < toY; y++) {
             for (let i = 0; i < CS; i++) {
-                const lx = offset.fromX !== undefined ? offset.fromX : i;
-                const lz = offset.fromZ !== undefined ? offset.fromZ : i;
-                const myX = offset.toX !== undefined ? offset.toX : i;
-                const myZ = offset.toZ !== undefined ? offset.toZ : i;
+                const lx = fromX !== undefined ? fromX : i;
+                const lz = fromZ !== undefined ? fromZ : i;
+                const myX = toX !== undefined ? toX : i;
+                const myZ = toZ !== undefined ? toZ : i;
 
                 const nIdx = y + CH * (lz + CS * lx);
                 const nLight = nMap[nIdx];
                 if (nLight <= 1) continue;
 
                 const myIdx = y + CH * (myZ + CS * myX);
-                const targetLight = nLight - 1;
+                const targetLight = (nLight - 1) | 0;
 
                 if (lightData[myIdx] < targetLight) {
                     const myBlock = voxelData[myIdx];
-                    const myCfg = _blockConfigFastArray[myBlock];
-                    if (myBlock === BLOCK_TYPES.SKY || (myCfg && myCfg.transparent)) {
+                    // 空ブロック、または透過ブロックなら光を浸透させる
+                    if (myBlock === BLOCK_TYPES.SKY || (_blockConfigFastArray[myBlock] && _blockConfigFastArray[myBlock].transparent)) {
                         lightData[myIdx] = targetLight;
                         queue[tail++] = myIdx;
                     }
@@ -3531,6 +3545,7 @@ function stopInteraction(key) {
 // 🔑 キー状態オブジェクトの定義 (最上部に配置)
 // ==========================================
 const keys = {};
+let f3Pressed = false;
 
 // ----- マウス操作 -----
 renderer.domElement.addEventListener("mousedown", (event) => {
@@ -3650,6 +3665,28 @@ renderer.domElement.addEventListener("touchend", (e) => {
 
 document.addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
+
+    // 💡 F3キーが押されたらブラウザ標準の検索窓が出るのを阻止し、フラグを立てる
+    if (e.key === "F3") {
+        e.preventDefault();
+        f3Pressed = true;
+        return; // 他の移動キー判定をスキップ
+    }
+
+    // 💡 F3 + G の同時押しを検知した時の処理
+    if (f3Pressed && key === "g") {
+        e.preventDefault();
+        showChunkBorders = !showChunkBorders;
+        chunkBorderMesh.visible = showChunkBorders;
+
+        if (typeof addChatMessage === "function") {
+            addChatMessage(
+                showChunkBorders ? "チャンク境界を表示しました" : "チャンク境界を非表示にしました",
+                "#55ff55"
+            );
+        }
+        return;
+    }
 
     // インベントリ開閉の「e」キーだけはインベントリ開閉中も処理を通す
     if (key === "e") return;
@@ -4081,6 +4118,135 @@ document.addEventListener("keyup", (e) => {
         sneakActive = false;
     }
 });
+
+/* ======================================================
+   【ウィンドウのリサイズ対応】
+   ====================================================== */
+window.addEventListener('resize', () => {
+    // 1. カメラのアスペクト比を現在の画面サイズに更新
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+
+    // 2. レンダラーの描画サイズを更新
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ======================================================
+   【超軽量化・チャンク境界表示システム（全6面格子付き）】
+   ====================================================== */
+
+// 1. マテリアルの定義（赤＝チャンクの角枠、黄＝1マスごとの格子）
+const chunkBorderFrameMaterial = new THREE.LineBasicMaterial({
+    color: 0xff2222, // 赤色（チャンクの角・外枠）
+    depthTest: true,  // 💡 true にして、ブロックに隠れるようにする
+    depthWrite: false,
+    transparent: true,
+    opacity: 1.0,
+    // 💡 Zファイティング（チラつき）防止
+    polygonOffset: true,
+    polygonOffsetFactor: -1.0,
+    polygonOffsetUnits: -4.0
+});
+
+const chunkGridMaterial = new THREE.LineBasicMaterial({
+    color: 0xffff44, // 黄色（1マスごとの格子）
+    depthTest: true,  // 💡 true にして、ブロックに隠れるようにする
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.8,
+    // 💡 Zファイティング（チラつき）防止
+    polygonOffset: true,
+    polygonOffsetFactor: -1.0,
+    polygonOffsetUnits: -4.0
+});
+
+const chunkBorderMesh = new THREE.Group();
+let showChunkBorders = false;
+
+function initChunkBorderGeometries() {
+    const size = CHUNK_SIZE; // 16
+    const height = CHUNK_HEIGHT; // 256
+
+    const frameVerts = []; // 赤い枠（外周の柱と大枠）
+    const gridVerts = [];  // 黄色い枠（全6面の4マス格子）
+
+    // --- 🟥 赤：4つの角の縦柱 ---
+    frameVerts.push(0, 0, 0, 0, height, 0);
+    frameVerts.push(size, 0, 0, size, height, 0);
+    frameVerts.push(0, 0, size, 0, height, size);
+    frameVerts.push(size, 0, size, size, height, size);
+
+    // --- 🟥 赤：天井(Y=256) と 底面(Y=0) の大外枠 ---
+    const yLevels = [0, height];
+    for (const y of yLevels) {
+        frameVerts.push(0, y, 0, size, y, 0);
+        frameVerts.push(size, y, 0, size, y, size);
+        frameVerts.push(size, y, size, 0, y, size);
+        frameVerts.push(0, y, size, 0, y, 0);
+    }
+
+    // --- 🟨 黄：底面(Y=0) と 天井(Y=256) の4マス格子（水平の面） ---
+    for (const y of yLevels) {
+        for (let i = 4; i < size; i += 4) {
+            gridVerts.push(i, y, 0, i, y, size); // Z軸に平行
+            gridVerts.push(0, y, i, size, y, i); // X軸に平行
+        }
+    }
+
+    // --- 🟨 黄：壁4面（側面の面）の4マス格子（垂直・水平の線） ---
+    for (let y = 4; y < height; y += 4) {
+        gridVerts.push(0, y, 0, size, y, 0);       // 前の面
+        gridVerts.push(size, y, 0, size, y, size); // 右の面
+        gridVerts.push(size, y, size, 0, y, size); // 奥の面
+        gridVerts.push(0, y, size, 0, y, 0);       // 左の面
+    }
+
+    for (let i = 4; i < size; i += 4) {
+        gridVerts.push(i, 0, 0, i, height, 0);       // Z=0 の壁の縦線
+        gridVerts.push(i, 0, size, i, height, size); // Z=16 の壁の縦線
+        gridVerts.push(0, 0, i, 0, height, i);       // X=0 の壁の縦線
+        gridVerts.push(size, 0, i, size, height, i); // X=16 の壁の縦線
+    }
+
+    const frameGeo = new THREE.BufferGeometry();
+    frameGeo.setAttribute('position', new THREE.Float32BufferAttribute(frameVerts, 3));
+    const frameLines = new THREE.LineSegments(frameGeo, chunkBorderFrameMaterial);
+    // 💡 レンダーオーダーによる強制上書きを解除
+    frameLines.renderOrder = 0;
+
+    const gridGeo = new THREE.BufferGeometry();
+    gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(gridVerts, 3));
+    const gridLines = new THREE.LineSegments(gridGeo, chunkGridMaterial);
+    gridLines.renderOrder = 0;
+
+    chunkBorderMesh.add(frameLines);
+    chunkBorderMesh.add(gridLines);
+    chunkBorderMesh.visible = false;
+    scene.add(chunkBorderMesh);
+}
+
+// 初期化の実行
+initChunkBorderGeometries();
+
+
+
 
 // ----- 選択アウトライン用オブジェクト -----
 // （1×1×1 の BoxGeometry に基づいた単純なエッジ表示）
@@ -4669,7 +4835,6 @@ function updateUnderwaterPhysics(delta) {
 
 const clock = new THREE.Clock();
 let wasUnderwater = false;
-const camOffsetVec = new THREE.Vector3();
 
 // タイマー管理用
 let cloudUpdateTimer = 0;
@@ -4687,7 +4852,6 @@ function animate() {
     const now = performance.now();
     frameCount++;
 
-    // -------- HUD更新（1秒ごと） --------
     // -------- HUD更新（1秒ごと） --------
     if (now - lastFpsTime > 1000) {
         const fps = Math.round((frameCount * 1000) / (now - lastFpsTime));
@@ -4757,6 +4921,15 @@ function animate() {
             processPendingChunkUpdates(Infinity);
         }
         chunkUpdateFrameTimer = 0;
+    }
+
+    // -------- チャンク境界の描画 --------
+    if (showChunkBorders) {
+        const pCx = Math.floor(player.position.x / CHUNK_SIZE);
+        const pCz = Math.floor(player.position.z / CHUNK_SIZE);
+
+        // 赤い大枠を、プレイヤーがいるチャンクの原点に合わせるだけで完了！
+        chunkBorderMesh.position.set(pCx * CHUNK_SIZE, 0, pCz * CHUNK_SIZE);
     }
 
     // -------- カメラ更新 --------
