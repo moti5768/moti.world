@@ -5365,4 +5365,4 @@ function addChatMessage(text, color = "#ffffff", duration = 6000) {
 
 // グローバルでどこからでも呼べるように window に露出
 window.addChatMessage = addChatMessage;
-addChatMessage("Minecraft for browser alpha 0.0.1a", "#ffff55");
+addChatMessage("Minecraft classic 0.0.1", "#ffff55");

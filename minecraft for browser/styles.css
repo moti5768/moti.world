@@ -286,15 +286,10 @@ canvas {
     z-index: 999999;
 }
 
-
-
-
-
-
 /* --- チャットログのスタイル --- */
 #chat-container {
     position: fixed;
-    bottom: 80px;
+    bottom: 100px;
     /* ホットバーの上 */
     left: 10px;
     width: 350px;
