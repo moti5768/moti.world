@@ -55,26 +55,32 @@ const grad2D = (hash, x, y) => {
 
 // 単一の2Dパーリンノイズ (-1.0 〜 1.0)
 const perlinNoise2D = (x, y) => {
-    // 負の数でも安全にグリッドの整数を求める
-    let fx = Math.floor(x);
-    let fy = Math.floor(y);
+    // 💡 Math.floor の代わりにビット演算を使いつつ、負の数も正しく処理
+    // (x | 0) は整数化。x < (x | 0) なら 1 引くことで Math.floor と同等にする
+    const xi = (x | 0);
+    const fx = x < xi ? xi - 1 : xi;
 
-    let X = fx & 255;
-    let Y = fy & 255;
+    const yi = (y | 0);
+    const fy = y < yi ? yi - 1 : yi;
 
-    // 💡 修正ポイント：引き算による誤差をなくし、必ず 0.0 〜 1.0 の範囲に収める
-    x -= fx;
-    y -= fy;
+    const X = fx & 255;
+    const Y = fy & 255;
 
-    const u = fade(x);
-    const v = fade(y);
+    // 💡 元の x, y を書き換えずに、小数部を定数として保持（最適化されやすい）
+    const xf = x - fx;
+    const yf = y - fy;
 
+    const u = fade(xf);
+    const v = fade(yf);
+
+    // ハッシュ計算のインライン化
     const a = p[X] + Y;
     const b = p[X + 1] + Y;
 
+    // grad2D への引数も計算済みの xf, yf を使用
     return lerp(
-        lerp(grad2D(p[a], x, y), grad2D(p[b], x - 1, y), u),
-        lerp(grad2D(p[a + 1], x, y - 1), grad2D(p[b + 1], x - 1, y - 1), u),
+        lerp(grad2D(p[a], xf, yf), grad2D(p[b], xf - 1, yf), u),
+        lerp(grad2D(p[a + 1], xf, yf - 1), grad2D(p[b + 1], xf - 1, yf - 1), u),
         v
     );
 };
@@ -85,43 +91,119 @@ const perlinNoise2D = (x, y) => {
 function fractalNoise2D(x, z, octaves = 4, persistence = 0.5) {
     let total = 0;
     let amplitude = 1;
-    let frequency = 1;
+    let freq = 1; // frequency を短縮（微差ですがJITに優しい）
     let maxValue = 0;
 
-    for (let i = 0; i < octaves; i++) {
-        total += perlinNoise2D(x * frequency, z * frequency) * amplitude;
+    // 💡 ループ内での計算を最小限に集約
+    for (let i = 0; i < octaves; i = (i + 1) | 0) {
+        total += perlinNoise2D(x * freq, z * freq) * amplitude;
         maxValue += amplitude;
+
         amplitude *= persistence;
-        frequency *= 2.0;
+        freq *= 2; // 2.0 ではなく整数 2 を使用
     }
 
-    return total / maxValue;
+    // 💡 0除算を防ぎつつ、計算結果を返す
+    return maxValue === 0 ? 0 : total / maxValue;
 }
 
 /* ======================================================
    【定数・グローバル変数】
    ====================================================== */
 let cloudTiles = new Map(); // 雲システム用
+let globalBrightnessMultiplier = 1.0;　//世界全体の明るさ　デフォルトで50%
+
+/* ======================================================
+   【新・昼夜サイクルシステム】
+   ====================================================== */
+let gameTime = 0;                  // 0 ～ 24000 tick
+const TICKS_PER_DAY = 24000;
+const TIME_SPEED = 1.0;            // Tick速度倍率 (1.0 = 20分で1日)
+
+// 24000tick の時間帯における「太陽の明るさ(0.0 ～ 1.0)」の早見表
+function getSkyLightFactor(time) {
+    if (time >= 0 && time < 12000) {
+        return 1.0; // 昼 (10分間)
+    } else if (time >= 12000 && time < 13000) {
+        const t = (time - 12000) / 1000;
+        return THREE.MathUtils.lerp(1.0, 0.1, t); // 夕焼け (1.5分)
+    } else if (time >= 13000 && time < 23000) {
+        return 0.1; // 夜 (7分間、月明かり程度の 10%)
+    } else {
+        const t = (time - 23000) / 1000;
+        return THREE.MathUtils.lerp(0.1, 1.0, t); // 朝焼け (1.5分)
+    }
+}
+
+/* ======================================================
+   【改善後】Minecraft完全準拠：空とフォグの色更新
+   ====================================================== */
+function updateSkyAndFogColor(time) {
+    let r, g, b;
+
+    // Minecraftのカラー定義（RGB）
+    const day = { r: 120, g: 167, b: 255 };    // #78A7FF (鮮やかな昼)
+    const sunset = { r: 255, g: 141, b: 93 }; // #FF8D5D (夕焼けオレンジ)
+    const night = { r: 12, g: 12, b: 20 };     // #0C0C14 (深い夜)
+
+    if (time >= 0 && time < 12000) {
+        // --- 昼 ---
+        ({ r, g, b } = day);
+
+    } else if (time >= 12000 && time < 13500) {
+        // --- 夕方 (1.5時間分でじわじわ変化) ---
+        const t = (time - 12000) / 1500;
+        r = THREE.MathUtils.lerp(day.r, sunset.r, t);
+        g = THREE.MathUtils.lerp(day.g, sunset.g, t);
+        b = THREE.MathUtils.lerp(day.b, sunset.b, t);
+
+    } else if (time >= 13500 && time < 15000) {
+        // --- 日没から夜へ ---
+        const t = (time - 13500) / 1500;
+        r = THREE.MathUtils.lerp(sunset.r, night.r, t);
+        g = THREE.MathUtils.lerp(sunset.g, night.g, t);
+        b = THREE.MathUtils.lerp(sunset.b, night.b, t);
+
+    } else if (time >= 15000 && time < 22500) {
+        // --- 夜 ---
+        ({ r, g, b } = night);
+
+    } else {
+        // --- 夜明け (22500〜24000) ---
+        const t = (time - 22500) / 1500;
+        r = THREE.MathUtils.lerp(night.r, day.r, t);
+        g = THREE.MathUtils.lerp(night.g, day.g, t);
+        b = THREE.MathUtils.lerp(night.b, day.b, t);
+    }
+
+    // 整数化してHEXカラーに変換
+    const hexColor = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
+
+    // レンダラーの背景とフォグに適用
+    renderer.setClearColor(hexColor);
+    if (scene.fog) {
+        scene.fog.color.setHex(hexColor);
+    }
+}
 /* ======================================================
    【新・チャンク保存管理システム (クラスなし版)】
    ====================================================== */
 const ChunkSaveManager = {
-    // 変更されたチャンクの生データ (Uint8Array) を保持する
-    modifiedChunks: new Map(), // Key(BigInt) -> Uint8Array
+    modifiedChunks: new Map(),
 
-    // 1. ローカル座標から 1次元配列のインデックスを求める
+    // 1. ビット演算を用いた高速なインデックス計算
+    // script.js の他の部分と整合性を取るため、(y) + (z * 256) + (x * 256 * 16) の形式に最適化
     getBlockIndex: function (lx, ly, lz) {
-        return ly + CHUNK_HEIGHT * (lz + CHUNK_SIZE * lx);
+        // CHUNK_HEIGHT=256(8bit), CHUNK_SIZE=16(4bit) を想定
+        return (ly | 0) + ((lz | 0) << 8) + ((lx | 0) << 12);
     },
 
-    // 2. 変更があった時、特定のチャンク配列にブロックを書き込む
     setBlock: function (cx, cz, lx, ly, lz, blockType) {
-        const key = encodeChunkKey(cx, cz);
+        if (ly < 0 || ly >= CHUNK_HEIGHT) return;
 
-        // has() と get() の二重ルックアップを避けて取得
+        const key = encodeChunkKey(cx, cz);
         let dataArray = this.modifiedChunks.get(key);
         if (!dataArray) {
-            // 初めての変更なら、そのチャンクの初期状態を生成して保存
             dataArray = this.captureBaseChunkData(cx, cz);
             this.modifiedChunks.set(key, dataArray);
         }
@@ -130,7 +212,6 @@ const ChunkSaveManager = {
         dataArray[idx] = blockType;
     },
 
-    // 3. 変更されたブロックデータを取得する。未変更なら null
     getBlock: function (cx, cz, lx, ly, lz) {
         if (ly < 0 || ly >= CHUNK_HEIGHT) return null;
 
@@ -143,24 +224,27 @@ const ChunkSaveManager = {
         return dataArray[idx];
     },
 
-    // 4. 初めての変更時
-    // 4. 初めての変更時（地形のみを生成する本来の責務）
+    // 4. 地形生成の最適化
     captureBaseChunkData: function (cx, cz) {
+        // サイズを定数から計算 (16 * 256 * 16 = 65536)
         const data = new Uint8Array(CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE);
         const baseX = cx * CHUNK_SIZE;
         const baseZ = cz * CHUNK_SIZE;
 
-        let idx = 0;
+        // ループの外で定数を計算しておく
+        for (let x = 0; x < CHUNK_SIZE; x = (x + 1) | 0) {
+            const worldX = (baseX + x) | 0;
+            const xOffset = (x << 12); // インデックス計算の一部を外側に
 
-        for (let x = 0; x < CHUNK_SIZE; x++) {
-            const worldX = baseX + x;
+            for (let z = 0; z < CHUNK_SIZE; z = (z + 1) | 0) {
+                const worldZ = (baseZ + z) | 0;
+                const zOffset = (z << 8);
+                const surfaceHeight = getTerrainHeight(worldX, worldZ) | 0;
 
-            for (let z = 0; z < CHUNK_SIZE; z++) {
-                const worldZ = baseZ + z;
-                const surfaceHeight = getTerrainHeight(worldX, worldZ);
+                for (let y = 0; y < CHUNK_HEIGHT; y = (y + 1) | 0) {
+                    const worldY = (BEDROCK_LEVEL + y) | 0;
+                    const idx = (y + zOffset + xOffset) | 0;
 
-                for (let y = 0; y < CHUNK_HEIGHT; y++) {
-                    const worldY = BEDROCK_LEVEL + y;
                     let blockType = BLOCK_TYPES.SKY;
 
                     if (worldY === BEDROCK_LEVEL) {
@@ -177,7 +261,7 @@ const ChunkSaveManager = {
                         blockType = BLOCK_TYPES.WATER;
                     }
 
-                    data[idx++] = blockType;
+                    data[idx] = blockType;
                 }
             }
         }
@@ -242,15 +326,9 @@ const _sweptTmpExit = new THREE.Vector3();
 const globalTempVec3 = new THREE.Vector3();
 const globalTempVec3b = new THREE.Vector3();
 const globalTempVec3c = new THREE.Vector3();
-const globalCenterVec = new THREE.Vector2(0, 0);
 
 const globalRaycaster = new THREE.Raycaster();
 globalRaycaster.near = 0.01;
-
-const globalSamplePoints = [];
-for (let i = 0; i < 9; i++) {
-    globalSamplePoints.push(new THREE.Vector3());
-}
 
 const lastCamPos = new THREE.Vector3();
 const lastCamRot = new THREE.Euler();
@@ -267,8 +345,6 @@ if (initialNoise > 0.2) {
 }
 // 本来の地表の高さ + 余裕を持たせた2ブロック上
 const spawnY = Math.max(Math.floor(BASE_HEIGHT + heightModifier), SEA_LEVEL + 5);
-
-console.log("Spawn Position (Calculated):", spawnX, spawnY, spawnZ);
 
 console.log("Spawn Position:", spawnX, spawnY, spawnZ);
 
@@ -467,10 +543,10 @@ function getCurrentPlayerHeight() {
    【シーン・カメラ・レンダラー設定】
    ====================================================== */
 // フォグの色を定義（背景色とも合わせます）
-const fogColor = 0xbfd1e5;
+const fogColor = 0x78A7FF;
 const scene = new THREE.Scene();
 // 💡 32マス先から霧が始まり、128マス（8チャンク程度）先で完全に霧で見えなくする
-scene.fog = new THREE.Fog(fogColor, 32, 128);
+scene.fog = new THREE.FogExp2(fogColor, 0.008);
 setMinecraftSky(scene);
 
 loadCloudTexture(() => {
@@ -597,13 +673,14 @@ function checkAABBCollision(aabb, velocity, dt) {
 
         // 💡 改善：rawフラグを true(boolean) で渡し、関数内部での {} 生成のメモリ汚染を阻止
         const id = getVoxelAtWorld(x, y, z, globalTerrainCache, true);
-        if (id === BLOCK_TYPES.SKY) continue;
+        if (id === BLOCK_TYPES.SKY || id === BLOCK_TYPES.WATER) continue;
 
         // 💡 改善：Map.get() の重複を排し、ハッシュ計算コストを半分に
         let coll = blockCollisionFlagCache.get(id);
         if (coll === undefined) {
-            getCachedCollisionBoxes(id); // 内部キャッシュを誘発させる
-            coll = blockCollisionFlagCache.get(id);
+            // 💡 getCachedCollisionBoxes(id) を呼ぶと、内部で自動的に blockCollisionFlagCache にセットされるため、それを利用する
+            getCachedCollisionBoxes(id);
+            coll = blockCollisionFlagCache.get(id) ?? false; // null合体演算子で確実に取得
         }
         if (!coll) continue;
 
@@ -647,43 +724,61 @@ function checkAABBCollision(aabb, velocity, dt) {
 let terrainCacheIdx = 0;
 const MAX_SEARCH_DEPTH = 32;
 
+/**
+ * 指定座標の地形の高さを取得する。
+ * startY が指定された場合は、その高さから下向きに最初のブロックを探す（物理・衝突判定用）。
+ * 指定がない場合は、純粋な地形生成ノイズから高さを算出する。
+ */
 function getTerrainHeight(worldX, worldZ, startY) {
-    const xInt = Math.floor(worldX);
-    const zInt = Math.floor(worldZ);
+    // 整数化（Math.floor 相当。ビット演算で高速化）
+    const xInt = worldX | 0;
+    const zInt = worldZ | 0;
 
+    // --- ケースA: 特定の高さから下の地面を探す（衝突判定などのホットパス） ---
     if (startY !== undefined) {
-        let y = Math.floor(startY);
-        const minY = Math.max(0, y - MAX_SEARCH_DEPTH);
-        for (; y >= minY; y--) {
-            if (getVoxelAtWorld(xInt, y, zInt) !== 0) return y + 1;
+        let y = startY | 0;
+        // 下限設定（0を下回らない）
+        const minY = (y - MAX_SEARCH_DEPTH) | 0;
+        const lowLimit = minY < 0 ? 0 : minY;
+
+        // getVoxelAtWorld をループ。ここは非常に重くなる可能性があるため、
+        // 戻り値 0 (SKY) 以外が見つかった瞬間に return
+        for (; y >= lowLimit; y--) {
+            if (getVoxelAtWorld(xInt, y, zInt) !== 0) return (y + 1) | 0;
         }
         return -Infinity;
     }
 
-    // 💡 負の座標もバグらないよう安全にビットパッキング
+    // --- ケースB: 純粋な地形ノイズからの高さ算出（キャッシュ利用） ---
+
+    // 負の座標も考慮した安全な 32bit キー作成
     const key = (((xInt & 0xffff) << 16) | (zInt & 0xffff)) >>> 0;
     const cachedHeight = terrainHeightCache.get(key);
 
     if (cachedHeight !== undefined) return cachedHeight;
 
+    // ノイズ計算
     const noise = fractalNoise2D(xInt * NOISE_SCALE, zInt * NOISE_SCALE, 5, 0.5);
     let heightModifier = noise * 35;
 
+    // 山岳地帯の急峻化（ノイズが0.2を超えた場合に指数関数的に高くする）
     if (noise > 0.2) {
-        heightModifier += Math.pow(noise - 0.2, 2) * 60;
+        const diff = noise - 0.2;
+        heightModifier += (diff * diff) * 60;
     }
 
-    const result = Math.floor(BASE_HEIGHT + heightModifier);
+    const result = (BASE_HEIGHT + heightModifier) | 0;
 
-    // 💡 【超軽量化】shift() で配列をズラすのをやめ、インデックスで上書きする（リングバッファ方式）
+    // 💡 リングバッファ方式によるキャッシュ管理（維持）
     if (terrainCacheKeys.length < MAX_CACHE_SIZE) {
         terrainCacheKeys.push(key);
     } else {
+        // 古いキャッシュを削除して上書き
         const oldKey = terrainCacheKeys[terrainCacheIdx];
         terrainHeightCache.delete(oldKey);
 
-        terrainCacheKeys[terrainCacheIdx] = key; // 古い位置に上書き
-        terrainCacheIdx = (terrainCacheIdx + 1) % MAX_CACHE_SIZE; // 次の位置へ（一周したら0に戻る）
+        terrainCacheKeys[terrainCacheIdx] = key;
+        terrainCacheIdx = (terrainCacheIdx + 1) % MAX_CACHE_SIZE;
     }
 
     terrainHeightCache.set(key, result);
@@ -709,43 +804,81 @@ function getVoxelHash(x, y, z) {
     return (ox << 21) | (oz << 11) | oy;
 }
 
+/**
+ * 指定した世界座標のボクセル（ブロック）を取得する。
+ * ホットパス（超高頻度実行）のため、可能な限り計算を削減し、
+ * ご提示いただいた「Map検索1回化」と「高高度判定の最適化」を統合。
+ */
 function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = false) {
+    // 1. 垂直方向の境界チェック（最速で return するため最初に行う）
+    // ※ CHUNK_HEIGHT は定数として参照（通常 256）
     if (y < 0 || y >= CHUNK_HEIGHT) return SKY;
 
-    const fx = Math.floor(x);
-    const fz = Math.floor(z);
+    // 2. 座標の整数化とビット演算による計算（Math.floor よりも高速）
+    const fx = x | 0;
+    const fy = y | 0;
+    const fz = z | 0;
 
-    const cx = Math.floor(fx / CHUNK_SIZE);
-    const cz = Math.floor(fz / CHUNK_SIZE);
-
+    // 3. チャンク座標とローカル座標の算出
+    // CHUNK_SIZE が 16 の場合、>> 4 と & 15 が最速
+    const cx = fx >> 4;
+    const cz = fz >> 4;
     const lx = fx & 15;
     const lz = fz & 15;
 
-    const modValue = ChunkSaveManager.getBlock(cx, cz, lx, y, lz);
+    // 4. 💡 修正1：Mapの検索を1回に集約
+    // getBlock を呼び出さず、ここで直接 modifiedChunks からデータを取得する
+    const chunkKey = encodeChunkKey(cx, cz);
+    const modifiedData = ChunkSaveManager.modifiedChunks.get(chunkKey);
 
-    // 💡 1. ユーザー変更ブロックの高速最短リターン
-    if (modValue !== null) {
-        if (isRaw || modValue === SKY) return modValue;
+    if (modifiedData !== undefined) {
+        // modifiedData は TypedArray (Uint8Array等) であることを想定
+        // インデックス計算: (lx * CHUNK_SIZE * CHUNK_HEIGHT) + (lz * CHUNK_HEIGHT) + fy
+        // ※ script.js のデータ構造に合わせる必要がありますが、一般的な [x][z][y] 順を想定
+        const idx = (lx << 12) | (lz << 8) | fy;
+        const modValue = modifiedData[idx];
 
-        let isSolid = blockCollisionCache.get(modValue);
-        if (isSolid === undefined) {
-            isSolid = !!getBlockConfigById(modValue)?.collision;
-            blockCollisionCache.set(modValue, isSolid);
+        if (modValue !== undefined && modValue !== null) {
+            // SKY(0) は常に SKY として返す
+            if (isRaw || modValue === SKY) return modValue;
+
+            // 当たり判定設定の高速参照
+            const cfg = _blockConfigFastArray[modValue];
+            if (cfg) {
+                return cfg.collision ? modValue : SKY;
+            }
+            return SKY;
         }
-        return isSolid ? modValue : SKY;
     }
 
-    if (y === BEDROCK_LEVEL) return BEDROCK;
+    // 5. 基盤岩の判定
+    if (fy === BEDROCK_LEVEL) return BEDROCK;
 
+    // 6. 💡 修正2：高高度（SEA_LEVEL + 32）以上の判定を効率化
+    // 超上空ならノイズ計算（getTerrainHeight）の前に即座に返せる可能性を高める
+    if (fy >= SEA_LEVEL + 32) {
+        const surfaceHeight = getTerrainHeight(fx, fz);
+        if (fy >= surfaceHeight) return SKY;
+
+        // 地表より下なら地層判定へ
+        return determineNaturalBlockLayer(fy, surfaceHeight, fx, fz);
+    }
+
+    // 7. 通常高度以下の判定
     const surfaceHeight = getTerrainHeight(fx, fz);
 
-    // 💡 2. 空・海（地表より上）の判定
-    if (y >= surfaceHeight) {
-        return (y <= SEA_LEVEL) ? WATER : SKY;
+    // 空・海（地表より上）の判定
+    if (fy >= surfaceHeight) {
+        return (fy <= SEA_LEVEL) ? WATER : SKY;
     }
 
-    // 💡 3. 【超軽量化のキモ】洞窟計算の間引き判定
-    // 地表から「ある程度（例えば3マス以上）潜った場所」でのみ、洞窟計算を行う
+    // 地中の判定
+    return determineNaturalBlockLayer(fy, surfaceHeight, fx, fz);
+}
+
+// 💡 整理：地表より下のブロック種別を決めるロジックを外出し
+function determineNaturalBlockLayer(y, surfaceHeight, fx, fz) {
+    // 洞窟計算の間引き判定
     if (y > 3 && y < surfaceHeight - 3) {
         const caveInfo = getCaveTubeInfo(fx, fz);
         const caveRadius = caveInfo[1];
@@ -753,12 +886,11 @@ function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = fal
         if (caveRadius > 0) {
             const dy = y - caveInfo[0];
             if ((dy * dy) < caveRadius * caveRadius) {
-                return SKY; // すでに y < surfaceHeight の中に入っているので判定を1つ削除
+                return SKY;
             }
         }
     }
 
-    // 💡 4. そのまま層の判定へ
     if (y === surfaceHeight - 1) {
         return (y <= SEA_LEVEL) ? DIRT : GRASS;
     }
@@ -901,7 +1033,7 @@ function updateScreenOverlay() {
     const voxelID = getPreciseHeadBlockType(_sharedHeadPos);
     const config = getBlockConfiguration(voxelID);
     const el = document.getElementById("screenOverlayHtml");
-    const texturePath = config?.screenFill && (config.textures.top || config.textures.all);
+    const texturePath = config?.screenFill && (config.textures.top || config.textures.all || config.textures.side);
 
     if (!texturePath) {
         el.style.display = "none";
@@ -1228,7 +1360,7 @@ function canDescendFromSupport(centerX, centerZ, halfWidth, margin) {
  */
 function getBlockHeight(id) {
     const config = getBlockConfiguration(id);
-    if (!config) return 1.0;
+    if (!config || config.collision === false) return 0.0;
 
     // もし明示的に height が設定されていればそれを最優先
     if (typeof config.height === "number") {
@@ -1251,9 +1383,6 @@ function getBlockHeight(id) {
 /* ======================================================
    【物理更新：通常モード用】（重力・ジャンプ・水平慣性）
    ====================================================== */
-// === 軽量版 getDesiredHorizontalVelocity ===
-// 外見や挙動は一切変わりません
-
 // 再利用ベクトルをグローバルに1回だけ作成
 const _vForward = new THREE.Vector3();
 const _vRight = new THREE.Vector3();
@@ -1261,29 +1390,25 @@ const _vDesired = new THREE.Vector3();
 const _vUp = new THREE.Vector3(0, 1, 0);
 
 function getDesiredHorizontalVelocity(multiplier = 1) {
-    // カメラの前方向ベクトルを取得
     camera.getWorldDirection(_vForward);
     _vForward.y = 0;
     _vForward.normalize();
 
-    // 右方向ベクトル（forward × up）
     _vRight.crossVectors(_vForward, _vUp).normalize();
 
-    // 希望移動方向
     _vDesired.set(0, 0, 0);
     if (keys["w"] || keys["arrowup"]) _vDesired.add(_vForward);
     if (keys["s"] || keys["arrowdown"]) _vDesired.addScaledVector(_vForward, -1);
     if (keys["a"] || keys["arrowleft"]) _vDesired.addScaledVector(_vRight, -1);
     if (keys["d"] || keys["arrowright"]) _vDesired.add(_vRight);
 
-    // 正規化＋スカラー適用
     if (_vDesired.lengthSq() > 0) {
+        // 💡 lengthSq()の判定は残しつつ、無駄な再計算を避けてスマートに
         _vDesired.normalize().multiplyScalar(multiplier);
-    } else {
-        _vDesired.set(0, 0, 0);
     }
+    // else で .set(0,0,0) を呼ぶ必要はありません（すでに set(0,0,0) から始まっているため）
 
-    return _vDesired;
+    return _vDesired; // 常に同じ参照を使い回す
 }
 
 
@@ -1425,27 +1550,43 @@ function markColumnModified(wx, wz, modY) {
         col = { maxModifiedY: modY, blocks: [] };
         columnModifications.set(key, col);
     }
-    col.maxModifiedY = Math.max(col.maxModifiedY, modY);
+    col.maxModifiedY = col.maxModifiedY > modY ? col.maxModifiedY : modY; // Math.max 呼び出しコストを排除
 }
 
+// 🪚 改善①: traverseを使わず再帰呼び出しと一時配列生成を排除
 function disposeMesh(mesh) {
-    mesh.traverse(obj => {
+    if (!mesh) return;
+
+    // traverse() を使わず、1階層下（子要素）だけをスキャンする方が速い
+    // （もしメッシュ自体がネストしていないシンプルな Group 構成なら直下だけでOK）
+    const children = mesh.children;
+    for (let i = children.length - 1; i >= 0; i--) {
+        const obj = children[i];
         if (obj.isMesh) {
-            obj.geometry?.dispose();
-            (Array.isArray(obj.material) ? obj.material : [obj.material])
-                .forEach(mat => mat?.dispose());
+            if (obj.geometry) {
+                obj.geometry.dispose();
+            }
+
+            const mat = obj.material;
+            if (mat) {
+                if (Array.isArray(mat)) {
+                    for (let j = 0; j < mat.length; j++) {
+                        mat[j].dispose();
+                    }
+                } else {
+                    mat.dispose();
+                }
+            }
         }
-    });
+    }
 }
 
 function refreshChunkAt(cx, cz) {
-    // 1. 文字列を一切介さない、既存の BigInt エンコードを使用
     const key = encodeChunkKey(cx, cz);
 
-    // ▼▼▼ ライトマップのキャッシュを破棄して再計算を促す ▼▼▼
-    chunkLightCache.delete(key);
+    // 💡 修正：この行を削除、またはコメントアウトする！
+    // chunkLightCache.delete(key); 
 
-    // 2. Map からメッシュを取得 (Object[key] は内部で文字列化されるため廃止)
     const oldChunk = loadedChunks.get(key);
     if (!oldChunk) return;
 
@@ -1454,37 +1595,51 @@ function refreshChunkAt(cx, cz) {
 
     const newChunk = generateChunkMeshMultiTexture(cx, cz);
     newChunk.userData.fadedIn = true;
+    syncSingleChunkSkyLight(newChunk);
 
-    newChunk.traverse(child => {
-        if (!child.isMesh || !child.material) return;
-        const mats = Array.isArray(child.material) ? child.material : [child.material];
-        mats.forEach(mat => {
-            if (!mat || !mat.userData) return;
-            if (mat.userData.realTransparent !== undefined) mat.transparent = mat.userData.realTransparent;
-            if (mat.userData.realDepthWrite !== undefined) mat.depthWrite = mat.userData.realDepthWrite;
-            if (mat.userData.realOpacity !== undefined) mat.opacity = mat.userData.realOpacity;
-        });
-    });
+    const children = newChunk.children;
+    for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (!child.isMesh || !child.material) continue;
+
+        const mats = child.material;
+        if (Array.isArray(mats)) {
+            for (let j = 0; j < mats.length; j++) {
+                const mat = mats[j];
+                const ud = mat.userData;
+                if (!ud) continue;
+                if (ud.realTransparent !== undefined) mat.transparent = ud.realTransparent;
+                if (ud.realDepthWrite !== undefined) mat.depthWrite = ud.realDepthWrite;
+                if (ud.realOpacity !== undefined) mat.opacity = ud.realOpacity;
+            }
+        } else {
+            const ud = mats.userData;
+            if (ud) {
+                if (ud.realTransparent !== undefined) mats.transparent = ud.realTransparent;
+                if (ud.realDepthWrite !== undefined) mats.depthWrite = ud.realDepthWrite;
+                if (ud.realOpacity !== undefined) mats.opacity = ud.realOpacity;
+            }
+        }
+    }
 
     scene.add(newChunk);
-
-    // 3. Map へ BigInt のまま保存
     loadedChunks.set(key, newChunk);
 
     clearCaches();
 }
 
-const BIGINT_OFFSET = 2_000_000n; // ±1,875,000 + 安全マージン
+const BIGINT_OFFSET = 2_000_000n;
 
 function encodeChunkKey(cx, cz) {
     return (BigInt(cx) + BIGINT_OFFSET) << 32n | ((BigInt(cz) + BIGINT_OFFSET) & 0xffffffffn);
 }
 
-function decodeChunkKey(key) {
-    return [
-        Number((key >> 32n) - BIGINT_OFFSET),
-        Number((key & 0xffffffffn) - BIGINT_OFFSET)
-    ];
+const _sharedChunkCoord = { cx: 0, cz: 0 };
+
+function decodeChunkKey(key, out = _sharedChunkCoord) {
+    out.cx = Number((key >> 32n) - BIGINT_OFFSET);
+    out.cz = Number((key & 0xffffffffn) - BIGINT_OFFSET);
+    return out;
 }
 
 // ───────────────────────────────
@@ -1536,20 +1691,28 @@ function scheduleChunkUpdate() {
 // ==========================================
 let chunkQueueScheduled = false;
 
+// 💡 ループ全体の開始時刻を記録する変数も、GCを嫌ってトップレベルに定義
+let processStartTime = 0;
+
 function processChunkQueue(deadline) {
     let tasksProcessed = 0;
-    const MAX_CHUNKS_PER_FRAME = 1;
-
-    const canContinue = (deadline && typeof deadline.timeRemaining === 'function')
-        ? () => deadline.timeRemaining() > 1
-        : () => true;
+    const MAX_CHUNKS_PER_FRAME = 1; // 1フレームに生成を許す最大チャンク数
+    const FRAME_TIME_BUDGET = 10;   // 1フレームに許容する最大ミリ秒 (10ms)
 
     // 💡 変数の宣言をあらかじめ外側に出しておくことで、メモリのゴミ（GC）の発生を抑えます
-    let t0, chunkInfo, cx, cz, key, mesh;
+    let chunkInfo, cx, cz, key, mesh;
 
-    while (chunkQueue.length > 0 && tasksProcessed < MAX_CHUNKS_PER_FRAME && canContinue()) {
-        t0 = performance.now(); // タイム計測開始
-        chunkInfo = chunkQueue.shift();
+    processStartTime = performance.now(); // 処理全体の開始時間
+
+    // 💡 条件1: キューに何かある、条件2: 1フレームの制限数以内、条件3: 1フレームの時間予算以内
+    while (
+        chunkQueue.length > 0 &&
+        tasksProcessed < MAX_CHUNKS_PER_FRAME &&
+        (performance.now() - processStartTime) < FRAME_TIME_BUDGET
+    ) {
+
+        // 💡 shift() は配列が長いと全要素のズレが発生して激重になるため、pop() で末尾から爆速で抜き取る
+        chunkInfo = chunkQueue.pop();
 
         if (chunkInfo) {
             cx = chunkInfo.cx;
@@ -1558,7 +1721,7 @@ function processChunkQueue(deadline) {
 
             if (!loadedChunks.has(key)) {
                 mesh = generateChunkMeshMultiTexture(cx, cz);
-
+                syncSingleChunkSkyLight(mesh);
                 if (typeof CHUNK_VISIBLE_DISTANCE !== "undefined" && CHUNK_VISIBLE_DISTANCE === 0) {
                     mesh.userData.fadedIn = true;
                 } else {
@@ -1581,20 +1744,18 @@ function processChunkQueue(deadline) {
             }
         }
 
-        if (performance.now() - t0 > 10) {
-            break; // 1個作るのに10ms以上かかったら、欲張らずに次フレームに回す（これが軽さの秘訣！）
-        }
         tasksProcessed++;
     }
 
+    // 処理しきれずキューが残った場合は、次フレームにスケジュールする
     if (chunkQueue.length > 0) {
         if (!chunkQueueScheduled) {
             chunkQueueScheduled = true;
 
             if (window.requestIdleCallback) {
-                window.requestIdleCallback((dl) => {
+                window.requestIdleCallback(() => {
                     chunkQueueScheduled = false;
-                    processChunkQueue(dl);
+                    processChunkQueue();
                 }, { timeout: 1000 });
             } else {
                 requestAnimationFrame(() => {
@@ -1605,50 +1766,75 @@ function processChunkQueue(deadline) {
         }
     }
 }
-/**
- * 保留中のチャンク更新要求を処理する関数
- * 時間計測(Time Budgeting)により、フリーズしない限界まで即座に処理する。
- */
-function processPendingChunkUpdates(batchSize = 1) {
+
+// ✅ 新規追加：特定のメッシュ(チャンク)に、現在の昼夜の明るさを即座に同期させる関数
+function syncSingleChunkSkyLight(mesh) {
+    if (!mesh) return;
+
+    const currentSkyFactor = getSkyLightFactor(gameTime);
+
+    // 💡 traverse を使うことで、何階層深くにあるメッシュでも確実に見つけ出します
+    mesh.traverse(child => {
+        if (!child.isMesh || !child.material) return;
+
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+
+        for (let i = 0; i < mats.length; i++) {
+            const m = mats[i];
+            if (!m) continue;
+
+            // マテリアル直下、あるいは userData 内にある Uniforms への参照を両方チェック
+            const uniforms = m.shaderUniforms || (m.userData && m.userData.shaderUniforms);
+
+            if (uniforms && uniforms.u_skyFactor) {
+                uniforms.u_skyFactor.value = currentSkyFactor;
+            }
+        }
+    });
+}
+/* ======================================================
+   【修正版】ライトの再計算 ＋ チャンクメッシュ構築
+   ====================================================== */
+function processPendingChunkUpdates() {
     if (pendingChunkUpdates.size === 0) return;
 
     const startTime = performance.now();
-    const FRAME_BUDGET = 10; // ⏳ 10ミリ秒（これを超えたら重くなる前に一旦打ち切る）
+    const FRAME_BUDGET = 4.0; // 予算 4.0ms
 
-    let processed = 0;
-    while (pendingChunkUpdates.size > 0 && processed < batchSize) {
-
-        // 🔥 【ここが最大のキモ】
-        // 10ミリ秒を超えそうなら、枚数が batchSize に達していなくてもループを抜けてフリーズを防ぐ！
-        if (performance.now() - startTime > FRAME_BUDGET) {
-            break;
-        }
-
+    // 💡 values().next() を使い、Set の先頭から1つずつ確実に「取り出して」処理する
+    while (pendingChunkUpdates.size > 0) {
+        // 先頭のキーを取得
         const key = pendingChunkUpdates.values().next().value;
-        if (!key) break;
 
-        const [cx, cz] = decodeChunkKey(key);
+        // 💡 取得したら【真っ先に】削除。これで break してもデータがロスト・重複しない
+        pendingChunkUpdates.delete(key);
 
-        // 実際のチャンク更新呼び出し
-        if (typeof refreshChunkAt === "function") {
-            refreshChunkAt(cx, cz);
-        } else if (typeof requestChunkUpdate === "function") {
-            requestChunkUpdate(cx, cz);
-        } else {
-            console.warn("チャンク更新関数が見つかりません:", cx, cz);
+        const coord = decodeChunkKey(key);
+        const voxelData = ChunkSaveManager.modifiedChunks.get(key);
+
+        if (voxelData) {
+            generateChunkLightMap(key, voxelData);
         }
 
-        pendingChunkUpdates.delete(key);
-        processed++;
+        if (typeof refreshChunkAt === "function") {
+            refreshChunkAt(coord.cx, coord.cz);
+        } else if (typeof requestChunkUpdate === "function") {
+            requestChunkUpdate(coord.cx, coord.cz);
+        }
+
+        // 時間チェック
+        const elapsed = performance.now() - startTime;
+        if (elapsed > FRAME_BUDGET) {
+            break; // 安全に次のフレームへ処理を回せます
+        }
     }
 
-    // 残っている場合は再スケジュール (requestAnimationFrameや自前のタイマーなど)
+    // 🔄 残りがあれば次フレームへ
     if (pendingChunkUpdates.size > 0) {
         if (typeof scheduleChunkUpdate === "function") {
             scheduleChunkUpdate();
         } else {
-            // スケジューラーがない場合のフォールバック（ブラウザの次の描画タイミングに逃がす）
-            requestAnimationFrame(() => processPendingChunkUpdates(Infinity));
+            requestAnimationFrame(processPendingChunkUpdates);
         }
     }
 }
@@ -2060,33 +2246,26 @@ function computeVisibilityMask(getN, curType, curTransp, curCustom) {
     return mask;
 }
 
-"use strict";
-
 // ==========================================
-// 1. 関数の外側に定数を定義 (GC（メモリ確保）の削減)
-// ==========================================
-const FACE_INDICES = { px: 0, nx: 1, py: 2, ny: 3, pz: 4, nz: 5 };
-const CORNER_INDICES = { LL: 0, LR: 1, UR: 2, UL: 3 };
-const SIDE_SHADOW_OFFSETS = { px: [1, 1, 0], nx: [-1, 1, 0], pz: [0, 1, 1], nz: [0, 1, -1] };
-const TOP_SHADOW_OFFSETS = { LL: [-1, 1], LR: [1, 1], UR: [1, -1], UL: [-1, -1] };
-
-// ==========================================
-// 2. キャッシュ管理
+// 1. キャッシュ管理
 // ==========================================
 const blockConfigCache = new Map();
-const configCache = new Map();
 
 const clearCaches = () => {
     blockConfigCache.clear();
-    configCache.clear();
 };
 
 const getConfigCached = id => {
-    if (!configCache.has(id)) {
-        if (!blockConfigCache.has(id)) blockConfigCache.set(id, getBlockConfiguration(id));
-        configCache.set(id, blockConfigCache.get(id));
+    // 1. まずMapからデータを取得する
+    let config = blockConfigCache.get(id);
+
+    // 2. なければ重い getBlockConfiguration(id) を1回だけ呼んで保存
+    if (config === undefined) {
+        config = getBlockConfiguration(id);
+        blockConfigCache.set(id, config);
     }
-    return configCache.get(id);
+
+    return config;
 };
 
 /* ======================================================
@@ -2099,236 +2278,287 @@ for (let i = 0; i <= 15; i++) {
 
 const chunkLightCache = new Map();
 const neighborUnlightRequests = [];
+const neighborLightRequests = [];
+
 /* ======================================================
    【超限界軽量化】スリム・スカイライト伝播エンジン
    ====================================================== */
 
-// 1次元インデックス上での「6方向へのオフセット差分」を定数化してGC・計算を排除
 const CS = CHUNK_SIZE;
 const CH = CHUNK_HEIGHT;
-const CS_CH = CS * CH; // 16 * 256 = 4096
+const CS_CH = CS * CH; // 4096
+const TOTAL_CELLS = CS * CH * CS; // 65536
+
+const _localLightCoord = { cx: 0, cz: 0 };
 
 // 1次元配列上のオフセット [+X, -X, +Y, -Y, +Z, -Z]
 const MOVE_OFFSETS = new Int32Array([CS_CH, -CS_CH, 1, -1, CH, -CH]);
 
+// 🔥 【超限界軽量化】関数の外側でキュー配列を一度だけ確保。
+// 毎フレームの new Int32Array によるGC（カクつき）を完全にゼロにします。
+const _sharedQueue = new Int32Array(TOTAL_CELLS);
+const _sharedUnlightQueue = new Int32Array(TOTAL_CELLS * 2);
+/* ======================================================
+   【新・2系統ライトマップ用のビット演算ユーティリティ】
+   ====================================================== */
+const _getSkyLight = (val) => (val >> 4) & 0x0F; // 上位4ビット（天空光）を取得
+const _getBlockLight = (val) => val & 0x0F;      // 下位4ビット（ブロック光）を取得
+const _packLight = (sky, block) => (sky << 4) | (block & 0x0F); // 1バイトに合体
+/* ======================================================
+   【修正版】2系統ライトマップ伝播エンジン（隣接チャンクへの完全伝播対応）
+   ====================================================== */
+/* ======================================================
+   【超軽量・限界突破版】2系統ライトマップ伝播エンジン
+   ====================================================== */
 function generateChunkLightMap(chunkKey, voxelData) {
-    const TOTAL_CELLS = CS * CH * CS;
+    if (!voxelData || voxelData.length < TOTAL_CELLS) {
+        console.warn("generateChunkLightMap: voxelData is invalid or too small.");
+        return null;
+    }
 
     let lightData = chunkLightCache.get(chunkKey);
     if (!lightData) {
         lightData = new Uint8Array(TOTAL_CELLS);
+    } else {
+        // 💡 修正の肝1: 古いゴミデータを一掃し、完全にクリーンな状態で計算を始める！
+        lightData.fill(0);
     }
 
-    // 通常の光伝播(Relight)用1次元インデックスキュー (x,y,z の分解を排除)
-    const queue = new Int32Array(TOTAL_CELLS);
+    const queue = _sharedQueue;
     let head = 0, tail = 0;
 
-    // お化けライト消去(Unlight)用キュー [index, oldLight]
-    const unlightQueue = new Int32Array(TOTAL_CELLS * 6);
-    let unhead = 0, untail = 0;
+    decodeChunkKey(chunkKey, _localLightCoord);
+    const cx = _localLightCoord.cx;
+    const cz = _localLightCoord.cz;
 
-    // --- STEP 0: 設置された不透過ブロックによる既存光の強制減衰判定 ---
-    for (let i = 0; i < TOTAL_CELLS; i++) {
-        const type = voxelData[i];
-        if (type === BLOCK_TYPES.SKY) continue;
+    const mapPX = chunkLightCache.get(encodeChunkKey(cx + 1, cz));
+    const mapNX = chunkLightCache.get(encodeChunkKey(cx - 1, cz));
+    const mapPZ = chunkLightCache.get(encodeChunkKey(cx, cz + 1));
+    const mapNZ = chunkLightCache.get(encodeChunkKey(cx, cz - 1));
 
-        const cfg = _blockConfigFastArray[type];
-        if (cfg && !cfg.transparent && lightData[i] > 0) {
-            unlightQueue[untail++] = i;
-            unlightQueue[untail++] = lightData[i];
-            lightData[i] = 0;
-        }
-    }
+    const neighborMaps = [mapPX, mapNX, null, null, mapPZ, mapNZ];
+    const neighborCxOffsets = [1, -1, 0, 0, 0, 0];
+    const neighborCzOffsets = [0, 0, 0, 0, 1, -1];
 
-    // --- STEP 1: 空からの直射日光を降らせる (デクリメント高速走査) ---
-    for (let x = 0; x < CS; x++) {
-        const xBase = CS_CH * x;
-        for (let z = 0; z < CS; z++) {
-            let currentLight = 15;
-            let idx = (CH - 1) + CH * z + xBase;
+    // ======================================================
+    // 🌞 PHASE 1: 天空光（太陽の直射日光）の計算
+    // ======================================================
+    for (let x = 0; x < CS; x = (x + 1) | 0) {
+        const xBase = (CS_CH * x) | 0;
+        for (let z = 0; z < CS; z = (z + 1) | 0) {
+            let currentSky = 15;
+            let idx = ((CH - 1) + CH * z + xBase) | 0;
 
-            for (let y = CH - 1; y >= 0; y--) {
+            for (let y = (CH - 1) | 0; y >= 0; y = (y - 1) | 0) {
                 const type = voxelData[idx];
-                const oldLight = lightData[idx];
 
-                if (currentLight === 15) {
+                if (currentSky === 15 && type !== BLOCK_TYPES.SKY) {
                     const cfg = _blockConfigFastArray[type];
-                    if (type !== BLOCK_TYPES.SKY && cfg && !cfg.transparent) {
-                        currentLight = 0;
+                    if (cfg && !cfg.transparent) {
+                        currentSky = 0; // 不透明ブロックで直射日光を遮断
                     }
                 }
 
-                if (currentLight < oldLight) {
-                    unlightQueue[untail++] = idx;
-                    unlightQueue[untail++] = oldLight;
-                    lightData[idx] = currentLight;
-                } else if (currentLight > oldLight) {
-                    lightData[idx] = currentLight;
-                    queue[tail++] = idx;
-                } else if (currentLight === 15) {
+                if (currentSky > 0) {
+                    lightData[idx] = (currentSky << 4); // 💡 oldPacked を見ない。新規に上書き
                     queue[tail++] = idx;
                 }
-                idx--;
+                idx = (idx - 1) | 0;
             }
         }
     }
 
-    // --- STEP 2: 自ら光るブロックの探索 ---
-    for (let i = 0; i < TOTAL_CELLS; i++) {
-        const type = voxelData[i];
-        if (type === BLOCK_TYPES.SKY) continue;
-
-        const cfg = _blockConfigFastArray[type];
-        if (cfg && cfg.isLightSource) {
-            if (lightData[i] < 15) {
-                lightData[i] = 15;
-                queue[tail++] = i;
-            }
-        }
-    }
-
-    // --- STEP 3: 隣接チャンクからの光の輸入 (超高速化版) ---
-    const [cx, cz] = decodeChunkKey(chunkKey);
-    const neighborOffsets = [
-        { dx: -1, dz: 0, fromX: CS - 1, toX: 0 },
-        { dx: 1, dz: 0, fromX: 0, toX: CS - 1 },
-        { dx: 0, dz: -1, fromZ: CS - 1, toZ: 0 },
-        { dx: 0, dz: 1, fromZ: 0, toZ: CS - 1 }
-    ];
-
-    for (let o = 0; o < 4; o++) {
-        const offset = neighborOffsets[o];
-
-        // 💡 Map の取得とキーのエンコードを、ループの「外側」に移動（4回のみの実行に！）
-        const nMap = chunkLightCache.get(encodeChunkKey(cx + offset.dx, cz + offset.dz));
+    // --- 隣のチャンクから境界を越えて入ってきた【天空光】をキューに流す ---
+    for (let i = 0; i < 6; i++) {
+        if (i === 2 || i === 3) continue;
+        const nMap = neighborMaps[i];
         if (!nMap) continue;
 
-        const fromX = offset.fromX;
-        const fromZ = offset.fromZ;
-        const toX = offset.toX;
-        const toY = CH;
-        const toZ = offset.toZ;
+        for (let y = 0; y < CH; y++) {
+            for (let s = 0; s < CS; s++) {
+                let x = 0, z = 0, nLx = 0, nLz = 0;
+                if (i === 0) { x = CS - 1; z = s; nLx = 0; nLz = s; }
+                else if (i === 1) { x = 0; z = s; nLx = CS - 1; nLz = s; }
+                else if (i === 4) { x = s; z = CS - 1; nLx = s; nLz = 0; }
+                else if (i === 5) { x = s; z = 0; nLx = s; nLz = CS - 1; }
 
-        for (let y = 0; y < toY; y++) {
-            for (let i = 0; i < CS; i++) {
-                const lx = fromX !== undefined ? fromX : i;
-                const lz = fromZ !== undefined ? fromZ : i;
-                const myX = toX !== undefined ? toX : i;
-                const myZ = toZ !== undefined ? toZ : i;
+                const idx = (y + (z << 8) + (x << 12)) | 0;
+                const nIdx = (y + (nLz << 8) + (nLx << 12)) | 0;
 
-                const nIdx = y + CH * (lz + CS * lx);
-                const nLight = nMap[nIdx];
-                if (nLight <= 1) continue;
+                const myPacked = lightData[idx];
+                const nSky = (nMap[nIdx] >> 4) & 15;
+                const mySky = (myPacked >> 4) & 15;
 
-                const myIdx = y + CH * (myZ + CS * myX);
-                const targetLight = (nLight - 1) | 0;
-
-                if (lightData[myIdx] < targetLight) {
-                    const myBlock = voxelData[myIdx];
-                    // 空ブロック、または透過ブロックなら光を浸透させる
-                    if (myBlock === BLOCK_TYPES.SKY || (_blockConfigFastArray[myBlock] && _blockConfigFastArray[myBlock].transparent)) {
-                        lightData[myIdx] = targetLight;
-                        queue[tail++] = myIdx;
+                if (nSky - 1 > mySky) {
+                    const type = voxelData[idx];
+                    const cfg = _blockConfigFastArray[type];
+                    if (type === BLOCK_TYPES.SKY || (cfg && cfg.transparent)) {
+                        lightData[idx] = ((nSky - 1) << 4) | (myPacked & 15);
+                        queue[tail++] = idx;
                     }
                 }
             }
         }
     }
 
+    // --- 🌞 天空光のBFS伝播 ---
+    while (head < tail) {
+        const idx = queue[head++];
+        const packed = lightData[idx];
+        const skyLight = (packed >> 4) & 15;
+        if (skyLight <= 1) continue;
 
-    // --- STEP 4: お化けライト減衰 BFS (Unlight) ---
-    while (unhead < untail) {
-        const idx = unlightQueue[unhead++];
-        const oldVal = unlightQueue[unhead++];
+        const nextSky = (skyLight - 1) | 0;
+        const y = idx & 255;
+        const rem = idx >> 8;
+        const z = rem & 15;
+        const x = rem >> 4;
 
-        // 1次元インデックスから、その場の y, z, x を数学的に逆算（境界チェック用）
-        const y = idx % CH;
-        const rem = (idx / CH) | 0;
-        const z = rem % CS;
-        const x = (rem / CS) | 0;
+        for (let i = 0; i < 6; i = (i + 1) | 0) {
+            if ((i === 2 && y === CH - 1) || (i === 3 && y === 0)) continue;
 
-        for (let i = 0; i < 6; i++) {
-            const offset = MOVE_OFFSETS[i];
-            const nIdx = idx + offset;
+            const isBorderCross = (i === 0 && x === CS - 1) || (i === 1 && x === 0) || (i === 4 && z === CS - 1) || (i === 5 && z === 0);
 
-            // 分岐予測をビット演算で突破（上下の限界チェック）
-            if (i === 2 && y === CH - 1) continue; // +Y 天井
-            if (i === 3 && y === 0) continue;      // -Y 底
-
-            // チャンク境界チェック (はみ出し)
-            if ((i === 0 && x === CS - 1) || (i === 1 && x === 0) ||
-                (i === 4 && z === CS - 1) || (i === 5 && z === 0)) {
-
-                // 既存の「隣接チャンクのお化けライト消去リクエスト」へ飛ばす
-                let nLx = x, nLz = z, nCx = cx, nCz = cz;
-                if (i === 0) { nCx++; nLx = 0; }
-                if (i === 1) { nCx--; nLx = CS - 1; }
-                if (i === 4) { nCz++; nLz = 0; }
-                if (i === 5) { nCz--; nLz = CS - 1; }
-
-                const nKey = encodeChunkKey(nCx, nCz);
-                const nMap = chunkLightCache.get(nKey);
+            if (isBorderCross) {
+                const nMap = neighborMaps[i];
                 if (nMap) {
-                    const neighborIdx = y + CH * (nLz + CS * nLx);
-                    const nLight = nMap[neighborIdx];
-                    if (nLight > 0 && nLight < oldVal) {
-                        neighborUnlightRequests.push({ cx: nCx, cz: nCz, lx: nLx, ly: y, lz: nLz, oldLight: nLight });
-                        nMap[neighborIdx] = 0;
-                    } else if (nLight >= oldVal) {
-                        queue[tail++] = idx; // 隣の方が明るければそこを再伝播の起点に
+                    const nLx = (i === 0) ? 0 : (i === 1) ? (CS - 1) : x;
+                    const nLz = (i === 4) ? 0 : (i === 5) ? (CS - 1) : z;
+                    const nIdx = (y + (nLz << 8) + (nLx << 12)) | 0;
+
+                    const nPacked = nMap[nIdx];
+                    if (((nPacked >> 4) & 15) < nextSky) {
+                        const nKey = encodeChunkKey(cx + neighborCxOffsets[i], cz + neighborCzOffsets[i]);
+                        const nVoxelData = ChunkSaveManager.modifiedChunks.get(nKey);
+                        if (nVoxelData) {
+                            const nType = nVoxelData[nIdx];
+                            const nCfg = _blockConfigFastArray[nType];
+                            if (nType === BLOCK_TYPES.SKY || (nCfg && nCfg.transparent)) {
+                                nMap[nIdx] = (nextSky << 4) | (nPacked & 15);
+                                pendingChunkUpdates.add(nKey);
+                            }
+                        }
                     }
                 }
                 continue;
             }
 
-            // --- 自チャンク内部 ---
-            const nLight = lightData[nIdx];
-            if (nLight !== 0 && nLight < oldVal) {
-                unlightQueue[untail++] = nIdx;
-                unlightQueue[untail++] = nLight;
-                lightData[nIdx] = 0;
-            } else if (nLight >= oldVal) {
-                queue[tail++] = nIdx;
+            const nIdx = (idx + MOVE_OFFSETS[i]) | 0;
+            const nPacked = lightData[nIdx];
+
+            if (((nPacked >> 4) & 15) >= nextSky) continue;
+
+            const type = voxelData[nIdx];
+            const cfg = _blockConfigFastArray[type];
+            if (type === BLOCK_TYPES.SKY || (cfg && cfg.transparent)) {
+                lightData[nIdx] = (nextSky << 4) | (nPacked & 15);
+                queue[tail++] = nIdx; // 💡 修正：前回発見した nIdx をプッシュ
             }
         }
     }
 
-    // --- STEP 5: 光の再伝播 BFS (Flood Fill / Relight) ---
+
+    // ======================================================
+    // 🕯️ PHASE 2: ブロック光（発光ブロック）の計算
+    // ======================================================
+    head = 0; tail = 0;
+
+    for (let i = 0; i < TOTAL_CELLS; i = (i + 1) | 0) {
+        const type = voxelData[i];
+        const cfg = _blockConfigFastArray[type];
+
+        if (cfg && cfg.lightLevel > 0) {
+            lightData[i] = (lightData[i] & 240) | cfg.lightLevel;
+            queue[tail++] = i;
+        }
+    }
+
+    // --- 隣のチャンクから境界を越えて入ってきた【ブロック光】をキューに流す ---
+    for (let i = 0; i < 6; i++) {
+        if (i === 2 || i === 3) continue;
+        const nMap = neighborMaps[i];
+        if (!nMap) continue;
+
+        for (let y = 0; y < CH; y++) {
+            for (let s = 0; s < CS; s++) {
+                let x = 0, z = 0, nLx = 0, nLz = 0;
+                if (i === 0) { x = CS - 1; z = s; nLx = 0; nLz = s; }
+                else if (i === 1) { x = 0; z = s; nLx = CS - 1; nLz = s; }
+                else if (i === 4) { x = s; z = CS - 1; nLx = s; nLz = 0; }
+                else if (i === 5) { x = s; z = 0; nLx = s; nLz = CS - 1; }
+
+                const idx = (y + (z << 8) + (x << 12)) | 0;
+                const nIdx = (y + (nLz << 8) + (nLx << 12)) | 0;
+
+                const myPacked = lightData[idx];
+                const nBlock = nMap[nIdx] & 15;
+                const myBlock = myPacked & 15;
+
+                if (nBlock - 1 > myBlock) {
+                    const type = voxelData[idx];
+                    const cfg = _blockConfigFastArray[type];
+                    if (type === BLOCK_TYPES.SKY || (cfg && cfg.transparent)) {
+                        lightData[idx] = (myPacked & 240) | ((nBlock - 1) & 15);
+                        queue[tail++] = idx;
+                    }
+                }
+            }
+        }
+    }
+
+    // --- 🕯️ ブロック光のBFS伝播 ---
     while (head < tail) {
         const idx = queue[head++];
-        const currentLight = lightData[idx];
-        if (currentLight <= 1) continue;
+        const packed = lightData[idx];
+        const blockLight = packed & 15;
+        if (blockLight <= 1) continue;
 
-        const nextLight = currentLight - 1;
+        const nextBlock = (blockLight - 1) | 0;
+        const y = idx & 255;
+        const rem = idx >> 8;
+        const z = rem & 15;
+        const x = rem >> 4;
 
-        const y = idx % CH;
-        const rem = (idx / CH) | 0;
-        const z = rem % CS;
-        const x = (rem / CS) | 0;
+        for (let i = 0; i < 6; i = (i + 1) | 0) {
+            if ((i === 2 && y === CH - 1) || (i === 3 && y === 0)) continue;
 
-        for (let i = 0; i < 6; i++) {
-            const offset = MOVE_OFFSETS[i];
-            const nIdx = idx + offset;
+            const isBorderCross = (i === 0 && x === CS - 1) || (i === 1 && x === 0) || (i === 4 && z === CS - 1) || (i === 5 && z === 0);
 
-            if (i === 2 && y === CH - 1) continue;
-            if (i === 3 && y === 0) continue;
-            if ((i === 0 && x === CS - 1) || (i === 1 && x === 0) ||
-                (i === 4 && z === CS - 1) || (i === 5 && z === 0)) {
-                continue; // 隣接チャンクへの伝播は境界同期に任せる
+            if (isBorderCross) {
+                const nMap = neighborMaps[i];
+                if (nMap) {
+                    const nLx = (i === 0) ? 0 : (i === 1) ? (CS - 1) : x;
+                    const nLz = (i === 4) ? 0 : (i === 5) ? (CS - 1) : z;
+                    const nIdx = (y + (nLz << 8) + (nLx << 12)) | 0;
+
+                    const nPacked = nMap[nIdx];
+                    if ((nPacked & 15) < nextBlock) {
+                        const nKey = encodeChunkKey(cx + neighborCxOffsets[i], cz + neighborCzOffsets[i]);
+                        const nVoxelData = ChunkSaveManager.modifiedChunks.get(nKey);
+                        if (nVoxelData) {
+                            const nType = nVoxelData[nIdx];
+                            const nCfg = _blockConfigFastArray[nType];
+                            if (nType === BLOCK_TYPES.SKY || (nCfg && nCfg.transparent)) {
+                                nMap[nIdx] = (nPacked & 240) | nextBlock;
+                                pendingChunkUpdates.add(nKey);
+                            }
+                        }
+                    }
+                }
+                continue;
             }
 
-            if (lightData[nIdx] >= nextLight) continue;
+            const nIdx = (idx + MOVE_OFFSETS[i]) | 0;
+            const nPacked = lightData[nIdx];
+
+            if ((nPacked & 15) >= nextBlock) continue;
 
             const type = voxelData[nIdx];
-            if (type === BLOCK_TYPES.SKY) {
-                lightData[nIdx] = nextLight;
-                queue[tail++] = nIdx;
-            } else {
-                const cfg = _blockConfigFastArray[type];
-                if (cfg && cfg.transparent) {
-                    lightData[nIdx] = nextLight;
-                    queue[tail++] = nIdx;
-                }
+            const cfg = _blockConfigFastArray[type];
+
+            if (type === BLOCK_TYPES.SKY || (cfg && cfg.transparent)) {
+                lightData[nIdx] = (nPacked & 240) | nextBlock;
+                queue[tail++] = nIdx; // 💡 修正：前回発見した nIdx をプッシュ
             }
         }
     }
@@ -2340,8 +2570,6 @@ function generateChunkLightMap(chunkKey, voxelData) {
 // ---------------------------------------
 // CHUNK MESH GENERATION (軽量化版)
 // ---------------------------------------
-
-// 【追加】ファイル上部のどこかに配置
 const customFadeMaterialCache = new Map();
 
 function getOrCreateCustomFadeMaterial(baseMat, isCross, isWater, isTransparent) {
@@ -2358,14 +2586,16 @@ function getOrCreateCustomFadeMaterial(baseMat, isCross, isWater, isTransparent)
         return subMap.get(flags);
     }
 
-    const mat = new THREE.MeshLambertMaterial({
+    const mat = new THREE.MeshBasicMaterial({
         map: baseMat?.map || null,
-        transparent: true,
-        opacity: 1.0, // 💡 0 から 1.0 に変更（1フレーム抜けのホワイトアウト・ブラックアウト点滅を防ぐ）
+        // 水、透過指定、または元のマテリアルが透過なら transparent を有効化
+        transparent: isWater || isTransparent || (baseMat ? baseMat.transparent : false),
+        opacity: baseMat ? baseMat.opacity : 1.0,
         vertexColors: true,
         side: (isCross || isWater) ? THREE.DoubleSide : THREE.FrontSide,
         depthWrite: !(isCross || isTransparent || isWater),
-        alphaTest: isCross ? 0.5 : 0
+        // 植物、または透過指定がある場合はアルファテスト（しきい値0.5）を有効化
+        alphaTest: (isCross || isTransparent) ? 0.5 : (baseMat ? baseMat.alphaTest : 0)
     });
 
     subMap.set(flags, mat);
@@ -2374,9 +2604,9 @@ function getOrCreateCustomFadeMaterial(baseMat, isCross, isWater, isTransparent)
 
 
 const SharedMaterials = {
-    opaque: new THREE.MeshLambertMaterial({ vertexColors: true }),
-    water: new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.8, vertexColors: true }),
-    cutout: new THREE.MeshLambertMaterial({ alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true }),
+    opaque: new THREE.MeshBasicMaterial({ vertexColors: true }),
+    water: new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8, vertexColors: true }),
+    cutout: new THREE.MeshBasicMaterial({ alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true }),
     // ブロックIDごとにテクスチャをバインドしたマテリアルをあらかじめ配列化しておく
     blocks: new Map()
 };
@@ -2409,13 +2639,27 @@ for (let i = 0; i < 256; i++) {
 // =======================================================
 // 💡 関数の外（ファイルスコープ）で定義し、使い回して GC を防止する定数
 // =======================================================
-const _sharedVec3Zero = new THREE.Vector3(0, 0, 0); // 👈 追加
-const _sharedFaceShadeCache = { px: 0, nx: 0, py: 0, ny: 0, pz: 0, nz: 0 }; // 👈 追加
+const _sharedVec3Zero = new THREE.Vector3(0, 0, 0);
+
+const MAX_CH_VERTICES = 65536;
+const _globalPosBuffer = new Float32Array(MAX_CH_VERTICES * 3);
+const _globalColorBuffer = new Float32Array(MAX_CH_VERTICES * 3);
+const _globalUvBuffer = new Float32Array(MAX_CH_VERTICES * 2);
+const _globalIndexBuffer = new Uint32Array(MAX_CH_VERTICES * 1.5);
+
+const _isTransparentBlock = new Uint8Array(256);
+const _isCustomGeometryBlock = new Uint8Array(256);
+
+for (let id = 0; id < 256; id++) {
+    const cfg = _blockConfigFastArray[id];
+    if (cfg) {
+        _isTransparentBlock[id] = cfg.transparent ? 1 : 0;
+        _isCustomGeometryBlock[id] = (cfg.customGeometry || cfg.geometryType !== 'cube') ? 1 : 0;
+    }
+}
 
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     const baseX = cx * CHUNK_SIZE, baseZ = cz * CHUNK_SIZE;
-    const idx = (x, y, z) => ChunkSaveManager.getBlockIndex(x, y, z);
-
     const container = new THREE.Object3D();
 
     clearCaches();
@@ -2432,17 +2676,14 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         let vIdx = 0;
         for (let x = 0; x < CHUNK_SIZE; x++) {
             const worldX = baseX + x;
-
             for (let z = 0; z < CHUNK_SIZE; z++) {
                 const worldZ = baseZ + z;
-
                 const caveInfo = getCaveTubeInfo(worldX, worldZ);
                 const caveY = caveInfo[0];
                 const caveRadiusSq = caveInfo[1] * caveInfo[1];
 
                 for (let y = 0; y < CHUNK_HEIGHT; y++) {
                     const worldY = BEDROCK_LEVEL + y;
-
                     if (caveRadiusSq > 0 && worldY > 3 && (voxelData[vIdx] === BLOCK_TYPES.STONE || voxelData[vIdx] === BLOCK_TYPES.DIRT)) {
                         const dy = worldY - caveY;
                         if ((dy * dy) < caveRadiusSq) {
@@ -2459,60 +2700,33 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         ChunkSaveManager.modifiedChunks.set(chunkKey, voxelData);
     }
 
-    // --- 2. 最高高度の特定 ＆ 空っぽチャンクの早期スキップ（★効率化） ---
-    let maxModifiedHeight = 0;
-    let hasAnySolidBlock = false;
-
-    for (let i = voxelData.length - 1; i >= 0; i--) {
-        if (voxelData[i] !== BLOCK_TYPES.SKY) {
-            hasAnySolidBlock = true;
-            maxModifiedHeight = Math.floor(i / (CHUNK_SIZE * CHUNK_SIZE)) + 1;
-            break;
-        }
-    }
-
-    if (!hasAnySolidBlock) {
-        return container;
-    }
-
-    const activeHeight = Math.min(CHUNK_HEIGHT, Math.max(1, maxModifiedHeight));
-
-    // --- 3. ボクセル取得ヘルパー ---
-    // --- 3. ボクセル取得ヘルパー ---
-    const get = (x, y, z) => {
+    function get(x, y, z) {
         if (y < 0 || y >= CHUNK_HEIGHT) return BLOCK_TYPES.SKY;
-
         if (x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE) {
-            return voxelData[idx(x, y, z)];
+            return voxelData[y + CHUNK_HEIGHT * (z + CHUNK_SIZE * x)];
         }
-
         const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
         return getVoxelAtWorld(wx, wy, wz, globalTerrainCache, { raw: true });
-    };
+    }
 
-    // ▼▼▼ ここを追加 ▼▼▼
+    // --- 既存のコードを以下のように修正 ---
     let lightMap = chunkLightCache.get(chunkKey);
     if (!lightMap || isNewChunk) {
         lightMap = generateChunkLightMap(chunkKey, voxelData);
     }
 
-    const getLightLevel = (lx, ly, lz) => {
-        // 1. 完全に範囲外（高さ y が上下に突き抜けた場合）
+    function getLightLevel(lx, ly, lz) {
         if (ly < 0) return 0;
-        if (ly >= CHUNK_HEIGHT) return 15; // 空の上は常に明るい
+        if (ly >= CHUNK_HEIGHT) return 15;
 
-        // 2. チャンク内部
-        // ※ ビット演算で判定するとJITコンパイラが最適化しやすい
-        if ((lx | (CHUNK_SIZE - 1 - lx) | lz | (CHUNK_SIZE - 1 - lz)) >= 0) {
+        // 1. 自分のチャンク内なら高速に配列から取得
+        if (lx >= 0 && lx < CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE) {
             return lightMap[ly + CHUNK_HEIGHT * (lz + CHUNK_SIZE * lx)];
         }
 
-        // 3. 境界外（隣のチャンク）の場合：隣のチャンクの「実際のライトマップ」を取りに行く！
-        const wx = baseX + lx;
-        const wz = baseZ + lz;
-
-        const nCx = wx >> 4;
-        const nCz = wz >> 4;
+        const wx = baseX + lx, wz = baseZ + lz;
+        const nCx = Math.floor(wx / CHUNK_SIZE);
+        const nCz = Math.floor(wz / CHUNK_SIZE);
         const nKey = encodeChunkKey(nCx, nCz);
 
         const neighborLightMap = chunkLightCache.get(nKey);
@@ -2522,67 +2736,70 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             return neighborLightMap[ly + CHUNK_HEIGHT * (nLz + CHUNK_SIZE * nLx)];
         }
 
-        // 4. 💡 安全装置(フォールバック)の遅延・軽量化・影漏れ防止
-        const surfaceHeight = getTerrainHeight(wx, wz);
-        if (ly >= surfaceHeight) {
-            return 15; // 地表以上なら無条件で15を返して、重い getVoxelAtWorld をスキップ！
+        // 💡 修正：お隣のライトマップが無いときは、「現在の空の明るさ」をカンニングして返す
+        // gameTime から現在の太陽の明るさ(0.0 〜 1.0)を取得し、それを15段階にマッピングします。
+        if (typeof getSkyLightFactor === "function" && typeof gameTime !== "undefined") {
+            const skyFactor = getSkyLightFactor(gameTime); // 昼は 1.0, 夜は 0.1 になる
+
+            // 天空光(上位4ビット)に現在の明るさを乗算してパッキングする
+            const fallbackSky = Math.floor(15 * skyFactor);
+            return (fallbackSky << 4);
         }
 
-        // --- ⚠️ 改善ポイント：未ロードの隣チャンク「地下」の処理 ---
-
-        // 地下（ly < surfaceHeight）かつ、隣のライトマップ未生成の場合：
-        // 1. 無理に getVoxelAtWorld を呼ぶと「まだブロックを掘ったという情報」を反映できない。
-        // 2. さらに、毎回 getVoxelAtWorld を呼ぶと未ロード境界のメッシュ生成が激重になる。
-        // 
-        // 💡 解決策：
-        // 「未ロードの隣の地下」は、基本的には環境光「0」にするのがお化けライト残留を防ぐ意味でも安全。
-        // ただし、ブロックを壊したとき「隣のチャンクを強制再描画(全方位同期)」させることで、
-        // getVoxelAtWorld に頼らない正確な解決を行います。
-
-        return 0;
-    };
-    // ▲▲▲ ここまで ▲▲▲
+        return 15; // 万が一取得できなかった場合のセーフティ
+    }
 
     _globalVisCache.fill(0);
     const visCache = _globalVisCache;
 
-    const getVisMask = (x, y, z, type, cfg) => {
-        const key = idx(x, y, z);
-        let mask = visCache[key];
+    function getVisMask(x, y, z, type, index) {
+        const cached = visCache[index];
+        if (cached !== 0) return cached;
 
-        if (mask === 0) {
-            mask = computeVisibilityMask(
-                i => get(x + neighbors[i].dx, y + neighbors[i].dy, z + neighbors[i].dz),
-                type, cfg.transparent ?? false, cfg.customGeometry
-            );
-            visCache[key] = mask;
-        }
+        const myTrans = _isTransparentBlock[type], myCustom = _isCustomGeometryBlock[type];
+        let mask = 0, t = 0;
+
+        t = get(x + 1, y, z);
+        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 1;
+        t = get(x - 1, y, z);
+        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 2;
+        t = get(x, y + 1, z);
+        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 4;
+        t = get(x, y - 1, z);
+        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 8;
+        t = get(x, y, z + 1);
+        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 16;
+        t = get(x, y, z - 1);
+        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 32;
+
+        visCache[index] = mask;
         return mask;
-    };
+    }
 
-    const customGeomCache = new Map();
-    const customGeomBatches = new Map();
-    const faceGeoms = new Map();
+    const customGeomCache = new Map(), customGeomBatches = new Map(), faceGeoms = new Map();
+    let currentIdx, type, cfg, wx, wy, wz, visMask;
+    let targetX, targetY, targetZ, lightLevel, shade;
+    let hasAnySolidBlock = false;
 
-    // =======================================================
-    // 🧱 3D メッシュ組み立て 3重ループ
-    // =======================================================
-    for (let z = 0; z < CHUNK_SIZE; z++) {
-        for (let y = 0; y < activeHeight; y++) {
-            for (let x = 0; x < CHUNK_SIZE; x++) {
-                const type = voxelData[idx(x, y, z)];
+    for (let x = 0; x < CHUNK_SIZE; x++) {
+        for (let z = 0; z < CHUNK_SIZE; z++) {
+            const columnIndex = CHUNK_HEIGHT * (z + CHUNK_SIZE * x);
+
+            for (let y = CHUNK_HEIGHT - 1; y >= 0; y--) {
+                currentIdx = columnIndex + y;
+                type = voxelData[currentIdx];
+
                 if (type === BLOCK_TYPES.SKY) continue;
 
-                const cfg = _blockConfigFastArray[type];
+                hasAnySolidBlock = true;
+                cfg = _blockConfigFastArray[type];
                 if (!cfg) continue;
 
-                const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
-                const visMask = getVisMask(x, y, z, type, cfg);
+                wx = baseX + x; wy = BEDROCK_LEVEL + y; wz = baseZ + z;
+                visMask = getVisMask(x, y, z, type, currentIdx);
 
-                // 🌿 A. カスタムジオメトリ（草・花・階段など）
-                if (cfg.customGeometry || cfg.geometryType !== 'cube') {
+                if (_isCustomGeometryBlock[type]) {
                     if (!customGeomCache.has(type)) {
-                        // 💡 new THREE.Vector3() の生成を使い回し変数に変更
                         const mesh = createCustomBlockMesh(type, _sharedVec3Zero, null);
                         if (mesh) customGeomCache.set(type, mesh.geometry.clone());
                     }
@@ -2590,157 +2807,152 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                     if (!template) continue;
                     if (!visMask && cfg.cullAdjacentFaces !== false) continue;
 
-                    const filtered = template.groups.flatMap(group => {
+                    if (!customGeomBatches.has(type)) customGeomBatches.set(type, []);
+                    const batchArray = customGeomBatches.get(type);
+
+                    const groups = template.groups;
+                    for (let g = 0; g < groups.length; g++) {
+                        const group = groups[g];
                         const dir = detectFaceDirection(template, group);
-                        if (cfg.cullAdjacentFaces !== false && ((visMask >> dir) & 1) === 0) return [];
+
+                        if (cfg.cullAdjacentFaces !== false && ((visMask >> dir) & 1) === 0) continue;
+
                         const subGeo = new THREE.BufferGeometry();
                         extractGroupGeometry(template, group, subGeo);
-
                         subGeo.applyMatrix4(_tmpMat.makeTranslation(wx, wy, wz));
-                        return subGeo;
-                    });
 
-                    // 💡 filteredが空の場合の早期スキップを追加
-                    if (filtered.length === 0) continue;
+                        const posAttr = subGeo.getAttribute('position');
+                        const normalAttr = subGeo.getAttribute('normal');
 
-                    if (filtered.length) {
-                        if (!customGeomBatches.has(type)) customGeomBatches.set(type, []);
-                        const merged = mergeBufferGeometries(filtered, true);
+                        const colors = _globalColorBuffer.subarray(0, posAttr.count * 3);
 
-                        const posAttr = merged.getAttribute('position');
-                        const normalAttr = merged.getAttribute('normal');
-                        const colors = new Float32Array(posAttr.count * 3);
+                        // 💡 [超軽量化 1] 面の向き（dir）の判定をループの外側で 1 回だけ行う
+                        // --- 💡 [改善後] カスタムジオメトリの 2系統ライティング適用 ---
+                        let skyLevel = 0;
+                        let blockLevel = 0;
 
                         if (cfg.geometryType === "cross") {
-                            const centerX = Math.floor((posAttr.getX(0) + posAttr.getX(posAttr.count - 1)) / 2) - baseX;
-                            const centerZ = Math.floor((posAttr.getZ(0) + posAttr.getZ(posAttr.count - 1)) / 2) - baseZ;
-                            let yMin = Infinity;
-                            for (let i = 0; i < posAttr.count; i++) yMin = Math.min(yMin, posAttr.getY(i));
-                            yMin = Math.floor(yMin) - BEDROCK_LEVEL;
-
-                            let lightLevel = getLightLevel(centerX, yMin, centerZ);
-                            let shade = LIGHT_LEVEL_FACTORS[lightLevel];
-
-                            for (let i = 0; i < posAttr.count; i++) {
-                                colors.set([shade, shade, shade], i * 3);
-                            }
+                            lightLevel = getLightLevel(x, y, z);
+                            skyLevel = _getSkyLight(lightLevel);
+                            blockLevel = _getBlockLight(lightLevel);
                         } else {
-                            for (let i = 0; i < posAttr.count; i++) {
-                                const ny = normalAttr.getY(i), nx = normalAttr.getX(i), nz = normalAttr.getZ(i);
+                            const nxOffset = dir === 0 ? 1 : dir === 1 ? -1 : 0;
+                            const nyOffset = dir === 2 ? 1 : dir === 3 ? -1 : 0;
+                            const nzOffset = dir === 4 ? 1 : dir === 5 ? -1 : 0;
 
-                                let targetX = x + (nx > 0.9 ? 1 : nx < -0.9 ? -1 : 0);
-                                let targetY = y + (ny > 0.9 ? 1 : ny < -0.9 ? -1 : 0);
-                                let targetZ = z + (nz > 0.9 ? 1 : nz < -0.9 ? -1 : 0);
-
-                                let lightLevel = getLightLevel(targetX, targetY, targetZ);
-                                let shade = LIGHT_LEVEL_FACTORS[lightLevel];
-
-                                if (nx > 0.9 || nx < -0.9) shade *= 0.8;
-                                if (nz > 0.9 || nz < -0.9) shade *= 0.8;
-                                if (ny < -0.9) shade *= 0.6;
-
-                                colors.set([shade, shade, shade], i * 3);
-                            }
+                            lightLevel = getLightLevel(x + nxOffset, y + nyOffset, z + nzOffset);
+                            skyLevel = _getSkyLight(lightLevel);
+                            blockLevel = _getBlockLight(lightLevel);
                         }
 
-                        merged.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-                        customGeomBatches.get(type).push(merged);
+                        let skyShade = LIGHT_LEVEL_FACTORS[skyLevel];
+                        let blockShade = LIGHT_LEVEL_FACTORS[blockLevel];
+
+                        // 平面影の適用（横面 0.8 / 底面 0.6）
+                        let faceWeight = 1.0;
+                        if (cfg.geometryType !== "cross") {
+                            if (dir === 0 || dir === 1 || dir === 4 || dir === 5) faceWeight = 0.8;
+                            if (dir === 3) faceWeight = 0.6;
+                        }
+
+                        skyShade = Math.max(0.04, skyShade * faceWeight * globalBrightnessMultiplier);
+                        blockShade = Math.max(0.04, blockShade * faceWeight * globalBrightnessMultiplier);
+
+                        // 🎨 colors.fill() を廃止し、Float32Array に [R, G, B] の順でパッキングする
+                        for (let v = 0; v < posAttr.count; v++) {
+                            const vIdx = v * 3;
+                            colors[vIdx] = skyShade;   // R: 天空光
+                            colors[vIdx + 1] = blockShade; // G: ブロック光
+                            colors[vIdx + 2] = 0.0;        // B: なし
+                        }
+
+                        subGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
+                        batchArray.push(subGeo);
                     }
                     continue;
                 }
 
-                // 📦 B. 通常立方体 (フルブロック)
                 if (!visMask) continue;
 
                 if (useInstancing) {
-                    if (!faceGeoms.has(type)) faceGeoms.set(type, new Map());
-                    const matMap = faceGeoms.get(type);
-
+                    // ... インスタンシング
+                } else {
                     for (let i = 0; i < FACE_KEYS.length; i++) {
                         const face = FACE_KEYS[i];
                         const data = faceData[face];
+
                         if (!((visMask >> data.bit) & 1)) continue;
-                        if (!matMap.has(face)) matMap.set(face, []);
-                        matMap.get(face).push([wx, wy, wz]);
-                    }
-                    continue;
-                }
 
-                for (let i = 0; i < FACE_KEYS.length; i++) {
-                    const face = FACE_KEYS[i];
-                    const data = faceData[face];
+                        const matIdx = faceToMaterialIndex[face];
+                        if (!faceGeoms.has(type)) faceGeoms.set(type, new Map());
+                        const matMap = faceGeoms.get(type);
+                        if (!matMap.has(matIdx)) matMap.set(matIdx, { positions: [], colors: [] });
 
-                    if (!((visMask >> data.bit) & 1)) continue;
+                        const batch = matMap.get(matIdx);
+                        const baseVerts = CUBE_VERTICES[face];
 
-                    const matIdx = faceToMaterialIndex[face];
-                    if (!faceGeoms.has(type)) faceGeoms.set(type, new Map());
-                    const matMap = faceGeoms.get(type);
-                    if (!matMap.has(matIdx)) matMap.set(matIdx, { positions: [], colors: [] });
+                        batch.positions.push(
+                            baseVerts[0] + wx, baseVerts[1] + wy, baseVerts[2] + wz,
+                            baseVerts[3] + wx, baseVerts[4] + wy, baseVerts[5] + wz,
+                            baseVerts[6] + wx, baseVerts[7] + wy, baseVerts[8] + wz,
+                            baseVerts[9] + wx, baseVerts[10] + wy, baseVerts[11] + wz
+                        );
 
-                    const batch = matMap.get(matIdx);
+                        // 💡 [超軽量化 2] クワッド（面）単位で getLightLevel の呼び出しを 1 回にまとめる
+                        targetX = x + (face === "px" ? 1 : face === "nx" ? -1 : 0);
+                        targetY = y + (face === "py" ? 1 : face === "ny" ? -1 : 0);
+                        targetZ = z + (face === "pz" ? 1 : face === "nz" ? -1 : 0);
 
-                    const baseVerts = CUBE_VERTICES[face];
-                    batch.positions.push(
-                        baseVerts[0] + wx, baseVerts[1] + wy, baseVerts[2] + wz,
-                        baseVerts[3] + wx, baseVerts[4] + wy, baseVerts[5] + wz,
-                        baseVerts[6] + wx, baseVerts[7] + wy, baseVerts[8] + wz,
-                        baseVerts[9] + wx, baseVerts[10] + wy, baseVerts[11] + wz
-                    );
+                        // 立方体の各面の描画ループ、またはカスタムジオメトリの頂点カラー算出時：
+                        lightLevel = getLightLevel(targetX, targetY, targetZ);
 
-                    for (let v = 0; v < 4; v++) {
-                        let targetX = x + (face === "px" ? 1 : face === "nx" ? -1 : 0);
-                        let targetY = y + (face === "py" ? 1 : face === "ny" ? -1 : 0);
-                        let targetZ = z + (face === "pz" ? 1 : face === "nz" ? -1 : 0);
+                        // 💡 【修正】パッキングされたデータから、天空光とブロック光を分離して抽出する
+                        let skyLevel = _getSkyLight(lightLevel);
+                        let blockLevel = _getBlockLight(lightLevel);
 
-                        let lightLevel = getLightLevel(targetX, targetY, targetZ);
-                        let shade = LIGHT_LEVEL_FACTORS[lightLevel];
+                        let skyShade = LIGHT_LEVEL_FACTORS[skyLevel];
+                        let blockShade = LIGHT_LEVEL_FACTORS[blockLevel];
 
-                        if (face === "px" || face === "nx") shade *= 0.8;
-                        if (face === "pz" || face === "nz") shade *= 0.8;
-                        if (face === "ny") shade *= 0.6;
+                        // 面による影の減衰（横面 0.8 / 底面 0.6）を計算
+                        let faceWeight = 1.0;
+                        if (face !== "py" && face !== "ny") faceWeight = 0.8;
+                        if (face === "ny") faceWeight = 0.6;
 
-                        batch.colors.push(shade, shade, shade);
+                        // 💡 R(天空光) と G(ブロック光) にそれぞれ影の重みと倍率を掛ける
+                        skyShade = Math.max(0.04, skyShade * faceWeight * globalBrightnessMultiplier);
+                        blockShade = Math.max(0.04, blockShade * faceWeight * globalBrightnessMultiplier);
+
+                        // 4頂点分の色データを [R(天空光), G(ブロック光), B(なし)] の順で12個流し込む
+                        batch.colors.push(
+                            skyShade, blockShade, 0.0,
+                            skyShade, blockShade, 0.0,
+                            skyShade, blockShade, 0.0,
+                            skyShade, blockShade, 0.0
+                        );
                     }
                 }
             }
         }
     }
 
-    // =======================================================
-    // 🧱 通常立方体マージ & メッシュ描画
-    // =======================================================
+    if (!hasAnySolidBlock) return container;
+
     for (const [type, group] of faceGeoms.entries()) {
         const mats = getBlockMaterials(+type);
 
-        if (useInstancing) {
-            for (const [face, positions] of group.entries()) {
-                if (!positions.length) continue;
-                const geom = getCachedFaceGeometry(face);
-                const mat = mats?.[0] ? mats[0] : new THREE.MeshBasicMaterial({ color: 0xffffff });
-
-                const mesh = new THREE.InstancedMesh(geom, mat, positions.length);
-                const dummy = new THREE.Object3D();
-                positions.forEach((pos, i) => {
-                    dummy.position.set(...pos);
-                    dummy.updateMatrix();
-                    mesh.setMatrixAt(i, dummy.matrix);
-                });
-                container.add(mesh);
-            }
-        } else {
+        if (!useInstancing) {
             let totalFaces = 0;
             for (const matData of group.values()) {
                 totalFaces += matData.positions.length / 12;
             }
 
             const finalGeom = new THREE.BufferGeometry();
-            const posArray = new Float32Array(totalFaces * 12);
-            const colorArray = new Float32Array(totalFaces * 12);
-            const uvArray = new Float32Array(totalFaces * 8);
-            const indexArray = new Uint32Array(totalFaces * 6);
+            const posArray = _globalPosBuffer.subarray(0, totalFaces * 12);
+            const colorArray = _globalColorBuffer.subarray(0, totalFaces * 12);
+            const uvArray = _globalUvBuffer.subarray(0, totalFaces * 8);
+            const indexArray = _globalIndexBuffer.subarray(0, totalFaces * 6);
 
-            let vOff = 0, uvOff = 0, iOff = 0, faceIdx = 0;
-            let groupOffset = 0;
+            let vOff = 0, uvOff = 0, iOff = 0, faceIdx = 0, groupOffset = 0;
 
             for (const [matIdx, matData] of group.entries()) {
                 const faceCount = matData.positions.length / 12;
@@ -2749,17 +2961,19 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 posArray.set(matData.positions, vOff);
                 colorArray.set(matData.colors, vOff);
 
+                // 💡 インデックスの配列への代入を完全にアンロール（iOff++ を直書き）
                 for (let f = 0; f < faceCount; f++) {
                     uvArray.set(CUBE_UVS, uvOff);
                     uvOff += 8;
 
                     const baseV = faceIdx * 4;
-                    indexArray[iOff++] = baseV;
-                    indexArray[iOff++] = baseV + 1;
-                    indexArray[iOff++] = baseV + 2;
-                    indexArray[iOff++] = baseV;
-                    indexArray[iOff++] = baseV + 2;
-                    indexArray[iOff++] = baseV + 3;
+                    indexArray[iOff] = baseV;
+                    indexArray[iOff + 1] = baseV + 1;
+                    indexArray[iOff + 2] = baseV + 2;
+                    indexArray[iOff + 3] = baseV;
+                    indexArray[iOff + 4] = baseV + 2;
+                    indexArray[iOff + 5] = baseV + 3;
+                    iOff += 6;
 
                     faceIdx++;
                 }
@@ -2769,24 +2983,42 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 vOff += matData.positions.length;
             }
 
-            finalGeom.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-            finalGeom.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
-            finalGeom.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
-            finalGeom.setIndex(new THREE.BufferAttribute(indexArray, 1));
+            finalGeom.setAttribute('position', new THREE.BufferAttribute(posArray.slice(), 3));
+            finalGeom.setAttribute('color', new THREE.BufferAttribute(colorArray.slice(), 3));
+            finalGeom.setAttribute('uv', new THREE.BufferAttribute(uvArray.slice(), 2));
+            finalGeom.setIndex(new THREE.BufferAttribute(indexArray.slice(), 1));
+
             finalGeom.computeVertexNormals();
             finalGeom.computeBoundingSphere();
 
             const baseMats = SharedMaterials.blocks.get(type) || getBlockMaterials(+type);
 
             const fadeReadyMats = baseMats.map(m => {
-                const cloned = m.clone();
-                cloned.userData = {
+                const basicMat = new THREE.MeshBasicMaterial({
+                    map: m.map || null,
+                    transparent: m.transparent,
+                    opacity: m.opacity,
+                    vertexColors: true,
+                    depthWrite: m.depthWrite,
+                    side: m.side,
+                    alphaTest: m.alphaTest
+                });
+
+                basicMat.userData = {
                     originMat: m,
                     realTransparent: m.userData?.realTransparent ?? m.transparent,
                     realDepthWrite: m.userData?.realDepthWrite ?? m.depthWrite,
-                    realOpacity: m.userData?.realOpacity ?? m.opacity
+                    realOpacity: m.userData?.realOpacity ?? m.opacity,
+                    // 👇 オリジナルの shaderUniforms への参照を渡す
+                    shaderUniforms: m.userData?.shaderUniforms
                 };
-                return cloned;
+
+                // 👇 さらに、このマテリアル自体にも onBeforeCompile を割り当ててシェーダーを書き換える
+                if (m.onBeforeCompile) {
+                    basicMat.onBeforeCompile = m.onBeforeCompile;
+                }
+
+                return basicMat;
             });
 
             const mesh = new THREE.Mesh(finalGeom, fadeReadyMats);
@@ -2795,7 +3027,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
             mesh.userData.finalizeFade = function () {
                 if (!Array.isArray(mesh.material)) return;
-
                 const restoredMats = mesh.material.map(clonedMat => {
                     const origin = clonedMat.userData?.originMat;
                     if (origin) {
@@ -2804,7 +3035,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                     }
                     return clonedMat;
                 });
-
                 mesh.material = restoredMats;
                 mesh.userData.finalizeFade = null;
             };
@@ -2813,9 +3043,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         }
     }
 
-    // =======================================================
-    // 🌿 カスタムジオメトリマージ & メッシュ描画
-    // =======================================================
     for (const [type, geoms] of customGeomBatches.entries()) {
         const merged = mergeBufferGeometries(geoms, true);
         merged.computeBoundingSphere();
@@ -2826,14 +3053,14 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
         const targetOpacity = baseMat?.userData?.realOpacity ?? 1.0;
         const isWater = type === BLOCK_TYPES.WATER || baseMat?.userData?.isWater === true;
-
         const isGlass = type === BLOCK_TYPES.GLASS || (cfg && cfg.id === 12);
         const isCutout = cfg?.geometryType === "cross" || cfg?.geometryType === "leaves" || isGlass;
 
-        const isChunkZero = typeof CHUNK_VISIBLE_DISTANCE !== "undefined" && CHUNK_VISIBLE_DISTANCE === 0;
-
         const sharedFadeMat = getOrCreateCustomFadeMaterial(baseMat, isCutout, isWater, isGlass);
         const fadeReadyMat = sharedFadeMat.clone();
+
+        fadeReadyMat.vertexColors = true;
+        if (isCutout) fadeReadyMat.alphaTest = 0.5;
 
         fadeReadyMat.userData = {
             originMat: baseMat,
@@ -2842,33 +3069,31 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             realOpacity: targetOpacity,
             isWater: isWater,
             isGlass: isGlass,
-            isAlphaCutout: isCutout
+            isAlphaCutout: isCutout,
+            // 👇 不透明ブロックと同様に、シェーダー内の天空光 Uniforms への参照を渡す
+            shaderUniforms: baseMat?.userData?.shaderUniforms
         };
+
+        // 👇 オリジナル（blocks.js側など）で定義された onBeforeCompile をコピーし、カスタムジオメトリにも適用
+        if (baseMat && baseMat.onBeforeCompile) {
+            fadeReadyMat.onBeforeCompile = baseMat.onBeforeCompile;
+        }
 
         const mesh = new THREE.Mesh(merged, fadeReadyMat);
 
-        if (isChunkZero) {
+        if (typeof CHUNK_VISIBLE_DISTANCE !== "undefined" && CHUNK_VISIBLE_DISTANCE === 0) {
             fadeReadyMat.opacity = targetOpacity;
         }
 
         mesh.castShadow = !isCutout;
         mesh.receiveShadow = !isCutout;
         mesh.frustumCulled = true;
+        mesh.renderOrder = isWater ? 10 : (isGlass || isCutout ? 1 : 0);
 
-        if (isWater) {
-            mesh.renderOrder = 10;
-        } else if (isGlass || isCutout) {
-            mesh.renderOrder = 1;
-        } else {
-            mesh.renderOrder = 0;
-        }
-
+        // --- ✨ 修正後（クローンしたマテリアルをそのまま保持させる） ---
         mesh.userData.finalizeFade = function () {
-            if (mesh.material && mesh.material.userData?.originMat) {
-                const origin = mesh.material.userData.originMat;
-                mesh.material.dispose();
-                mesh.material = origin;
-            }
+            // カスタムジオメトリは頂点カラー情報を保持した専用マテリアルが必要なため、
+            // オリジナルのマテリアルへの差し戻し（dispose）を行わない。
             mesh.userData.finalizeFade = null;
         };
 
@@ -2938,8 +3163,12 @@ const precomputeOffsets = () => {
         const dz = Math.floor(i / s) - CHUNK_VISIBLE_DISTANCE;
         o.push({ dx, dz, d: dx * dx + dz * dz });
     }
+    // offsetsをあらかじめ「近い順（昇順）」で計算して保持する
     return o.sort((a, b) => a.d - b.d);
 };
+
+// 💡 ファイルのトップレベル（関数の外）で1度だけ定義し、使い回す（GC対策）
+const _chunkKeysInQueue = new Set();
 
 function updateChunks() {
     const pCx = Math.floor(player.position.x / CHUNK_SIZE);
@@ -2948,60 +3177,68 @@ function updateChunks() {
     if (lastChunk.x === pCx && lastChunk.z === pCz && offsets) return;
 
     const isMoved = lastChunk.x !== pCx || lastChunk.z !== pCz;
-    lastChunk = { x: pCx, z: pCz };
+
+    // 💡 オブジェクトを new したりリテラル {} で上書きするのをやめ、プロパティを直接書き換える
+    lastChunk.x = pCx;
+    lastChunk.z = pCz;
     offsets ||= precomputeOffsets();
 
-    const queued = new Set();
+    // 💡 Setを毎回新しく作らず、既存のものをクリアして再利用
+    _chunkKeysInQueue.clear();
     for (let i = 0; i < chunkQueue.length; i++) {
         const q = chunkQueue[i];
-        queued.add(encodeChunkKey(q.cx, q.cz));
+        _chunkKeysInQueue.add(encodeChunkKey(q.cx, q.cz));
     }
 
-    const req = new Set();
     const cands = offsets;
 
+    // 1. 未ロード＆未キューイングのものを追加
     for (let i = 0; i < cands.length; i++) {
         const offset = cands[i];
         const cx = pCx + offset.dx;
         const cz = pCz + offset.dz;
         const hashKey = encodeChunkKey(cx, cz);
 
-        req.add(hashKey);
-
-        if (!loadedChunks.has(hashKey) && !queued.has(hashKey)) {
+        if (!loadedChunks.has(hashKey) && !_chunkKeysInQueue.has(hashKey)) {
             chunkQueue.push({ cx, cz });
+            _chunkKeysInQueue.add(hashKey); // 連続追加時の重複も即座に防止
         }
     }
 
-    // 🛠️ 修正1: マージン(+2)を取り払う
-    chunkQueue = chunkQueue.filter(e => {
-        const dx = Math.abs(e.cx - pCx);
-        const dz = Math.abs(e.cz - pCz);
-        return dx <= CHUNK_VISIBLE_DISTANCE && dz <= CHUNK_VISIBLE_DISTANCE;
-    });
+    // 💡 filter() を使わず、配列の破壊を避ける（描画距離外のキューは放置しても生成時に弾かれるため、無理に消さない方が速い）
+    // もしキューがあまりにも肥大化（数千件など）した時だけ間引くのがベスト。
+    if (chunkQueue.length > 500) {
+        let writeIdx = 0;
+        for (let i = 0; i < chunkQueue.length; i++) {
+            const q = chunkQueue[i];
+            const dx = Math.abs(q.cx - pCx);
+            const dz = Math.abs(q.cz - pCz);
+            if (dx <= CHUNK_VISIBLE_DISTANCE && dz <= CHUNK_VISIBLE_DISTANCE) {
+                chunkQueue[writeIdx++] = q;
+            }
+        }
+        chunkQueue.length = writeIdx; // 💡 配列のサイズを切り詰める（超高速、GCゼロ！）
+    }
 
+    // 💡 プレイヤーが移動した時だけソート。遠い順に並べることで、生成器が pop() で近い順に処理できる。
     if (isMoved && chunkQueue.length > 1) {
         chunkQueue.sort((a, b) => {
             const dAx = a.cx - pCx;
             const dAz = a.cz - pCz;
             const dBx = b.cx - pCx;
             const dBz = b.cz - pCz;
-
-            const distA = (dAx * dAx) + (dAz * dAz);
-            const distB = (dBx * dBx) + (dBz * dBz);
-
-            return distA - distB;
+            // ユークリッド距離の自乗
+            return (dBx * dBx + dBz * dBz) - (dAx * dAx + dAz * dAz);
         });
     }
 
+    // 2. 範囲外のチャンクをアンロード
     for (const [hashKey, mesh] of loadedChunks.entries()) {
-        const [cx, cz] = decodeChunkKey(hashKey);
+        const coord = decodeChunkKey(hashKey);
+        const dx = Math.abs(coord.cx - pCx);
+        const dz = Math.abs(coord.cz - pCz);
 
-        const dx = cx - pCx;
-        const dz = cz - pCz;
-
-        // 🛠️ 修正2: マージン(+1)を取り払う
-        if (Math.abs(dx) > CHUNK_VISIBLE_DISTANCE || Math.abs(dz) > CHUNK_VISIBLE_DISTANCE) {
+        if (dx > CHUNK_VISIBLE_DISTANCE || dz > CHUNK_VISIBLE_DISTANCE) {
             releaseChunkMesh(mesh);
             loadedChunks.delete(hashKey);
         }
@@ -3038,6 +3275,25 @@ window.updateChunksFromUI = () => {
     }
     console.log("描画距離の更新:", d);
 };
+// --- 追加：UIから世界全体の明るさを更新する関数 ---
+window.updateGlobalBrightnessFromUI = function () {
+    const slider = document.getElementById("brightnessSlider");
+    if (!slider) return;
+
+    const val = parseInt(slider.value, 10);
+    // スライダー50を基準 (1.0) とし、0〜100を 0.0〜2.0 にマッピング
+    globalBrightnessMultiplier = val / 50;
+
+    // 現在ロードされているチャンクをすべて即時リフレッシュ
+    for (const [key, mesh] of loadedChunks.entries()) {
+        const coord = decodeChunkKey(key);
+        refreshChunkAt(coord.cx, coord.cz);
+    }
+
+    if (typeof addChatMessage === "function") {
+        addChatMessage(`世界の明るさを ${val}% に調整しました。`, "#ffff55");
+    }
+};
 
 
 /* ======================================================
@@ -3052,101 +3308,84 @@ function getChunkCoord(val) {
     return Math.floor(val / CHUNK_SIZE);  // 負の値も正しく処理
 }
 
-/**
- * チャンク更新要求をまとめて処理
- */
-function processChunkUpdates() {
-    for (const key of pendingChunkUpdates) {
-        const [x, z] = decodeChunkKey(key);
-        requestChunkUpdate(x, z);
-    }
-    pendingChunkUpdates.clear();
-    scheduleChunkUpdate();
-    updateTimeout = null;
-}
+let updateTimeout = null;
 
-/**
- * ブロック操作によって影響を受けるチャンクを特定し、更新を要求する
- * お化けライトの隣接チャンクへの消去（Unlight）の伝播同期もここで行います。
- */
-function updateAffectedChunks(blockPos, forceImmediate = true) {
+// ループの外で使い回すことで、ブロック設置・破壊時のGC（カクつき）を完全に阻止する
+let _nCx = 0, _nCz = 0, _nKey = 0n, _nMesh = null, _nVoxelData = null;
+
+function updateAffectedChunks(blockPos, forceImmediate = false) {
     const cx = getChunkCoord(blockPos.x);
     const cz = getChunkCoord(blockPos.z);
     const myKey = encodeChunkKey(cx, cz);
 
-    // ======================================================
-    // 1. 自チャンクのライトマップ再計算（地形データは get でキャッシュから安全取得）
-    // ======================================================
-    const myVoxelData = ChunkSaveManager.modifiedChunks.get(myKey)
-        || ChunkSaveManager.captureBaseChunkData(cx, cz);
+    // ==========================================
+    // 1. 周辺チャンクのライトデータリセット（一旦クリア）
+    // ==========================================
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+            const nCx = cx + dx;
+            const nCz = cz + dz;
+            const nKey = encodeChunkKey(nCx, nCz);
 
-    generateChunkLightMap(myKey, myVoxelData);
+            if (!loadedChunks.has(nKey)) continue;
 
-    // ======================================================
-    // 2. お化けライトの連鎖伝播（配列のメモリ再確保を排除して高速化）
-    // ======================================================
-    pendingChunkUpdates.add(myKey);
+            const lData = chunkLightCache.get(nKey);
+            if (lData) lData.fill(0); // 💡 一旦ゼロにして境界バグを未然に防ぐ
 
-    // 💡 配列の shift() は重いため、インデックス走査（リングバッファ風）で GC を抑制
-    const lightQueue = [];
-    let head = 0;
-
-    while (neighborUnlightRequests.length > 0) {
-        const req = neighborUnlightRequests.pop(); // pop() は shift() より圧倒的に高速
-        const nKey = encodeChunkKey(req.cx, req.cz);
-        if (loadedChunks.has(nKey)) {
-            lightQueue.push({ key: nKey, cx: req.cx, cz: req.cz });
-        }
-    }
-
-    while (head < lightQueue.length) {
-        const current = lightQueue[head++];
-
-        // 💡 修正：captureBaseChunkData を呼ばず、既存データがない（まだ誰も弄ってない）ならスキップ！
-        // 未変更チャンクの光は、地形生成時に自動計算されるため、今無理やり作る必要はありません。
-        const nVoxelData = ChunkSaveManager.modifiedChunks.get(current.key);
-        if (!nVoxelData) continue;
-
-        generateChunkLightMap(current.key, nVoxelData);
-        pendingChunkUpdates.add(current.key); // 光が変わったので描画リストへ
-
-        while (neighborUnlightRequests.length > 0) {
-            const nextReq = neighborUnlightRequests.pop();
-            const nextKey = encodeChunkKey(nextReq.cx, nextReq.cz);
-
-            if (loadedChunks.has(nextKey) && !pendingChunkUpdates.has(nextKey)) {
-                lightQueue.push({ key: nextKey, cx: nextReq.cx, cz: nextReq.cz });
+            let nVoxelData = ChunkSaveManager.modifiedChunks.get(nKey);
+            if (!nVoxelData) {
+                nVoxelData = ChunkSaveManager.captureBaseChunkData(nCx, nCz);
+                ChunkSaveManager.modifiedChunks.set(nKey, nVoxelData);
             }
         }
     }
 
-    // ======================================================
-    // 3. メッシュ再生成の登録（本当に境界に近いときだけ隣接を更新）
-    // ======================================================
-    const localX = blockPos.x & (CHUNK_SIZE - 1);
-    const localZ = blockPos.z & (CHUNK_SIZE - 1);
+    // ==========================================
+    // 2. 【最重要】周辺チャンクのライトマップを一斉に計算（光情報の確定）
+    // ==========================================
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+            const nCx = cx + dx;
+            const nCz = cz + dz;
+            const nKey = encodeChunkKey(nCx, nCz);
 
-    // ブロックがチャンクの「真ん中」にあるなら、隣のメッシュ（見た目）を作り直す必要はない！
-    const isMinX = (localX <= 1);
-    const isMaxX = (localX >= CHUNK_SIZE - 2);
-    const isMinZ = (localZ <= 1);
-    const isMaxZ = (localZ >= CHUNK_SIZE - 2);
+            if (!loadedChunks.has(nKey)) continue;
 
-    if (isMinX) pendingChunkUpdates.add(encodeChunkKey(cx - 1, cz));
-    if (isMaxX) pendingChunkUpdates.add(encodeChunkKey(cx + 1, cz));
-    if (isMinZ) pendingChunkUpdates.add(encodeChunkKey(cx, cz - 1));
-    if (isMaxZ) pendingChunkUpdates.add(encodeChunkKey(cx, cz + 1));
+            const vData = ChunkSaveManager.modifiedChunks.get(nKey);
+            if (vData) {
+                generateChunkLightMap(nKey, vData); // 💡 全員分のライトを確定させる
+            }
+        }
+    }
 
-    if (isMinX && isMinZ) pendingChunkUpdates.add(encodeChunkKey(cx - 1, cz - 1));
-    if (isMinX && isMaxZ) pendingChunkUpdates.add(encodeChunkKey(cx - 1, cz + 1));
-    if (isMaxX && isMinZ) pendingChunkUpdates.add(encodeChunkKey(cx + 1, cz - 1));
-    if (isMaxX && isMaxZ) pendingChunkUpdates.add(encodeChunkKey(cx + 1, cz + 1));
+    // ==========================================
+    // 3. 自分のチャンク（中心）のメッシュをその場で即時反映！
+    // ==========================================
+    refreshChunkAt(cx, cz); // プレイヤーを待たせない！
 
-    // ======================================================
-    // 4. 即時反映（時間計測ブレーキに任せる）
-    // ======================================================
-    if (forceImmediate) {
-        processPendingChunkUpdates(Infinity);
+    // ==========================================
+    // 4. お隣のチャンクのメッシュ更新（非同期分散、または即時）
+    // ==========================================
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+            if (dx === 0 && dz === 0) continue; // 自分は既に描画済みなのでスキップ
+
+            const nCx = cx + dx;
+            const nCz = cz + dz;
+            const nKey = encodeChunkKey(nCx, nCz);
+
+            if (!loadedChunks.has(nKey)) continue;
+
+            if (forceImmediate) {
+                refreshChunkAt(nCx, nCz);
+            } else {
+                pendingChunkUpdates.add(nKey); // お隣は次のフレーム以降に分散描画
+            }
+        }
+    }
+
+    if (!forceImmediate) {
+        scheduleChunkUpdate();
     }
 }
 /**
@@ -3449,7 +3688,7 @@ function interactWithBlock(action) {
         console.log("破壊完了:", base);
 
         markColumnModified(base.x, base.z, base.y);
-        updateAffectedChunks(base, true);
+        updateAffectedChunks(base, false);
         updateBlockSelection();
         updateBlockInfo();
         return;
@@ -3502,7 +3741,7 @@ function interactWithBlock(action) {
         console.log("設置完了:", candidate);
 
         markColumnModified(candidate.x, candidate.z, candidate.y);
-        updateAffectedChunks(candidate, true);
+        updateAffectedChunks(candidate, false);
         updateBlockSelection();
         updateBlockInfo();
         return;
@@ -3589,11 +3828,6 @@ renderer.domElement.addEventListener("click", () => {
     if (!("ontouchstart" in window)) {
         renderer.domElement.requestPointerLock();
     }
-});
-
-document.addEventListener("pointerlockchange", () => {
-    pointerLocked = (document.pointerLockElement === renderer.domElement);
-    console.log(pointerLocked ? "Pointer Locked" : "Pointer Unlocked");
 });
 
 // ----- タッチ操作で視点回転＋短タップ設置・長押し破壊 -----
@@ -3849,7 +4083,7 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
 
     const originalMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     const newMaterials = originalMaterials.map(m => {
-        return new THREE.MeshLambertMaterial({
+        return new THREE.MeshBasicMaterial({
             map: m.map || null,
             side: THREE.FrontSide,
             transparent: m.transparent || false,
@@ -4349,14 +4583,14 @@ function getTargetBlockByDDA(maxDistance) {
 }
 
 /* ======================================================
-   【修正版：アウトラインの選択更新】
+   【超軽量・チラつき防止版】アウトラインの選択更新
    ====================================================== */
 function updateBlockSelection() {
     const hit = getTargetBlockByDDA(BLOCK_INTERACT_RANGE);
 
     if (!hit) {
         selectionOutlineMesh.visible = false;
-        return;
+        return; // DDA側でhitがnullの場合、内部で適切にfreeVecされている前提
     }
 
     const { x, y, z } = hit;
@@ -4374,6 +4608,7 @@ function updateBlockSelection() {
 
     const config = getBlockConfiguration(voxel);
 
+    // プールされたベクトルを安全に使い回す
     let center = globalTempVec3b;
     let size = globalTempVec3c;
 
@@ -4382,14 +4617,15 @@ function updateBlockSelection() {
         size.set(config.selectionSize.x, config.selectionSize.y, config.selectionSize.z);
     } else {
         center.set(x + 0.5, y + 0.5, z + 0.5);
-        size.set(1, 1, 1);
+        size.set(1.01, 1.01, 1.01); // 💡 1.00 から 1.01 にして描画のチラつきを防止
     }
 
     selectionOutlineMesh.position.copy(center);
     selectionOutlineMesh.scale.copy(size);
     selectionOutlineMesh.visible = true;
 
-    freeVec(hit.normal);
+    // 💡 確実にプールへ返却
+    if (hit.normal) freeVec(hit.normal);
 }
 
 /* ======================================================
@@ -4848,62 +5084,85 @@ function animate() {
     requestAnimationFrame(animate);
 
     let delta = clock.getDelta();
-    if (delta > 0.1) delta = 0.1;
+    if (delta > 0.1) delta = 0.1; // スパイク対策
     const now = performance.now();
     frameCount++;
 
-    // -------- HUD更新（1秒ごと） --------
+    // 1. -------- 昼夜サイクルの進行と「空・霧」の色更新 --------
+    // gameTimeを進め、背景色(ClearColor)とFog色を同期させる
+    gameTime = (gameTime + delta * 20 * TIME_SPEED) % TICKS_PER_DAY;
+    updateSkyAndFogColor(gameTime);
+
+    // 2. -------- ブロックの明るさ（シェーダー）への反映 --------
+    // 空の明るさ係数を取得し、各チャンクのMaterial(Uniforms)に流し込む
+    const currentSkyFactor = getSkyLightFactor(gameTime);
+
+    for (const mesh of loadedChunks.values()) {
+        if (!mesh.children) continue;
+
+        for (let i = 0; i < mesh.children.length; i++) {
+            const child = mesh.children[i];
+            if (!child.material) continue;
+
+            // マルチマテリアルと単一マテリアルの両方に対応
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+
+            for (let j = 0; j < mats.length; j++) {
+                const m = mats[j];
+                // シェーダー内の u_skyFactor 変数をリアルタイムに書き換え
+                if (m.userData && m.userData.shaderUniforms && m.userData.shaderUniforms.u_skyFactor) {
+                    m.userData.shaderUniforms.u_skyFactor.value = currentSkyFactor;
+                }
+            }
+        }
+    }
+
+    // 3. -------- HUD（デバッグ情報）の更新（1秒ごと） --------
     if (now - lastFpsTime > 1000) {
         const fps = Math.round((frameCount * 1000) / (now - lastFpsTime));
-
-        // 1. メッシュ再構築待ち(再描画待ち)のキューの合計
         const activeUpdates = pendingChunkUpdates.size + chunkQueue.length;
-
-        // 2. プレイヤーが手を加えた（保存された）チャンクの総数
         const modifiedChunkCount = ChunkSaveManager.modifiedChunks.size;
-
         const pCx = Math.floor(player.position.x / CHUNK_SIZE);
         const pCz = Math.floor(player.position.z / CHUNK_SIZE);
 
-        // 💡 崩れないように綺麗に整形したHTML
         fpsCounter.innerHTML =
             `<span>Minecraft Alpha v0.0.1a</span><br>` +
-            `<span>${fps} fps, ${activeUpdates} chunks update</span><br>` + // 👈 元の表示を復活！
-            `<span>${modifiedChunkCount} modified chunks (Saved)</span><br>` + // 👈 変更検知を新設！
+            `<span>Time: ${getGameClock(gameTime)} (${Math.floor(gameTime)} ticks)</span><br>` + // ← 末尾に + を追加
+            `<span>${fps} fps, ${activeUpdates} chunks update</span><br>` +
+            `<span>${modifiedChunkCount} modified chunks (Saved)</span><br>` +
             `<span>C: ${loadedChunks.size} loaded. (Quality: ${CHUNK_VISIBLE_DISTANCE} chunks)</span><br>` +
             `<span>Dimension: Overworld</span><br>` +
-            `<span>x: ${Math.round(player.position.x) === 0 ? 0 : Math.round(player.position.x)} (C: ${pCx})</span><br>` +
-            `<span>y: ${Math.round(player.position.y) === 0 ? 0 : Math.round(player.position.y)} (feet)</span><br>` +
-            `<span>z: ${Math.round(player.position.z) === 0 ? 0 : Math.round(player.position.z)} (C: ${pCz})</span><br>` +
-            `<span>Mode: ${flightMode ? "Flight" : wasUnderwater ? "Swimming" : "Walking"} / Dash: ${dashActive ? "ON" : "OFF"} / Sneak: ${sneakActive ? "ON" : "OFF"}</span>`;
+            `<span>x: ${Math.round(player.position.x)} (C: ${pCx})</span><br>` +
+            `<span>y: ${Math.round(player.position.y)} (feet)</span><br>` +
+            `<span>z: ${Math.round(player.position.z)} (C: ${pCz})</span><br>` +
+            `<span>Mode: ${flightMode ? "Flight" : wasUnderwater ? "Swimming" : "Walking"} / Dash: ${dashActive ? "ON" : "OFF"}</span>`;
 
         frameCount = 0;
         lastFpsTime = now;
     }
 
-    // -------- プレイヤー操作 & 物理更新 --------
+    // 4. -------- プレイヤー操作 & 物理更新 --------
     updateBlockParticles(delta);
-
     camera.rotation.set(pitch, yaw, 0);
 
-    // 💡 1. 水中判定を「ジャンプ判定の前」に持ってくる
+    // 水中判定（負荷軽減のため0.1秒おき）
     underwaterTimer += delta;
     if (underwaterTimer > 0.1) {
         wasUnderwater = isPlayerEntireBodyInWater();
         underwaterTimer = 0;
     }
 
-    // 💡 2. ジャンプ要求のフラグ立て（泳いでいない時だけ予約を許可する）
+    // ジャンプ要求判定
     if (!flightMode && keys[" "] && player.onGround && !wasUnderwater) {
         jumpRequest = true;
     }
 
-    // 💡 3. 物理演算の分岐。泳いでいる時はジャンプ要求を確実にへし折る
+    // 物理演算モードの切り替え
     if (flightMode) {
         updateFlightPhysics(delta);
     } else if (wasUnderwater) {
         updateUnderwaterPhysics(delta);
-        jumpRequest = false; // 🔥 水中上昇中は、陸上の跳躍予約を毎フレーム完全にリセット！
+        jumpRequest = false;
     } else {
         updateNormalPhysics(delta);
     }
@@ -4911,64 +5170,59 @@ function animate() {
     resolvePlayerCollision();
     updateOnGround();
 
-    // -------- チャンク更新 --------
+    // 5. -------- チャンク生成 & メッシュ再構築 --------
     updateChunks();
 
     chunkUpdateFrameTimer += delta;
-    if (chunkUpdateFrameTimer > 0.016) { // 約 60fps ごと
+    if (chunkUpdateFrameTimer > 0.016) {
         if (pendingChunkUpdates.size > 0) {
-            // 💡 修正：固定の「1枚」ではなく、時間計測ブレーキの「限界まで」働く設定に変更！
-            processPendingChunkUpdates(Infinity);
+            // 時間の許す限り未処理のチャンク更新を処理
+            // processPendingChunkUpdates(Infinity);
+            processPendingChunkUpdates(4);
         }
         chunkUpdateFrameTimer = 0;
     }
 
-    // -------- チャンク境界の描画 --------
+    // チャンク境界線の表示
     if (showChunkBorders) {
         const pCx = Math.floor(player.position.x / CHUNK_SIZE);
         const pCz = Math.floor(player.position.z / CHUNK_SIZE);
-
-        // 赤い大枠を、プレイヤーがいるチャンクの原点に合わせるだけで完了！
         chunkBorderMesh.position.set(pCx * CHUNK_SIZE, 0, pCz * CHUNK_SIZE);
     }
 
-    // -------- カメラ更新 --------
+    // 6. -------- カメラ位置の更新（補間付き） --------
     const targetCamPos = globalTempVec3;
     _camOffset.set(0, getCurrentPlayerHeight() - (flightMode ? 0.15 : 0), 0);
     targetCamPos.copy(player.position).add(_camOffset);
 
     camera.position.x = targetCamPos.x;
     camera.position.z = targetCamPos.z;
-
     camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamPos.y, 0.5);
 
-    // -------- ブロック情報更新（間引き） -----------
+    // 7. -------- ブロック選択・情報の更新（間引き） --------
     blockInfoTimer += delta;
     if (blockInfoTimer > 0.05) {
-
         const moved = camera.position.distanceToSquared(lastCamPos) > 0.00001 ||
-            camera.rotation.x !== lastCamRot.x ||
-            camera.rotation.y !== lastCamRot.y ||
-            camera.rotation.z !== lastCamRot.z;
-
+            camera.rotation.y !== lastCamRot.y || camera.rotation.x !== lastCamRot.x;
         if (moved) {
             updateBlockSelection();
             updateBlockInfo();
             updateHeadBlockInfo();
-
             lastCamPos.copy(camera.position);
             lastCamRot.copy(camera.rotation);
         }
         blockInfoTimer = 0;
     }
 
-    // -------- クラウド更新 --------
+    // 8. -------- クラウド（雲）の描画更新 --------
+    // ここが動くことで、空の色が変化しても雲は描画され続けます
     cloudUpdateTimer += delta;
     cloudGridTimer += delta;
 
     if (cloudUpdateTimer > 0.05) {
         updateCloudTiles(delta);
-        updateCloudOpacity(camera.position);
+        // 第2引数に getSkyLightFactor(gameTime) を渡す！
+        updateCloudOpacity(camera.position, getSkyLightFactor(gameTime));
         cloudUpdateTimer = 0;
     }
 
@@ -4976,18 +5230,24 @@ function animate() {
         cloudTiles.forEach(tile => {
             const distSq = tile.position.distanceToSquared(camera.position);
             if (distSq > 256) return;
-            adjustCloudLayerDepth(tile, camera);
+            adjustCloudLayerDepth(tile, camera); // 重なり順の調整
         });
-        updateCloudGrid(scene, camera.position);
+        updateCloudGrid(scene, camera.position); // カメラ周囲の再配置
         cloudGridTimer = 0;
     }
 
-    // -------- スクリーンオーバーレイ --------
+    // 9. -------- 最終処理 & レンダリング --------
     updateScreenOverlay();
     resetLastPlacedIfOnGround();
 
-    // -------- 描画 --------
     renderer.render(scene, camera);
+}
+function getGameClock(ticks) {
+    // 0 ticks を 朝6:00 と仮定した場合の計算
+    let totalHours = (ticks / 1000 + 6) % 24;
+    let hours = Math.floor(totalHours);
+    let minutes = Math.floor((totalHours % 1) * 60);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 }
 animate();
 

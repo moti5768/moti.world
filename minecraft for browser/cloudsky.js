@@ -76,19 +76,11 @@ function loadCloudTexture(callback) {
  * Minecraft風の青空背景
  */
 function setMinecraftSky(scene) {
-    const canvas = document.createElement("canvas");
-    canvas.width = 16;
-    canvas.height = 256;
-    const ctx = canvas.getContext("2d");
-    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    grad.addColorStop(0, "#000066");
-    grad.addColorStop(1, "#87ceeb");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.magFilter = THREE.NearestFilter;
-    tex.minFilter = THREE.NearestMipmapNearestFilter;
-    scene.background = tex;
+    // 💡 背景画像を null にして、renderer.setClearColor を有効にする
+    scene.background = null;
+
+    // 💡 画面がクリアされない不具合を防ぐため、もし設定されていれば skybox 等を明示的にクリア
+    scene.environment = null;
 }
 
 /**
@@ -106,10 +98,16 @@ function addCloudTile(scene, gridX, gridZ) {
         depthWrite: false,
         depthTest: true,
         side: THREE.DoubleSide,
-        fog: true
+        // 💡 fogを一旦 false にしてテストしてください
+        // これが true だと、遠くの雲が空の色（Fogの色）と完全に同化して消えます
+        fog: false
     });
 
     const mesh = new THREE.Mesh(geo, mat);
+
+    // 💡 描画順序を明示的に指定（他の不透明な物体より後に描画）
+    mesh.renderOrder = 10;
+
     const px = gridX * tileSize + tileSize / 2;
     const pz = gridZ * tileSize + tileSize / 2;
     mesh.position.set(px, 256, pz);
@@ -118,7 +116,7 @@ function addCloudTile(scene, gridX, gridZ) {
     const uvScale = 1 / tileSize;
     const pos = geo.attributes.position.array;
     const uvs = geo.attributes.uv.array;
-    const uvLen = uvs.length; // 配列長のキャッシュ
+    const uvLen = uvs.length;
 
     for (let i = 0, j = 0; j < uvLen; i += 3, j += 2) {
         uvs[j] = Math.floor((px + pos[i]) * uvScale * texW) / texW;
@@ -176,26 +174,41 @@ function updateCloudTiles(delta) {
 }
 
 /**
- * 距離に応じた雲の不透明度更新
+ * 距離に応じた雲の不透明度と「色」の更新
+ * 引数に currentSkyFactor (明るさ) を追加します
  */
-function updateCloudOpacity(playerPos) {
-    const nearD2 = 4000000;  // 2000 ** 2 をあらかじめ定数化
-    const farD2 = 36000000; // 6000 ** 2 をあらかじめ定数化
+// スコープ外で前回の値を保持
+let lastSkyFactor = -1;
+
+function updateCloudOpacity(playerPos, currentSkyFactor = 1.0) {
+    const nearD2 = 4000000;  // 2000^2
+    const farD2 = 36000000; // 6000^2
+
+    // 空の色が変わった時だけフラグを立てる
+    const skyChanged = currentSkyFactor !== lastSkyFactor;
 
     cloudTiles.forEach(tile => {
         const dist2 = tile.position.distanceToSquared(playerPos);
-        let baseOpacity = 1;
+        let baseOpacity = 0;
 
-        if (dist2 > nearD2 && dist2 < farD2) {
-            // 平方根（重い計算）は範囲内に入った時だけ行う
-            baseOpacity = 1 - ((Math.sqrt(dist2) - 2000) / 4000);
-        } else if (dist2 >= farD2) {
-            baseOpacity = 0;
+        if (dist2 < nearD2) {
+            baseOpacity = 1;
+        } else if (dist2 < farD2) {
+            // 💡 負荷の高い Math.sqrt を避け、2乗の比率で近似計算（見た目の差はほぼ無し）
+            // もし厳密な線形減衰が必要なら Math.sqrt を残しますが、通常はこちらで十分です
+            baseOpacity = 1 - (dist2 - nearD2) / (farD2 - nearD2);
+        }
+
+        // 💡 変更があった時のみ setScalar を呼ぶことで CPU-GPU 間の通信を削減
+        if (skyChanged) {
+            tile.material.color.setScalar(currentSkyFactor);
         }
 
         tile.userData.fadeFactor = Math.min((tile.userData.fadeFactor ?? 0) + 0.05, 1);
         tile.material.opacity = baseOpacity * tile.userData.fadeFactor;
     });
+
+    lastSkyFactor = currentSkyFactor;
 }
 
 /**

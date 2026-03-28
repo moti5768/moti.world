@@ -40,6 +40,7 @@ const defaultBlockConfig = {
     customCollision: null,  // ← 追加
     hardness: 1.0,
     Gamma: 1.0,
+    lightLevel: 0,
     drop: null,
     cullAdjacentFaces: true,
     overwrite: false,
@@ -230,14 +231,14 @@ export const BLOCK_CONFIG = {
         targetblock: false,
         overwrite: true,
         geometryType: "water",
-        isLightSource: true,
+        lightLevel: 15,
         previewType: "2D"
     }),
     GLOWSTONE: createBlockConfig({
         id: 20, // 重複しない新しいID
         textures: { all: "textures/glowstone.png" }, // 使用するテクスチャパス
         geometryType: "cube",
-        isLightSource: true, // 💡 光源判定フラグ
+        lightLevel: 15,
         hardness: 1.0
     }),
 };
@@ -339,12 +340,13 @@ function createMaterialsFromBlockConfig(blockConfig) {
     const isWater = geometryType === "water";
     const isGlass = blockConfig.id === 12;
 
-    const isLightSource = blockConfig.isLightSource === true;
+    // 💡 【修正】真偽値（true/false）ではなく、数値の lightLevel を見て光源かどうかを判定する
+    const isLightSource = (blockConfig.lightLevel !== undefined && blockConfig.lightLevel > 0);
 
-    // 💡 【修正】 透過ブレンド（半透明）にするのは、純粋な「水（ID: 18）」の時だけにする！
+    // 💡 透過ブレンド（半透明）にするのは、純粋な「水（ID: 18）」の時だけにする！
     const isBlendTransparent = (blockConfig.id === 18);
 
-    // 💡 【修正】 光源や、透過ブレンドする水以外の「透明フラグ付きブロック」をカットアウト対象にする
+    // 💡 光源や、透過ブレンドする水以外の「透明フラグ付きブロック」をカットアウト対象にする
     const isAlphaCutout = transparent === true && !isBlendTransparent && !isLightSource;
 
     // 水と溶岩（geometryType === "water"）は両面描画(DoubleSide)にしておく
@@ -373,17 +375,71 @@ function createMaterialsFromBlockConfig(blockConfig) {
             materialOptions.map = cachedLoadTexture(texPathOrNone, blockConfig.fallbackTexture || null);
         }
 
-        const mat = new THREE.MeshLambertMaterial(materialOptions);
+        const mat = new THREE.MeshBasicMaterial(materialOptions);
 
-        mat.userData = {
+        // 🌞 GPUに現在の時間を渡すための入れ物（Uniform）
+        mat.userData.shaderUniforms = {
+            u_skyFactor: { value: 1.0 }
+        };
+
+        // 💡 1. この関数のスコープ内でマテリアル自身への参照を固定します（クロージャ）
+        const targetMaterial = mat;
+
+        mat.onBeforeCompile = function (shader) {
+            shader.uniforms = shader.uniforms || {};
+
+            // 頂点シェーダーに変数を追加
+            shader.vertexShader = `
+uniform float u_skyFactor;
+uniform float u_isLightSource;
+${shader.vertexShader}
+`;
+
+            // 頂点シェーダーのカラー計算部分を書き換え
+            shader.vertexShader = shader.vertexShader.replace(
+                `#include <color_vertex>`,
+                `
+#include <color_vertex>
+
+// 💡 [未来への準備]
+// 今はまだ script.js から1種類の光（R）しか届いていないので、一時的に G（ブロック光）にも R の値をコピーして安全に動かします。
+float skyLight = vColor.r; 
+float blockLight = vColor.g; 
+
+if (u_isLightSource > 0.5) {
+    vColor.rgb = vec3(1.0); // 自分が光源ならMAX
+} else {
+    // 💡 太陽の光（skyLight）は夜になると暗くなる
+    float finalSky = skyLight * u_skyFactor;
+    
+    // 💡 松明の光（blockLight）は夜でも暗くならない！
+    float finalBlock = blockLight; 
+
+    // 太陽の光と、松明の光の「明るい方」を、その面の最終的な明るさとして採用する
+    vColor.rgb = vec3(max(finalSky, finalBlock));
+}
+`
+            );
+
+            // 💡 2. 確定させた targetMaterial から安全に引っ張ることで currentMat エラーを防止
+            if (!targetMaterial.userData.shaderUniforms) {
+                targetMaterial.userData.shaderUniforms = { u_skyFactor: { value: 1.0 } };
+            }
+
+            shader.uniforms.u_skyFactor = targetMaterial.userData.shaderUniforms.u_skyFactor;
+            shader.uniforms.u_isLightSource = { value: isLightSource ? 1.0 : 0.0 };
+        };
+
+        // 💡 3. userDataを上書きではなく「プロパティ追加・結合」の形にして、先に作った shaderUniforms が消えないようにする！
+        Object.assign(mat.userData, {
             realTransparent: isBlendTransparent,
             realDepthWrite: !isBlendTransparent,
             realOpacity: opacity,
             isAlphaCutout: isAlphaCutout,
-            isWater: (blockConfig.id === 18), // userData内も水かどうかで判定を分ける
+            isWater: (blockConfig.id === 18),
             isGlass: isGlass,
             isLightSource: isLightSource
-        };
+        });
 
         return mat;
     }
@@ -520,15 +576,72 @@ function getBlockGeometry(type, config) {
         case "stairs": {
             const lower = new THREE.BoxGeometry(1, 0.5, 1);
             lower.translate(0.5, 0.25, 0.5);
-            adjustSideUVs(lower);
+            // adjustSideUVs(lower) は不要になるので削除します
 
             const upper = new THREE.BoxGeometry(0.5, 0.5, 1);
             upper.translate(0.75, 0.75, 0.5);
-            adjustSideUVs(upper);
+            // adjustSideUVs(upper) は不要になるので削除します
 
-            geom = BufferGeometryUtils.mergeBufferGeometries([lower, upper], true);
-            geom.clearGroups();
-            geom.addGroup(0, geom.index.count, 0);
+            const merged = BufferGeometryUtils.mergeBufferGeometries([lower, upper], true);
+
+            const posAttr = merged.getAttribute('position'); // 頂点座標を取得
+            const normAttr = merged.getAttribute('normal'); // 法線（向き）を取得
+            const uvAttr = merged.getAttribute('uv');       // UV座標を取得
+            const indexAttr = merged.index;
+
+            merged.clearGroups(); // 一旦古い12個のグループをリセット
+
+            for (let i = 0; i < indexAttr.count; i += 6) {
+                const vertexIndex = indexAttr.array[i] * 3;
+                const nx = normAttr.array[vertexIndex];
+                const ny = normAttr.array[vertexIndex + 1];
+                const nz = normAttr.array[vertexIndex + 2];
+
+                let matIdx = 0;
+                if (nx > 0.5) matIdx = 0;      // 右面 (+X)
+                else if (nx < -0.5) matIdx = 1; // 左面 (-X)
+                else if (ny > 0.5) matIdx = 2; // 上面 (+Y)
+                else if (ny < -0.5) matIdx = 3; // 下面 (-Y)
+                else if (nz > 0.5) matIdx = 4; // 正面 (+Z)
+                else if (nz < -0.5) matIdx = 5; // 背面 (-Z)
+
+                merged.addGroup(i, 6, matIdx);
+
+                // 💡 【修正】各面を構成する6つのインデックスのUVを、頂点座標(xyz)から再計算する
+                for (let f = 0; f < 6; f++) {
+                    const idx = indexAttr.array[i + f];
+                    const vx = posAttr.array[idx * 3];     // ブロック内の X 座標 (0.0 ～ 1.0)
+                    const vy = posAttr.array[idx * 3 + 1]; // ブロック内の Y 座標 (0.0 ～ 1.0)
+                    const vz = posAttr.array[idx * 3 + 2]; // ブロック内の Z 座標 (0.0 ～ 1.0)
+
+                    let u = 0, v = 0;
+
+                    switch (matIdx) {
+                        case 0: // 右面 (+X) 
+                        case 1: // 左面 (-X)
+                            u = vz; // Zを横軸に
+                            v = vy; // Yを縦軸に
+                            break;
+                        case 2: // 上面 (+Y)
+                        case 3: // 下面 (-Y)
+                            u = vx; // Xを横軸に
+                            v = vz; // Zを縦軸に
+                            break;
+                        case 4: // 正面 (+Z)
+                        case 5: // 背面 (-Z)
+                            u = vx; // Xを横軸に
+                            v = vy; // Yを縦軸に
+                            break;
+                    }
+
+                    // 頂点の座標（0.0〜1.0）をそのままUVとして焼き付ける
+                    uvAttr.array[idx * 2] = u;
+                    uvAttr.array[idx * 2 + 1] = v;
+                }
+            }
+
+            uvAttr.needsUpdate = true; // UV情報を更新
+            geom = merged;
             break;
         }
 
