@@ -250,6 +250,8 @@ const ChunkSaveManager = {
                     if (worldY === BEDROCK_LEVEL) {
                         blockType = BLOCK_TYPES.BEDROCK;
                     } else if (worldY < surfaceHeight) {
+
+                        // まず通常の地形ブロック
                         if (worldY === surfaceHeight - 1) {
                             blockType = (worldY <= SEA_LEVEL) ? BLOCK_TYPES.DIRT : BLOCK_TYPES.GRASS;
                         } else if (worldY > surfaceHeight - 4) {
@@ -257,7 +259,20 @@ const ChunkSaveManager = {
                         } else {
                             blockType = BLOCK_TYPES.STONE;
                         }
-                    } else if (worldY <= SEA_LEVEL) {
+
+                        // --- 洞窟生成を反映 ---
+                        const [caveY, radius] = getCaveTubeInfo(worldX, worldZ);
+                        if (radius > 0 && Math.abs(worldY - caveY) < radius) {
+                            blockType = BLOCK_TYPES.SKY;
+                        }
+
+                        // --- 溶岩層 ---
+                        if (worldY >= 1 && worldY <= 11 && blockType === BLOCK_TYPES.SKY) {
+                            blockType = BLOCK_TYPES.LAVA;
+                        }
+                    }
+
+                    else if (worldY <= SEA_LEVEL) {
                         blockType = BLOCK_TYPES.WATER;
                     }
 
@@ -787,7 +802,6 @@ function getTerrainHeight(worldX, worldZ, startY) {
 }
 
 const globalTerrainCache = new Map();
-const blockCollisionCache = new Map();
 const BEDROCK_LEVEL = 0;
 const BLOCK_CONFIG_BY_ID = new Map(Object.values(BLOCK_CONFIG).map(c => [c.id, c]));
 
@@ -844,11 +858,21 @@ function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = fal
             if (isRaw || modValue === SKY) return modValue;
 
             // 当たり判定設定の高速参照
+            // 当たり判定設定の高速参照
             const cfg = _blockConfigFastArray[modValue];
             if (cfg) {
+
+                // ★★★ 修正ポイント ★★★
+                // 流体（WATER, LAVA）は SKY に変換しない
+                if (modValue === BLOCK_TYPES.WATER || modValue === BLOCK_TYPES.LAVA) {
+                    return modValue;
+                }
+
+                // 通常ブロックは collision=true のみ返す
                 return cfg.collision ? modValue : SKY;
             }
             return SKY;
+
         }
     }
 
@@ -5007,7 +5031,7 @@ function isPlayerEntireBodyInWater() {
             _waterCellCache.set(numericKey, blockValue);
         }
 
-        const isWater = (blockValue === BLOCK_TYPES.WATER);
+        const isWater = (blockValue === BLOCK_TYPES.WATER || blockValue === BLOCK_TYPES.LAVA);
 
         if (i < 5) {
             // インデックス 0〜4 は下半身の多数決用
