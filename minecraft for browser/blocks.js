@@ -50,9 +50,9 @@ const defaultBlockConfig = {
         scale: 2.2
     },
     // ここから追加：
-    // ブロックごとのフォールバック画像パス（例: "textures/fallback_stone.png"）
+    // ブロックごとのフォールバック画像パス（例: "textures/blocks/fallback_stone.png"）
     // 指定しない場合は「map を持たないマテリアル（defaultColor 表示）」になります
-    fallbackTexture: "textures/missing_texture.png",
+    fallbackTexture: "textures/blocks/missing_texture.png",
     // map を持たない場合に表示したい色（0xffffff など）。未指定なら白
     defaultColor: 0xffffff,
 
@@ -82,49 +82,49 @@ export const BLOCK_CONFIG = {
     GRASS: createBlockConfig({
         id: 1,
         textures: {
-            top: "textures/grass_top.png",
-            side: "textures/grass_side.png",
-            bottom: "textures/dirt.png"
+            top: "textures/blocks/grass_top.png",
+            side: "textures/blocks/grass_side.png",
+            bottom: "textures/blocks/dirt.png"
         }
     }),
     DIRT: createBlockConfig({
         id: 2,
-        textures: { all: "textures/dirt.png" }
+        textures: { all: "textures/blocks/dirt.png" }
     }),
     STONE: createBlockConfig({
         id: 3,
-        textures: { all: "textures/stone.png" }
+        textures: { all: "textures/blocks/stone.png" }
     }),
     COBBLE_STONE: createBlockConfig({
         id: 4,
-        textures: { all: "textures/cobblestone.png" }
+        textures: { all: "textures/blocks/cobblestone.png" }
     }),
     COBBLE_STONE_MOSSY: createBlockConfig({
         id: 5,
-        textures: { all: "textures/cobblestone_mossy.png" }
+        textures: { all: "textures/blocks/cobblestone_mossy.png" }
     }),
     COAL_ORE: createBlockConfig({
         id: 6,
-        textures: { all: "textures/coal_ore.png" }
+        textures: { all: "textures/blocks/coal_ore.png" }
     }),
     PLANKS: createBlockConfig({
         id: 7,
-        textures: { all: "textures/planks.png" }
+        textures: { all: "textures/blocks/planks.png" }
     }),
     BRICK: createBlockConfig({
         id: 8,
-        textures: { all: "textures/brick.png" }
+        textures: { all: "textures/blocks/brick.png" }
     }),
     BEDROCK: createBlockConfig({
         id: 9,
-        textures: { all: "textures/bedrock.png" }
+        textures: { all: "textures/blocks/bedrock.png" }
     }),
     STONE_STAIRS: createBlockConfig({
         id: 10,
         textures: {
-            top: "textures/stone.png",
-            bottom: "textures/stone.png",
-            side: "textures/stone.png"
+            top: "textures/blocks/stone.png",
+            bottom: "textures/blocks/stone.png",
+            side: "textures/blocks/stone.png"
         },
         geometryType: "stairs",
         transparent: true,
@@ -135,7 +135,7 @@ export const BLOCK_CONFIG = {
     }),
     STONE_SLAB: createBlockConfig({
         id: 11,
-        textures: { all: "textures/stone.png" },
+        textures: { all: "textures/blocks/stone.png" },
         geometryType: "slab",
         transparent: true,
         customCollision: () => getCustomCollision("slab"),
@@ -147,14 +147,14 @@ export const BLOCK_CONFIG = {
     }),
     GLASS: createBlockConfig({
         id: 12,
-        textures: { all: "textures/glass.png" },
+        textures: { all: "textures/blocks/glass.png" },
         transparent: true,
         geometryType: "cube",
         screenFill: false
     }),
     FLOWER: createBlockConfig({
         id: 13,
-        textures: { all: "textures/flower.png" },
+        textures: { all: "textures/blocks/flower.png" },
         collision: false,
         geometryType: "cross",
         transparent: true,
@@ -167,7 +167,7 @@ export const BLOCK_CONFIG = {
     }),
     FLOWER_ROSE: createBlockConfig({
         id: 14,
-        textures: { all: "textures/flower_rose.png" },
+        textures: { all: "textures/blocks/flower_rose.png" },
         collision: false,
         geometryType: "cross",
         transparent: true,
@@ -180,7 +180,7 @@ export const BLOCK_CONFIG = {
     }),
     TALLGRASS: createBlockConfig({
         id: 15,
-        textures: { all: "textures/tallgrass.png" },
+        textures: { all: "textures/blocks/tallgrass.png" },
         collision: false,
         geometryType: "cross",
         transparent: true,
@@ -193,7 +193,7 @@ export const BLOCK_CONFIG = {
     }),
     LEAVES: createBlockConfig({
         id: 16,
-        textures: { all: "textures/leaves.png" },
+        textures: { all: "textures/blocks/leaves.png" },
         geometryType: "leaves",
         transparent: true,
         cullAdjacentFaces: false,
@@ -201,7 +201,7 @@ export const BLOCK_CONFIG = {
     }),
     WOOL_CARPET: createBlockConfig({
         id: 17,
-        textures: { all: "textures/wool_colored_white.png" },
+        textures: { all: "textures/blocks/wool_colored_white.png" },
         geometryType: "carpet",
         transparent: true,
         customCollision: () => getCustomCollision("carpet"),
@@ -213,7 +213,7 @@ export const BLOCK_CONFIG = {
     }),
     WATER: createBlockConfig({
         id: 18,
-        textures: { all: "textures/water.png" },
+        textures: { all: "textures/blocks/water.png" },
         collision: false,
         transparent: true,
         opacity: 0.8,
@@ -224,7 +224,7 @@ export const BLOCK_CONFIG = {
     }),
     LAVA: createBlockConfig({
         id: 19,
-        textures: { all: "textures/lava.png" },
+        textures: { all: "textures/blocks/lava.png" },
         collision: false,
         transparent: true,
         opacity: 1,
@@ -236,7 +236,7 @@ export const BLOCK_CONFIG = {
     }),
     GLOWSTONE: createBlockConfig({
         id: 20, // 重複しない新しいID
-        textures: { all: "textures/glowstone.png" }, // 使用するテクスチャパス
+        textures: { all: "textures/blocks/glowstone.png" }, // 使用するテクスチャパス
         geometryType: "cube",
         lightLevel: 15,
         hardness: 1.0
@@ -252,76 +252,84 @@ for (const cfg of Object.values(BLOCK_CONFIG)) {
     }
 }
 
-const textureLoader = new THREE.TextureLoader();
+const loadingManager = new THREE.LoadingManager();
+loadingManager.maxConnections = 16; // 同時ロード数を増やす（デフォルト6）
+
+const textureLoader = new THREE.TextureLoader(loadingManager);
 const textureCache = new Map();
 let sharedEmptyTexture = null; // フォールバック無し時に共有する空テクスチャ
 
+// ロード中の Promise を管理するキャッシュ（重複ロードを完全に防ぐ）
+const loadingPromises = new Map();
+
 function cachedLoadTexture(path, fallback = null) {
-    // path がない場合は fallback を試し、なければ共有の空テクスチャを返す
+    // 1. パスがない場合はフォールバックへ
     if (!path) {
         if (fallback) return cachedLoadTexture(fallback, null);
-        if (!sharedEmptyTexture) {
-            sharedEmptyTexture = new THREE.Texture(); // image 未設定の空テクスチャ
-            // 注意: needsUpdate は不要（空のまま）
-        }
-        return sharedEmptyTexture;
+        return getSharedEmptyTexture();
     }
 
-    // キャッシュがあればそれを返す
+    // 2. すでに完了したキャッシュがあれば即座に返す
     if (textureCache.has(path)) return textureCache.get(path);
 
-    // placeholder をまず登録して返す（既存描画が壊れないようにする）
+    // 3. ロード中の場合は、その処理を待機している placeholder を返す
+    // これにより、同じパスに対して同時に1回しか textureLoader.load が走らない
+    if (loadingPromises.has(path)) return textureCache.get(path);
+
+    // 4. 新規ロード開始
     const placeholder = new THREE.Texture();
     textureCache.set(path, placeholder);
 
-    textureLoader.load(
-        path,
-        (tex) => {
-            // 正常読み込み：placeholder を実画像で埋める
-            tex.magFilter = THREE.NearestFilter;
-            tex.minFilter = THREE.NearestMipmapNearestFilter;
+    const loadPromise = new Promise((resolve) => {
+        textureLoader.load(
+            path,
+            (tex) => {
+                // 成功時：ピクセルパーフェクトな設定
+                tex.magFilter = THREE.NearestFilter;
+                tex.minFilter = THREE.NearestMipmapNearestFilter;
+                tex.generateMipmaps = true;
 
-            placeholder.image = tex.image;
-            placeholder.magFilter = tex.magFilter;
-            placeholder.minFilter = tex.minFilter;
-            placeholder.needsUpdate = true;
-
-            // textureCache の値は placeholder のまま（参照が更新される）
-        },
-        undefined,
-        (err) => {
-            console.warn(`Texture load failed for "${path}".`, err);
-            // フォールバックがあればそれを取得してキャッシュを差し替える
-            if (fallback && fallback !== path) {
-                const fbTex = cachedLoadTexture(fallback, null);
-                textureCache.set(path, fbTex);
-
-                // placeholder を使用している既存メッシュ向けに fbTex の内容をコピー（fbTex が画像を持っていれば）
-                if (fbTex && fbTex.image) {
-                    placeholder.image = fbTex.image;
-                    placeholder.magFilter = fbTex.magFilter || THREE.NearestFilter;
-                    placeholder.minFilter = fbTex.minFilter || THREE.NearestFilter;
-                    placeholder.needsUpdate = true;
-                }
-            } else {
-                // 💡 【改善】フォールバックすら無い or 失敗した場合の最終防衛ライン
-                // メモリ上で 1x1 のマゼンタ色（テクスチャ紛失カラー）の仮画像を生成して即時適用する
-                const canvas = document.createElement('canvas');
-                canvas.width = 1;
-                canvas.height = 1;
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = '#ff00ff'; // マゼンタ色
-                ctx.fillRect(0, 0, 1, 1);
-
-                placeholder.image = canvas;
-                placeholder.magFilter = THREE.NearestFilter;
-                placeholder.minFilter = THREE.NearestFilter;
+                // placeholder の中身を書き換え
+                placeholder.image = tex.image;
+                placeholder.magFilter = tex.magFilter;
+                placeholder.minFilter = tex.minFilter;
                 placeholder.needsUpdate = true;
-            }
-        }
-    );
 
+                resolve(placeholder);
+            },
+            undefined,
+            (err) => {
+                console.warn(`Texture load failed: ${path}`);
+                if (fallback && fallback !== path) {
+                    const fbTex = cachedLoadTexture(fallback, null);
+                    // フォールバック画像がすでにロード済みなら中身をコピー
+                    if (fbTex.image) {
+                        placeholder.image = fbTex.image;
+                        placeholder.needsUpdate = true;
+                    }
+                } else {
+                    // 最終防衛ライン：マゼンタのチェック柄などを適用（既存のロジック）
+                    applyErrorTexture(placeholder);
+                }
+                resolve(placeholder);
+            }
+        );
+    });
+
+    loadingPromises.set(path, loadPromise);
     return placeholder;
+}
+
+// ヘルパー：エラー時にマゼンタ色を塗る
+function applyErrorTexture(tex) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2; canvas.height = 2;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ff00ff'; ctx.fillRect(0, 0, 1, 1); ctx.fillRect(1, 1, 1, 1);
+    ctx.fillStyle = '#000000'; ctx.fillRect(1, 0, 1, 1); ctx.fillRect(0, 1, 1, 1);
+    tex.image = canvas;
+    tex.magFilter = THREE.NearestFilter;
+    tex.needsUpdate = true;
 }
 
 // グローバルキャッシュ
@@ -360,87 +368,58 @@ function createMaterialsFromBlockConfig(blockConfig) {
         return blockConfig.fallbackTexture || null;
     }
 
+    // --- 改善後：マテリアル設定部分の抜粋 ---
+
     function getMat(texPathOrNone) {
+        const isWater = (blockConfig.id === 18);
+        const isLava = (blockConfig.id === 19);
+
         const materialOptions = {
-            color: (blockConfig.defaultColor !== undefined) ? blockConfig.defaultColor : 0xffffff,
-            transparent: isBlendTransparent, // 溶岩なら false になる
+            color: blockConfig.defaultColor ?? 0xffffff,
+            transparent: isBlendTransparent,
             opacity: opacity,
             vertexColors: useVertexColors,
             side: side,
-            depthWrite: !isBlendTransparent, // 溶岩なら true になり、奥のブロックを隠す（正常な描画順になる）
+            depthWrite: !isBlendTransparent,
             alphaTest: isAlphaCutout ? 0.5 : 0,
         };
 
         if (texPathOrNone && texPathOrNone !== "none") {
-            materialOptions.map = cachedLoadTexture(texPathOrNone, blockConfig.fallbackTexture || null);
+            materialOptions.map = cachedLoadTexture(texPathOrNone, blockConfig.fallbackTexture);
         }
 
         const mat = new THREE.MeshBasicMaterial(materialOptions);
 
-        // 🌞 GPUに現在の時間を渡すための入れ物（Uniform）
+        // ユニフォームの初期化を確実に
         mat.userData.shaderUniforms = {
-            u_skyFactor: { value: 1.0 }
+            u_skyFactor: { value: 1.0 },
+            u_isLightSource: { value: isLightSource ? 1.0 : 0.0 }
         };
 
-        // 💡 1. この関数のスコープ内でマテリアル自身への参照を固定します（クロージャ）
-        const targetMaterial = mat;
+        mat.onBeforeCompile = (shader) => {
+            shader.uniforms.u_skyFactor = mat.userData.shaderUniforms.u_skyFactor;
+            shader.uniforms.u_isLightSource = mat.userData.shaderUniforms.u_isLightSource;
 
-        mat.onBeforeCompile = function (shader) {
-            shader.uniforms = shader.uniforms || {};
-
-            // 頂点シェーダーに変数を追加
+            // 頂点シェーダーの注入（改善前より整理）
             shader.vertexShader = `
-uniform float u_skyFactor;
-uniform float u_isLightSource;
-${shader.vertexShader}
-`;
-
-            // 頂点シェーダーのカラー計算部分を書き換え
-            shader.vertexShader = shader.vertexShader.replace(
-                `#include <color_vertex>`,
+            uniform float u_skyFactor;
+            uniform float u_isLightSource;
+            ${shader.vertexShader}
+        `.replace(
+                '#include <color_vertex>',
                 `
-#include <color_vertex>
-
-// 💡 [未来への準備]
-// 今はまだ script.js から1種類の光（R）しか届いていないので、一時的に G（ブロック光）にも R の値をコピーして安全に動かします。
-float skyLight = vColor.r; 
-float blockLight = vColor.g; 
-
-if (u_isLightSource > 0.5) {
-    vColor.rgb = vec3(1.0); // 自分が光源ならMAX
-} else {
-    // 💡 太陽の光（skyLight）は夜になると暗くなる
-    float finalSky = skyLight * u_skyFactor;
-    
-    // 💡 松明の光（blockLight）は夜でも暗くならない！
-    float finalBlock = blockLight; 
-
-    // 太陽の光と、松明の光の「明るい方」を、その面の最終的な明るさとして採用する
-    vColor.rgb = vec3(max(finalSky, finalBlock));
-}
-`
-            );
-
-            // 💡 2. 確定させた targetMaterial から安全に引っ張ることで currentMat エラーを防止
-            if (!targetMaterial.userData.shaderUniforms) {
-                targetMaterial.userData.shaderUniforms = { u_skyFactor: { value: 1.0 } };
+            #include <color_vertex>
+            float skyLight = vColor.r; 
+            float blockLight = vColor.g; 
+            
+            if (u_isLightSource > 0.5) {
+                vColor.rgb = vec3(1.0);
+            } else {
+                vColor.rgb = vec4(max(skyLight * u_skyFactor, blockLight)).rgb;
             }
-
-            shader.uniforms.u_skyFactor = targetMaterial.userData.shaderUniforms.u_skyFactor;
-            shader.uniforms.u_isLightSource = { value: isLightSource ? 1.0 : 0.0 };
+            `
+            );
         };
-
-        // 💡 3. userDataを上書きではなく「プロパティ追加・結合」の形にして、先に作った shaderUniforms が消えないようにする！
-        Object.assign(mat.userData, {
-            realTransparent: isBlendTransparent,
-            realDepthWrite: !isBlendTransparent,
-            realOpacity: opacity,
-            isAlphaCutout: isAlphaCutout,
-            isWater: (blockConfig.id === 18),
-            isGlass: isGlass,
-            isLightSource: isLightSource
-        });
-
         return mat;
     }
 

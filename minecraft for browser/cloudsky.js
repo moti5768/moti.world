@@ -102,7 +102,8 @@ function addCloudTile(scene, gridX, gridZ) {
         // これが true だと、遠くの雲が空の色（Fogの色）と完全に同化して消えます
         fog: false
     });
-
+    const initialFactor = lastSkyFactor < 0 ? 1.0 : lastSkyFactor;
+    mat.color.setScalar(initialFactor);
     const mesh = new THREE.Mesh(geo, mat);
 
     // 💡 描画順序を明示的に指定（他の不透明な物体より後に描画）

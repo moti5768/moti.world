@@ -557,11 +557,11 @@ const camera = new THREE.PerspectiveCamera(
     80,                                 // 視野角
     window.innerWidth / window.innerHeight, // アスペクト比
     0.1,                                // near
-    10000                               // far
+    5000                               // far
 );
 camera.rotation.order = "YXZ";
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
 renderer.setClearColor(fogColor); // 背景色と fog の色を合わせる
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -569,7 +569,8 @@ document.body.appendChild(renderer.domElement);
 
 let targetCamPos = player.position.clone().add(new THREE.Vector3(0, getCurrentPlayerHeight(), 0));
 camera.position.copy(targetCamPos);
-scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+// 環境光を抑えめにし、ブロックのライトレベルを際立たせる
+scene.add(new THREE.AmbientLight(0xffffff, 0.2));
 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.85);
 directionalLight.position.set(10, 20, 10);
 scene.add(directionalLight);
@@ -1732,6 +1733,22 @@ function processChunkQueue(deadline) {
                 scene.add(mesh);
                 loadedChunks.set(key, mesh);
 
+                const neighborOffsets = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+                for (let i = 0; i < neighborOffsets.length; i++) {
+                    const nx = cx + neighborOffsets[i][0];
+                    const nz = cz + neighborOffsets[i][1];
+                    const nKey = encodeChunkKey(nx, nz);
+
+                    // もし隣のチャンクがすでに読み込まれて表示されているなら
+                    if (loadedChunks.has(nKey)) {
+                        // その隣接チャンクを「更新が必要なリスト」に入れる
+                        // これにより、次のフレーム以降で隣のチャンクも再計算（メッシュ作り直し）が走ります
+                        if (typeof pendingChunkUpdates !== "undefined") {
+                            pendingChunkUpdates.add(nKey);
+                        }
+                    }
+                }
+
                 fadeInMesh(mesh, 500, () => {
                     mesh.userData.fadedIn = true;
 
@@ -2272,8 +2289,18 @@ const getConfigCached = id => {
    【新・15段階 マイクラ準拠 ライティングエンジン (SkyLight)】
    ====================================================== */
 const LIGHT_LEVEL_FACTORS = new Float32Array(16);
+const brightness = 0.5; // マイクラの設定「明るさ: 50%」に相当。0.0(暗い)〜1.0(明るい)で調整可能
+
 for (let i = 0; i <= 15; i++) {
-    LIGHT_LEVEL_FACTORS[i] = Math.max(0.04, Math.pow(0.8, 15 - i));
+    // 1. マイクラの基本減衰カーブ (指数関数)
+    const f = Math.pow(0.8, 15 - i);
+
+    // 2. マイクラ特有の非線形補正（低いレベルを底上げし、高いレベルを維持する）
+    // 計算式: f / (f * (1 - brightness) + brightness)
+    const level = f / (f * (1.0 - brightness) + brightness);
+
+    // 最低輝度を 0.03 程度に設定（完全な漆黒を防ぐ）
+    LIGHT_LEVEL_FACTORS[i] = Math.max(0.03, level);
 }
 
 const chunkLightCache = new Map();
@@ -2304,12 +2331,6 @@ const _sharedUnlightQueue = new Int32Array(TOTAL_CELLS * 2);
 const _getSkyLight = (val) => (val >> 4) & 0x0F; // 上位4ビット（天空光）を取得
 const _getBlockLight = (val) => val & 0x0F;      // 下位4ビット（ブロック光）を取得
 const _packLight = (sky, block) => (sky << 4) | (block & 0x0F); // 1バイトに合体
-/* ======================================================
-   【修正版】2系統ライトマップ伝播エンジン（隣接チャンクへの完全伝播対応）
-   ====================================================== */
-/* ======================================================
-   【超軽量・限界突破版】2系統ライトマップ伝播エンジン
-   ====================================================== */
 function generateChunkLightMap(chunkKey, voxelData) {
     if (!voxelData || voxelData.length < TOTAL_CELLS) {
         console.warn("generateChunkLightMap: voxelData is invalid or too small.");
@@ -4628,14 +4649,14 @@ function updateBlockSelection() {
     if (hit.normal) freeVec(hit.normal);
 }
 
-/* ======================================================
-   【修正版：UI情報表示更新】
-   ====================================================== */
+// スクリプトの上の方（関数の外）で宣言
+let currentTargetBlockText = "None";
+
 function updateBlockInfo() {
     const hit = getTargetBlockByDDA(BLOCK_INTERACT_RANGE);
 
     if (!hit) {
-        blockInfoElem.style.display = "none";
+        currentTargetBlockText = "None";
         return;
     }
 
@@ -4643,7 +4664,6 @@ function updateBlockInfo() {
     const cx = getChunkCoord(x);
     const cz = getChunkCoord(z);
 
-    // ✅ 負の座標に対応する数学的剰余
     let lx = x % CHUNK_SIZE;
     if (lx < 0) lx += CHUNK_SIZE;
     let lz = z % CHUNK_SIZE;
@@ -4652,19 +4672,20 @@ function updateBlockInfo() {
     const voxel = ChunkSaveManager.getBlock(cx, cz, lx, y, lz)
         ?? getVoxelAtWorld(x, y, z, globalTerrainCache, { raw: true });
 
-    if (voxel === BLOCK_TYPES.SKY) {
-        blockInfoElem.style.display = "none";
-        freeVec(hit.normal);
+    if (voxel === BLOCK_TYPES.SKY || voxel === undefined) {
+        currentTargetBlockText = "None";
+        if (hit.normal) freeVec(hit.normal);
         return;
     }
 
     const blockName = BLOCK_NAMES[voxel] || "Unknown";
     const config = getBlockConfiguration(voxel);
 
-    blockInfoElem.innerHTML = `Block: ${blockName} (Value: ${voxel})` + (config ? `<br>Type: ${config.geometryType}` : "");
-    blockInfoElem.style.display = "block";
+    // ✅ ポイント：HTMLとして表示するので \n ではなく <br> を使います
+    currentTargetBlockText = `${blockName} (ID: ${voxel}) [${x}, ${y}, ${z}]` +
+        (config ? `<br>Type: ${config.geometryType}` : "");
 
-    freeVec(hit.normal);
+    if (hit.normal) freeVec(hit.normal);
 }
 
 /* ======================================================
@@ -5090,7 +5111,7 @@ function animate() {
 
     // 1. -------- 昼夜サイクルの進行と「空・霧」の色更新 --------
     // gameTimeを進め、背景色(ClearColor)とFog色を同期させる
-    gameTime = (gameTime + delta * 20 * TIME_SPEED) % TICKS_PER_DAY;
+    gameTime = (gameTime + delta * 2000 * TIME_SPEED) % TICKS_PER_DAY;
     updateSkyAndFogColor(gameTime);
 
     // 2. -------- ブロックの明るさ（シェーダー）への反映 --------
@@ -5125,9 +5146,14 @@ function animate() {
         const pCx = Math.floor(player.position.x / CHUNK_SIZE);
         const pCz = Math.floor(player.position.z / CHUNK_SIZE);
 
+        // --- ターゲット情報を安全に取得 ---
+        // global変数などに保存されている前提、もしくは一時変数として定義
+        const targetText = (typeof currentTargetBlockText !== 'undefined') ? currentTargetBlockText : "None";
+
+        // ご提示のフォーマットを完全に維持して統合
         fpsCounter.innerHTML =
             `<span>Minecraft Alpha v0.0.1a</span><br>` +
-            `<span>Time: ${getGameClock(gameTime)} (${Math.floor(gameTime)} ticks)</span><br>` + // ← 末尾に + を追加
+            `<span>Time: ${getGameClock(gameTime)} (${Math.floor(gameTime)} ticks)</span><br>` +
             `<span>${fps} fps, ${activeUpdates} chunks update</span><br>` +
             `<span>${modifiedChunkCount} modified chunks (Saved)</span><br>` +
             `<span>C: ${loadedChunks.size} loaded. (Quality: ${CHUNK_VISIBLE_DISTANCE} chunks)</span><br>` +
@@ -5135,10 +5161,27 @@ function animate() {
             `<span>x: ${Math.round(player.position.x)} (C: ${pCx})</span><br>` +
             `<span>y: ${Math.round(player.position.y)} (feet)</span><br>` +
             `<span>z: ${Math.round(player.position.z)} (C: ${pCz})</span><br>` +
-            `<span>Mode: ${flightMode ? "Flight" : wasUnderwater ? "Swimming" : "Walking"} / Dash: ${dashActive ? "ON" : "OFF"}</span>`;
-
+            `<span>Mode: ${flightMode ? "Flight" : wasUnderwater ? "Swimming" : "Walking"} / Dash: ${dashActive ? "ON" : "OFF"}</span><br>` +
+            `<span>--------------------------</span><br>` +
+            `<span>TargetBlock: ${targetText}</span>`;
         frameCount = 0;
         lastFpsTime = now;
+    }
+
+    // 7. -------- ブロック選択・情報の更新（間引き） --------
+    blockInfoTimer += delta;
+    if (blockInfoTimer > 0.05) {
+        const moved = camera.position.distanceToSquared(lastCamPos) > 0.00001 ||
+            camera.rotation.y !== lastCamRot.y || camera.rotation.x !== lastCamRot.x;
+        if (moved) {
+            updateBlockSelection();
+            // ここで実行はし続けます（内部で選択処理などを行っている場合があるため）
+            updateBlockInfo();
+            updateHeadBlockInfo();
+            lastCamPos.copy(camera.position);
+            lastCamRot.copy(camera.rotation);
+        }
+        blockInfoTimer = 0;
     }
 
     // 4. -------- プレイヤー操作 & 物理更新 --------
