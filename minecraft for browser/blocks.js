@@ -241,6 +241,19 @@ export const BLOCK_CONFIG = {
         lightLevel: 15,
         hardness: 1.0
     }),
+    SAPLING_OAK: createBlockConfig({
+        id: 21,
+        textures: { all: "textures/blocks/sapling_oak.png" },
+        collision: false,
+        geometryType: "cross",
+        transparent: true,
+        customCollision: () => getCustomCollision("cross"),
+        cullAdjacentFaces: false,
+        screenFill: false,
+        previewType: "2D",
+        selectionSize: { x: 0.8, y: 0.8, z: 0.8 },
+        selectionOffset: { x: 0.5, y: 0.4, z: 0.5 }
+    }),
 };
 
 const BLOCK_TYPES = Object.fromEntries(
