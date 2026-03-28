@@ -1491,15 +1491,22 @@ function playerSpeed() {
    【物理更新：飛行モード用】（重力無視・一定速度移動）
    ====================================================== */
 function updateFlightPhysics() {
-    const speed = dashActive ? flightDashMultiplier : playerSpeed();
+    // 修正：飛行モード(flightMode)かつ非ダッシュ時のベース速度を上げる
+    let baseSpeed = playerSpeed(); // デフォルト 0.08
+    if (flightMode && !dashActive) {
+        baseSpeed = 0.15; // 飛行時の巡航速度（お好みの数値に調整してください）
+    }
 
-    // 希望速度ベクトル（再利用）
+    const speed = dashActive ? flightDashMultiplier : baseSpeed;
+
+    // 加速度も少し上げるとキビキビ動きます（任意）
+    const accel = flightMode ? 0.05 : 0.5;
+
     const desiredVel = getDesiredHorizontalVelocity(speed);
     _tmpDesiredVel.copy(desiredVel);
 
-    // --- 水平移動補間 ---
-    player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * 0.1;
-    player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * 0.1;
+    player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * accel;
+    player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * accel
 
     // --- 垂直移動 ---
     let targetVertical = 0;
