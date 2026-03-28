@@ -5111,7 +5111,7 @@ function animate() {
 
     // 1. -------- 昼夜サイクルの進行と「空・霧」の色更新 --------
     // gameTimeを進め、背景色(ClearColor)とFog色を同期させる
-    gameTime = (gameTime + delta * 2000 * TIME_SPEED) % TICKS_PER_DAY;
+    gameTime = (gameTime + delta * 20 * TIME_SPEED) % TICKS_PER_DAY;
     updateSkyAndFogColor(gameTime);
 
     // 2. -------- ブロックの明るさ（シェーダー）への反映 --------
