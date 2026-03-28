@@ -5176,7 +5176,7 @@ function animate() {
 
         // ご提示のフォーマットを完全に維持して統合
         fpsCounter.innerHTML =
-            `<span>Minecraft Alpha v0.0.1a</span><br>` +
+            `<span>Minecraft classic 0.0.1</span><br>` +
             `<span>Time: ${getGameClock(gameTime)} (${Math.floor(gameTime)} ticks)</span><br>` +
             `<span>${fps} fps, ${activeUpdates} chunks update</span><br>` +
             `<span>${modifiedChunkCount} modified chunks (Saved)</span><br>` +
