@@ -4598,22 +4598,6 @@ function animate() {
         lastFpsTime = now;
     }
 
-    // 7. -------- ブロック選択・情報の更新（間引き） --------
-    blockInfoTimer += delta;
-    if (blockInfoTimer > 0.05) {
-        const moved = camera.position.distanceToSquared(lastCamPos) > 0.00001 ||
-            camera.rotation.y !== lastCamRot.y || camera.rotation.x !== lastCamRot.x;
-        if (moved) {
-            updateBlockSelection();
-            // ここで実行はし続けます（内部で選択処理などを行っている場合があるため）
-            updateBlockInfo();
-            updateHeadBlockInfo();
-            lastCamPos.copy(camera.position);
-            lastCamRot.copy(camera.rotation);
-        }
-        blockInfoTimer = 0;
-    }
-
     // 4. -------- プレイヤー操作 & 物理更新 --------
     updateBlockParticles(delta);
     camera.rotation.set(pitch, yaw, 0);
@@ -4722,17 +4706,6 @@ function getGameClock(ticks) {
     let minutes = Math.floor((totalHours % 1) * 60);
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 }
-
-
-
-
-
-
-
-
-
-
-
 
 /* ======================================================
    【UIイベント】タイトル画面からの起動
@@ -5030,6 +5003,7 @@ window.addEventListener('keydown', (e) => {
 
     // --- B. Eキー (インベントリ開閉) - 最優先 ---
     if (e.code === 'KeyE') {
+        if (isPaused) return
         e.preventDefault();
         e.stopImmediatePropagation();
 
@@ -5117,7 +5091,6 @@ document.addEventListener("keyup", (e) => {
 // 4. マウス・ホイール操作
 // ==========================================
 window.addEventListener("wheel", (e) => {
-    if (isInventoryOpen) return;
     selectedHotbarIndex = (selectedHotbarIndex + (e.deltaY > 0 ? 1 : 8)) % 9;
     updateHotbarSelection();
 }, { passive: true });
