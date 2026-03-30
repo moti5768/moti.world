@@ -84,22 +84,7 @@ async function loadFullSaveData() {
 
 
 
-document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
-document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
-const touchpad_controls = {
-    leftcontrols: document.getElementById("left-controls"),
-    rightcontrols: document.getElementById("right-controls")
-};
-
-const ua = navigator.userAgent.toLowerCase();
-if (ua.includes("mobile") || ua.indexOf("ipad") > -1 || (ua.indexOf("macintosh") > -1 && "ontouchend" in document)) {
-    touchpad_controls.leftcontrols.style.display = "block";
-    touchpad_controls.rightcontrols.style.display = "block";
-} else {
-    touchpad_controls.leftcontrols.style.display = "none";
-    touchpad_controls.rightcontrols.style.display = "none";
-}
 
 /* ======================================================
    【新・ノイズ関数群】（シード値対応・最適化済み）
@@ -473,174 +458,6 @@ if (initialNoise > 0.2) {
 }
 // 本来の地表の高さ + 余裕を持たせた2ブロック上
 const spawnY = Math.max(Math.floor(BASE_HEIGHT + heightModifier), SEA_LEVEL + 5);
-
-console.log("Spawn Position:", spawnX, spawnY, spawnZ);
-
-function setupTouchControls() {
-    // --- 前進ボタン用（dpad-up）のダブルタップによるダッシュ機能 ---
-    let lastForwardTapTime = 0;
-    const FORWARD_DOUBLE_TAP_THRESHOLD = 300; // ミリ秒
-    function handleForwardTap() {
-        const now = performance.now();
-        if (now - lastForwardTapTime < FORWARD_DOUBLE_TAP_THRESHOLD) {
-            dashActive = true;
-            console.log("Dash activated (forward double tap)!");
-        }
-        keys["w"] = true;
-        lastForwardTapTime = now;
-    }
-
-    // dpad-up (前進ボタン)
-    const btnUp = document.getElementById("dpad-up");
-    btnUp.addEventListener("touchstart", function (e) {
-        handleForwardTap();
-        e.preventDefault();
-    });
-    btnUp.addEventListener("touchend", function (e) {
-        keys["w"] = false;
-        dashActive = false;  // ボタン離し時にダッシュ解除
-        e.preventDefault();
-    });
-    btnUp.addEventListener("mousedown", function (e) {
-        handleForwardTap();
-    });
-    btnUp.addEventListener("mouseup", function (e) {
-        keys["w"] = false;
-        dashActive = false;  // ボタン離し時にダッシュ解除
-    });
-
-    // dpad-down
-    const btnDown = document.getElementById("dpad-down");
-    btnDown.addEventListener("touchstart", function (e) {
-        keys["s"] = true;
-        e.preventDefault();
-    });
-    btnDown.addEventListener("touchend", function (e) {
-        keys["s"] = false;
-        e.preventDefault();
-    });
-    btnDown.addEventListener("mousedown", function (e) {
-        keys["s"] = true;
-    });
-    btnDown.addEventListener("mouseup", function (e) {
-        keys["s"] = false;
-    });
-
-    // dpad-left
-    const btnLeft = document.getElementById("dpad-left");
-    btnLeft.addEventListener("touchstart", function (e) {
-        keys["a"] = true;
-        e.preventDefault();
-    });
-    btnLeft.addEventListener("touchend", function (e) {
-        keys["a"] = false;
-        e.preventDefault();
-    });
-    btnLeft.addEventListener("mousedown", function (e) {
-        keys["a"] = true;
-    });
-    btnLeft.addEventListener("mouseup", function (e) {
-        keys["a"] = false;
-    });
-
-    // dpad-right
-    const btnRight = document.getElementById("dpad-right");
-    btnRight.addEventListener("touchstart", function (e) {
-        keys["d"] = true;
-        e.preventDefault();
-    });
-    btnRight.addEventListener("touchend", function (e) {
-        keys["d"] = false;
-        e.preventDefault();
-    });
-    btnRight.addEventListener("mousedown", function (e) {
-        keys["d"] = true;
-    });
-    btnRight.addEventListener("mouseup", function (e) {
-        keys["d"] = false;
-    });
-
-    // Jump ボタン：シングルタップでジャンプ/上昇、ダブルタップで飛行モードの切替
-    const btnJump = document.getElementById("btn-jump");
-    let lastJumpTime = 0;
-    const DOUBLE_TAP_THRESHOLD = 300; // ms
-    function handleJumpTap() {
-        const now = performance.now();
-        if (now - lastJumpTime < DOUBLE_TAP_THRESHOLD) {
-            flightMode = !flightMode;
-            jumpRequest = false;
-            console.log("Flight Mode Toggled:", flightMode ? "ON" : "OFF");
-        } else {
-            if (flightMode) {
-                // 飛行モード時は上昇入力をシミュレート
-                keys[" "] = true;
-            } else {
-                jumpRequest = true;
-            }
-        }
-        lastJumpTime = now;
-    }
-    btnJump.addEventListener("touchstart", function (e) {
-        handleJumpTap();
-        e.preventDefault();
-    });
-    btnJump.addEventListener("mousedown", function (e) {
-        handleJumpTap();
-    });
-    btnJump.addEventListener("touchend", function (e) {
-        if (flightMode) { keys[" "] = false; }
-        e.preventDefault();
-    });
-    btnJump.addEventListener("mouseup", function (e) {
-        if (flightMode) { keys[" "] = false; }
-    });
-
-    // Sneak ボタン：シングルタップで一時的な降下（またはしゃがみ）、ダブルタップで持続的な下降入力をトグル
-    const btnSneak = document.getElementById("btn-sneak");
-    let lastSneakTime = 0;
-    const SNEAK_DOUBLE_TAP_THRESHOLD = 300; // ms
-    let sneakToggled = false; // 持続的スニーク状態のフラグ
-    function handleSneakTap() {
-        const now = performance.now();
-        if (now - lastSneakTime < SNEAK_DOUBLE_TAP_THRESHOLD) {
-            sneakToggled = !sneakToggled;
-            keys["shift"] = sneakToggled;
-            sneakActive = sneakToggled;
-            console.log("Sneak mode toggled:", sneakActive ? "ON" : "OFF");
-        } else {
-            if (flightMode) {
-                // 飛行モード時は下降入力をシミュレート
-                keys["shift"] = true;
-            } else {
-                keys["shift"] = true;
-                sneakActive = true;
-            }
-        }
-        lastSneakTime = now;
-    }
-    btnSneak.addEventListener("touchstart", function (e) {
-        handleSneakTap();
-        e.preventDefault();
-    });
-    btnSneak.addEventListener("mousedown", function (e) {
-        handleSneakTap();
-    });
-    btnSneak.addEventListener("touchend", function (e) {
-        if (!sneakToggled) {
-            keys["shift"] = false;
-            sneakActive = false;
-        }
-        e.preventDefault();
-    });
-    btnSneak.addEventListener("mouseup", function (e) {
-        if (!sneakToggled) {
-            keys["shift"] = false;
-            sneakActive = false;
-        }
-    });
-}
-// 初期化処理の末尾で呼び出す
-setupTouchControls();
 
 let jumpCooldown = 0;
 // プレイヤーデータ
@@ -3772,223 +3589,6 @@ function resetLastPlacedIfOnGround() {
     }
 }
 
-// それぞれのボタン用のインターバルIDを保持するオブジェクトを定義
-const interactIntervalIds = {
-    left: null,
-    right: null,
-    touch: null,
-};
-
-function startInteraction(action, key) {
-    if (interactIntervalIds[key] !== null) {
-        clearInterval(interactIntervalIds[key]);
-    }
-    interactWithBlock(action);
-    interactIntervalIds[key] = setInterval(() => {
-        interactWithBlock(action);
-    }, 150);
-}
-
-function stopInteraction(key) {
-    if (interactIntervalIds[key] !== null) {
-        clearInterval(interactIntervalIds[key]);
-        interactIntervalIds[key] = null;
-    }
-}
-
-// ==========================================
-// 🔑 キー状態オブジェクトの定義 (最上部に配置)
-// ==========================================
-const keys = {};
-let f3Pressed = false;
-
-// ----- マウス操作 -----
-renderer.domElement.addEventListener("mousedown", (event) => {
-    // 👇 ここを追加！ インベントリが開いている時は、マウスを押しても設置や破壊、ロック処理を完全に無視する
-    if (isInventoryOpen) return;
-
-    if (document.pointerLockElement !== renderer.domElement) return;
-
-    let action = null;
-    let buttonKey = null;
-    if (event.button === 0) {        // 左クリック：破壊
-        action = "destroy";
-        buttonKey = "left";
-    } else if (event.button === 2) { // 右クリック：設置
-        action = "place";
-        buttonKey = "right";
-    }
-
-    if (action && buttonKey) {
-        startInteraction(action, buttonKey);
-    }
-}, false);
-
-document.addEventListener("mouseup", (event) => {
-    if (event.button === 0) {
-        stopInteraction("left");
-    } else if (event.button === 2) {
-        stopInteraction("right");
-    }
-}, false);
-
-renderer.domElement.addEventListener("contextmenu", (e) => {
-    e.preventDefault();
-}, false);
-
-// ----- ポインタロック -----
-renderer.domElement.addEventListener("click", () => {
-    // インベントリが開いている時や、既にロック中の時はポインターロックを要求しない
-    if (isInventoryOpen || pointerLocked) return;
-
-    if (!("ontouchstart" in window)) {
-        renderer.domElement.requestPointerLock();
-    }
-});
-
-// ----- タッチ操作で視点回転＋短タップ設置・長押し破壊 -----
-let lastTouchX = null, lastTouchY = null;
-let touchHoldTimeout = null;
-let isLongPress = false;
-let isTouchMoving = false;
-
-renderer.domElement.addEventListener("touchstart", (e) => {
-    if (isInventoryOpen) return; // インベントリが開いている時は無視
-    if (e.touches.length !== 1) return;
-
-    isLongPress = false;
-    isTouchMoving = false;
-
-    lastTouchX = e.touches[0].clientX;
-    lastTouchY = e.touches[0].clientY;
-
-    touchHoldTimeout = setTimeout(() => {
-        isLongPress = true;
-        startInteraction("destroy", "touch");
-    }, 500);
-}, false);
-
-renderer.domElement.addEventListener("touchmove", (e) => {
-    if (isInventoryOpen) return; // インベントリが開いている時は視点移動も無視
-    if (e.touches.length !== 1) return;
-
-    const touch = e.touches[0];
-    const deltaX = touch.clientX - lastTouchX;
-    const deltaY = touch.clientY - lastTouchY;
-
-    if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
-        isTouchMoving = true;
-    }
-
-    lastTouchX = touch.clientX;
-    lastTouchY = touch.clientY;
-
-    const touchSensitivity = 0.005;
-    yaw -= deltaX * touchSensitivity;
-    pitch -= deltaY * touchSensitivity;
-    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-
-    e.preventDefault();
-}, false);
-
-renderer.domElement.addEventListener("touchend", (e) => {
-    clearTimeout(touchHoldTimeout);
-
-    if (isInventoryOpen) return; // インベントリが開いている時はタッチ終了後の処理も無視
-
-    if (!isTouchMoving) {
-        if (isLongPress) {
-            stopInteraction("touch");
-        } else {
-            interactWithBlock("place");
-        }
-    } else {
-        // 視点移動中なら破壊繰り返しも停止
-        if (isLongPress) {
-            stopInteraction("touch");
-        }
-    }
-
-    lastTouchX = lastTouchY = null;
-}, false);
-
-
-document.addEventListener("keydown", (e) => {
-    const key = e.key.toLowerCase();
-
-    // 💡 F3キーが押されたらブラウザ標準の検索窓が出るのを阻止し、フラグを立てる
-    if (e.key === "F3") {
-        e.preventDefault();
-        f3Pressed = true;
-        return; // 他の移動キー判定をスキップ
-    }
-
-    // 💡 F3 + G の同時押しを検知した時の処理
-    if (f3Pressed && key === "g") {
-        e.preventDefault();
-        showChunkBorders = !showChunkBorders;
-        chunkBorderMesh.visible = showChunkBorders;
-
-        if (typeof addChatMessage === "function") {
-            addChatMessage(
-                showChunkBorders ? "チャンク境界を表示しました" : "チャンク境界を非表示にしました",
-                "#55ff55"
-            );
-        }
-        return;
-    }
-
-    // インベントリ開閉の「e」キーだけはインベントリ開閉中も処理を通す
-    if (key === "e") return;
-
-    // それ以外の移動やアクションは、インベントリが開いていたら全て無視
-    if (isInventoryOpen) return;
-
-    if ((e.key === " " || e.key === "Spacebar") && e.repeat) return;
-    keys[key] = true;
-
-    if (e.key >= "1" && e.key <= "9") {
-        const hotbarItems = document.querySelectorAll(".hotbar-item");
-        hotbarItems.forEach(item => item.classList.remove("active"));
-
-        const index = parseInt(e.key, 10) - 1;
-        if (hotbarItems[index]) {
-            hotbarItems[index].classList.add("active");
-            // グローバルなホットバーインデックスの更新（もし利用している場合）
-            activeHotbarIndex = index;
-            // 数値キー選択時もデータ属性からブロック種別を正しく取得して更新する
-            activeBlockType = Number(hotbarItems[index].getAttribute("data-blocktype"));
-            console.log("Active block type switched to:", activeBlockType);
-        }
-    }
-    if (e.key === " " || e.key === "Spacebar") {
-        let now = performance.now();
-        if (now - lastSpaceTime < 300) {
-            flightMode = !flightMode;
-            jumpRequest = false;
-            console.log("Flight Mode:", flightMode);
-        }
-        lastSpaceTime = now;
-    }
-    if (e.key.toLowerCase() === "w") {
-        if (!e.repeat) {
-            let now = performance.now();
-            if (now - lastWPressTime < doubleTapThreshold) {
-                dashActive = true;
-                console.log("Dash activated!");
-            }
-            lastWPressTime = now;
-        }
-    }
-    if (e.key.toLowerCase() === "shift") {
-        sneakActive = true;
-        // 歩行モードでのみダッシュを解除する
-        if (!flightMode) {
-            dashActive = false;
-        }
-    }
-});
-
 // --- 選択管理 ---
 let activeBlockType = 0;
 let selectedHotbarIndex = 0;
@@ -4283,91 +3883,9 @@ function updateHotbarSelection() {
     console.log("Hotbar slot selected (updated):", selectedHotbarIndex, activeBlockType);
 }
 
-// --- ホイール・数字キーでホットバー切替 ---
-window.addEventListener("wheel", e => {
-    selectedHotbarIndex = (selectedHotbarIndex + (e.deltaY > 0 ? 1 : 8)) % 9;
-    updateHotbarSelection();
-});
-window.addEventListener("keydown", e => {
-    if (/^[1-9]$/.test(e.key)) {
-        selectedHotbarIndex = Number(e.key) - 1;
-        updateHotbarSelection();
-    }
-});
-
 // --- インベントリ表示制御 ---
 const inventoryContainer = document.getElementById("inventory-container");
 inventoryContainer.style.display = "none";
-
-// --- ポインターロック管理 ---
-let pointerLocked = false;
-// 状態の監視だけにする
-document.addEventListener("pointerlockchange", () => {
-    pointerLocked = (document.pointerLockElement === renderer.domElement);
-});
-// イベントの登録は、初期化時に「1回だけ」行う
-window.addEventListener("mousemove", onMouseMove);
-
-// --- マウス移動処理 ---
-function onMouseMove(e) {
-    if (!pointerLocked || inventoryContainer.style.display !== "none") return;
-    yaw -= e.movementX * mouseSensitivity;
-    pitch = Math.min(Math.max(pitch - e.movementY * mouseSensitivity, -Math.PI / 2), Math.PI / 2);
-}
-
-// --- 1. 状態を完全に管理するためのフラグ変数を追加 (文字列判定のバグを防止) ---
-let isInventoryOpen = false;
-
-// --- 2. クリックでポインターロック要求（インベントリ表示中やUIクリック時は完全に無視） ---
-window.addEventListener("click", (e) => {
-    // インベントリが開いているなら、どこをクリックしても絶対にロックしない
-    if (isInventoryOpen) {
-        return;
-    }
-
-    if (inventoryContainer.contains(e.target)) {
-        return;
-    }
-
-    if (pointerLocked) {
-        return;
-    }
-
-    if (e.target === renderer.domElement) {
-        renderer.domElement.requestPointerLock();
-    }
-});
-
-// --- 3. Eキーでインベントリ表示切替 ---
-window.addEventListener("keydown", e => {
-    if (e.key.toLowerCase() === "e") {
-        e.preventDefault();
-
-        if (isInventoryOpen) {
-            // ◆ インベントリが開いているなら【閉じる】
-            isInventoryOpen = false;
-            inventoryContainer.style.display = "none";
-            renderer.domElement.requestPointerLock(); // 閉じたら視点をロック
-        } else {
-            // ◆ インベントリが閉じているなら【開く】
-            isInventoryOpen = true;
-            inventoryContainer.style.display = "block";
-            if (pointerLocked) {
-                document.exitPointerLock(); // 開いたら視点のロックを外す
-            }
-        }
-    }
-});
-
-document.addEventListener("keyup", (e) => {
-    keys[e.key.toLowerCase()] = false;
-    if (e.key.toLowerCase() === "w") {
-        dashActive = false;
-    }
-    if (e.key.toLowerCase() === "shift") {
-        sneakActive = false;
-    }
-});
 
 /* ======================================================
    【ウィンドウのリサイズ対応】
@@ -5409,40 +4927,6 @@ function updatePauseUI() {
     }
 }
 
-// ポインターロックの状態変化を監視
-document.addEventListener('pointerlockchange', () => {
-    if (document.pointerLockElement === null) {
-        // マウスが解放された（Esc押下やAlt+Tabなど）
-        isPaused = true;
-    } else {
-        // マウスがロックされた（画面をクリックして再開した）
-        isPaused = false;
-    }
-    updatePauseUI();
-});
-
-// ESCキーの検知
-window.addEventListener('keydown', (e) => {
-    if (e.code === 'Escape') {
-        // メインメニューが表示されていない時だけポーズ
-        if (mainMenu.style.display === "none") {
-            // Escを押したとき、すでにロック解除されているなら
-            // 明示的にUIを出すための処理（念のため）
-            isPaused = true;
-            document.exitPointerLock();
-            updatePauseUI();
-        }
-    }
-});
-
-// 「ゲームに戻る」ボタン
-document.getElementById("btn-resume").addEventListener("click", () => {
-    // 💡 修正ポイント：renderer.domElement を直接指定する
-    if (renderer && renderer.domElement) {
-        renderer.domElement.requestPointerLock();
-    }
-});
-
 /* ======================================================
    【修正版】保存してタイトルへ戻る
    ====================================================== */
@@ -5534,3 +5018,405 @@ function addChatMessage(text, color = "#ffffff", duration = 6000) {
 // グローバルでどこからでも呼べるように window に露出
 window.addChatMessage = addChatMessage;
 addChatMessage("Minecraft classic 0.0.1", "#ffff55");
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ==========================================
+// 1. グローバル変数の定義と初期設定
+// ==========================================
+const keys = {};
+let f3Pressed = false;
+let isInventoryOpen = false;
+let pointerLocked = false;
+
+// インターバルID管理（連続破壊・設置用）
+const interactIntervalIds = {
+    left: null,
+    right: null,
+    touch: null,
+};
+
+// モバイル判定
+const touchpad_controls = {
+    leftcontrols: document.getElementById("left-controls"),
+    rightcontrols: document.getElementById("right-controls")
+};
+const ua = navigator.userAgent.toLowerCase();
+if (ua.includes("mobile") || ua.indexOf("ipad") > -1 || (ua.indexOf("macintosh") > -1 && "ontouchend" in document)) {
+    touchpad_controls.leftcontrols.style.display = "block";
+    touchpad_controls.rightcontrols.style.display = "block";
+} else {
+    touchpad_controls.leftcontrols.style.display = "none";
+    touchpad_controls.rightcontrols.style.display = "none";
+}
+
+// ==========================================
+// 2. ユーティリティ関数
+// ==========================================
+function startInteraction(action, key) {
+    if (interactIntervalIds[key] !== null) {
+        clearInterval(interactIntervalIds[key]);
+    }
+    interactWithBlock(action);
+    interactIntervalIds[key] = setInterval(() => {
+        interactWithBlock(action);
+    }, 150);
+}
+
+function stopInteraction(key) {
+    if (interactIntervalIds[key] !== null) {
+        clearInterval(interactIntervalIds[key]);
+        interactIntervalIds[key] = null;
+    }
+}
+
+// ==========================================
+// 3. キーボード入力 (keydown / keyup)
+// ==========================================
+window.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+
+    // --- A. F3キー関連 (デバッグ表示) ---
+    if (e.key === "F3") {
+        e.preventDefault();
+        f3Pressed = true;
+        return;
+    }
+    if (f3Pressed && key === "g") {
+        e.preventDefault();
+        showChunkBorders = !showChunkBorders;
+        if (chunkBorderMesh) chunkBorderMesh.visible = showChunkBorders;
+        if (typeof addChatMessage === "function") {
+            addChatMessage(
+                showChunkBorders ? "チャンク境界を表示しました" : "チャンク境界を非表示にしました",
+                "#55ff55"
+            );
+        }
+        return;
+    }
+
+    // --- B. Eキー (インベントリ開閉) - 最優先 ---
+    if (e.code === 'KeyE') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        if (isInventoryOpen) {
+            isInventoryOpen = false;
+            inventoryContainer.style.display = "none";
+            if (!isPaused) renderer.domElement.requestPointerLock();
+        } else {
+            isInventoryOpen = true;
+            inventoryContainer.style.display = "block";
+            document.exitPointerLock();
+        }
+        return;
+    }
+
+    // --- C. ESCキー (メニュー/キャンセル) ---
+    if (e.code === 'Escape') {
+        if (isInventoryOpen) {
+            isInventoryOpen = false;
+            inventoryContainer.style.display = "none";
+            return;
+        }
+        if (mainMenu.style.display === "none") {
+            isPaused = true;
+            if (typeof updatePauseUI === "function") updatePauseUI();
+        }
+        return;
+    }
+
+    // --- D. 以降、インベントリ表示中は無視する操作 ---
+    if (isInventoryOpen) return;
+
+    // 数字キー (1-9)
+    if (/^[1-9]$/.test(e.key)) {
+        selectedHotbarIndex = Number(e.key) - 1;
+        updateHotbarSelection();
+        const hotbarItems = document.querySelectorAll(".hotbar-item");
+        hotbarItems.forEach(item => item.classList.remove("active"));
+        if (hotbarItems[selectedHotbarIndex]) {
+            hotbarItems[selectedHotbarIndex].classList.add("active");
+            activeBlockType = Number(hotbarItems[selectedHotbarIndex].getAttribute("data-blocktype"));
+        }
+        return;
+    }
+
+    // スペースキー (ジャンプ / 飛行)
+    if (e.key === " " || e.key === "Spacebar") {
+        if (e.repeat) return;
+        let now = performance.now();
+        if (now - lastSpaceTime < 300) {
+            flightMode = !flightMode;
+            jumpRequest = false;
+        }
+        lastSpaceTime = now;
+        keys[" "] = true;
+    }
+
+    // Wキー (ダッシュ判定)
+    if (key === "w") {
+        if (!e.repeat) {
+            let now = performance.now();
+            if (now - lastWPressTime < doubleTapThreshold) dashActive = true;
+            lastWPressTime = now;
+        }
+    }
+
+    // Shiftキー (スニーク)
+    if (key === "shift") {
+        sneakActive = true;
+        if (!flightMode) dashActive = false;
+    }
+
+    keys[key] = true;
+});
+
+document.addEventListener("keyup", (e) => {
+    const key = e.key.toLowerCase();
+    keys[key] = false;
+    if (key === "f3") f3Pressed = false;
+    if (key === "w") dashActive = false;
+    if (key === "shift") sneakActive = false;
+});
+
+// ==========================================
+// 4. マウス・ホイール操作
+// ==========================================
+window.addEventListener("wheel", (e) => {
+    if (isInventoryOpen) return;
+    selectedHotbarIndex = (selectedHotbarIndex + (e.deltaY > 0 ? 1 : 8)) % 9;
+    updateHotbarSelection();
+}, { passive: true });
+
+renderer.domElement.addEventListener("mousedown", (event) => {
+    if (isInventoryOpen || document.pointerLockElement !== renderer.domElement) return;
+
+    let action = null;
+    let buttonKey = null;
+    if (event.button === 0) { action = "destroy"; buttonKey = "left"; }
+    else if (event.button === 2) { action = "place"; buttonKey = "right"; }
+
+    if (action && buttonKey) startInteraction(action, buttonKey);
+}, false);
+
+document.addEventListener("mouseup", (event) => {
+    if (event.button === 0) stopInteraction("left");
+    else if (event.button === 2) stopInteraction("right");
+}, false);
+
+renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault(), false);
+
+// ==========================================
+// 5. ポインターロック管理
+// ==========================================
+function onMouseMove(e) {
+    if (!pointerLocked || isInventoryOpen) return;
+    yaw -= e.movementX * mouseSensitivity;
+    pitch = Math.min(Math.max(pitch - e.movementY * mouseSensitivity, -Math.PI / 2), Math.PI / 2);
+}
+
+window.addEventListener("mousemove", onMouseMove);
+
+document.addEventListener('pointerlockchange', () => {
+    pointerLocked = (document.pointerLockElement === renderer.domElement);
+
+    if (pointerLocked) {
+        // ロックされたらポーズ解除
+        isPaused = false;
+        if (typeof updatePauseUI === "function") updatePauseUI();
+    } else {
+        // ロックが外れた時、インベントリを開いている最中でなければポーズにする
+        if (!isInventoryOpen) {
+            isPaused = true;
+            if (typeof updatePauseUI === "function") updatePauseUI();
+        }
+    }
+});
+
+renderer.domElement.addEventListener("click", (e) => {
+    if (isInventoryOpen || pointerLocked || inventoryContainer.contains(e.target)) return;
+    if (e.target === renderer.domElement && !("ontouchstart" in window)) {
+        renderer.domElement.requestPointerLock();
+    }
+});
+
+const btnResume = document.getElementById("btn-resume");
+if (btnResume) {
+    btnResume.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // 1. 先にフォーカスを外す（超重要）
+        btnResume.blur();
+
+        // 2. 状態を更新
+        isPaused = false;
+        if (typeof updatePauseUI === "function") updatePauseUI();
+
+        // 3. ブラウザの「解除フラグ」が消えるのを待つために
+        // 少し長めの待ち時間を設定（100ms程度が安定します）
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        if (renderer && renderer.domElement) {
+            renderer.domElement.requestPointerLock();
+        }
+    });
+}
+
+document.getElementById('btn-quit').addEventListener('click', () => {
+    if (confirm("ゲームを終了しますか？")) {
+        window.close();
+
+        // window.closeが効かなかった場合のみ、0.5秒後に実行される
+        setTimeout(() => {
+            if (!window.closed) {
+                alert("ブラウザのセキュリティ制限により自動で閉じられませんでした。タブを直接閉じてください。");
+                // あるいはタイトル画面へ戻す処理
+                // location.href = 'index.html'; 
+            }
+        }, 500);
+    }
+});
+
+// ==========================================
+// 6. タッチ操作 (スマホ用)
+// ==========================================
+let lastTouchX = null, lastTouchY = null;
+let touchHoldTimeout = null;
+let isLongPress = false;
+let isTouchMoving = false;
+
+renderer.domElement.addEventListener("touchstart", (e) => {
+    if (isInventoryOpen || e.touches.length !== 1) return;
+    isLongPress = false;
+    isTouchMoving = false;
+    lastTouchX = e.touches[0].clientX;
+    lastTouchY = e.touches[0].clientY;
+    touchHoldTimeout = setTimeout(() => {
+        isLongPress = true;
+        startInteraction("destroy", "touch");
+    }, 500);
+}, false);
+
+renderer.domElement.addEventListener("touchmove", (e) => {
+    if (isInventoryOpen || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - lastTouchX;
+    const deltaY = touch.clientY - lastTouchY;
+    if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) isTouchMoving = true;
+
+    lastTouchX = touch.clientX;
+    lastTouchY = touch.clientY;
+    const touchSensitivity = 0.005;
+    yaw -= deltaX * touchSensitivity;
+    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch - deltaY * touchSensitivity));
+    e.preventDefault();
+}, false);
+
+renderer.domElement.addEventListener("touchend", (e) => {
+    clearTimeout(touchHoldTimeout);
+    if (isInventoryOpen) return;
+    if (!isTouchMoving) {
+        if (isLongPress) stopInteraction("touch");
+        else interactWithBlock("place");
+    } else if (isLongPress) {
+        stopInteraction("touch");
+    }
+    lastTouchX = lastTouchY = null;
+}, false);
+
+// ズーム防止
+document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
+// ==========================================
+// 7. タッチUIボタン設定 (D-Pad / Jump / Sneak)
+// ==========================================
+function setupTouchControls() {
+    let lastForwardTapTime = 0;
+    let lastJumpTime = 0;
+    let lastSneakTime = 0;
+    let sneakToggled = false;
+    const TAP_THRESHOLD = 300;
+
+    const bindButton = (id, key, onStart, onEnd) => {
+        const btn = document.getElementById(id);
+        const start = (e) => { if (onStart) onStart(); keys[key] = true; e.preventDefault(); };
+        const end = (e) => { if (onEnd) onEnd(); keys[key] = false; e.preventDefault(); };
+        btn.addEventListener("touchstart", start);
+        btn.addEventListener("mousedown", start);
+        btn.addEventListener("touchend", end);
+        btn.addEventListener("mouseup", end);
+    };
+
+    // 前進 (ダブルタップでダッシュ)
+    bindButton("dpad-up", "w", () => {
+        const now = performance.now();
+        if (now - lastForwardTapTime < TAP_THRESHOLD) dashActive = true;
+        lastForwardTapTime = now;
+    }, () => { dashActive = false; });
+
+    bindButton("dpad-down", "s");
+    bindButton("dpad-left", "a");
+    bindButton("dpad-right", "d");
+
+    // ジャンプ (ダブルタップで飛行)
+    const btnJump = document.getElementById("btn-jump");
+    const jumpHandler = (e) => {
+        const now = performance.now();
+        if (now - lastJumpTime < TAP_THRESHOLD) {
+            flightMode = !flightMode;
+            jumpRequest = false;
+        } else {
+            if (flightMode) keys[" "] = true;
+            else jumpRequest = true;
+        }
+        lastJumpTime = now;
+        e.preventDefault();
+    };
+    btnJump.addEventListener("touchstart", jumpHandler);
+    btnJump.addEventListener("mousedown", jumpHandler);
+    btnJump.addEventListener("touchend", () => { if (flightMode) keys[" "] = false; });
+
+    // スニーク (ダブルタップでトグル)
+    const btnSneak = document.getElementById("btn-sneak");
+    const sneakHandler = (e) => {
+        const now = performance.now();
+        if (now - lastSneakTime < TAP_THRESHOLD) {
+            sneakToggled = !sneakToggled;
+            keys["shift"] = sneakToggled;
+            sneakActive = sneakToggled;
+        } else {
+            keys["shift"] = true;
+            sneakActive = true;
+        }
+        lastSneakTime = now;
+        e.preventDefault();
+    };
+    btnSneak.addEventListener("touchstart", sneakHandler);
+    btnSneak.addEventListener("mousedown", sneakHandler);
+    btnSneak.addEventListener("touchend", () => {
+        if (!sneakToggled) { keys["shift"] = false; sneakActive = false; }
+    });
+}
+
+setupTouchControls();
