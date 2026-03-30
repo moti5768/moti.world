@@ -3727,8 +3727,6 @@ const createHotbarItemPreview = async blockConfig => {
 
 window.addEventListener("DOMContentLoaded", async () => {
     const inventoryEl = document.getElementById("inventory");
-    inventoryEl.innerHTML = `<span>select block</span>
-    <p style="position: absolute; z-index: 999; margin-top: 80px;" class="center bold border"><span class="button">&nbsp;E&nbsp;</span>&emsp;キーでインベントリを閉じる</p>`;
 
     const promises = Object.values(BLOCK_CONFIG).map(async blockConfig => {
         if (!blockConfig.itemdisplay) return null;

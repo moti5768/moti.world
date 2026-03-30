@@ -249,17 +249,39 @@ canvas {
 }
 
 #inventory {
-    width: max-content;
+    /* width: max-content;  ← これを削除または auto に変更 */
+    width: 90vw;
+    /* 画面幅の90%を最大とする */
+    max-width: 600px;
+    /* PCで見るときに広がりすぎないよう制限（お好みで） */
+    max-height: 80vh;
+    /* 画面高さの80%を超えたらスクロール */
+    overflow-y: auto;
+    /* 縦方向にスクロールバーを出す */
+
     position: fixed;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.4);
-    padding: 5px;
+    background: rgba(0, 0, 0, 0.8);
+    /* 少し濃くするとアイテムが見やすくなります */
+    padding: 10px;
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
+    /* アイテムを中央寄せにする */
     gap: 4px;
     z-index: 100;
+    border: 2px solid #8b8b8b;
+    /* マイクラ風の枠線 */
+}
+
+#inventory::-webkit-scrollbar {
+    width: 6px;
+}
+
+#inventory::-webkit-scrollbar-thumb {
+    background: #555;
 }
 
 .inventory-item {
