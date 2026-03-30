@@ -5283,18 +5283,16 @@ if (btnResume) {
 }
 
 document.getElementById('btn-quit').addEventListener('click', () => {
-    if (confirm("ゲームを終了しますか？")) {
-        window.close();
+    window.close();
 
-        // window.closeが効かなかった場合のみ、0.5秒後に実行される
-        setTimeout(() => {
-            if (!window.closed) {
-                alert("ブラウザのセキュリティ制限により自動で閉じられませんでした。タブを直接閉じてください。");
-                // あるいはタイトル画面へ戻す処理
-                // location.href = 'index.html'; 
-            }
-        }, 500);
-    }
+    // window.closeが効かなかった場合のみ、0.5秒後に実行される
+    setTimeout(() => {
+        if (!window.closed) {
+            alert("ブラウザのセキュリティ制限により自動で閉じられませんでした。タブを直接閉じてください。");
+            // あるいはタイトル画面へ戻す処理
+            // location.href = 'index.html'; 
+        }
+    }, 500);
 });
 
 // ==========================================
