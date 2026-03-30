@@ -2,91 +2,6 @@
 import * as THREE from './build/three.module.js';
 
 /* ======================================================
-   【保存システム】IndexedDB Manager
-   ====================================================== */
-const DB_CONFIG = { name: "MinecraftJS_Save", version: 1 };
-
-async function getDB() {
-    return new Promise((resolve) => {
-        const request = indexedDB.open(DB_CONFIG.name, DB_CONFIG.version);
-        request.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            db.createObjectStore("world_meta"); // シード値、プレイヤー座標
-            db.createObjectStore("chunks");     // 変更されたブロックデータ
-        };
-        request.onsuccess = (e) => resolve(e.target.result);
-    });
-}
-
-// 保存関数の修正（最新版：BigIntの文字列化対応）
-async function saveWorldData(seed, playerPos, modifiedChunks) {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(["world_meta", "chunks"], "readwrite");
-
-        // 1. シードと座標を保存
-        const metaStore = tx.objectStore("world_meta");
-        metaStore.put(seed, "last_seed");
-        metaStore.put(playerPos, "player_pos");
-
-        // 2. チャンクデータ(設置情報)をすべて保存
-        if (modifiedChunks) {
-            const chunkStore = tx.objectStore("chunks");
-            modifiedChunks.forEach((data, key) => {
-                // ✅ BigInt型のキーを文字列に変換してIndexedDBのエラーを回避
-                chunkStore.put(data, key.toString());
-            });
-        }
-
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-// 読込関数の修正（最新版：文字列からBigIntへの復元対応）
-async function loadFullSaveData() {
-    const db = await getDB();
-    return new Promise((resolve) => {
-        const tx = db.transaction(["world_meta", "chunks"], "readonly");
-        const metaStore = tx.objectStore("world_meta");
-
-        const reqSeed = metaStore.get("last_seed");
-        const reqPos = metaStore.get("player_pos");
-        const chunks = new Map();
-
-        // チャンクデータをすべてMapに復元
-        tx.objectStore("chunks").openCursor().onsuccess = (e) => {
-            const cursor = e.target.result;
-            if (cursor) {
-                // ✅ 保存時に文字列化したキーを、元のBigInt型に戻してMapにセット
-                chunks.set(BigInt(cursor.key), cursor.value);
-                cursor.continue();
-            }
-        };
-
-        tx.oncomplete = () => {
-            resolve({
-                seed: reqSeed.result,
-                pos: reqPos.result,
-                chunks: chunks
-            });
-        };
-    });
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* ======================================================
    【新・ノイズ関数群】（シード値対応・最適化済み）
    ====================================================== */
 
@@ -5418,3 +5333,80 @@ function setupTouchControls() {
 }
 
 setupTouchControls();
+
+
+
+
+
+/* ======================================================
+   【保存システム】IndexedDB Manager
+   ====================================================== */
+const DB_CONFIG = { name: "MinecraftJS_Save", version: 1 };
+
+async function getDB() {
+    return new Promise((resolve) => {
+        const request = indexedDB.open(DB_CONFIG.name, DB_CONFIG.version);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            db.createObjectStore("world_meta"); // シード値、プレイヤー座標
+            db.createObjectStore("chunks");     // 変更されたブロックデータ
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+    });
+}
+
+// 保存関数の修正（最新版：BigIntの文字列化対応）
+async function saveWorldData(seed, playerPos, modifiedChunks) {
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(["world_meta", "chunks"], "readwrite");
+
+        // 1. シードと座標を保存
+        const metaStore = tx.objectStore("world_meta");
+        metaStore.put(seed, "last_seed");
+        metaStore.put(playerPos, "player_pos");
+
+        // 2. チャンクデータ(設置情報)をすべて保存
+        if (modifiedChunks) {
+            const chunkStore = tx.objectStore("chunks");
+            modifiedChunks.forEach((data, key) => {
+                // ✅ BigInt型のキーを文字列に変換してIndexedDBのエラーを回避
+                chunkStore.put(data, key.toString());
+            });
+        }
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+// 読込関数の修正（最新版：文字列からBigIntへの復元対応）
+async function loadFullSaveData() {
+    const db = await getDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction(["world_meta", "chunks"], "readonly");
+        const metaStore = tx.objectStore("world_meta");
+
+        const reqSeed = metaStore.get("last_seed");
+        const reqPos = metaStore.get("player_pos");
+        const chunks = new Map();
+
+        // チャンクデータをすべてMapに復元
+        tx.objectStore("chunks").openCursor().onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+                // ✅ 保存時に文字列化したキーを、元のBigInt型に戻してMapにセット
+                chunks.set(BigInt(cursor.key), cursor.value);
+                cursor.continue();
+            }
+        };
+
+        tx.oncomplete = () => {
+            resolve({
+                seed: reqSeed.result,
+                pos: reqPos.result,
+                chunks: chunks
+            });
+        };
+    });
+}
