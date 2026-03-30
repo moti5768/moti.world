@@ -319,3 +319,159 @@ canvas {
     transition: opacity 1s ease-out;
     /* フェードアウト用 */
 }
+
+/* --- ベース・背景設定 --- */
+.overlay-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    /* 土ブロックの背景。暗いグラデーションを重ねて文字を読みやすく */
+    background-color: black;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    font-family: 'Minecraft', 'Courier New', monospace;
+}
+
+/* --- タイトルロゴと跳ねるテキスト --- */
+.mc-logo-group {
+    position: relative;
+    margin-bottom: 50px;
+    text-align: center;
+}
+
+.mc-title {
+    font-size: 72px;
+    color: #fff;
+    text-shadow: 4px 4px 0px #3f3f3f;
+    margin: 0;
+}
+
+.edition {
+    position: absolute;
+    right: -30px;
+    bottom: -10px;
+    color: #FFFF55;
+    /* マイクラ定番の黄色 */
+    font-size: 20px;
+    text-shadow: 2px 2px 0px #3f3f00;
+    transform: rotate(-20deg);
+    white-space: nowrap;
+    animation: splash-anim 0.5s infinite alternate ease-in-out;
+}
+
+@keyframes splash-anim {
+    from {
+        transform: rotate(-20deg) scale(1.0);
+    }
+
+    to {
+        transform: rotate(-20deg) scale(1.1);
+    }
+}
+
+/* --- マイクラ風ボタン (Java版再現) --- */
+.mc-button {
+    width: 400px;
+    height: 40px;
+    margin: 4px 0;
+    background-color: #666;
+    border: 2px solid #000;
+    color: #e0e0e0;
+    font-size: 18px;
+    font-family: inherit;
+    cursor: pointer;
+    /* 立体感：上が明るく、下が暗い */
+    box-shadow: inset 2px 2px 0px #AAA, inset -2px -2px 0px #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-shadow: 2px 2px 0px #333;
+}
+
+.mc-button:hover {
+    background-color: #7c89ff;
+    /* Java版のホバー色 */
+    border-color: #fff;
+    /* 枠が白くなる */
+    color: #fff;
+    box-shadow: inset 2px 2px 0px #c0caff, inset -2px -2px 0px #3e4680;
+}
+
+/* 横並びボタン用 */
+.mc-button-row {
+    display: flex;
+    gap: 8px;
+    width: 408px;
+}
+
+.mc-button.half {
+    width: 200px;
+}
+
+/* --- 入力ボックス：凹んだデザイン --- */
+.mc-input {
+    width: 380px;
+    height: 40px;
+    background-color: #000;
+    border: 2px solid #a0a0a0;
+    color: #fff;
+    padding: 0 10px;
+    font-family: inherit;
+    font-size: 18px;
+    box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.8);
+    outline: none;
+}
+
+.mc-input:focus {
+    border-color: #fff;
+}
+
+/* --- フッター --- */
+.mc-footer {
+    position: absolute;
+    bottom: 10px;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 20px;
+    box-sizing: border-box;
+    color: #fff;
+    font-size: 14px;
+    text-shadow: 1px 1px 0px #000;
+}
+
+/* ローディング画面 */
+.loading-container {
+    width: 300px;
+    text-align: center;
+}
+
+.loading-text {
+    color: #fff;
+    margin-bottom: 10px;
+    font-size: 20px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #333;
+    border: 2px solid #fff;
+}
+
+#loading-fill {
+    width: 0%;
+    height: 100%;
+    background-color: #80ff80;
+    transition: width 0.1s;
+}
+
+/* 非表示制御用のヘルパークラス */
+.hidden {
+    display: none !important;
+}

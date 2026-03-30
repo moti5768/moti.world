@@ -12,55 +12,94 @@
 </head>
 
 <body>
-  <div id="crosshair"></div>
-  <div class="overzindex">
-    <!-- FPSカウンター -->
-    <div id="fpsCounter"></div>
-  </div>
+  <div id="ui-layer">
+    <div id="main-menu" class="overlay-screen">
+      <div class="mc-logo-group">
+        <h1 class="mc-title">MINECRAFT</h1>
+        <span class="edition">classic JS</span>
+      </div>
 
-  <div></div>
-  <!-- ホットバー -->
-  <div id="hotbar">
-  </div>
+      <div class="menu-buttons">
+        <button id="btn-to-world-config" class="mc-button">新しい世界を作成</button>
+        <button id="btn-load-saved" class="mc-button">保存した世界から再開</button>
 
-  <div id="inventory-container">
-    <div id="inventory">
-      <!-- JavaScriptでアイテム追加 -->
+        <div class="mc-button-row">
+          <button class="mc-button half">設定...</button>
+          <button class="mc-button half">終了</button>
+        </div>
+      </div>
+
+      <div class="mc-footer">
+        <span>Minecraft Classic 0.0.1</span>
+      </div>
+    </div>
+
+    <div id="world-config" class="overlay-screen" style="display:none;">
+      <h2 class="mc-title" style="font-size: 40px; margin-bottom: 30px;">世界の設定</h2>
+
+      <div class="config-content" style="margin-bottom: 20px;">
+        <div class="config-group">
+          <p class="mc-label" style="text-align: left; margin-bottom: 5px;">シード値:</p>
+          <input type="text" id="world-seed" class="mc-input" placeholder="空欄でランダム生成">
+        </div>
+      </div>
+
+      <div class="menu-buttons">
+        <button id="btn-start-game" class="mc-button">生成開始！</button>
+        <button id="btn-back-to-menu" class="mc-button">キャンセル</button>
+      </div>
+    </div>
+
+    <div id="loading-screen" class="overlay-screen" style="display:none;">
+      <div class="loading-container">
+        <div class="loading-text">世界を構築中...</div>
+        <div class="progress-bar">
+          <div id="loading-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pause-menu" class="overlay-screen" style="display:none; z-index: 2000;">
+      <h2 class="mc-label">ゲームメニュー</h2>
+      <div class="menu-buttons" style="display: flex; flex-direction: column; gap: 10px;">
+        <button id="btn-resume" class="mc-button">ゲームに戻る</button>
+        <button id="btn-save-quit" class="mc-button">保存してタイトルへ戻る</button>
+      </div>
     </div>
 
   </div>
 
+  <div id="crosshair"></div>
+  <div class="overzindex">
+    <div id="fpsCounter"></div>
+  </div>
 
+  <div id="hotbar"></div>
 
-  <!-- 既存のホットバーの下あたりに追加 -->
-  <!-- 左側のコントロール（方向キーと中央にスニークアイコン） -->
+  <div id="inventory-container">
+    <div id="inventory"></div>
+  </div>
+
   <div id="left-controls">
     <div id="touch-dpad">
       <button class="dpad-btn" id="dpad-up">↑</button>
       <button class="dpad-btn" id="dpad-left">←</button>
       <button class="dpad-btn" id="dpad-down">↓</button>
       <button class="dpad-btn" id="dpad-right">→</button>
-      <!-- スニークボタン：テキスト "Sneak" → アイコンに変更 -->
       <button class="touch-action-btn" id="btn-sneak">
         <svg width="24" height="24" viewBox="0 0 24 24">
-          <!-- 頭 -->
           <circle cx="12" cy="6" r="2" fill="white" />
-          <!-- 体 -->
           <path d="M12 8 L12 14" stroke="white" stroke-width="2" stroke-linecap="round" />
-          <!-- 膝を曲げた両足 -->
           <path d="M10 14 Q12 16 14 14" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" />
         </svg>
       </button>
     </div>
   </div>
 
-  <!-- 右側のコントロール（ジャンプアイコン） -->
   <div id="right-controls">
     <button class="touch-action-btn" id="btn-jump">
       <svg width="24" height="24" viewBox="0 0 24 24">
-        <!-- 垂直線 -->
         <path d="M12 2 L12 22" stroke="white" stroke-width="2" stroke-linecap="round" />
-        <!-- 上向きの矢印 -->
         <path d="M5 9 L12 2 L19 9" stroke="white" stroke-width="2" stroke-linecap="round" fill="none" />
       </svg>
     </button>
@@ -69,7 +108,7 @@
   <div id="screenOverlayHtml" style="pointer-events: none;"></div>
 
   <div
-    style="position:fixed;bottom:20px;left:10px;background:#000a;color:#fff; padding:8px; font:14px; display:flex; flex-direction:column; gap:6px;">
+    style="position:fixed;bottom:20px;left:10px;background:#000a;color:#fff; padding:8px; font:14px; display:flex; flex-direction:column; gap:6px; z-index:1001;">
     <div>
       <label>描画距離:<input id="chunkDistance" type="number" value="6" min="0" max="32"
           style="width:30px; text-align: center;"></label>
@@ -84,7 +123,6 @@
 
   <div id="chat-container"></div>
 
-  <!-- メインの JavaScript -->
   <script type="module" defer src="blocks.js"></script>
   <script type="module" defer src="cloudsky.js"></script>
   <script type="module" defer src="script.js"></script>
