@@ -2,171 +2,80 @@
 import * as THREE from './build/three.module.js';
 
 /* ======================================================
-   【保存システム】IndexedDB Manager
-   ====================================================== */
-const DB_CONFIG = { name: "MinecraftJS_Save", version: 1 };
-
-async function getDB() {
-    return new Promise((resolve) => {
-        const request = indexedDB.open(DB_CONFIG.name, DB_CONFIG.version);
-        request.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            db.createObjectStore("world_meta"); // シード値、プレイヤー座標
-            db.createObjectStore("chunks");     // 変更されたブロックデータ
-        };
-        request.onsuccess = (e) => resolve(e.target.result);
-    });
-}
-
-// 保存関数の修正（最新版：BigIntの文字列化対応）
-async function saveWorldData(seed, playerPos, modifiedChunks) {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(["world_meta", "chunks"], "readwrite");
-
-        // 1. シードと座標を保存
-        const metaStore = tx.objectStore("world_meta");
-        metaStore.put(seed, "last_seed");
-        metaStore.put(playerPos, "player_pos");
-
-        // 2. チャンクデータ(設置情報)をすべて保存
-        if (modifiedChunks) {
-            const chunkStore = tx.objectStore("chunks");
-            modifiedChunks.forEach((data, key) => {
-                // ✅ BigInt型のキーを文字列に変換してIndexedDBのエラーを回避
-                chunkStore.put(data, key.toString());
-            });
-        }
-
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-// 読込関数の修正（最新版：文字列からBigIntへの復元対応）
-async function loadFullSaveData() {
-    const db = await getDB();
-    return new Promise((resolve) => {
-        const tx = db.transaction(["world_meta", "chunks"], "readonly");
-        const metaStore = tx.objectStore("world_meta");
-
-        const reqSeed = metaStore.get("last_seed");
-        const reqPos = metaStore.get("player_pos");
-        const chunks = new Map();
-
-        // チャンクデータをすべてMapに復元
-        tx.objectStore("chunks").openCursor().onsuccess = (e) => {
-            const cursor = e.target.result;
-            if (cursor) {
-                // ✅ 保存時に文字列化したキーを、元のBigInt型に戻してMapにセット
-                chunks.set(BigInt(cursor.key), cursor.value);
-                cursor.continue();
-            }
-        };
-
-        tx.oncomplete = () => {
-            resolve({
-                seed: reqSeed.result,
-                pos: reqPos.result,
-                chunks: chunks
-            });
-        };
-    });
-}
-
-/* ======================================================
-   【新・ノイズ関数群】（シード値対応・最適化済み）
+   【修正版・高精度ノイズ関数群】
    ====================================================== */
 
-// 512要素の空の配列を用意する
 const p = new Uint8Array(512);
 let currentSeed = 0;
 
-/**
- * シード値を元に p 配列を生成する（決定論的な生成）
- */
 function applySeed(seedInput) {
-    // 1. シード値の決定ロジック
-    if (!seedInput) {
-        currentSeed = Math.floor(Math.random() * 2147483647);
-    } else if (!isNaN(seedInput)) {
-        currentSeed = parseInt(seedInput);
+    if (typeof seedInput === 'number') {
+        // すでに数値（セーブデータからのロードなど）なら、そのままシードとして使う
+        currentSeed = seedInput >>> 0;
     } else {
-        // 文字列シードを数値ハッシュに変換
-        let hash = 0;
-        for (let i = 0; i < seedInput.length; i++) {
-            hash = ((hash << 5) - hash) + seedInput.charCodeAt(i);
-            hash |= 0;
+        // 文字列（新規入力）なら、ハッシュ化して数値に変換する
+        let h = 2166136261 >>> 0;
+        const str = String(seedInput || Math.random());
+        for (let i = 0; i < str.length; i++) {
+            h = Math.imul(h ^ str.charCodeAt(i), 16777619);
         }
-        currentSeed = Math.abs(hash);
+        currentSeed = h >>> 0;
     }
 
-    // 2. 決定論的な疑似乱数生成 (Lcg)
+    // --- 以降（乱数生成とシャッフル）は変更なし ---
     let s = currentSeed;
-    const lcg = () => {
-        s = (s * 16807) % 2147483647;
-        return s / 2147483647;
+    const nextRand = () => {
+        s |= 0; s = s + 0x6D2B79F5 | 0;
+        let t = Math.imul(s ^ s >>> 15, 1 | s);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
     };
 
-    // 3. 0-255 の配列をシャッフル
     const base = new Uint8Array(256);
     for (let i = 0; i < 256; i++) base[i] = i;
     for (let i = 255; i > 0; i--) {
-        const j = (lcg() * (i + 1)) | 0;
-        const temp = base[i]; // 一時変数で入れ替え（GC防止）
-        base[i] = base[j];
-        base[j] = temp;
+        const j = (nextRand() * (i + 1)) | 0;
+        [base[i], base[j]] = [base[j], base[i]];
     }
-
-    // 4. グローバル変数 p を埋める (2度繰り返して境界対策)
     for (let i = 0; i < 256; i++) {
-        p[i] = base[i];
-        p[i + 256] = base[i];
+        p[i] = p[i + 256] = base[i];
     }
 
     return currentSeed;
 }
-
-// 💡 重要：以前のエラーの原因だった「p[i] = permutation[i]」のループは削除しました。
-
-// 初期状態として一度実行しておく
-applySeed(Date.now().toString());
 
 /* --- パーリンノイズ計算用ヘルパー --- */
 
 const fade = t => t * t * t * (t * (t * (t * 6 - 15) + 10));
 const lerp = (a, b, t) => a + t * (b - a);
 
-// ベクトル勾配の内積計算
+// 2D勾配：ビット演算を整理して方向の偏りを防ぐ
 const grad2D = (hash, x, y) => {
-    const h = hash & 3;
-    const u = h < 2 ? x : y;
-    const v = h < 2 ? y : x;
-    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+    const v = (hash & 1) === 0 ? x : y;
+    const u = (hash & 2) === 0 ? y : x;
+    return (((hash & 4) === 0 ? -v : v) + ((hash & 8) === 0 ? -2.0 * u : 2.0 * u));
 };
 
-// 単一の2Dパーリンノイズ (-1.0 〜 1.0)
 const perlinNoise2D = (x, y) => {
-    const xi = (x | 0);
-    const fx = x < xi ? xi - 1 : xi;
-    const yi = (y | 0);
-    const fy = y < yi ? yi - 1 : yi;
+    // 負の数でも正しく動作する座標取得
+    let X = Math.floor(x) & 255;
+    let Y = Math.floor(y) & 255;
 
-    const X = fx & 255;
-    const Y = fy & 255;
-
-    const xf = x - fx;
-    const yf = y - fy;
+    let xf = x - Math.floor(x);
+    let yf = y - Math.floor(y);
 
     const u = fade(xf);
     const v = fade(yf);
 
-    const a = p[X] + Y;
-    const b = p[X + 1] + Y;
+    // ハッシュの参照を安定させる
+    const aa = p[p[X] + Y];
+    const ab = p[p[X] + Y + 1];
+    const ba = p[p[X + 1] + Y];
+    const bb = p[p[X + 1] + Y + 1];
 
     return lerp(
-        lerp(grad2D(p[a], xf, yf), grad2D(p[b], xf - 1, yf), u),
-        lerp(grad2D(p[a + 1], xf, yf - 1), grad2D(p[b + 1], xf - 1, yf - 1), u),
+        lerp(grad2D(aa, xf, yf), grad2D(ba, xf - 1, yf), u),
+        lerp(grad2D(ab, xf, yf - 1), grad2D(bb, xf - 1, yf - 1), u),
         v
     );
 };
@@ -3923,27 +3832,11 @@ window.addEventListener('resize', () => {
     // 1. カメラのアスペクト比を現在の画面サイズに更新
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-
+    if (!renderer) return;
     // 2. レンダラーの描画サイズを更新
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /* ======================================================
    【超軽量化・チャンク境界表示システム（全6面格子付き）】
@@ -4651,17 +4544,21 @@ function animate() {
     if (delta > 0.1) delta = 0.1; // スパイク対策
     const now = performance.now();
 
+    // 0. -------- ロード・スポーン待機ガード --------
     if (!player.spawnFixed) {
         const pCx = Math.floor(player.position.x / CHUNK_SIZE);
         const pCz = Math.floor(player.position.z / CHUNK_SIZE);
 
         if (loadedChunks.has(encodeChunkKey(pCx, pCz))) {
-            // 新規スポーン時のみ、地形に合わせる
+            // 地形ロード完了
             const groundY = Math.floor(BASE_HEIGHT + heightModifier);
-            player.position.y = groundY + 0.1;
+            player.position.y = (player.position.y === 40) ? groundY + 0.1 : player.position.y;
             player.spawnFixed = true;
+
+            // ロード直後の描画状態を、復元された gameTime に即座に合わせる
+            updateSkyAndFogColor(gameTime);
         } else {
-            // チャンクがロードされるまで空中で待機
+            // チャンクがロードされるまで物理演算と時間進行を停止
             player.velocity.y = 0;
             updateChunks();
             return;
@@ -4670,14 +4567,15 @@ function animate() {
     frameCount++;
 
     // 1. -------- 昼夜サイクルの進行と「空・霧」の色更新 --------
-    // gameTimeを進め、背景色(ClearColor)とFog色を同期させる
-    gameTime = (gameTime + delta * 20 * TIME_SPEED) % TICKS_PER_DAY;
+    // ★重要: player.spawnFixed が true の時のみ時間を進める。
+    // これにより、ロード完了前に 0 からカウントアップされるのを防ぎます。
+    if (player.spawnFixed) {
+        gameTime = (gameTime + delta * 20 * TIME_SPEED) % TICKS_PER_DAY;
+    }
     updateSkyAndFogColor(gameTime);
 
     // 2. -------- ブロックの明るさ（シェーダー）への反映 --------
-    // 空の明るさ係数を取得し、各チャンクのMaterial(Uniforms)に流し込む
     const currentSkyFactor = getSkyLightFactor(gameTime);
-    // 💡 事前に集めておいた参照を書き換えるだけ。メッシュの走査が不要になり超高速化！
     globalSkyUniforms.forEach(uniform => {
         uniform.value = currentSkyFactor;
     });
@@ -4689,14 +4587,11 @@ function animate() {
         const modifiedChunkCount = ChunkSaveManager.modifiedChunks.size;
         const pCx = Math.floor(player.position.x / CHUNK_SIZE);
         const pCz = Math.floor(player.position.z / CHUNK_SIZE);
-
-        // --- ターゲット情報を安全に取得 ---
-        // global変数などに保存されている前提、もしくは一時変数として定義
         const targetText = (typeof currentTargetBlockText !== 'undefined') ? currentTargetBlockText : "None";
 
-        // ご提示のフォーマットを完全に維持して統合
         fpsCounter.innerHTML =
             `<span>Minecraft classic 0.0.1</span><br>` +
+            `<span>Seed: ${currentSeed}</span><br>` +
             `<span>Time: ${getGameClock(gameTime)} (${Math.floor(gameTime)} ticks)</span><br>` +
             `<span>${fps} fps, ${activeUpdates} chunks update</span><br>` +
             `<span>${modifiedChunkCount} modified chunks (Saved)</span><br>` +
@@ -4716,19 +4611,16 @@ function animate() {
     updateBlockParticles(delta);
     camera.rotation.set(pitch, yaw, 0);
 
-    // 水中判定（負荷軽減のため0.1秒おき）
     underwaterTimer += delta;
     if (underwaterTimer > 0.1) {
         wasUnderwater = isPlayerEntireBodyInWater();
         underwaterTimer = 0;
     }
 
-    // ジャンプ要求判定
     if (!flightMode && keys[" "] && player.onGround && !wasUnderwater) {
         jumpRequest = true;
     }
 
-    // 物理演算モードの切り替え
     if (flightMode) {
         updateFlightPhysics(delta);
     } else if (wasUnderwater) {
@@ -4747,21 +4639,18 @@ function animate() {
     chunkUpdateFrameTimer += delta;
     if (chunkUpdateFrameTimer > 0.016) {
         if (pendingChunkUpdates.size > 0) {
-            // 時間の許す限り未処理のチャンク更新を処理
-            // processPendingChunkUpdates(Infinity);
             processPendingChunkUpdates(4);
         }
         chunkUpdateFrameTimer = 0;
     }
 
-    // チャンク境界線の表示
     if (showChunkBorders) {
         const pCx = Math.floor(player.position.x / CHUNK_SIZE);
         const pCz = Math.floor(player.position.z / CHUNK_SIZE);
         chunkBorderMesh.position.set(pCx * CHUNK_SIZE, 0, pCz * CHUNK_SIZE);
     }
 
-    // 6. -------- カメラ位置の更新（補間付き） --------
+    // 6. -------- カメラ位置の更新 --------
     const targetCamPos = globalTempVec3;
     _camOffset.set(0, getCurrentPlayerHeight() - (flightMode ? 0.15 : 0), 0);
     targetCamPos.copy(player.position).add(_camOffset);
@@ -4770,7 +4659,7 @@ function animate() {
     camera.position.z = targetCamPos.z;
     camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamPos.y, 0.5);
 
-    // 7. -------- ブロック選択・情報の更新（間引き） --------
+    // 7. -------- ブロック選択・情報の更新 --------
     blockInfoTimer += delta;
     if (blockInfoTimer > 0.05) {
         const moved = camera.position.distanceToSquared(lastCamPos) > 0.00001 ||
@@ -4786,13 +4675,11 @@ function animate() {
     }
 
     // 8. -------- クラウド（雲）の描画更新 --------
-    // ここが動くことで、空の色が変化しても雲は描画され続けます
     cloudUpdateTimer += delta;
     cloudGridTimer += delta;
 
     if (cloudUpdateTimer > 0.05) {
         updateCloudTiles(delta);
-        // 第2引数に getSkyLightFactor(gameTime) を渡す！
         updateCloudOpacity(camera.position, getSkyLightFactor(gameTime));
         cloudUpdateTimer = 0;
     }
@@ -4801,9 +4688,9 @@ function animate() {
         cloudTiles.forEach(tile => {
             const distSq = tile.position.distanceToSquared(camera.position);
             if (distSq > 256) return;
-            adjustCloudLayerDepth(tile, camera); // 重なり順の調整
+            adjustCloudLayerDepth(tile, camera);
         });
-        updateCloudGrid(scene, camera.position); // カメラ周囲の再配置
+        updateCloudGrid(scene, camera.position);
         cloudGridTimer = 0;
     }
 
@@ -4849,64 +4736,105 @@ document.getElementById('btn-start-game').onclick = async () => {
     startGame(seed);
 };
 
-// 保存データから再開
+// 保存データから再開（最新修正版）
 document.getElementById('btn-load-saved').onclick = async () => {
-    const saveData = await loadFullSaveData();
+    try {
+        const saveData = await loadFullSaveData();
 
-    if (saveData.seed !== undefined) {
-        // 1. シード値を適用
-        applySeed(saveData.seed.toString());
+        // saveData 自体が存在し、かつ seed があるか確認
+        if (saveData && saveData.seed !== undefined) {
 
-        // 2. 設置情報をマネージャーに復元（保険としてここでも代入）
-        if (typeof ChunkSaveManager !== 'undefined') {
-            ChunkSaveManager.modifiedChunks = saveData.chunks;
+            // 1. シード値を適用（数値・文字列両対応）
+            if (typeof applySeed === 'function') {
+                applySeed(saveData.seed);
+            }
+
+            // 2. 設置情報をマネージャーに復元
+            if (typeof ChunkSaveManager !== 'undefined') {
+                // saveData.chunks が Map 形式であることを期待
+                ChunkSaveManager.modifiedChunks = (saveData.chunks instanceof Map)
+                    ? saveData.chunks
+                    : new Map();
+            }
+
+            // 3. ゲーム時間を取得
+            // loadFullSaveData が gameTime というキーで返していることを確実に利用
+            // 取得失敗時や異常値の場合は 6000 (朝) をデフォルトにする
+            const restoredTime = (typeof saveData.gameTime === 'number' && !isNaN(saveData.gameTime))
+                ? saveData.gameTime
+                : 6000;
+
+            console.log(`[Load] 復元データ確認 - Seed: ${saveData.seed}, Time: ${restoredTime}, Chunks: ${saveData.chunks?.size || 0}件`);
+
+            // 4. ゲーム開始
+            // 引数の順番：(seed, pos, chunks, gameTime)
+            startGame(
+                saveData.seed,
+                saveData.pos || { x: 0, y: 40, z: 0 }, // 座標がない場合のフォールバック
+                saveData.chunks,
+                restoredTime // 確定させた時間を渡す
+            );
+
+            // 念のためチャット欄などがあれば通知（任意）
+            if (typeof addChatMessage === 'function') {
+                addChatMessage("セーブデータをロードしました", "#ffff00");
+            }
+
+        } else {
+            alert("セーブデータが見つかりませんでした。");
         }
-
-        // 3. ゲーム開始（★第3引数に saveData.chunks を追加！）
-        startGame(saveData.seed, saveData.pos, saveData.chunks);
-    } else {
-        alert("セーブデータがありません。");
+    } catch (error) {
+        console.error("ロード中にエラーが発生しました:", error);
+        alert("データの読み込みに失敗しました。");
     }
 };
 
-function startGame(seed, savedPos = null, savedChunks = null) {
+// 引数に savedTime = 0 を追加
+function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0) {
     ui.config.style.display = 'none';
     ui.menu.style.display = 'none';
     ui.loading.style.display = 'flex';
     initCanvas();
+
+    // --- ★最重要: setTimeout の外で即座に時間をセット ---
+    // これにより、500msの待機中に初期値(0)で動くのを防ぎます
+    if (typeof gameTime !== 'undefined') {
+        gameTime = savedTime;
+    }
+
     setTimeout(() => {
+        if (typeof applySeed === 'function') {
+            applySeed(seed);
+        }
+
         // --- 1. データの復元 ---
         if (savedChunks instanceof Map && savedChunks.size > 0) {
-            // 引数でデータが届いた場合、それを採用
             ChunkSaveManager.modifiedChunks = savedChunks;
-            console.log("チャンクデータを復元しました:", savedChunks.size, "件");
-        } else if (ChunkSaveManager.modifiedChunks.size > 0) {
-            // ★引数がなくても、すでにメモリにデータがあるなら消さずに保持する
-            console.log("既存のメモリデータを保持します");
         } else {
-            // 本当に新規の世界の時だけクリア
-            ChunkSaveManager.modifiedChunks = new Map();
+            ChunkSaveManager.modifiedChunks = ChunkSaveManager.modifiedChunks || new Map();
         }
 
         // --- 2. プレイヤー位置の反映 ---
         const startPos = savedPos ? savedPos : { x: 0, y: 40, z: 0 };
         if (typeof player !== 'undefined') {
             player.position.set(startPos.x, startPos.y, startPos.z);
-
-            // ✅ ロードされた位置なら、animate内での地面計算を無効にする
-            if (savedPos) {
-                player.spawnFixed = true;
-            } else {
-                player.spawnFixed = false; // 新規ワールドなら地面を探させる
-            }
+            player.spawnFixed = !!savedPos;
         }
+
+        // --- 3. 描画の反映 ---
+        if (typeof updateSkyAndFogColor === 'function') {
+            updateSkyAndFogColor(gameTime);
+        }
+        console.log("時間を復元しました:", gameTime);
 
         ui.loading.style.display = 'none';
 
-        // --- 3. 初回保存の実行 ---
-        saveWorldData(seed, startPos, ChunkSaveManager.modifiedChunks);
+        // --- ★重要: ロード直後のセーブ(上書き)をコメントアウト ---
+        // ロードが完了した瞬間にセーブすると、万が一ロードに失敗していた場合に
+        // 保存データを「壊れたデータ」で上書きしてしまうリスクがあるためです。
+        // saveWorldData(seed, startPos, ChunkSaveManager.modifiedChunks, gameTime);
 
-        addChatMessage(savedPos ? "データをロードしました" : `世界を新しく生成しました (Seed: ${seed})`, "#ffff00");
+        addChatMessage(savedPos ? "データをロードしました" : `世界を新しく生成しました`, "#ffff00");
 
         animate(); // ループ開始
     }, 500);
@@ -4951,7 +4879,7 @@ if (btnSaveAndQuit) {
                 : null;
 
             // 保存処理を実行（modifiedChunksも渡すように後述のsaveWorldDataを修正します）
-            await saveWorldData(s, pPos, modified);
+            await saveWorldData(s, pPos, modified, gameTime);
             console.log("World saved with chunks.");
 
         } catch (error) {
@@ -4961,18 +4889,6 @@ if (btnSaveAndQuit) {
         }
     };
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -5256,15 +5172,6 @@ document.addEventListener('pointerlockchange', () => {
     }
 });
 
-// 関数として定義（これなら読み込み時にエラーにならない）
-function onCanvasClick(e) {
-    if (!renderer || isInventoryOpen || pointerLocked || inventoryContainer.contains(e.target)) return;
-
-    if (e.target === renderer.domElement && !("ontouchstart" in window)) {
-        renderer.domElement.requestPointerLock();
-    }
-}
-
 const btnResume = document.getElementById("btn-resume");
 if (btnResume) {
     btnResume.addEventListener("click", async (e) => {
@@ -5422,3 +5329,97 @@ function setupTouchControls() {
 }
 
 setupTouchControls();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ======================================================
+   【保存システム】IndexedDB Manager
+   ====================================================== */
+const DB_CONFIG = { name: "MinecraftJS_Save", version: 1 };
+
+async function getDB() {
+    return new Promise((resolve) => {
+        const request = indexedDB.open(DB_CONFIG.name, DB_CONFIG.version);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            db.createObjectStore("world_meta"); // シード値、プレイヤー座標
+            db.createObjectStore("chunks");     // 変更されたブロックデータ
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+    });
+}
+
+// 保存関数の修正（最新版：gameTimeの追加）
+async function saveWorldData(seed, playerPos, modifiedChunks, gameTime) { // 引数にgameTimeを追加
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(["world_meta", "chunks"], "readwrite");
+
+        // 1. シード、座標、時間を保存
+        const metaStore = tx.objectStore("world_meta");
+        metaStore.put(seed, "last_seed");
+        metaStore.put(playerPos, "player_pos");
+        metaStore.put(gameTime, "game_time"); // ✅ ゲーム時間を追加保存
+
+        // 2. チャンクデータ(設置情報)をすべて保存
+        if (modifiedChunks) {
+            const chunkStore = tx.objectStore("chunks");
+            modifiedChunks.forEach((data, key) => {
+                chunkStore.put(data, key.toString());
+            });
+        }
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+// 読込関数の修正（最新版：gameTimeの復元対応）
+async function loadFullSaveData() {
+    const db = await getDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction(["world_meta", "chunks"], "readonly");
+        const metaStore = tx.objectStore("world_meta");
+
+        const reqSeed = metaStore.get("last_seed");
+        const reqPos = metaStore.get("player_pos");
+        const reqTime = metaStore.get("game_time"); // ✅ ゲーム時間を取得
+
+        const chunks = new Map();
+
+        // チャンクデータをすべてMapに復元
+        tx.objectStore("chunks").openCursor().onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+                chunks.set(BigInt(cursor.key), cursor.value);
+                cursor.continue();
+            }
+        };
+
+        tx.oncomplete = () => {
+            resolve({
+                seed: reqSeed.result,
+                pos: reqPos.result,
+                gameTime: reqTime.result ?? 0, // ✅ 取得。データがない場合は0（朝）を返す
+                chunks: chunks
+            });
+        };
+    });
+}
