@@ -2,6 +2,79 @@
 import * as THREE from './build/three.module.js';
 
 /* ======================================================
+   【保存システム】IndexedDB Manager
+   ====================================================== */
+const DB_CONFIG = { name: "MinecraftJS_Save", version: 1 };
+
+async function getDB() {
+    return new Promise((resolve) => {
+        const request = indexedDB.open(DB_CONFIG.name, DB_CONFIG.version);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            db.createObjectStore("world_meta"); // シード値、プレイヤー座標
+            db.createObjectStore("chunks");     // 変更されたブロックデータ
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+    });
+}
+
+// 保存関数の修正（最新版：BigIntの文字列化対応）
+async function saveWorldData(seed, playerPos, modifiedChunks) {
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(["world_meta", "chunks"], "readwrite");
+
+        // 1. シードと座標を保存
+        const metaStore = tx.objectStore("world_meta");
+        metaStore.put(seed, "last_seed");
+        metaStore.put(playerPos, "player_pos");
+
+        // 2. チャンクデータ(設置情報)をすべて保存
+        if (modifiedChunks) {
+            const chunkStore = tx.objectStore("chunks");
+            modifiedChunks.forEach((data, key) => {
+                // ✅ BigInt型のキーを文字列に変換してIndexedDBのエラーを回避
+                chunkStore.put(data, key.toString());
+            });
+        }
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+// 読込関数の修正（最新版：文字列からBigIntへの復元対応）
+async function loadFullSaveData() {
+    const db = await getDB();
+    return new Promise((resolve) => {
+        const tx = db.transaction(["world_meta", "chunks"], "readonly");
+        const metaStore = tx.objectStore("world_meta");
+
+        const reqSeed = metaStore.get("last_seed");
+        const reqPos = metaStore.get("player_pos");
+        const chunks = new Map();
+
+        // チャンクデータをすべてMapに復元
+        tx.objectStore("chunks").openCursor().onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+                // ✅ 保存時に文字列化したキーを、元のBigInt型に戻してMapにセット
+                chunks.set(BigInt(cursor.key), cursor.value);
+                cursor.continue();
+            }
+        };
+
+        tx.oncomplete = () => {
+            resolve({
+                seed: reqSeed.result,
+                pos: reqPos.result,
+                chunks: chunks
+            });
+        };
+    });
+}
+
+/* ======================================================
    【新・ノイズ関数群】（シード値対応・最適化済み）
    ====================================================== */
 
@@ -36,10 +109,13 @@ function applySeed(seedInput) {
     };
 
     // 3. 0-255 の配列をシャッフル
-    const base = Array.from({ length: 256 }, (_, i) => i);
+    const base = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) base[i] = i;
     for (let i = 255; i > 0; i--) {
-        const j = Math.floor(lcg() * (i + 1));
-        [base[i], base[j]] = [base[j], base[i]];
+        const j = (lcg() * (i + 1)) | 0;
+        const temp = base[i]; // 一時変数で入れ替え（GC防止）
+        base[i] = base[j];
+        base[j] = temp;
     }
 
     // 4. グローバル変数 p を埋める (2度繰り返して境界対策)
@@ -423,12 +499,49 @@ const camera = new THREE.PerspectiveCamera(
 );
 camera.rotation.order = "YXZ";
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
-renderer.setClearColor(fogColor); // 背景色と fog の色を合わせる
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
-document.body.appendChild(renderer.domElement);
+let renderer;
+function initCanvas() {
+    // 1. レンダラーの生成（ここで初めて Canvas が作られる）
+    renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+    renderer.setClearColor(fogColor);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
 
+    // 2. HTMLのbodyに Canvas を追加
+    document.body.appendChild(renderer.domElement);
+
+    // 3. 各種イベントの紐付け（生成直後に行う）
+
+    // --- A. マウス・クリック系 ---
+    renderer.domElement.addEventListener("mousedown", onCanvasMouseDown, false);
+
+    renderer.domElement.addEventListener("click", (e) => {
+        if (isInventoryOpen || pointerLocked || (inventoryContainer && inventoryContainer.contains(e.target))) return;
+        if (e.target === renderer.domElement && !("ontouchstart" in window)) {
+            renderer.domElement.requestPointerLock();
+        }
+    });
+
+    renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault(), false);
+
+    // --- B. タッチ操作 (スマホ用) ---
+    // 先ほど定義した関数 (onCanvasTouchStart など) を紐付けます
+    // passive: false にすることでブラウザのデフォルト挙動を抑制できるようにします
+    renderer.domElement.addEventListener("touchstart", onCanvasTouchStart, { passive: false });
+    renderer.domElement.addEventListener("touchmove", onCanvasTouchMove, { passive: false });
+    renderer.domElement.addEventListener("touchend", onCanvasTouchEnd, { passive: false });
+
+    // --- C. ズーム・ピンチ防止 ---
+    // ゲーム画面(Canvas)上での Ctrl+ホイール によるズームを防止
+    renderer.domElement.addEventListener('wheel', e => {
+        if (e.ctrlKey) e.preventDefault();
+    }, { passive: false });
+
+    // 2本指以上の操作（ピンチズーム）を防止
+    renderer.domElement.addEventListener('touchmove', e => {
+        if (e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
+}
 let targetCamPos = player.position.clone().add(new THREE.Vector3(0, getCurrentPlayerHeight(), 0));
 camera.position.copy(targetCamPos);
 // 環境光を抑えめにし、ブロックのライトレベルを際立たせる
@@ -2472,7 +2585,10 @@ function getOrCreateCustomFadeMaterial(baseMat, isCross, isWater, isTransparent)
         opacity: baseMat ? baseMat.opacity : 1.0,
         vertexColors: true,
         side: (isCross || isWater) ? THREE.DoubleSide : THREE.FrontSide,
-        depthWrite: !(isCross || isTransparent || isWater),
+
+        // 💡 修正箇所: isCrossの場合は強制的にtrueにし、それ以外(水やガラス)はfalseにする
+        depthWrite: isCross ? true : !(isTransparent || isWater),
+
         // 植物、または透過指定がある場合はアルファテスト（しきい値0.5）を有効化
         alphaTest: (isCross || isTransparent) ? 0.5 : (baseMat ? baseMat.alphaTest : 0)
     });
@@ -4757,7 +4873,7 @@ function startGame(seed, savedPos = null, savedChunks = null) {
     ui.config.style.display = 'none';
     ui.menu.style.display = 'none';
     ui.loading.style.display = 'flex';
-
+    initCanvas();
     setTimeout(() => {
         // --- 1. データの復元 ---
         if (savedChunks instanceof Map && savedChunks.size > 0) {
@@ -4978,6 +5094,7 @@ function stopInteraction(key) {
 // 3. キーボード入力 (keydown / keyup)
 // ==========================================
 window.addEventListener('keydown', (e) => {
+    if (!renderer) return;
     const key = e.key.toLowerCase();
 
     // --- A. F3キー関連 (デバッグ表示) ---
@@ -5089,12 +5206,15 @@ document.addEventListener("keyup", (e) => {
 // 4. マウス・ホイール操作
 // ==========================================
 window.addEventListener("wheel", (e) => {
+    if (!renderer) return;
     selectedHotbarIndex = (selectedHotbarIndex + (e.deltaY > 0 ? 1 : 8)) % 9;
     updateHotbarSelection();
 }, { passive: true });
 
-renderer.domElement.addEventListener("mousedown", (event) => {
-    if (isInventoryOpen || document.pointerLockElement !== renderer.domElement) return;
+// マウスダウン時の処理を関数化
+function onCanvasMouseDown(event) {
+    // ガード：rendererがない、またはインベントリ中、またはロックされていない場合は無視
+    if (!renderer || isInventoryOpen || document.pointerLockElement !== renderer.domElement) return;
 
     let action = null;
     let buttonKey = null;
@@ -5102,14 +5222,12 @@ renderer.domElement.addEventListener("mousedown", (event) => {
     else if (event.button === 2) { action = "place"; buttonKey = "right"; }
 
     if (action && buttonKey) startInteraction(action, buttonKey);
-}, false);
+}
 
 document.addEventListener("mouseup", (event) => {
     if (event.button === 0) stopInteraction("left");
     else if (event.button === 2) stopInteraction("right");
 }, false);
-
-renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault(), false);
 
 // ==========================================
 // 5. ポインターロック管理
@@ -5138,12 +5256,14 @@ document.addEventListener('pointerlockchange', () => {
     }
 });
 
-renderer.domElement.addEventListener("click", (e) => {
-    if (isInventoryOpen || pointerLocked || inventoryContainer.contains(e.target)) return;
+// 関数として定義（これなら読み込み時にエラーにならない）
+function onCanvasClick(e) {
+    if (!renderer || isInventoryOpen || pointerLocked || inventoryContainer.contains(e.target)) return;
+
     if (e.target === renderer.domElement && !("ontouchstart" in window)) {
         renderer.domElement.requestPointerLock();
     }
-});
+}
 
 const btnResume = document.getElementById("btn-resume");
 if (btnResume) {
@@ -5181,16 +5301,14 @@ document.getElementById('btn-quit').addEventListener('click', () => {
     }, 500);
 });
 
-// ==========================================
-// 6. タッチ操作 (スマホ用)
-// ==========================================
+// --- タッチ操作用の変数と関数 ---
 let lastTouchX = null, lastTouchY = null;
 let touchHoldTimeout = null;
 let isLongPress = false;
 let isTouchMoving = false;
 
-renderer.domElement.addEventListener("touchstart", (e) => {
-    if (isInventoryOpen || e.touches.length !== 1) return;
+function onCanvasTouchStart(e) {
+    if (!renderer || isInventoryOpen || e.touches.length !== 1) return;
     isLongPress = false;
     isTouchMoving = false;
     lastTouchX = e.touches[0].clientX;
@@ -5199,26 +5317,30 @@ renderer.domElement.addEventListener("touchstart", (e) => {
         isLongPress = true;
         startInteraction("destroy", "touch");
     }, 500);
-}, false);
+}
 
-renderer.domElement.addEventListener("touchmove", (e) => {
-    if (isInventoryOpen || e.touches.length !== 1) return;
+function onCanvasTouchMove(e) {
+    if (!renderer || isInventoryOpen || e.touches.length !== 1) return;
     const touch = e.touches[0];
     const deltaX = touch.clientX - lastTouchX;
     const deltaY = touch.clientY - lastTouchY;
+
     if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) isTouchMoving = true;
 
     lastTouchX = touch.clientX;
     lastTouchY = touch.clientY;
+
     const touchSensitivity = 0.005;
     yaw -= deltaX * touchSensitivity;
     pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch - deltaY * touchSensitivity));
-    e.preventDefault();
-}, false);
 
-renderer.domElement.addEventListener("touchend", (e) => {
+    if (e.cancelable) e.preventDefault();
+}
+
+function onCanvasTouchEnd(e) {
     clearTimeout(touchHoldTimeout);
-    if (isInventoryOpen) return;
+    if (!renderer || isInventoryOpen) return;
+
     if (!isTouchMoving) {
         if (isLongPress) stopInteraction("touch");
         else interactWithBlock("place");
@@ -5226,11 +5348,7 @@ renderer.domElement.addEventListener("touchend", (e) => {
         stopInteraction("touch");
     }
     lastTouchX = lastTouchY = null;
-}, false);
-
-// ズーム防止
-document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
-document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+}
 
 // ==========================================
 // 7. タッチUIボタン設定 (D-Pad / Jump / Sneak)
@@ -5304,80 +5422,3 @@ function setupTouchControls() {
 }
 
 setupTouchControls();
-
-
-
-
-
-/* ======================================================
-   【保存システム】IndexedDB Manager
-   ====================================================== */
-const DB_CONFIG = { name: "MinecraftJS_Save", version: 1 };
-
-async function getDB() {
-    return new Promise((resolve) => {
-        const request = indexedDB.open(DB_CONFIG.name, DB_CONFIG.version);
-        request.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            db.createObjectStore("world_meta"); // シード値、プレイヤー座標
-            db.createObjectStore("chunks");     // 変更されたブロックデータ
-        };
-        request.onsuccess = (e) => resolve(e.target.result);
-    });
-}
-
-// 保存関数の修正（最新版：BigIntの文字列化対応）
-async function saveWorldData(seed, playerPos, modifiedChunks) {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(["world_meta", "chunks"], "readwrite");
-
-        // 1. シードと座標を保存
-        const metaStore = tx.objectStore("world_meta");
-        metaStore.put(seed, "last_seed");
-        metaStore.put(playerPos, "player_pos");
-
-        // 2. チャンクデータ(設置情報)をすべて保存
-        if (modifiedChunks) {
-            const chunkStore = tx.objectStore("chunks");
-            modifiedChunks.forEach((data, key) => {
-                // ✅ BigInt型のキーを文字列に変換してIndexedDBのエラーを回避
-                chunkStore.put(data, key.toString());
-            });
-        }
-
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-// 読込関数の修正（最新版：文字列からBigIntへの復元対応）
-async function loadFullSaveData() {
-    const db = await getDB();
-    return new Promise((resolve) => {
-        const tx = db.transaction(["world_meta", "chunks"], "readonly");
-        const metaStore = tx.objectStore("world_meta");
-
-        const reqSeed = metaStore.get("last_seed");
-        const reqPos = metaStore.get("player_pos");
-        const chunks = new Map();
-
-        // チャンクデータをすべてMapに復元
-        tx.objectStore("chunks").openCursor().onsuccess = (e) => {
-            const cursor = e.target.result;
-            if (cursor) {
-                // ✅ 保存時に文字列化したキーを、元のBigInt型に戻してMapにセット
-                chunks.set(BigInt(cursor.key), cursor.value);
-                cursor.continue();
-            }
-        };
-
-        tx.oncomplete = () => {
-            resolve({
-                seed: reqSeed.result,
-                pos: reqPos.result,
-                chunks: chunks
-            });
-        };
-    });
-}

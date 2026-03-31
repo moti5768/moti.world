@@ -206,11 +206,17 @@ canvas {
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    justify-content: center;
-    align-items: center;
     z-index: 1;
-    background-color: gray;
-    border: solid 2px black;
+    background-color: #666;
+    border: 2px solid #000;
+    color: #e0e0e0;
+    font-size: 8px;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: inset 2px 2px 0px #AAA, inset -2px -2px 0px #333;
+    align-items: center;
+    justify-content: center;
+    text-shadow: 2px 2px 0px #333;
 }
 
 .hotbar-item {
@@ -268,7 +274,8 @@ canvas {
     padding: 10px;
     display: flex;
     flex-wrap: wrap;
-    justify-content: center;
+    justify-content: flex-start;
+    ;
     /* アイテムを中央寄せにする */
     gap: 4px;
     z-index: 100;
