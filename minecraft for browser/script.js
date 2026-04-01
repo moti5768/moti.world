@@ -183,99 +183,98 @@ function updateSkyAndFogColor(time) {
 const ChunkSaveManager = {
     modifiedChunks: new Map(),
 
-    // 1. ビット演算を用いた高速なインデックス計算
-    // script.js の他の部分と整合性を取るため、(y) + (z * 256) + (x * 256 * 16) の形式に最適化
+    // インデックス計算（>>> 0 で符号なし32bit整数を保証）
     getBlockIndex: function (lx, ly, lz) {
-        // CHUNK_HEIGHT=256(8bit), CHUNK_SIZE=16(4bit) を想定
-        return (ly | 0) + ((lz | 0) << 8) + ((lx | 0) << 12);
+        return ((ly | 0) + ((lz | 0) << 8) + ((lx | 0) << 12)) >>> 0;
     },
 
+    // setBlock / getBlock は変更なし（完成度が高いため）
     setBlock: function (cx, cz, lx, ly, lz, blockType) {
         if (ly < 0 || ly >= CHUNK_HEIGHT) return;
-
         const key = encodeChunkKey(cx, cz);
         let dataArray = this.modifiedChunks.get(key);
         if (!dataArray) {
             dataArray = this.captureBaseChunkData(cx, cz);
+            dataArray[this.getBlockIndex(lx, ly, lz)] = blockType;
             this.modifiedChunks.set(key, dataArray);
+        } else {
+            dataArray[this.getBlockIndex(lx, ly, lz)] = blockType;
         }
-
-        const idx = this.getBlockIndex(lx, ly, lz);
-        dataArray[idx] = blockType;
     },
 
     getBlock: function (cx, cz, lx, ly, lz) {
         if (ly < 0 || ly >= CHUNK_HEIGHT) return null;
-
         const key = encodeChunkKey(cx, cz);
         const dataArray = this.modifiedChunks.get(key);
-
-        if (!dataArray) return null;
-
-        const idx = this.getBlockIndex(lx, ly, lz);
-        return dataArray[idx];
+        return dataArray ? dataArray[this.getBlockIndex(lx, ly, lz)] : null;
     },
 
+    /**
+     * 地形生成のコアロジック（最適化版）
+     */
     captureBaseChunkData: function (cx, cz) {
-        // 65536バイト（16x256x16）のメモリを確保（0で初期化＝SKY）
-        const data = new Uint8Array(65536);
+        const data = new Uint8Array(65536); // デフォルト 0 (SKY)
         const baseX = (cx << 4) | 0;
         const baseZ = (cz << 4) | 0;
-
-        // 定数のキャッシュ
         const SEA_LEVEL_VAL = SEA_LEVEL | 0;
         const LAVA_LEVEL = 11;
 
-        for (let x = 0; x < 16; x = (x + 1) | 0) {
+        for (let x = 0; x < 16; x++) {
             const xOff = (x << 12) | 0;
             const worldX = (baseX + x) | 0;
-
-            for (let z = 0; z < 16; z = (z + 1) | 0) {
+            for (let z = 0; z < 16; z++) {
                 const zOff = (z << 8) | 0;
                 const worldZ = (baseZ + z) | 0;
+                const columnIdx = (xOff + zOff) | 0; // 加算に変更
 
-                // 垂直方向の基準インデックス
-                const columnIdx = (xOff | zOff) | 0;
+                // 1. 先に高さを取得
+                const sHeight = getTerrainHeight(worldX, worldZ) | 0;
 
-                const surfaceHeight = getTerrainHeight(worldX, worldZ) | 0;
-                const [caveY, radius] = getCaveTubeInfo(worldX, worldZ);
+                // 2. 引数に sHeight を渡して洞窟情報を取得（再計算を防止）
+                const [caveY, radius] = getCaveTubeInfo(worldX, worldZ, sHeight);
 
-                // --- 1. 岩盤 (Bedrock) ---
+                // 3. 洞窟の有効な高さ範囲を事前に算出（重要！）
+                const caveMinY = radius > 0 ? (caveY - radius) | 0 : -1;
+                const caveMaxY = radius > 0 ? (caveY + radius) | 0 : -1;
+                const caveRadiusSq = radius * radius;
+
+                // 岩盤
                 data[columnIdx] = BLOCK_TYPES.BEDROCK;
 
-                // --- 2. 地層の塗りつぶし (y=1 から surfaceHeight まで) ---
-                // y=1 から surfaceHeight-5 までは「石」で確定なので、判定をスキップ
-                const stoneEnd = (surfaceHeight - 4) | 0;
+                // 地層生成（ループを分割して if 判定を減らす）
+                const dirtLayerStart = (sHeight - 4) | 0;
 
-                for (let y = 1; y < surfaceHeight; y = (y + 1) | 0) {
-                    let type = BLOCK_TYPES.STONE;
+                for (let y = 1; y < sHeight; y++) {
+                    const idx = (columnIdx + y) | 0;
 
-                    // 表面の装飾（マイクラ流：表面は草、その下は土）
-                    if (y === surfaceHeight - 1) {
-                        type = (y < SEA_LEVEL_VAL) ? BLOCK_TYPES.DIRT : BLOCK_TYPES.GRASS;
-                    } else if (y >= stoneEnd) {
-                        type = BLOCK_TYPES.DIRT;
+                    // 💡 洞窟判定（範囲外なら dy の計算すらしない）
+                    if (y >= caveMinY && y <= caveMaxY) {
+                        const dy = y - caveY;
+                        if ((dy * dy) < caveRadiusSq) {
+                            data[idx] = (y <= LAVA_LEVEL) ? BLOCK_TYPES.LAVA : BLOCK_TYPES.SKY;
+                            continue;
+                        }
                     }
 
-                    // 洞窟の切り抜き（石・土の層のみ判定）
-                    if (radius > 0 && y > (caveY - radius) && y < (caveY + radius)) {
-                        // 溶岩層（y=11以下）なら溶岩、それ以外は空気
-                        data[columnIdx | y] = (y <= LAVA_LEVEL) ? BLOCK_TYPES.LAVA : BLOCK_TYPES.SKY;
+                    // 💡 地層の塗り分け
+                    if (y < dirtLayerStart) {
+                        data[idx] = BLOCK_TYPES.STONE;
+                    } else if (y === sHeight - 1) {
+                        data[idx] = (y < SEA_LEVEL_VAL) ? BLOCK_TYPES.DIRT : BLOCK_TYPES.GRASS;
                     } else {
-                        data[columnIdx | y] = type;
+                        data[idx] = BLOCK_TYPES.DIRT;
                     }
                 }
 
-                // --- 3. 水 (SurfaceHeight から SEA_LEVEL まで) ---
-                // すでに SKY(0) なので、SEA_LEVEL より低い場所だけ水を置く
-                if (surfaceHeight <= SEA_LEVEL_VAL) {
-                    for (let y = surfaceHeight; y <= SEA_LEVEL_VAL; y = (y + 1) | 0) {
-                        if (y > 0) data[columnIdx | y] = BLOCK_TYPES.WATER;
+                // 水（y軸が連続しているため、高速に処理可能）
+                if (sHeight <= SEA_LEVEL_VAL) {
+                    for (let y = sHeight; y <= SEA_LEVEL_VAL; y++) {
+                        const idx = (columnIdx + y) | 0;
+                        if (y > 0 && data[idx] === BLOCK_TYPES.SKY) {
+                            data[idx] = BLOCK_TYPES.WATER;
+                        }
                     }
                 }
-
-                // --- 4. 空 (y > SEA_LEVEL かつ y > surfaceHeight) ---
-                // 初期値が 0 なので、何もしなくてOK（これが最速！）
             }
         }
         return data;
@@ -618,7 +617,6 @@ function getTerrainHeight(worldX, worldZ, startY) {
     const xInt = worldX | 0;
     const zInt = worldZ | 0;
 
-    // --- ケースA: 衝突判定パス ---
     if (startY !== undefined) {
         let y = startY | 0;
         const lowLimit = Math.max(0, (y - MAX_SEARCH_DEPTH) | 0);
@@ -628,14 +626,12 @@ function getTerrainHeight(worldX, worldZ, startY) {
         return -Infinity;
     }
 
-    // --- ケースB: 地形算出パス ---
-    // シンプルで高速なキー生成
     const key = (xInt << 16) ^ zInt;
     const cachedHeight = terrainHeightCache.get(key);
     if (cachedHeight !== undefined) return cachedHeight;
 
-    // ノイズ計算（4オクターブにするとさらに20%高速化）
-    const noise = fractalNoise2D(xInt * NOISE_SCALE, zInt * NOISE_SCALE, 5, 0.5);
+    // 💡 最適化：オクターブを 5 -> 4 に削減
+    const noise = fractalNoise2D(xInt * NOISE_SCALE, zInt * NOISE_SCALE, 4, 0.5);
 
     let heightModifier = noise * 35;
     if (noise > 0.2) {
@@ -645,7 +641,6 @@ function getTerrainHeight(worldX, worldZ, startY) {
 
     const result = (BASE_HEIGHT + heightModifier) | 0;
 
-    // 💡 強化：一定数で一括クリア（Map.deleteを使わない高速管理）
     if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
         terrainHeightCache.clear();
     }
@@ -673,78 +668,69 @@ function getVoxelHash(x, y, z) {
 }
 
 /**
- * 指定した世界座標のボクセル（ブロック）を取得する。
- * ホットパス（超高頻度実行）のため、可能な限り計算を削減し、
- * ご提示いただいた「Map検索1回化」と「高高度判定の最適化」を統合。
+ * 指定した世界座標のボクセルを取得する。
+ * 物理判定（衝突）と描画判定の両方で使用される最重要関数。
  */
 function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = false) {
-    // 1. 垂直方向の境界チェック（最速で return するため最初に行う）
-    if (y < 0 || y >= CHUNK_HEIGHT) return SKY;
-
-    // 2. 座標の整数化
-    const fx = x | 0;
+    // 1. 垂直方向の境界チェック
     const fy = y | 0;
+    if (fy < 0 || fy >= CHUNK_HEIGHT) return 0; // SKY
+
+    const fx = x | 0;
     const fz = z | 0;
 
-    // 3. チャンク座標とローカル座標の算出
+    // 2. チャンク座標とローカル座標の算出
     const cx = fx >> 4;
     const cz = fz >> 4;
     const lx = fx & 15;
     const lz = fz & 15;
 
-    // 4. 💡 修正：保存された変更データのチェック
+    // 3. 保存された変更データのチェック (Map検索)
     const chunkKey = encodeChunkKey(cx, cz);
     const modifiedData = ChunkSaveManager.modifiedChunks.get(chunkKey);
 
     if (modifiedData !== undefined) {
-        // ★最重要：ChunkSaveManager.getBlockIndex と完全に一致させる
-        // 順序: (y) + (z * 256) + (x * 4096)
-        const idx = (fy | 0) + (lz << 8) + (lx << 12);
+        // ChunkSaveManager.getBlockIndex と完全に一致させる: (y) + (z*256) + (x*4096)
+        const idx = (fy) + (lz << 8) + (lx << 12);
         const modValue = modifiedData[idx];
 
-        if (modValue !== undefined && modValue !== null) {
-            // SKY(0) は常に SKY(0) として返す
-            if (modValue === 0) return 0;
+        if (modValue !== undefined) {
+            if (isRaw) return modValue; // 描画用ならそのまま（花や草も返す）
 
-            // 描画用（isRaw=true）なら、当たり判定の有無に関わらず値をそのまま返す
-            // これにより「花」や「草」が表示されるようになる
-            if (isRaw) return modValue;
-
-            // 以下、物理判定（衝突・設置など）用の処理
+            // 物理判定用：当たり判定設定があるものだけ返す
             const cfg = _blockConfigFastArray[modValue];
-            if (cfg) {
-                // 水や溶岩などの流体はそのまま返す
-                if (modValue === BLOCK_TYPES.WATER || modValue === BLOCK_TYPES.LAVA) {
-                    return modValue;
-                }
-                // 通常ブロックは collision（当たり判定）設定がある場合のみ値を返し、
-                // 花や草などの衝突しないブロックは SKY として扱う
-                return cfg.collision ? modValue : 0;
-            }
-            return 0;
+            return (cfg && cfg.collision !== false) ? modValue : 0;
         }
     }
 
-    // 5. 基盤岩の判定
-    if (fy === BEDROCK_LEVEL) return BEDROCK;
+    // 4. 自然地形の判定（保存データがない場合）
+    if (fy === 0) return BLOCK_TYPES.BEDROCK;
 
-    // 6. 高高度（SEA_LEVEL + 32）以上の判定を効率化
-    if (fy >= (SEA_LEVEL + 32)) {
-        const surfaceHeight = getTerrainHeight(fx, fz) | 0;
-        if (fy >= surfaceHeight) return SKY;
-        return determineNaturalBlockLayer(fy, surfaceHeight, fx, fz);
-    }
-
-    // 7. 通常高度以下の判定
     const surfaceHeight = getTerrainHeight(fx, fz) | 0;
 
-    // 空・海（地表より上）の判定
+    // A. 地表より上の場合（空か水）
     if (fy >= surfaceHeight) {
-        return (fy <= SEA_LEVEL) ? WATER : SKY;
+        return (fy <= SEA_LEVEL) ? BLOCK_TYPES.WATER : 0; // SKY
     }
 
-    // 地中の判定
-    return determineNaturalBlockLayer(fy, surfaceHeight, fx, fz);
+    // B. 地中の場合（洞窟判定を入れる）
+    // 💡 ここが重要：描画システム（captureBaseChunkData）と同じルールで洞窟を彫る
+    const [caveY, radius] = getCaveTubeInfo(fx, fz);
+    if (radius > 0 && fy > 3) {
+        const dy = fy - caveY;
+        if ((dy * dy) < (radius * radius)) {
+            // 溶岩層（y=11以下）なら溶岩、それ以外は空気(0)
+            return (fy <= 11) ? BLOCK_TYPES.LAVA : 0;
+        }
+    }
+
+    // C. 洞窟でなければ、通常の地層を返す
+    // 既存の determineNaturalBlockLayer を呼ぶか、ここで直接判定
+    if (fy === surfaceHeight - 1) {
+        return (fy < SEA_LEVEL) ? BLOCK_TYPES.DIRT : BLOCK_TYPES.GRASS;
+    }
+    if (fy >= surfaceHeight - 4) return BLOCK_TYPES.DIRT;
+    return BLOCK_TYPES.STONE;
 }
 
 // 💡 整理：地表より下のブロック種別を決めるロジックを外出し
@@ -775,24 +761,25 @@ function determineNaturalBlockLayer(y, surfaceHeight, fx, fz) {
 
 // 💡 1. まず、関数の【外側】に、使い回し用の配列を作ります（最重要！）
 const _SHARED_CAVE_INFO = [0, 0];
-
 const CAVE_SCALE_XZ = 0.02;
 
-function getCaveTubeInfo(worldX, worldZ) {
+function getCaveTubeInfo(worldX, worldZ, surfaceHeight) {
     const x = Math.abs(worldX);
     const z = Math.abs(worldZ);
 
-    // 💡 1. 1つ目のノイズ計算
-    const n1 = fractalNoise2D(x * CAVE_SCALE_XZ, z * CAVE_SCALE_XZ, 2, 0.5);
+    // 💡 1. 1つ目のノイズ（洞窟は詳細度不要のためオクターブ1で十分）
+    const n1 = perlinNoise2D(x * CAVE_SCALE_XZ, z * CAVE_SCALE_XZ);
 
-    // 💡 【追加の最適化】
-    // n1 が極端な値（例えば 0.1未満 や 0.9以上）の時、
-    // 経験的に洞窟（diff < 0.07）になる確率は極めて低いです。
-    // もし地形の形状にこだわりがなければ、ここで「n1 > 0.8」などで切るのも手です。
-    // (※ 厳密な diff 判定の前に、大まかなノイズ強度が低ければスキップする)
+    // 💡 【新規最適化】早期リターン
+    // diff < 0.07 になるには n1 がこの範囲内にいないと n2 での逆転がほぼ不可能
+    if (n1 < 0.02 || n1 > 0.98) {
+        _SHARED_CAVE_INFO[0] = 0;
+        _SHARED_CAVE_INFO[1] = 0;
+        return _SHARED_CAVE_INFO;
+    }
 
-    // 💡 2. 2つ目のノイズ計算
-    const n2 = fractalNoise2D((x + 2000) * CAVE_SCALE_XZ, (z + 2000) * CAVE_SCALE_XZ, 2, 0.5);
+    // 💡 2. 2つ目のノイズ
+    const n2 = perlinNoise2D((x + 2000) * CAVE_SCALE_XZ, (z + 2000) * CAVE_SCALE_XZ);
 
     const diff = Math.abs(n1 - n2);
     const threshold = 0.07;
@@ -802,31 +789,33 @@ function getCaveTubeInfo(worldX, worldZ) {
         const thicknessFactor = (threshold - diff) / threshold;
         radius = 2.5 + thicknessFactor * 1.5;
 
+        // 💡 部屋のノイズ
         const roomNoise = perlinNoise2D(x * 0.03, z * 0.03);
         if (roomNoise > 0.45) {
             radius += (roomNoise - 0.45) * 10;
         }
     }
 
-    // 💡 3. 半径 0 なら即リターン
     if (radius === 0) {
         _SHARED_CAVE_INFO[0] = 0;
         _SHARED_CAVE_INFO[1] = 0;
         return _SHARED_CAVE_INFO;
     }
 
-    // 💡 4. 半径がある場合のみ、高さを計算
-    const baseNoise = fractalNoise2D(x * 0.006, z * 0.006, 2, 0.5);
+    // 💡 4. 半径がある場合のみ計算
+    const baseNoise = perlinNoise2D(x * 0.006, z * 0.006);
     const baseY = 15 + baseNoise * 25;
 
     const wave = Math.sin(worldX * 0.015) * Math.cos(worldZ * 0.015);
     let finalY = baseY;
 
-    // 💡 【重要】surfaceHeight の取得を if の中に移動
     if (wave > 0) {
-        const surfaceHeight = getTerrainHeight(worldX, worldZ); // ここで初めて呼ぶ！
-        const t = Math.pow(wave, 1.5);
-        const targetY = surfaceHeight - 2;
+        // 💡 修正：引数があればそれを使う（Map検索と再計算を回避）
+        const sHeight = (surfaceHeight !== undefined) ? surfaceHeight : getTerrainHeight(worldX, worldZ);
+
+        // Math.pow(wave, 1.5) を wave * Math.sqrt(wave) で代用（高速）
+        const t = wave * Math.sqrt(wave);
+        const targetY = sHeight - 2;
         finalY = baseY * (1 - t) + targetY * t;
     }
 
@@ -2591,35 +2580,10 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
     // --- 1. 地形・洞窟生成 ---
     if (!voxelData) {
+        // captureBaseChunkDataを呼ぶだけで、洞窟も地形もすべて含まれたデータが手に入ります。
         voxelData = ChunkSaveManager.captureBaseChunkData(cx, cz);
         isNewChunk = true;
-
-        let vIdx = 0;
-        for (let x = 0; x < CHUNK_SIZE; x++) {
-            const worldX = baseX + x;
-            for (let z = 0; z < CHUNK_SIZE; z++) {
-                const worldZ = baseZ + z;
-                const caveInfo = getCaveTubeInfo(worldX, worldZ);
-                const caveY = caveInfo[0];
-                const caveRadiusSq = caveInfo[1] * caveInfo[1];
-
-                for (let y = 0; y < CHUNK_HEIGHT; y++) {
-                    const worldY = BEDROCK_LEVEL + y;
-                    // 石と土の部分に洞窟（空気を）を彫る
-                    if (caveRadiusSq > 0 && worldY > 3 && (voxelData[vIdx] === BLOCK_TYPES.STONE || voxelData[vIdx] === BLOCK_TYPES.DIRT)) {
-                        const dy = worldY - caveY;
-                        if ((dy * dy) < caveRadiusSq) {
-                            voxelData[vIdx] = BLOCK_TYPES.SKY;
-                        }
-                    }
-                    vIdx++;
-                }
-            }
-        }
-    }
-
-    if (isNewChunk) {
-        ChunkSaveManager.modifiedChunks.set(chunkKey, voxelData);
+        // ここで modifiedChunks.set はせず、軽量な状態を維持します。
     }
 
     // --- 2. データアクセス・ヘルパー ---
@@ -2832,7 +2796,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         container.add(mesh);
     }
 
-    // --- 5. カスタムメッシュの結合 (mergeBufferGeometriesを使用) ---
+    // --- 5. カスタムメッシュの結合 ---
     for (const [type, geoms] of customGeomBatches.entries()) {
         const merged = mergeBufferGeometries(geoms, true);
         merged.computeBoundingSphere();
@@ -2848,7 +2812,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
         const mesh = new THREE.Mesh(merged, fadeMat);
         mesh.renderOrder = isWater ? 10 : (isGlass || isCutout ? 1 : 0);
-        mesh.userData.finalizeFade = null; // カスタムはマテリアル破棄を個別に制御
+        mesh.userData.finalizeFade = null;
         container.add(mesh);
     }
 
@@ -3011,53 +2975,6 @@ function updateChunks() {
         processChunkQueue({ timeRemaining: () => 16, didTimeout: true });
     }
 }
-
-
-window.updateChunksFromUI = () => {
-    const d = parseInt(document.getElementById("chunkDistance").value, 10);
-    if (isNaN(d) || d < 0 || d > 32) return alert("0～32の範囲で入力してください。");
-
-    CHUNK_VISIBLE_DISTANCE = d;
-
-    // 1. オフセット（探索用の同心円テーブル）を初期化して再計算させる
-    offsets = null;
-
-    // 2. まだ読み込まれていない古い描画距離のキューをリセットして、おかしなチャンクが生成されるのを防ぐ
-    chunkQueue = [];
-
-    // 3. 一度、現在の位置からチャンク探索判定をリセットする
-    lastChunk.x = null;
-    lastChunk.z = null;
-
-    // 4. 新しい描画距離で再探索・キューイングを走らせる
-    updateChunks();
-
-    // ユーザーへのフィードバック
-    if (typeof addChatMessage === "function") {
-        addChatMessage(`描画距離を ${d} に更新しました。`, "#55ff55");
-    }
-    console.log("描画距離の更新:", d);
-};
-// --- 追加：UIから世界全体の明るさを更新する関数 ---
-window.updateGlobalBrightnessFromUI = function () {
-    const slider = document.getElementById("brightnessSlider");
-    if (!slider) return;
-
-    const val = parseInt(slider.value, 10);
-    // スライダー50を基準 (1.0) とし、0〜100を 0.0〜2.0 にマッピング
-    globalBrightnessMultiplier = val / 50;
-
-    // 現在ロードされているチャンクをすべて即時リフレッシュ
-    for (const [key, mesh] of loadedChunks.entries()) {
-        const coord = decodeChunkKey(key);
-        refreshChunkAt(coord.cx, coord.cz);
-    }
-
-    if (typeof addChatMessage === "function") {
-        addChatMessage(`世界の明るさを ${val}% に調整しました。`, "#ffff55");
-    }
-};
-
 
 /* ======================================================
    【ブロックの破壊・設置機能】（長押し、範囲指定、プレイヤー領域禁止）
@@ -5332,6 +5249,202 @@ setupTouchControls();
 
 
 
+/* ======================================================
+   【1. 設定関連のグローバル変数・DOM取得】
+   ====================================================== */
+
+const settingsMenu = document.getElementById('settings-menu');
+const btnOpenSettings = document.getElementById('btn-open-settings');
+const btnOpenSettingsPause = document.getElementById('btn-open-settings-pause');
+const btnSettingsBack = document.getElementById('btn-settings-back');
+const btnSettingsReset = document.getElementById('btn-settings-reset');
+
+const rangeRenderDist = document.getElementById('range-render-dist');
+const renderDistValLabel = document.getElementById('renderDistVal');
+const brightnessSlider = document.getElementById('brightnessSlider');
+const brightnessValLabel = document.getElementById('brightnessVal');
+const debugChunkInput = document.getElementById('chunkDistance');
+
+let isOpenedFromPause = false;
+
+// 遅延実行用のタイマー変数
+let renderDistanceTimeout = null;
+
+/* ======================================================
+   【2. 画面遷移の制御】
+   ====================================================== */
+const toggleMenu = (showSettings, fromPause = false) => {
+    settingsMenu.style.display = showSettings ? 'flex' : 'none';
+    if (showSettings) {
+        if (typeof mainMenu !== 'undefined') mainMenu.style.display = 'none';
+        if (typeof pauseMenu !== 'undefined') pauseMenu.style.display = 'none';
+        isOpenedFromPause = fromPause;
+    } else {
+        if (isOpenedFromPause) {
+            if (typeof pauseMenu !== 'undefined') pauseMenu.style.display = 'flex';
+        } else {
+            if (typeof mainMenu !== 'undefined') mainMenu.style.display = 'flex';
+        }
+    }
+};
+
+if (btnOpenSettings) btnOpenSettings.addEventListener('click', () => toggleMenu(true, false));
+if (btnOpenSettingsPause) btnOpenSettingsPause.addEventListener('click', () => toggleMenu(true, true));
+if (btnSettingsBack) btnSettingsBack.addEventListener('click', () => toggleMenu(false));
+
+/* ======================================================
+   【3. コアロジック：描画距離 (Render Distance) の更新】
+   ====================================================== */
+function applyRenderDistance(val) {
+    if (isNaN(val) || val < 0 || val > 32) return;
+
+    CHUNK_VISIBLE_DISTANCE = val;
+
+    // UIの同期
+    if (rangeRenderDist) rangeRenderDist.value = val;
+    if (renderDistValLabel) renderDistValLabel.innerText = val;
+    if (debugChunkInput) debugChunkInput.value = val;
+
+    // 内部システムのリセット（重い処理）
+    offsets = null;
+    chunkQueue = [];
+    lastChunk.x = null;
+    lastChunk.z = null;
+
+    // フォグとカメラの調整
+    if (typeof scene !== 'undefined' && scene.fog) {
+        if (scene.fog.isFogExp2) {
+            scene.fog.density = 0.05 / (val || 1);
+        } else {
+            scene.fog.near = (val - 1) * 16;
+            scene.fog.far = val * 16;
+        }
+    }
+    if (typeof camera !== 'undefined') {
+        camera.far = Math.max(val * 32, 200); // 描画距離に合わせて遠方を調整
+        camera.updateProjectionMatrix();
+    }
+
+    // チャンク更新をリクエスト
+    if (typeof updateChunks === 'function') {
+        updateChunks();
+    }
+}
+
+/* ======================================================
+   【4. コアロジック：明るさ (Brightness) の更新】
+   ====================================================== */
+window.updateGlobalBrightnessFromUI = function () {
+    const slider = document.getElementById("brightnessSlider");
+    if (!slider) return;
+
+    const val = parseInt(slider.value, 10);
+    if (brightnessValLabel) brightnessValLabel.innerText = val;
+
+    globalBrightnessMultiplier = val / 50;
+
+    // 1. ライトの強度を更新
+    if (window.sceneObjects && window.sceneObjects.ambientLight) {
+        window.sceneObjects.ambientLight.intensity = globalBrightnessMultiplier;
+    }
+
+    // 2. 全チャンクの「マテリアル」だけを更新 (ジオメトリ再生成はしない)
+    if (typeof loadedChunks !== 'undefined') {
+        for (const [key, mesh] of loadedChunks.entries()) {
+            // もしカスタムシェーダーを使用しているなら、uniformを更新するだけで済む
+            if (mesh.material && mesh.material.uniforms && mesh.material.uniforms.uBrightness) {
+                mesh.material.uniforms.uBrightness.value = globalBrightnessMultiplier;
+            } else {
+                // 標準マテリアルの場合：再生成せずに色味だけ変えるのは難しいため、
+                // 負荷が高い場合は「スライダーを離した時だけ」再生成するように制限する
+                // ここではパフォーマンスを優先し、動かしている間はライト変更のみとする
+            }
+        }
+    }
+};
+
+// 明るさ：スライダーを「離した時」だけ重いリフレッシュを行う
+function refreshAllChunks() {
+    if (typeof loadedChunks !== 'undefined' && typeof refreshChunkAt === 'function') {
+        for (const [key, mesh] of loadedChunks.entries()) {
+            const coord = decodeChunkKey(key);
+            refreshChunkAt(coord.cx, coord.cz);
+        }
+    }
+}
+
+/* ======================================================
+   【5. UIイベントリスナーの設定（最適化版）】
+   ====================================================== */
+
+// 描画距離スライダー：デバウンス処理
+if (rangeRenderDist) {
+    rangeRenderDist.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (renderDistValLabel) renderDistValLabel.innerText = val;
+
+        // 前の予約をキャンセルして、止まってから300ms後に実行
+        clearTimeout(renderDistanceTimeout);
+        renderDistanceTimeout = setTimeout(() => {
+            applyRenderDistance(val);
+        }, 300);
+    });
+}
+
+// 明るさスライダー
+if (brightnessSlider) {
+    // 動かしている間はライトの強度（軽い処理）だけ変える
+    brightnessSlider.addEventListener('input', () => {
+        const val = parseInt(brightnessSlider.value, 10);
+        if (brightnessValLabel) brightnessValLabel.innerText = val;
+        globalBrightnessMultiplier = val / 50;
+        if (window.sceneObjects && window.sceneObjects.ambientLight) {
+            window.sceneObjects.ambientLight.intensity = globalBrightnessMultiplier;
+        }
+    });
+
+    // 指を離した時だけ、全体をリフレッシュする（重い処理を1回だけ）
+    brightnessSlider.addEventListener('change', refreshAllChunks);
+}
+
+/* ======================================================
+   【6. 設定のリセット機能】
+   ====================================================== */
+const resetSettings = () => {
+    // デフォルト値の定義
+    const DEFAULTS = {
+        renderDist: 6,
+        brightness: 50
+    };
+
+    // 1. 描画距離のリセット
+    if (rangeRenderDist) {
+        rangeRenderDist.value = DEFAULTS.renderDist;
+        // 即時反映関数を呼び出す
+        applyRenderDistance(DEFAULTS.renderDist);
+    }
+
+    // 2. 明るさのリセット
+    if (brightnessSlider) {
+        brightnessSlider.value = DEFAULTS.brightness;
+        if (brightnessValLabel) brightnessValLabel.innerText = DEFAULTS.brightness;
+
+        // 変数更新とライト強度反映
+        globalBrightnessMultiplier = DEFAULTS.brightness / 50;
+        if (window.sceneObjects && window.sceneObjects.ambientLight) {
+            window.sceneObjects.ambientLight.intensity = globalBrightnessMultiplier;
+        }
+        // 重いチャンクリフレッシュを実行
+        refreshAllChunks();
+    }
+
+    console.log("Settings have been reset to default.");
+};
+
+// リセットボタンにイベントを登録
+if (btnSettingsReset) {
+    btnSettingsReset.addEventListener('click', resetSettings);
+}
 
 
 

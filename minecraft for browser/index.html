@@ -25,13 +25,34 @@
         <button id="btn-load-saved" class="mc-button">保存した世界から再開</button>
 
         <div class="mc-button-row">
-          <button class="mc-button half">設定...(開発中)</button>
+          <button id="btn-open-settings" class="mc-button half">設定...</button>
           <button id="btn-quit" class="mc-button half">終了</button>
         </div>
       </div>
 
       <div class="mc-footer">
         <span>Minecraft Classic 0.0.1</span>
+      </div>
+    </div>
+
+    <div id="settings-menu" class="overlay-screen" style="display: none;">
+      <h2 class="mc-title" style="font-size: 24px; margin-bottom: 20px;">設定</h2>
+
+      <div class="menu-buttons settings-grid">
+        <div class="setting-item">
+          <span>描画距離: <span id="renderDistVal">6</span></span>
+          <input type="range" id="range-render-dist" min="2" max="16" value="6">
+        </div>
+
+        <div class="setting-item">
+          <span>明るさ: <span id="brightnessVal">50</span>%</span>
+          <input type="range" id="brightnessSlider" min="0" max="100" value="50">
+        </div>
+
+        <div class="mc-button-row">
+          <button id="btn-settings-reset" class="mc-button half">リセット</button>
+          <button id="btn-settings-back" class="mc-button half">完了</button>
+        </div>
       </div>
     </div>
 
@@ -64,6 +85,9 @@
       <h2 class="mc-label">ゲームメニュー</h2>
       <div class="menu-buttons" style="display: flex; flex-direction: column; gap: 10px;">
         <button id="btn-resume" class="mc-button">ゲームに戻る</button>
+
+        <button id="btn-open-settings-pause" class="mc-button">設定</button>
+
         <button id="btn-save-quit" class="mc-button">保存してタイトルへ戻る</button>
       </div>
     </div>
@@ -107,20 +131,6 @@
   </div>
 
   <div id="screenOverlayHtml" style="pointer-events: none;"></div>
-
-  <div
-    style="position:fixed;bottom:20px;left:10px;background:#000a;color:#fff; padding:8px; font:14px; display:flex; flex-direction:column; gap:6px; z-index:1001;">
-    <div>
-      <label>描画距離:<input id="chunkDistance" type="number" value="6" min="0" max="32"
-          style="width:30px; text-align: center;"></label>
-      <button onclick="updateChunksFromUI()">更新</button>
-    </div>
-    <div>
-      <label>全体の明るさ:</label>
-      <input id="brightnessSlider" type="range" value="50" min="0" max="100"
-        style="width: 80px; vertical-align: middle;" onchange="updateGlobalBrightnessFromUI()">
-    </div>
-  </div>
 
   <div id="chat-container"></div>
 

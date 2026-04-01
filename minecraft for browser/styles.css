@@ -504,3 +504,45 @@ canvas {
 .hidden {
     display: none !important;
 }
+
+.settings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    width: 400px;
+}
+
+.setting-item {
+    background: rgba(0, 0, 0, 0.6);
+    border: 2px solid #888;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: white;
+}
+
+.setting-item input {
+    width: 100%;
+    margin-top: 5px;
+}
+
+.settings-grid .mc-button-row {
+    grid-column: span 2;
+    /* グリッドの2列分を占有させる */
+    display: flex;
+    /* 中のボタンを横に並べる */
+    gap: 8px;
+    /* ボタン間の隙間 */
+    width: 100%;
+    /* 親の幅いっぱいに広げる */
+    margin-top: 10px;
+    /* 上に少し余白を作る */
+}
+
+/* ボタン自体の幅を調整（mc-buttonの固定幅400pxを上書き） */
+.settings-grid .mc-button.half {
+    width: 100%;
+    /* flexによって半分ずつに分配される */
+    flex: 1;
+}
