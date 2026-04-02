@@ -99,6 +99,60 @@ function fractalNoise2D(x, z, octaves = 4, persistence = 0.5) {
     return maxValue === 0 ? 0 : total / maxValue;
 }
 
+
+
+
+
+
+
+
+
+
+
+
+// 3D用の勾配関数
+const grad3D = (hash, x, y, z) => {
+    const h = hash & 15;
+    const u = h < 8 ? x : y;
+    const v = h < 4 ? y : (h === 12 || h === 14 ? x : z);
+    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+};
+
+// 3Dパーリンノイズ
+const perlinNoise3D = (x, y, z) => {
+    let X = Math.floor(x) & 255;
+    let Y = Math.floor(y) & 255;
+    let Z = Math.floor(z) & 255;
+
+    let xf = x - Math.floor(x);
+    let yf = y - Math.floor(y);
+    let zf = z - Math.floor(z);
+
+    const u = fade(xf);
+    const v = fade(yf);
+    const w = fade(zf);
+
+    const A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z;
+    const B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+
+    return lerp(
+        lerp(
+            lerp(grad3D(p[AA], xf, yf, zf), grad3D(p[BA], xf - 1, yf, zf), u),
+            lerp(grad3D(p[AB], xf, yf - 1, zf), grad3D(p[BB], xf - 1, yf - 1, zf), u),
+            v
+        ),
+        lerp(
+            lerp(grad3D(p[AA + 1], xf, yf, zf - 1), grad3D(p[BA + 1], xf - 1, yf, zf - 1), u),
+            lerp(grad3D(p[AB + 1], xf, yf - 1, zf - 1), grad3D(p[BB + 1], xf - 1, yf - 1, zf - 1), u),
+            v
+        ),
+        w
+    );
+};
+
+
+
+
 /* ======================================================
    【定数・グローバル変数】
    ====================================================== */
@@ -208,16 +262,13 @@ const ChunkSaveManager = {
         const dataArray = this.modifiedChunks.get(key);
         return dataArray ? dataArray[this.getBlockIndex(lx, ly, lz)] : null;
     },
-
     /**
-     * 地形生成のコアロジック（最適化版）
+     * 地形生成のコアロジック（3D洞窟・最適化版）
      */
     captureBaseChunkData: function (cx, cz) {
-        const data = new Uint8Array(65536); // デフォルト 0 (SKY)
+        const data = new Uint8Array(65536);
         const baseX = (cx << 4) | 0;
         const baseZ = (cz << 4) | 0;
-        const SEA_LEVEL_VAL = SEA_LEVEL | 0;
-        const LAVA_LEVEL = 11;
 
         for (let x = 0; x < 16; x++) {
             const xOff = (x << 12) | 0;
@@ -225,55 +276,20 @@ const ChunkSaveManager = {
             for (let z = 0; z < 16; z++) {
                 const zOff = (z << 8) | 0;
                 const worldZ = (baseZ + z) | 0;
-                const columnIdx = (xOff + zOff) | 0; // 加算に変更
+                const columnIdx = (xOff + zOff) | 0;
 
-                // 1. 先に高さを取得
                 const sHeight = getTerrainHeight(worldX, worldZ) | 0;
 
-                // 2. 引数に sHeight を渡して洞窟情報を取得（再計算を防止）
-                const [caveY, radius] = getCaveTubeInfo(worldX, worldZ, sHeight);
-
-                // 3. 洞窟の有効な高さ範囲を事前に算出（重要！）
-                const caveMinY = radius > 0 ? (caveY - radius) | 0 : -1;
-                const caveMaxY = radius > 0 ? (caveY + radius) | 0 : -1;
-                const caveRadiusSq = radius * radius;
-
-                // 岩盤
+                // 1. 最下層に岩盤を設置
                 data[columnIdx] = BLOCK_TYPES.BEDROCK;
 
-                // 地層生成（ループを分割して if 判定を減らす）
-                const dirtLayerStart = (sHeight - 4) | 0;
-
-                for (let y = 1; y < sHeight; y++) {
+                // 2. y=1からチャンクの高さ上限まで一括判定
+                for (let y = 1; y < CHUNK_HEIGHT; y++) {
                     const idx = (columnIdx + y) | 0;
 
-                    // 💡 洞窟判定（範囲外なら dy の計算すらしない）
-                    if (y >= caveMinY && y <= caveMaxY) {
-                        const dy = y - caveY;
-                        if ((dy * dy) < caveRadiusSq) {
-                            data[idx] = (y <= LAVA_LEVEL) ? BLOCK_TYPES.LAVA : BLOCK_TYPES.SKY;
-                            continue;
-                        }
-                    }
-
-                    // 💡 地層の塗り分け
-                    if (y < dirtLayerStart) {
-                        data[idx] = BLOCK_TYPES.STONE;
-                    } else if (y === sHeight - 1) {
-                        data[idx] = (y < SEA_LEVEL_VAL) ? BLOCK_TYPES.DIRT : BLOCK_TYPES.GRASS;
-                    } else {
-                        data[idx] = BLOCK_TYPES.DIRT;
-                    }
-                }
-
-                // 水（y軸が連続しているため、高速に処理可能）
-                if (sHeight <= SEA_LEVEL_VAL) {
-                    for (let y = sHeight; y <= SEA_LEVEL_VAL; y++) {
-                        const idx = (columnIdx + y) | 0;
-                        if (y > 0 && data[idx] === BLOCK_TYPES.SKY) {
-                            data[idx] = BLOCK_TYPES.WATER;
-                        }
-                    }
+                    // 💡 共通関数を呼び出すだけ！
+                    // 洞窟、地層、水、空気をすべて determineNaturalBlockLayer が判定します
+                    data[idx] = determineNaturalBlockLayer(y, sHeight, worldX, worldZ);
                 }
             }
         }
@@ -672,164 +688,99 @@ function getVoxelHash(x, y, z) {
  * 物理判定（衝突）と描画判定の両方で使用される最重要関数。
  */
 function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = false) {
-    // 1. 垂直方向の境界チェック
     const fy = y | 0;
-    if (fy < 0 || fy >= CHUNK_HEIGHT) return 0; // SKY
-
+    if (fy < 0 || fy >= CHUNK_HEIGHT) return 0;
     const fx = x | 0;
     const fz = z | 0;
 
-    // 2. チャンク座標とローカル座標の算出
-    const cx = fx >> 4;
-    const cz = fz >> 4;
-    const lx = fx & 15;
-    const lz = fz & 15;
-
-    // 3. 保存された変更データのチェック (Map検索)
-    const chunkKey = encodeChunkKey(cx, cz);
+    // 1. セーブデータ（ユーザーの変更）を最優先
+    const chunkKey = encodeChunkKey(fx >> 4, fz >> 4);
     const modifiedData = ChunkSaveManager.modifiedChunks.get(chunkKey);
-
     if (modifiedData !== undefined) {
-        // ChunkSaveManager.getBlockIndex と完全に一致させる: (y) + (z*256) + (x*4096)
-        const idx = (fy) + (lz << 8) + (lx << 12);
+        const idx = (fy) + ((fz & 15) << 8) + ((fx & 15) << 12);
         const modValue = modifiedData[idx];
-
         if (modValue !== undefined) {
-            if (isRaw) return modValue; // 描画用ならそのまま（花や草も返す）
-
-            // 物理判定用：当たり判定設定があるものだけ返す
+            if (isRaw) return modValue;
             const cfg = _blockConfigFastArray[modValue];
             return (cfg && cfg.collision !== false) ? modValue : 0;
         }
     }
 
-    // 4. 自然地形の判定（保存データがない場合）
+    // 2. 基盤岩
     if (fy === 0) return BLOCK_TYPES.BEDROCK;
 
+    // 3. 自然生成（共通関数に丸投げ）
     const surfaceHeight = getTerrainHeight(fx, fz) | 0;
+    const blockType = determineNaturalBlockLayer(fy, surfaceHeight, fx, fz);
 
-    // A. 地表より上の場合（空か水）
-    if (fy >= surfaceHeight) {
-        return (fy <= SEA_LEVEL) ? BLOCK_TYPES.WATER : 0; // SKY
+    if (isRaw) return blockType;
+
+    // 衝突判定（空気や水、衝突フラグのないものは0を返す）
+    const cfg = _blockConfigFastArray[blockType];
+    return (cfg && cfg.collision !== false) ? blockType : 0;
+}
+
+// 💡 自然な地形（地層・洞窟）を決定する共通関数
+function determineNaturalBlockLayer(y, surfaceHeight, fx, fz) {
+    // 1. 海面・空中の判定
+    if (y >= surfaceHeight) {
+        return (y <= SEA_LEVEL) ? BLOCK_TYPES.WATER : 0; // 0は空気
     }
 
-    // B. 地中の場合（洞窟判定を入れる）
-    // 💡 ここが重要：描画システム（captureBaseChunkData）と同じルールで洞窟を彫る
-    const [caveY, radius] = getCaveTubeInfo(fx, fz);
-    if (radius > 0 && fy > 3) {
-        const dy = fy - caveY;
-        if ((dy * dy) < (radius * radius)) {
-            // 溶岩層（y=11以下）なら溶岩、それ以外は空気(0)
-            return (fy <= 11) ? BLOCK_TYPES.LAVA : 0;
+    // 2. 洞窟判定：地表ギリギリ（surfaceHeight - 1）まで判定
+    // これにより入り口が露出します
+    if (y < surfaceHeight && y > 4) {
+        if (isCave(fx, y, fz, surfaceHeight)) {
+            // 深層なら溶岩、それ以外は空気
+            return (y <= 11) ? BLOCK_TYPES.LAVA : 0;
         }
     }
 
-    // C. 洞窟でなければ、通常の地層を返す
-    // 既存の determineNaturalBlockLayer を呼ぶか、ここで直接判定
-    if (fy === surfaceHeight - 1) {
-        return (fy < SEA_LEVEL) ? BLOCK_TYPES.DIRT : BLOCK_TYPES.GRASS;
+    // 3. 地層の判定
+    if (y === surfaceHeight - 1) {
+        // 海面より低ければ土、高ければ草
+        return (y < SEA_LEVEL) ? BLOCK_TYPES.DIRT : BLOCK_TYPES.GRASS;
     }
-    if (fy >= surfaceHeight - 4) return BLOCK_TYPES.DIRT;
+
+    if (y >= surfaceHeight - 4) {
+        return BLOCK_TYPES.DIRT;
+    }
+
+    // それ以外（深い場所）は石
     return BLOCK_TYPES.STONE;
 }
 
-// 💡 整理：地表より下のブロック種別を決めるロジックを外出し
-function determineNaturalBlockLayer(y, surfaceHeight, fx, fz) {
-    // 洞窟計算の間引き判定
-    if (y > 3 && y < surfaceHeight - 3) {
-        const caveInfo = getCaveTubeInfo(fx, fz);
-        const caveRadius = caveInfo[1];
+const CAVE_SCALE_XZ = 0.02;   // 少し小さくして、より大きなうねりに
+const CAVE_SCALE_Y = 0.025;   // 垂直方向もゆったりさせる
+const CAVE_THRESHOLD = 0.08;  // この値を大きくすると洞窟が太くなります
 
-        if (caveRadius > 0) {
-            const dy = y - caveInfo[0];
-            if ((dy * dy) < caveRadius * caveRadius) {
-                return SKY;
-            }
-        }
+// 定数としてあらかじめ計算しておく
+const OFFSET1_X = 1234 * CAVE_SCALE_XZ;
+const OFFSET1_Y = 5678 * CAVE_SCALE_Y;
+const OFFSET1_Z = 9101 * CAVE_SCALE_XZ;
+
+function isCave(x, y, z, surfaceHeight) {
+    if (y > surfaceHeight - 1) return false;
+    const depth = surfaceHeight - y;
+    let currentThreshold = CAVE_THRESHOLD;
+    if (depth < 5) {
+        currentThreshold *= (depth * 0.16 + 0.6);
     }
+    // 1つ目のノイズ
+    const nx = x * CAVE_SCALE_XZ;
+    const ny = y * CAVE_SCALE_Y;
+    const nz = z * CAVE_SCALE_XZ;
 
-    if (y === surfaceHeight - 1) {
-        return (y <= SEA_LEVEL) ? DIRT : GRASS;
-    }
+    const n1 = perlinNoise3D(nx, ny, nz);
+    const absN1 = Math.abs(n1);
 
-    if (y > surfaceHeight - 4) {
-        return DIRT;
-    }
+    if (absN1 >= currentThreshold) return false;
 
-    return STONE;
+    // 2つ目のノイズ（オフセット計算を簡略化）
+    const n2 = perlinNoise3D(nx + OFFSET1_X, ny + OFFSET1_Y, nz + OFFSET1_Z);
+
+    return (absN1 + Math.abs(n2)) < currentThreshold;
 }
-
-// 💡 1. まず、関数の【外側】に、使い回し用の配列を作ります（最重要！）
-const _SHARED_CAVE_INFO = [0, 0];
-const CAVE_SCALE_XZ = 0.02;
-
-function getCaveTubeInfo(worldX, worldZ, surfaceHeight) {
-    const x = Math.abs(worldX);
-    const z = Math.abs(worldZ);
-
-    // 💡 1. 1つ目のノイズ（洞窟は詳細度不要のためオクターブ1で十分）
-    const n1 = perlinNoise2D(x * CAVE_SCALE_XZ, z * CAVE_SCALE_XZ);
-
-    // 💡 【新規最適化】早期リターン
-    // diff < 0.07 になるには n1 がこの範囲内にいないと n2 での逆転がほぼ不可能
-    if (n1 < 0.02 || n1 > 0.98) {
-        _SHARED_CAVE_INFO[0] = 0;
-        _SHARED_CAVE_INFO[1] = 0;
-        return _SHARED_CAVE_INFO;
-    }
-
-    // 💡 2. 2つ目のノイズ
-    const n2 = perlinNoise2D((x + 2000) * CAVE_SCALE_XZ, (z + 2000) * CAVE_SCALE_XZ);
-
-    const diff = Math.abs(n1 - n2);
-    const threshold = 0.07;
-    let radius = 0;
-
-    if (diff < threshold) {
-        const thicknessFactor = (threshold - diff) / threshold;
-        radius = 2.5 + thicknessFactor * 1.5;
-
-        // 💡 部屋のノイズ
-        const roomNoise = perlinNoise2D(x * 0.03, z * 0.03);
-        if (roomNoise > 0.45) {
-            radius += (roomNoise - 0.45) * 10;
-        }
-    }
-
-    if (radius === 0) {
-        _SHARED_CAVE_INFO[0] = 0;
-        _SHARED_CAVE_INFO[1] = 0;
-        return _SHARED_CAVE_INFO;
-    }
-
-    // 💡 4. 半径がある場合のみ計算
-    const baseNoise = perlinNoise2D(x * 0.006, z * 0.006);
-    const baseY = 15 + baseNoise * 25;
-
-    const wave = Math.sin(worldX * 0.015) * Math.cos(worldZ * 0.015);
-    let finalY = baseY;
-
-    if (wave > 0) {
-        // 💡 修正：引数があればそれを使う（Map検索と再計算を回避）
-        const sHeight = (surfaceHeight !== undefined) ? surfaceHeight : getTerrainHeight(worldX, worldZ);
-
-        // Math.pow(wave, 1.5) を wave * Math.sqrt(wave) で代用（高速）
-        const t = wave * Math.sqrt(wave);
-        const targetY = sHeight - 2;
-        finalY = baseY * (1 - t) + targetY * t;
-    }
-
-    if (finalY < 5) finalY = 5;
-
-    _SHARED_CAVE_INFO[0] = finalY;
-    _SHARED_CAVE_INFO[1] = radius;
-    return _SHARED_CAVE_INFO;
-}
-
-
-
-
-
 
 /**
  * getPreciseHeadBlockType
@@ -4452,7 +4403,10 @@ let cloudGridTimer = 0;
 let underwaterTimer = 0;
 let chunkUpdateFrameTimer = 0;  // 自然チャンク更新用
 let blockInfoTimer = 0;
+
+// 最適化：再利用するベクトル群（GC対策）
 const _camOffset = new THREE.Vector3();
+const _tempVec3 = new THREE.Vector3();
 
 function animate() {
     requestAnimationFrame(animate);
@@ -4461,11 +4415,12 @@ function animate() {
     if (delta > 0.1) delta = 0.1; // スパイク対策
     const now = performance.now();
 
+    // プレイヤーの現在チャンク座標を計算（共通利用）
+    const pCx = Math.floor(player.position.x / CHUNK_SIZE);
+    const pCz = Math.floor(player.position.z / CHUNK_SIZE);
+
     // 0. -------- ロード・スポーン待機ガード --------
     if (!player.spawnFixed) {
-        const pCx = Math.floor(player.position.x / CHUNK_SIZE);
-        const pCz = Math.floor(player.position.z / CHUNK_SIZE);
-
         if (loadedChunks.has(encodeChunkKey(pCx, pCz))) {
             // 地形ロード完了
             const groundY = Math.floor(BASE_HEIGHT + heightModifier);
@@ -4483,13 +4438,11 @@ function animate() {
     }
     frameCount++;
 
-    // 1. -------- 昼夜サイクルの進行と「空・霧」の色更新 --------
-    // ★重要: player.spawnFixed が true の時のみ時間を進める。
-    // これにより、ロード完了前に 0 からカウントアップされるのを防ぎます。
+    // 1. -------- 昼夜サイクルの進行 --------
     if (player.spawnFixed) {
         gameTime = (gameTime + delta * 20 * TIME_SPEED) % TICKS_PER_DAY;
+        updateSkyAndFogColor(gameTime);
     }
-    updateSkyAndFogColor(gameTime);
 
     // 2. -------- ブロックの明るさ（シェーダー）への反映 --------
     const currentSkyFactor = getSkyLightFactor(gameTime);
@@ -4501,25 +4454,26 @@ function animate() {
     if (now - lastFpsTime > 1000) {
         const fps = Math.round((frameCount * 1000) / (now - lastFpsTime));
         const activeUpdates = pendingChunkUpdates.size + chunkQueue.length;
-        const modifiedChunkCount = ChunkSaveManager.modifiedChunks.size;
-        const pCx = Math.floor(player.position.x / CHUNK_SIZE);
-        const pCz = Math.floor(player.position.z / CHUNK_SIZE);
+        const modifiedCount = ChunkSaveManager.modifiedChunks.size;
         const targetText = (typeof currentTargetBlockText !== 'undefined') ? currentTargetBlockText : "None";
+        const moveMode = flightMode ? "Flight" : (wasUnderwater ? "Swimming" : "Walking");
 
-        fpsCounter.innerHTML =
-            `<span>Minecraft classic 0.0.1</span><br>` +
-            `<span>Seed: ${currentSeed}</span><br>` +
-            `<span>Time: ${getGameClock(gameTime)} (${Math.floor(gameTime)} ticks)</span><br>` +
-            `<span>${fps} fps, ${activeUpdates} chunks update</span><br>` +
-            `<span>${modifiedChunkCount} modified chunks (Saved)</span><br>` +
-            `<span>C: ${loadedChunks.size} loaded. (Quality: ${CHUNK_VISIBLE_DISTANCE} chunks)</span><br>` +
-            `<span>Dimension: Overworld</span><br>` +
-            `<span>x: ${Math.round(player.position.x)} (C: ${pCx})</span><br>` +
-            `<span>y: ${Math.round(player.position.y)} (feet)</span><br>` +
-            `<span>z: ${Math.round(player.position.z)} (C: ${pCz})</span><br>` +
-            `<span>Mode: ${flightMode ? "Flight" : wasUnderwater ? "Swimming" : "Walking"} / Dash: ${dashActive ? "ON" : "OFF"}</span><br>` +
-            `<span>--------------------------</span><br>` +
-            `<span>TargetBlock: ${targetText}</span>`;
+        // innerHTMLの更新はコストが高いため、1つのテンプレートリテラルで結合
+        fpsCounter.innerHTML = `
+            <b>Minecraft classic 0.0.1</b><br>
+            Seed: ${currentSeed}<br>
+            Time: ${getGameClock(gameTime)} (${Math.floor(gameTime)} ticks)<br>
+            ${fps} fps, ${activeUpdates} chunks update<br>
+            ${modifiedCount} modified chunks (Saved)<br>
+            C: ${loadedChunks.size} loaded. (Quality: ${CHUNK_VISIBLE_DISTANCE})<br>
+            Dimension: Overworld<br>
+            x: ${Math.round(player.position.x)} (C: ${pCx})<br>
+            y: ${Math.round(player.position.y)} (feet)<br>
+            z: ${Math.round(player.position.z)} (C: ${pCz})<br>
+            Mode: ${moveMode} / Dash: ${dashActive ? "ON" : "OFF"}<br>
+            --------------------------<br>
+            TargetBlock: ${targetText}
+        `;
         frameCount = 0;
         lastFpsTime = now;
     }
@@ -4528,16 +4482,19 @@ function animate() {
     updateBlockParticles(delta);
     camera.rotation.set(pitch, yaw, 0);
 
+    // 水中判定の頻度を下げて負荷軽減
     underwaterTimer += delta;
     if (underwaterTimer > 0.1) {
         wasUnderwater = isPlayerEntireBodyInWater();
         underwaterTimer = 0;
     }
 
+    // ジャンプ入力
     if (!flightMode && keys[" "] && player.onGround && !wasUnderwater) {
         jumpRequest = true;
     }
 
+    // 物理エンジン
     if (flightMode) {
         updateFlightPhysics(delta);
     } else if (wasUnderwater) {
@@ -4562,26 +4519,28 @@ function animate() {
     }
 
     if (showChunkBorders) {
-        const pCx = Math.floor(player.position.x / CHUNK_SIZE);
-        const pCz = Math.floor(player.position.z / CHUNK_SIZE);
         chunkBorderMesh.position.set(pCx * CHUNK_SIZE, 0, pCz * CHUNK_SIZE);
     }
 
     // 6. -------- カメラ位置の更新 --------
-    const targetCamPos = globalTempVec3;
-    _camOffset.set(0, getCurrentPlayerHeight() - (flightMode ? 0.15 : 0), 0);
-    targetCamPos.copy(player.position).add(_camOffset);
+    // Lerp（補間）を使用して滑らかに移動
+    const playerHeight = getCurrentPlayerHeight() - (flightMode ? 0.15 : 0);
+    _camOffset.set(0, playerHeight, 0);
+    _tempVec3.copy(player.position).add(_camOffset);
 
-    camera.position.x = targetCamPos.x;
-    camera.position.z = targetCamPos.z;
-    camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamPos.y, 0.5);
+    camera.position.x = _tempVec3.x;
+    camera.position.z = _tempVec3.z;
+    camera.position.y = THREE.MathUtils.lerp(camera.position.y, _tempVec3.y, 0.5);
 
     // 7. -------- ブロック選択・情報の更新 --------
     blockInfoTimer += delta;
     if (blockInfoTimer > 0.05) {
-        const moved = camera.position.distanceToSquared(lastCamPos) > 0.00001 ||
-            camera.rotation.y !== lastCamRot.y || camera.rotation.x !== lastCamRot.x;
-        if (moved) {
+        // カメラが動いた時だけ重い処理を実行
+        const hasMoved = camera.position.distanceToSquared(lastCamPos) > 0.0001 ||
+            Math.abs(camera.rotation.y - lastCamRot.y) > 0.0001 ||
+            Math.abs(camera.rotation.x - lastCamRot.x) > 0.0001;
+
+        if (hasMoved) {
             updateBlockSelection();
             updateBlockInfo();
             updateHeadBlockInfo();
@@ -4597,17 +4556,18 @@ function animate() {
 
     if (cloudUpdateTimer > 0.05) {
         updateCloudTiles(delta);
-        updateCloudOpacity(camera.position, getSkyLightFactor(gameTime));
+        updateCloudOpacity(camera.position, currentSkyFactor);
         cloudUpdateTimer = 0;
     }
 
     if (cloudGridTimer > 0.1) {
+        const camPos = camera.position;
         cloudTiles.forEach(tile => {
-            const distSq = tile.position.distanceToSquared(camera.position);
-            if (distSq > 256) return;
-            adjustCloudLayerDepth(tile, camera);
+            if (tile.position.distanceToSquared(camPos) < 256) {
+                adjustCloudLayerDepth(tile, camera);
+            }
         });
-        updateCloudGrid(scene, camera.position);
+        updateCloudGrid(scene, camPos);
         cloudGridTimer = 0;
     }
 
@@ -4617,11 +4577,15 @@ function animate() {
 
     renderer.render(scene, camera);
 }
+
+/**
+ * ゲーム内時間を HH:mm 形式に変換
+ */
 function getGameClock(ticks) {
-    // 0 ticks を 朝6:00 と仮定した場合の計算
-    let totalHours = (ticks / 1000 + 6) % 24;
-    let hours = Math.floor(totalHours);
-    let minutes = Math.floor((totalHours % 1) * 60);
+    // 1000 ticks = 1時間, 0 ticks = 6:00
+    const totalHours = (ticks / 1000 + 6) % 24;
+    const hours = Math.floor(totalHours);
+    const minutes = Math.floor((totalHours % 1) * 60);
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 }
 
@@ -5298,6 +5262,7 @@ if (btnSettingsBack) btnSettingsBack.addEventListener('click', () => toggleMenu(
 function applyRenderDistance(val) {
     if (isNaN(val) || val < 0 || val > 32) return;
 
+    // 1. チャンクの描画距離変数のみを更新
     CHUNK_VISIBLE_DISTANCE = val;
 
     // UIの同期
@@ -5305,27 +5270,35 @@ function applyRenderDistance(val) {
     if (renderDistValLabel) renderDistValLabel.innerText = val;
     if (debugChunkInput) debugChunkInput.value = val;
 
-    // 内部システムのリセット（重い処理）
+    // 内部システムのリセット（チャンク再生成用）
     offsets = null;
     chunkQueue = [];
     lastChunk.x = null;
     lastChunk.z = null;
 
-    // フォグとカメラの調整
+    // 2. フォグの設定（地形の端を隠すためだけに使用）
     if (typeof scene !== 'undefined' && scene.fog) {
+        // 地形が消えるべき距離（1チャンク16マス）
+        const terrainLimit = val * 16;
+
         if (scene.fog.isFogExp2) {
-            scene.fog.density = 0.05 / (val || 1);
+            // 指数フォグの場合、地形の端がちょうど霞む程度の濃度に設定
+            scene.fog.density = 0.05 / (terrainLimit || 1);
         } else {
-            scene.fog.near = (val - 1) * 16;
-            scene.fog.far = val * 16;
+            // 線形フォグの場合
+            // near: 霧が始まる距離（少し手前から）
+            // far:  地形の描画限界で霧が最大になるように設定
+            scene.fog.near = Math.max(0, (val - 2) * 16);
+            scene.fog.far = terrainLimit;
         }
     }
-    if (typeof camera !== 'undefined') {
-        camera.far = Math.max(val * 32, 200); // 描画距離に合わせて遠方を調整
-        camera.updateProjectionMatrix();
-    }
 
-    // チャンク更新をリクエスト
+    // 3. 【重要】カメラと雲の設定には一切触れない
+    // camera.far を変更してしまうと、cloudsky.js で描画している遠くの雲が切れてしまうため、
+    // ここでは camera.far の更新（短縮）を行いません。
+    // ※初期化時に camera.far = 2000〜3000 程度に設定されている前提を維持します。
+
+    // 4. チャンク更新をリクエスト
     if (typeof updateChunks === 'function') {
         updateChunks();
     }
