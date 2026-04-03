@@ -19,7 +19,7 @@ function getTileHash(x, z) {
 /**
  * クラウドテクスチャを読み込み、黒背景を透明化＋パディング
  */
-function loadCloudTexture(callback) {
+export function loadCloudTexture(callback) {
     new THREE.TextureLoader().load(
         'textures/clouds.png',
         texture => {
@@ -75,7 +75,7 @@ function loadCloudTexture(callback) {
 /**
  * Minecraft風の青空背景
  */
-function setMinecraftSky(scene) {
+export function setMinecraftSky(scene) {
     // 💡 背景画像を null にして、renderer.setClearColor を有効にする
     scene.background = null;
 
@@ -131,7 +131,7 @@ function addCloudTile(scene, gridX, gridZ) {
 /**
  * プレイヤー位置に基づき雲タイルを更新
  */
-function updateCloudGrid(scene, playerPos) {
+export function updateCloudGrid(scene, playerPos) {
     if (!cloudTexture) return;
 
     const gx = Math.floor(playerPos.x / tileSize);
@@ -168,7 +168,7 @@ function updateCloudGrid(scene, playerPos) {
 /**
  * 雲テクスチャのオフセット更新
  */
-function updateCloudTiles(delta) {
+export function updateCloudTiles(delta) {
     if (!cloudTexture) return;
     let off = cloudTexture.offset.x + 0.0005 * delta;
     cloudTexture.offset.x = off >= 1 ? off - 1 : off;
@@ -181,7 +181,7 @@ function updateCloudTiles(delta) {
 // スコープ外で前回の値を保持
 let lastSkyFactor = -1;
 
-function updateCloudOpacity(playerPos, currentSkyFactor = 1.0) {
+export function updateCloudOpacity(playerPos, currentSkyFactor = 1.0) {
     const nearD2 = 4000000;  // 2000^2
     const farD2 = 36000000; // 6000^2
 
@@ -215,7 +215,7 @@ function updateCloudOpacity(playerPos, currentSkyFactor = 1.0) {
 /**
  * カメラ高さに応じた描画順序調整
  */
-function adjustCloudLayerDepth(tile, camera) {
+export function adjustCloudLayerDepth(tile, camera) {
     const above = camera.position.y >= tile.position.y;
 
     if (above) {
@@ -230,11 +230,3 @@ function adjustCloudLayerDepth(tile, camera) {
 
     tile.material.needsUpdate = true;
 }
-
-// グローバル公開
-window.setMinecraftSky = setMinecraftSky;
-window.loadCloudTexture = loadCloudTexture;
-window.updateCloudGrid = updateCloudGrid;
-window.updateCloudTiles = updateCloudTiles;
-window.updateCloudOpacity = updateCloudOpacity;
-window.adjustCloudLayerDepth = adjustCloudLayerDepth;

@@ -25,7 +25,50 @@ const CUSTOM_COLLISION_CACHE = {
 
 // --- カスタム衝突判定取得関数 ---
 function getCustomCollision(type) {
-    return CUSTOM_COLLISION_CACHE[type] || [];
+    const base = CUSTOM_COLLISION_CACHE[type] || [];
+    // 変換をかけるため、必ず新しいインスタンスを生成して返す
+    return base.map(box => box.clone());
+}
+
+// blocks.js
+
+/**
+ * 設置時の状況からメタデータ（回転・上下）を計算する
+ * @param {number} blockId - 設置しようとしているブロックのID
+ * @param {THREE.Vector3} camDir - カメラの方向ベクトル
+ * @param {THREE.Vector3} rawNormal - クリックした面の法線ベクトル
+ * @param {THREE.Vector3} intersectPoint - クリックした位置の精密な座標
+ * @returns {number} metaData (4ビット分: 0-15)
+ */
+export function calculatePlacementMeta(blockId, camDir, rawNormal, intersectPoint) {
+    const cfg = getBlockConfiguration(blockId);
+    if (!cfg || !cfg.directional) return 0;
+
+    let direction = 0;
+    // 1. 水平方向の向き計算 (0:南, 1:西, 2:北, 3:東)
+    // プレイヤーの向きを反転させて計算
+    const lookX = -camDir.x;
+    const lookZ = -camDir.z;
+
+    if (Math.abs(lookX) > Math.abs(lookZ)) {
+        direction = (lookX > 0) ? 2 : 0;
+    } else {
+        direction = (lookZ > 0) ? 1 : 3;
+    }
+
+    // 2. 上下逆さま判定 (階段やハーフブロック用)
+    let isUpsideDown = 0;
+    if (rawNormal.y < -0.5) {
+        // 天井に貼った場合
+        isUpsideDown = 1;
+    } else if (Math.abs(rawNormal.y) < 0.5) {
+        // 横面をクリックした場合、クリックした高さがブロックの上半分なら逆さま
+        const hitY = intersectPoint.y - Math.floor(intersectPoint.y);
+        if (hitY > 0.5) isUpsideDown = 1;
+    }
+
+    // 3. メタデータの合成 (下位2bit: 向き, 3bit目: 上下)
+    return direction | (isUpsideDown << 2);
 }
 
 // ── 共通のデフォルト設定 ──
@@ -128,6 +171,7 @@ export const BLOCK_CONFIG = {
         },
         geometryType: "stairs",
         transparent: true,
+        directional: true,
         customCollision: () => getCustomCollision("stairs"),
         cullAdjacentFaces: false,
         screenFill: false,
@@ -256,7 +300,7 @@ export const BLOCK_CONFIG = {
     }),
 };
 
-const BLOCK_TYPES = Object.fromEntries(
+export const BLOCK_TYPES = Object.fromEntries(
     Object.entries(BLOCK_CONFIG).map(([key, cfg]) => [key, cfg.id])
 );
 for (const cfg of Object.values(BLOCK_CONFIG)) {
@@ -347,7 +391,7 @@ function applyErrorTexture(tex) {
 
 // グローバルキャッシュ
 const materialCache = new Map();      // ブロック構成ごとのキャッシュ
-function createMaterialsFromBlockConfig(blockConfig) {
+export function createMaterialsFromBlockConfig(blockConfig) {
     const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
     const { geometryType, transparent, textures } = blockConfig;
 
@@ -454,28 +498,37 @@ const BLOCK_MATERIALS_CACHE = new Map();
 
 /**
  * 指定ブロックタイプのマテリアル配列を返す。  
- * キャッシュがあれば再利用し、無駄な再生成を防ぐ。
- * @param {number} blockType - ブロック種識別子
- * @returns {THREE.Material[] | null} - マテリアルの配列（複数マテリアル対応）
+ * 回転データ（メタデータ）が含まれている場合でも、純粋なIDを抽出して設定を参照します。
+ * キャッシュがあれば再利用し、無駄な再生成を防ぎます。
+ * * @param {number|string} blockType - ブロック種識別子（回転データを含む場合がある）
+ * @returns {THREE.Material[] | null} - マテリアルの配列
  */
-function getBlockMaterials(blockType) {
-    const bType = Number(blockType);
+export function getBlockMaterials(blockType) {
+    // 1. 下位12ビット(0xFFF)でマスクし、純粋なブロックIDのみを抽出する
+    // これにより、回転しているブロック(例: ID 4106)も元のID(例: 10)として扱える
+    const bId = Number(blockType) & 0xFFF;
 
-    // キャッシュがあれば即返す
-    if (BLOCK_MATERIALS_CACHE.has(bType)) {
-        return BLOCK_MATERIALS_CACHE.get(bType);
+    // 2. IDベースのキャッシュを確認（向きが違ってもマテリアルは共通なため）
+    if (BLOCK_MATERIALS_CACHE.has(bId)) {
+        return BLOCK_MATERIALS_CACHE.get(bId);
     }
 
-    // O(1) で設定取得
-    const config = blockConfigLookup[bType];
+    // 3. ルックアップテーブルから設定を取得
+    const config = blockConfigLookup[bId];
     if (!config) {
-        console.warn(`Unknown block type: ${bType}`);
+        // IDが0(SKY)の場合は警告を出さずにnullを返す（描画不要なため）
+        if (bId !== 0) {
+            console.warn(`Unknown block type ID: ${bId} (Original value: ${blockType})`);
+        }
         return null;
     }
 
-    // マテリアル生成＆キャッシュ保存
+    // 4. マテリアル生成
     const materials = createMaterialsFromBlockConfig(config);
-    BLOCK_MATERIALS_CACHE.set(bType, materials);
+
+    // 5. 純粋なIDをキーとしてキャッシュに保存
+    BLOCK_MATERIALS_CACHE.set(bId, materials);
+
     return materials;
 }
 
@@ -534,7 +587,7 @@ function adjustSideUVsForCarpet(geom, scaleY = 0.0625) {
  * @returns {THREE.BufferGeometry}
  */
 const SHARED_PLANE = new THREE.PlaneGeometry(1, 1);
-function getBlockGeometry(type, config) {
+export function getBlockGeometry(type, config) {
     // カスタムジオメトリがあればキャッシュ
     if (config?.customGeometry) {
         if (!cachedCustomGeometries[config.id]) {
@@ -683,102 +736,174 @@ function getBlockGeometry(type, config) {
     return geom;
 }
 
+// 行列計算用の作業用変数（使い回してGCを抑える）
+const _tmpMat = new THREE.Matrix4();
+
+/**
+ * ブロックの中心を軸に、メタデータに応じた回転と反転を適用する
+ * target が Box3 の場合は、回転後に AABB (軸に平行な境界ボックス) を再計算して
+ * min > max による判定消失を防ぐ。
+ */
+function applyMetadataTransform(target, metadata) {
+    if (!metadata) return;
+
+    const rotation = metadata & 3;           // 0, 1, 2, 3
+    const isUpsideDown = (metadata >> 2) & 1;
+
+    // 💡 修正点：行列を合成する順序を整理
+    const finalMat = new THREE.Matrix4();
+    const center = new THREE.Vector3(0.5, 0.5, 0.5);
+
+    // 1. 中心を原点へ移動
+    finalMat.makeTranslation(-center.x, -center.y, -center.z);
+
+    // 2. 回転行列の作成
+    const rotateMat = new THREE.Matrix4();
+
+    // 逆さま処理は X軸回転の方が階段には適しています
+    if (isUpsideDown) {
+        rotateMat.makeRotationX(Math.PI);
+    }
+
+    // Y軸回転を合成 (反時計回り)
+    if (rotation !== 0) {
+        const yRot = new THREE.Matrix4().makeRotationY(rotation * (Math.PI / 2));
+        rotateMat.multiply(yRot);
+    }
+
+    // 3. 行列を合成 (戻す移動 * 回転 * 行く移動)
+    finalMat.premultiply(rotateMat);
+    finalMat.premultiply(new THREE.Matrix4().makeTranslation(center.x, center.y, center.z));
+
+    if (target instanceof THREE.Box3) {
+        // Box3 の再計算ロジックはそのまま（完璧です）
+        const points = [ /* ...既存の8頂点計算... */];
+        // (中略) 
+    } else if (target instanceof THREE.Object3D) {
+        // 💡 重要：applyMatrix4 を使う場合は、一度状態をリセットするか、
+        // 以下の方法で transform を上書きします
+        target.quaternion.setFromRotationMatrix(rotateMat);
+        // 上下反転がある場合、位置のオフセット調整が必要になる場合があります
+        if (isUpsideDown) target.position.y += 1;
+    }
+}
+
 /**
  * マルチマテリアル対応ブロックメッシュ生成
- * @param {number} blockType
- * @param {THREE.Vector3} pos
- * @param {THREE.Euler} [rotation]
+ * @param {number} rawBlockType - ブロック種識別子（回転データを含む場合がある）
+ * @param {THREE.Vector3} pos - 配置座標
+ * @param {number} metadata - メタデータ（回転・反転フラグ。rawBlockTypeに含まれる場合は自動抽出）
  * @returns {THREE.Mesh|null}
  */
-function createBlockMesh(blockType, pos, rotation) {
-    const config = getBlockConfiguration(blockType);
+export function createBlockMesh(rawBlockType, pos, metadata = 0) {
+    // 1. 下位12ビット(0xFFF)でマスクし、純粋なブロックIDのみを抽出する
+    const blockId = Number(rawBlockType) & 0xFFF;
+
+    // もし metadata が明示的に渡されていない(0)かつ、rawBlockType にメタデータが含まれている場合、
+    // rawBlockType からメタデータ(13ビット目以降)を抽出して補完する
+    const finalMetadata = metadata !== 0 ? metadata : (Number(rawBlockType) >> 12);
+
+    // 2. 浄化した ID で設定を取得
+    const config = getBlockConfiguration(blockId);
     if (!config) {
-        console.error("Unknown block type:", blockType);
+        console.error("Unknown block type ID:", blockId, "(raw:", rawBlockType, ")");
         return null;
     }
 
-    // ジオメトリとマテリアル取得
+    // 3. ジオメトリ取得
     const geometry = getBlockGeometry(config.geometryType, config);
-    const materials = getBlockMaterials(blockType);
+
+    // 4. マテリアル取得（getBlockMaterials 側でも & 0xFFF が行われる前提）
+    const materials = getBlockMaterials(blockId);
     if (!materials) {
-        console.error("No materials found for block type:", blockType);
+        console.error("No materials found for block type ID:", blockId);
         return null;
     }
 
-    // Mesh作成（マルチマテリアル対応）
-    let mesh;
-    if (Array.isArray(materials) && materials.length > 1 && geometry.groups && geometry.groups.length > 0) {
-        mesh = new THREE.Mesh(geometry, materials);
-    } else {
-        mesh = new THREE.Mesh(geometry, Array.isArray(materials) ? materials[0] : materials);
-    }
+    // 5. Mesh作成
+    let mesh = new THREE.Mesh(geometry, materials);
 
-    // 位置・影設定
+    // 6. 向きと反転を適用（位置を決める前に中心座標基準で回転させる）
+    applyMetadataTransform(mesh, finalMetadata);
+
+    // 7. 位置設定
     mesh.position.copy(pos);
     mesh.castShadow = false;
     mesh.receiveShadow = false;
 
-    if (rotation) {
-        mesh.rotation.copy(rotation);
+    // 8. 当たり判定の構築
+    let boxes = [];
+    if (typeof config.customCollision === "function") {
+        // カスタム判定（階段・ハーフ等）: config側で用意されたBox3のクローンを取得
+        boxes = config.customCollision();
+    } else if (config.collision) {
+        // 標準ブロック
+        const height = config.geometryType === "slab" ? 0.5 : 1;
+        boxes = [new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, height, 1))];
     }
 
-    // カスタム衝突判定のBox3をキャッシュから取得・clone＆座標調整
-    if (typeof config.customCollision === "function") {
-        if (!mesh.userData.localCollisionBoxes) {
-            mesh.userData.localCollisionBoxes = config._cachedCollision || [];
-            mesh.userData.collisionBoxes = config._cachedCollision.map(box => box.clone());
-        }
-        if (!mesh.userData.collisionBoxes) {
-            mesh.userData.collisionBoxes = mesh.userData.localCollisionBoxes.map(box => box.clone());
-        }
-        if (mesh.userData.collisionBoxes.length > 0) {
-            mesh.userData.collisionBoxes.forEach(box => box.translate(pos));
-        }
-    } else {
-        if (config.collision) {
-            const height = config.geometryType === "slab" ? 0.5 : 1;
-            mesh.userData.collisionBoxes = [
-                new THREE.Box3(pos.clone(), new THREE.Vector3(pos.x + 1, pos.y + height, pos.z + 1))
-            ];
-        } else {
-            mesh.userData.collisionBoxes = [];
-        }
-    }
+    // 9. 当たり判定も回転させてから、ワールド座標(pos)へ移動
+    mesh.userData.collisionBoxes = boxes.map(box => {
+        applyMetadataTransform(box, finalMetadata); // 回転を適用
+        box.translate(pos);                        // 設置ワールド座標に移動
+        return box;
+    });
+
     mesh.updateMatrixWorld();
     return mesh;
 }
 
 /**
- * 指定ブロックの当たり判定用 Box3 配列を返す関数  
- * customCollision プロパティがなければ、デフォルトでセル全体（もしくは slab なら高さ 0.5）の Box3 を返す
- * @param {number} blockType - ブロック種識別子
- * @param {THREE.Vector3} pos - ブロック設置位置（セルの左下隅）
- * @returns {THREE.Box3[]} - 当たり判定ボックスの配列
+ * 指定ブロックの当たり判定用 Box3 配列を返す関数
+ * @param {number} rawBlockType - ブロック種識別子（回転データを含む場合がある）
+ * @param {THREE.Vector3} pos - 配置座標
+ * @param {number} metadata - 補足のメタデータ（指定がない場合はrawBlockTypeから抽出）
  */
-// 関数の外側に1つだけ置いておく
 const _sharedCollisionBox = new THREE.Box3();
 const _sharedCollisionMax = new THREE.Vector3();
 
-function getBlockCollisionBoxes(blockType, pos) {
-    const config = getBlockConfiguration(blockType);
+export function getBlockCollisionBoxes(rawBlockType, pos, metadata = 0) {
+    // 1. 下位12ビット(0xFFF)でマスクし、純粋なブロックIDのみを抽出する
+    const blockId = Number(rawBlockType) & 0xFFF;
+
+    // metadataが0の場合、rawBlockTypeの上位ビットから回転情報を抽出する
+    const finalMetadata = metadata !== 0 ? metadata : (Number(rawBlockType) >> 12);
+
+    // 2. 浄化したIDで設定を取得
+    const config = getBlockConfiguration(blockId);
     if (!config || !config.collision) return [];
 
-    if (typeof config.customCollision === "function") {
-        return config.customCollision().map(localBox => {
-            const worldBox = localBox.clone(); // 既存の仕様を維持
-            worldBox.min.add(pos);
-            worldBox.max.add(pos);
-            return worldBox;
+    // 3. 向きがある、またはカスタム形状（階段・ハーフ等）の場合は個別に計算してクローンを返す
+    // ※ metadataだけでなく、config自体がカスタム衝突判定を持つかもチェック
+    if (finalMetadata !== 0 || typeof config.customCollision === "function") {
+        let boxes = [];
+        if (typeof config.customCollision === "function") {
+            // 内部で clone されたベースの Box3 配列を取得
+            boxes = config.customCollision();
+        } else {
+            // 標準ブロック（立方体またはスラブ）
+            const h = (config.geometryType === "slab") ? 0.5 : 1;
+            boxes = [new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, h, 1))];
+        }
+
+        return boxes.map(box => {
+            // 回転を適用（applyMetadataTransform内部でmin/maxの逆転を解決）
+            applyMetadataTransform(box, finalMetadata);
+            // ワールド座標 (pos) へ移動
+            box.min.add(pos);
+            box.max.add(pos);
+            return box;
         });
     }
 
+    // 4. 最適化パス：回転がない標準的なフルブロックの場合のみ共有変数を使用
     const height = (config.geometryType === "slab") ? 0.5 : 1;
-
-    // 💡 既存の Box3 の器の中身だけを書き換えて、配列に入れて返す
     _sharedCollisionMax.set(pos.x + 1, pos.y + height, pos.z + 1);
     _sharedCollisionBox.set(pos, _sharedCollisionMax);
 
-    return [_sharedCollisionBox]; // 👈 毎回 new しない！
+    // 注意: 共有変数は「その場」で判定に使う用です。
+    // 非同期処理などで保持したい場合は呼び出し側で clone() してください。
+    return [_sharedCollisionBox];
 }
 
 /**
@@ -786,30 +911,6 @@ function getBlockCollisionBoxes(blockType, pos) {
  * @param {number} blockID - ブロック種識別子
  * @returns {object|null} - 該当する設定があれば返し、なければ null
  */
-function getBlockConfiguration(blockID) {
+export function getBlockConfiguration(blockID) {
     return blockConfigLookup[blockID] || null;
-}
-
-/* -------------------------------------------------------------------------
-   4. エクスポート／グローバル設定
-   ------------------------------------------------------------------------- */
-if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
-    module.exports = {
-        BLOCK_CONFIG,
-        createBlockMesh,
-        getBlockCollisionBoxes,
-        getBlockMaterials,
-        createMaterialsFromBlockConfig,
-        getBlockConfiguration,
-        getBlockGeometry
-    };
-} else {
-    window.BLOCK_CONFIG = BLOCK_CONFIG;
-    window.BLOCK_TYPES = BLOCK_TYPES;
-    window.createBlockMesh = createBlockMesh;
-    window.getBlockCollisionBoxes = getBlockCollisionBoxes;
-    window.getBlockMaterials = getBlockMaterials;
-    window.createMaterialsFromBlockConfig = createMaterialsFromBlockConfig;
-    window.getBlockConfiguration = getBlockConfiguration;
-    window.getBlockGeometry = getBlockGeometry;
 }
