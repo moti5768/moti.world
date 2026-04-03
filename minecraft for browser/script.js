@@ -1177,64 +1177,40 @@ function axisSeparatedCollisionResolve(dt) {
 }
 
 /**
- * 足元4隅に支えがあるか判定。
- * 高さ差が小さい場合は支えとみなし、降りられない。
- * 高さ差が十分あれば降りられる（ジャンプ後や段差中央でも動ける）。
- */
-// 関数の外側（ファイルの適当な場所、または直上）に1度だけ定義
-/**
  * 足元4隅に支え（安全に歩ける床）があるか判定。
- * スニーク（落下防止）を「発動させるべき崖」か「そのまま進んで良い床」かを判定します。
+ * 回転・反転ブロック（逆さ階段やハーフブロック等）の物理形状に対応。
  */
-const _canDescendOffsets = [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()];
-const RAW_TRUE_OPTION = { raw: true };
-
 function canDescendFromSupport(centerX, centerZ, halfWidth, margin) {
     const footY = player.position.y;
-
     const w = halfWidth - margin;
-    _canDescendOffsets[0].set(w, w);
-    _canDescendOffsets[1].set(-w, w);
-    _canDescendOffsets[2].set(w, -w);
-    _canDescendOffsets[3].set(-w, -w);
 
-    // プレイヤーが今立っているブロックの「基準の床の高さ」を整数化
-    const currentGroundY = Math.floor(footY);
+    // 💡 4隅の座標を定義
+    const offsets = [
+        { x: w, z: w }, { x: -w, z: w },
+        { x: w, z: -w }, { x: -w, z: -w }
+    ];
 
-    for (let i = 0; i < 4; i++) {
-        const offset = _canDescendOffsets[i];
-        const checkX = centerX + offset.x;
-        const checkZ = centerZ + offset.y;
-        const blockX = Math.floor(checkX);
-        const blockZ = Math.floor(checkZ);
+    const checkAABB = getPooledBox();
 
-        // 💡 改善点: 現在の足元 (footY) 直下から、少し下まで走査する
-        for (let yOffset = 0; yOffset >= -1; yOffset--) {
-            const blockY = currentGroundY + yOffset;
-            const voxel = getVoxelAtWorld(blockX, blockY, blockZ, globalTerrainCache, RAW_TRUE_OPTION);
+    try {
+        for (const offset of offsets) {
+            const checkX = centerX + offset.x;
+            const checkZ = centerZ + offset.z;
 
-            if (voxel === 0 || voxel === BLOCK_TYPES.SKY) continue;
+            // 足元から0.6ブロック下までの範囲に衝突体があるかチェック
+            checkAABB.min.set(checkX - 0.01, footY - 0.6, checkZ - 0.01);
+            checkAABB.max.set(checkX + 0.01, footY + 0.05, checkZ + 0.01);
 
-            const config = getBlockConfiguration(voxel);
-            if (!config || config.collision !== true) continue;
-
-            const blockHeight = getBlockHeight(voxel);
-            const blockTopY = blockY + blockHeight;
-
-            // 💡 修正ポイント: 
-            // プレイヤーの足元 (footY) と、進もうとしている先のブロック上面 (blockTopY) の「差」を見る。
-            const heightDiff = footY - blockTopY;
-
-            // 進む先が、現在の足元から「0.6ブロック未満」の低い段差、
-            // もしくはハーフブロック等で「全く同じ高さ、あるいは少し高い位置」であれば、それは崖ではありません。
-            if (heightDiff < 0.6) {
-                return true; // 支え（進める床）があるのでスニークを解除し、スムーズに移動させる
+            // checkAABBCollision が回転・反転メタデータを考慮して判定してくれる
+            if (checkAABBCollision(checkAABB)) {
+                return true;
             }
         }
+    } finally {
+        releasePooledBox(checkAABB);
     }
 
-    // 足元4隅のどこを調べても、進む先に「足元より0.6ブロック以内の床」がなければ、それは本物の崖です。
-    return false; // 落下防止を発動（停止）させる
+    return false;
 }
 
 /**
