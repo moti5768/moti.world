@@ -516,20 +516,19 @@ const _tempMax = new THREE.Vector3();
  * @param {THREE.Vector3} pos - 計算基準となる座標（省略時は現在のプレイヤー位置）
  * @returns {THREE.Box3} 計算済みのAABB（※内部で再利用されるため、値を保持したい場合は .clone() してください）
  */
-function getPlayerAABB(pos = player.position) {
-    const height = getCurrentPlayerHeight();
-    const half = PLAYER_RADIUS - COLLISION_MARGIN;
+function getPlayerAABB(pos = player.position, size = null) {
+    // 💡 改善：sizeが渡されていれば再計算しない（ループ最適化用）
+    const h = size ? size.h : getCurrentPlayerHeight();
+    const r = size ? size.r : (PLAYER_RADIUS - COLLISION_MARGIN);
 
-    // Y座標の基準（足元）を計算
-    // positionIsCenterがtrueなら中心から半分下げ、そうでなければそのまま（足元基準）
-    const feetY = player.positionIsCenter ? pos.y - (height / 2) : pos.y;
+    // 💡 改善：足元のY座標計算を共通化
+    const feetY = player.positionIsCenter ? pos.y - (h * 0.5) : pos.y;
 
-    // 新規インスタンスを作らず、既存のVector3の値を書き換える
-    _tempMin.set(pos.x - half, feetY, pos.z - half);
-    _tempMax.set(pos.x + half, feetY + height, pos.z + half);
+    // 💡 改善：Box3のプロパティを直接セット（中間変数を経由しない）
+    _tempAABB.min.set(pos.x - r, feetY, pos.z - r);
+    _tempAABB.max.set(pos.x + r, feetY + h, pos.z + r);
 
-    // Box3に値をセットして返す
-    return _tempAABB.set(_tempMin, _tempMax);
+    return _tempAABB;
 }
 function getPlayerAABBAt(pos) {
     return getPlayerAABB(pos);
@@ -1039,52 +1038,57 @@ function resolveVerticalCollision(origY, candidateY, newX, newZ) {
  * 通常の軸別衝突解決後に、依然としてプレイヤーのAABBが衝突している場合、
  * 複数の方向を試して最小の移動量でプレイヤーを重なり状態から解放します。
  */
+const COLLISION_DIRECTIONS = [
+    new THREE.Vector3(0, 1, 0),  // 上（脱出優先度高）
+    new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
+    new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1),
+    new THREE.Vector3(0, -1, 0)  // 下
+];
+const _moveTempVec = new THREE.Vector3();
 function resolvePlayerCollision() {
     axisSeparatedCollisionResolve(dt);
 
-    const aabb = getPlayerAABB();
-    if (!checkAABBCollision(aabb)) return; // どこも埋まってないなら何もしない
+    // 💡 改善：現在のサイズを一度だけキャッシュ
+    const size = {
+        h: getCurrentPlayerHeight(),
+        r: PLAYER_RADIUS - COLLISION_MARGIN
+    };
 
-    // 💡 16方向はやりすぎ（処理落ちの原因）なので、前後左右＋上下の6方向に限定して負荷を1/3にカット
-    const directions = [
-        new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
-        new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1),
-        new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0)
-    ];
+    if (!checkAABBCollision(getPlayerAABB(player.position, size))) return;
 
     let bestDir = null;
     let bestDist = Infinity;
-    const tempVec = new THREE.Vector3();
 
-    for (const dir of directions) {
+    for (let i = 0; i < COLLISION_DIRECTIONS.length; i++) {
+        const dir = COLLISION_DIRECTIONS[i];
         let low = 0, high = 1.0;
         let foundDist = null;
 
-        for (let i = 0; i < 10; i++) {
-            const mid = (low + high) / 2;
-            tempVec.copy(player.position).addScaledVector(dir, mid);
+        // 💡 改善：回数を 8回に絞っても精度（1/256）は十分
+        for (let j = 0; j < 8; j++) {
+            const mid = (low + high) * 0.5;
+            _moveTempVec.copy(player.position).addScaledVector(dir, mid);
 
-            if (!checkAABBCollision(getPlayerAABBAt(tempVec))) {
-                foundDist = mid; // ぶつからないので、これが安全な距離
-                high = mid;    // もっと手前に安全な場所がないか探す
+            if (!checkAABBCollision(getPlayerAABB(_moveTempVec, size))) {
+                foundDist = mid;
+                high = mid;
             } else {
-                low = mid;     // ぶつかったので、もっと遠くまで逃げる
+                low = mid;
             }
         }
 
         if (foundDist !== null && foundDist < bestDist) {
             bestDist = foundDist;
             bestDir = dir;
+            // 💡 改善：わずかな移動で済むなら、他の方向は調べず終了（早期リターン）
+            if (bestDist < 0.01) break;
         }
     }
 
     if (bestDir) {
         player.position.addScaledVector(bestDir, bestDist);
-    } else {
-        // 🛠️ 修正2: 水中や飛行中は、無理やり上に押し出すのをやめる
-        if (!wasUnderwater && !flightMode) {
-            player.position.y += 0.1;
-        }
+    } else if (!wasUnderwater && !flightMode) {
+        player.position.y += 0.1;
     }
 }
 
@@ -2920,7 +2924,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     if (opaqueGeometries.length > 0) {
         const finalGeom = mergeBufferGeometries(opaqueGeometries, true);
         const mesh = new THREE.Mesh(finalGeom, chunkMaterials);
-        mesh.castShadow = mesh.receiveShadow = true;
         mesh.userData.finalizeFade = function () {
             if (!mesh.material) return;
             if (Array.isArray(mesh.material)) {
@@ -3025,7 +3028,6 @@ function createCustomBlockMesh(type, position, rotation) {
     const mesh = new THREE.Mesh(meshGeometry, meshMaterial);
     mesh.position.copy(position);
     if (rotation) mesh.rotation.copy(rotation);
-    mesh.castShadow = mesh.receiveShadow = true;
     // ✅ 単体配置される特殊ブロックも、視点による非表示化バグを無効化する
     mesh.frustumCulled = true;
 
@@ -4964,11 +4966,16 @@ function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0) {
             ChunkSaveManager.modifiedChunks = ChunkSaveManager.modifiedChunks || new Map();
         }
 
-        // --- 2. プレイヤー位置の反映 ---
-        const startPos = savedPos ? savedPos : { x: 0, y: 40, z: 0 };
+        // --- 2. プレイヤー位置・視点の反映 ---
+        const startPos = savedPos ? savedPos : { x: 0, y: 40, z: 0, yaw: 0, pitch: 0 };
         if (typeof player !== 'undefined') {
             player.position.set(startPos.x, startPos.y, startPos.z);
             player.spawnFixed = !!savedPos;
+        }
+        // 視点(カメラ角度)の復元
+        if (typeof yaw !== 'undefined' && typeof pitch !== 'undefined') {
+            yaw = startPos.yaw || 0;
+            pitch = startPos.pitch || 0;
         }
 
         // --- 3. 描画の反映 ---
@@ -5018,10 +5025,10 @@ if (btnSaveAndQuit) {
             // シード値
             const s = (typeof currentSeed !== 'undefined') ? currentSeed : 0;
 
-            // プレイヤー座標
+            // プレイヤー座標と視点の角度 (yaw, pitch) を一緒に保存
             const pPos = (typeof player !== 'undefined' && player.position)
-                ? { x: player.position.x, y: player.position.y, z: player.position.z }
-                : { x: 0, y: 20, z: 0 };
+                ? { x: player.position.x, y: player.position.y, z: player.position.z, yaw: yaw, pitch: pitch }
+                : { x: 0, y: 20, z: 0, yaw: 0, pitch: 0 };
 
             // 【重要】設置情報 (Mapオブジェクトをそのまま渡す)
             const modified = (typeof ChunkSaveManager !== 'undefined')
