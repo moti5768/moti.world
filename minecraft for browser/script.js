@@ -2600,6 +2600,8 @@ const _dirVectors = [
     new THREE.Vector3(0, 0, 1),  // 4: pz
     new THREE.Vector3(0, 0, -1)  // 5: nz
 ];
+// 計算用の一時変数（GC対策：これらを再利用する）
+const _mTemp = new THREE.Matrix4();
 
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     const baseX = cx * CHUNK_SIZE, baseZ = cz * CHUNK_SIZE;
@@ -2652,24 +2654,59 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             ? (Math.floor(15 * getSkyLightFactor(gameTime)) << 4) : 15;
     }
 
+    // --- 修正版：getVisMask ---
     function getVisMask(x, y, z, type, index) {
         const cached = _globalVisCache[index];
         if (cached !== 0) return cached;
-        const myTrans = _isTransparentBlock[type], myCustom = _isCustomGeometryBlock[type];
-        let mask = 0, t = 0;
 
-        t = get(x + 1, y, z);
-        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 1;
-        t = get(x - 1, y, z);
-        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 2;
-        t = get(x, y + 1, z);
-        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 4;
-        t = get(x, y - 1, z);
-        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 8;
-        t = get(x, y, z + 1);
-        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 16;
-        t = get(x, y, z - 1);
-        if (t === 0 || t === BLOCK_TYPES.SKY || (_isTransparentBlock[t] && (!myTrans || t !== type)) || (_isCustomGeometryBlock[t] && !myCustom)) mask |= 32;
+        // --- 不足していた定数の定義 ---
+        const STRIDE_Z = CHUNK_HEIGHT;
+        const STRIDE_X = CHUNK_HEIGHT * CHUNK_SIZE;
+        const SKY = BLOCK_TYPES.SKY;
+
+        const myTrans = _isTransparentBlock[type];
+        const myCustom = _isCustomGeometryBlock[type];
+        let mask = 0;
+        let t = 0;
+
+        /**
+         * 元の判定ロジックを完全に維持
+         */
+        const shouldShow = (neighborType) => {
+            // neighborType が 0(AIR) または SKY の場合は面を表示
+            if (neighborType === 0 || neighborType === SKY) return true;
+            // 隣が透明ブロックで、(自分が不透明 または 種類が違う) 場合は面を表示
+            if (_isTransparentBlock[neighborType] && (!myTrans || neighborType !== type)) return true;
+            // 隣がカスタムモデルで、自分がカスタムモデルでない場合は面を表示
+            if (_isCustomGeometryBlock[neighborType] && !myCustom) return true;
+            return false;
+        };
+
+        // --- 各方向の判定 (境界チェックを行い、チャンク内なら高速に配列参照) ---
+
+        // X+ (右)
+        t = (x < CHUNK_SIZE - 1) ? (voxelData[index + STRIDE_X] & 0xFFF) : get(x + 1, y, z);
+        if (shouldShow(t)) mask |= 1;
+
+        // X- (左)
+        t = (x > 0) ? (voxelData[index - STRIDE_X] & 0xFFF) : get(x - 1, y, z);
+        if (shouldShow(t)) mask |= 2;
+
+        // Y+ (上)
+        t = (y < CHUNK_HEIGHT - 1) ? (voxelData[index + 1] & 0xFFF) : get(x, y + 1, z);
+        if (shouldShow(t)) mask |= 4;
+
+        // Y- (下)
+        t = (y > 0) ? (voxelData[index - 1] & 0xFFF) : get(x, y - 1, z);
+        if (shouldShow(t)) mask |= 8;
+
+        // Z+ (奥)
+        t = (z < CHUNK_SIZE - 1) ? (voxelData[index + STRIDE_Z] & 0xFFF) : get(x, y, z + 1);
+        if (shouldShow(t)) mask |= 16;
+
+        // Z- (前)
+        t = (z > 0) ? (voxelData[index - STRIDE_Z] & 0xFFF) : get(x, y, z - 1);
+        if (shouldShow(t)) mask |= 32;
 
         _globalVisCache[index] = mask;
         return mask;
@@ -2697,12 +2734,14 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
                 const visMask = getVisMask(x, y, z, type, currentIdx);
 
-                // A. カスタムジオメトリ (階段、植物など)
+                // A. カスタムジオメトリ (改善後の最適化版)
                 if (_isCustomGeometryBlock[type]) {
+                    // キャッシュへの格納（cloneを避けて参照を保持）
                     if (!customGeomCache.has(type)) {
                         const m = createCustomBlockMesh(type, _sharedVec3Zero, null);
-                        if (m) customGeomCache.set(type, m.geometry.clone());
+                        if (m) customGeomCache.set(type, m.geometry);
                     }
+
                     const template = customGeomCache.get(type);
                     if (!template || (!visMask && cfg.cullAdjacentFaces !== false)) continue;
 
@@ -2712,23 +2751,34 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                     for (let g = 0; g < template.groups.length; g++) {
                         const group = template.groups[g];
                         const dir = detectFaceDirection(template, group);
+
+                        // カリング判定
                         if (cfg.cullAdjacentFaces !== false && ((visMask >> dir) & 1) === 0) continue;
 
+                        // ジオメトリの抽出
                         const subGeo = new THREE.BufferGeometry();
                         extractGroupGeometry(template, group, subGeo);
 
-                        // 行列作成
+                        // --- 行列作成 (new Matrix4を排除) ---
                         _m1.makeTranslation(-0.5, -0.5, -0.5);
                         _r1.identity();
+
+                        // 上下反転（meta第3ビット）
                         if ((meta >> 2) & 1) _r1.makeRotationX(Math.PI);
+
+                        // 回転（meta下位2ビット）
                         const angle = (meta & 3) * Math.PI / 2;
-                        if (angle !== 0) _r1.multiply(new THREE.Matrix4().makeRotationY(angle));
+                        if (angle !== 0) {
+                            _mTemp.makeRotationY(angle); // 外部変数を再利用
+                            _r1.multiply(_mTemp);
+                        }
                         _m1.premultiply(_r1);
 
                         // 法線方向計算
                         _v1.copy(_dirVectors[dir]).applyMatrix4(_r1);
                         const wdx = Math.round(_v1.x), wdy = Math.round(_v1.y), wdz = Math.round(_v1.z);
 
+                        // 簡易陰影(AO)の計算
                         let fw = 1.0;
                         if (cfg.geometryType !== "cross") {
                             if (wdy > 0.5) fw = 1.0;
@@ -2737,20 +2787,27 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                             else fw = 0.8;
                         }
 
+                        // 光源レベル取得
                         const light = (cfg.geometryType === "cross") ? getLightLevel(x, y, z) : getLightLevel(x + wdx, y + wdy, z + wdz);
 
-                        _m1.premultiply(new THREE.Matrix4().makeTranslation(wx + 0.5, wy + 0.5, wz + 0.5));
+                        // 座標変換の適用 (new Matrix4を排除)
+                        _mTemp.makeTranslation(wx + 0.5, wy + 0.5, wz + 0.5); // 外部変数を再利用
+                        _m1.premultiply(_mTemp);
                         subGeo.applyMatrix4(_m1);
 
+                        // 頂点カラーの設定
                         const count = subGeo.getAttribute('position').count;
                         const colors = new Float32Array(count * 3);
                         const sS = Math.max(0.04, LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * fw * globalBrightnessMultiplier);
                         const bS = Math.max(0.04, LIGHT_LEVEL_FACTORS[light & 15] * fw * globalBrightnessMultiplier);
 
                         for (let v = 0; v < count; v++) {
-                            colors[v * 3] = sS; colors[v * 3 + 1] = bS; colors[v * 3 + 2] = 0;
+                            colors[v * 3] = sS;
+                            colors[v * 3 + 1] = bS;
+                            colors[v * 3 + 2] = 0;
                         }
                         subGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
                         batchArray.push(subGeo);
                     }
                     continue;
