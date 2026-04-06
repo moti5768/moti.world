@@ -21,7 +21,7 @@ function getTileHash(x, z) {
  */
 export function loadCloudTexture(callback) {
     new THREE.TextureLoader().load(
-        'textures/clouds.png',
+        'textures/environment/clouds.png',
         texture => {
             const img = texture.image, b = 2;
             const w = img.width, h = img.height;

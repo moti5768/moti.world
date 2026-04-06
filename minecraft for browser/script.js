@@ -158,76 +158,220 @@ const perlinNoise3D = (x, y, z) => {
 /* ======================================================
    【定数・グローバル変数】
    ====================================================== */
-let cloudTiles = new Map(); // 雲システム用
-let globalBrightnessMultiplier = 1.0;　//世界全体の明るさ　デフォルトで50%
+let cloudTiles = new Map();
+let globalBrightnessMultiplier = 1.0;
 
 /* ======================================================
    【新・昼夜サイクルシステム】
    ====================================================== */
-let gameTime = 0;                  // 0 ～ 24000 tick
-const TICKS_PER_DAY = 24000;
-const TIME_SPEED = 1.0;            // Tick速度倍率 (1.0 = 20分で1日)
+let sunMesh, moonMesh;
+const CELESTIAL_ORBIT_RADIUS = 1500; // 描画距離(2500)より内側、雲より外側に配置
 
-// 24000tick の時間帯における「太陽の明るさ(0.0 ～ 1.0)」の早見表
+/* ======================================================
+   textures/environment/ 内の素材を読み込む初期化関数
+   ====================================================== */
+function initSunMoon() {
+    const loader = new THREE.TextureLoader();
+
+    // --- 太陽の設定 ---
+    const sunTex = loader.load('textures/environment/sun.png');
+    sunTex.magFilter = THREE.NearestFilter; // ドットをクッキリさせる
+    sunTex.minFilter = THREE.NearestFilter;
+
+    const sunMat = new THREE.MeshBasicMaterial({
+        map: sunTex,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending, // 背景の黒を透過させる
+        // 💡 0xffffff(真っ白)だと昼間に白飛びするので、少しグレーにする
+        color: new THREE.Color(0xbbbbbb),
+        fog: false
+    });
+    sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), sunMat);
+    scene.add(sunMesh);
+
+    // --- 月の設定 ---
+    const moonTex = loader.load('textures/environment/moon_phases.png');
+    moonTex.magFilter = THREE.NearestFilter;
+    moonTex.minFilter = THREE.NearestFilter;
+
+    // 💡 moon_phases.png から「満月」の区画だけを表示
+    moonTex.repeat.set(0.25, 0.5);
+    moonTex.offset.set(0, 0.5);
+
+    const moonMat = new THREE.MeshBasicMaterial({
+        map: moonTex,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        color: new THREE.Color(0xffffff), // 月は夜に映えるので白でOK
+        fog: false
+    });
+    moonMesh = new THREE.Mesh(new THREE.PlaneGeometry(350, 350), moonMat);
+    scene.add(moonMesh);
+}
+
+function updateSunMoonPosition() {
+    if (!sunMesh || !moonMesh || !player) return;
+
+    const angle = (gameTime / TICKS_PER_DAY) * Math.PI * 2;
+
+    // 向きのベクトルを先に計算
+    const sunDir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0);
+
+    const sunX = sunDir.x * CELESTIAL_ORBIT_RADIUS;
+    const sunY = sunDir.y * CELESTIAL_ORBIT_RADIUS;
+
+    sunMesh.position.set(player.position.x + sunX, player.position.y + sunY, player.position.z);
+    sunMesh.lookAt(player.position);
+
+    moonMesh.position.set(player.position.x - sunX, player.position.y - sunY, player.position.z);
+    moonMesh.lookAt(player.position);
+
+    // 表示判定（地平線の下に少し隠れるまで出す）
+    sunMesh.visible = (sunY > -150);
+    moonMesh.visible = (sunY < 150);
+
+    // ★重要: sunDir を渡して、視線補正の計算を一致させる
+    updateSkyAndFogColor(gameTime, sunY, sunDir);
+}
+
+
+
+
+
+
+let gameTime = 0;
+const TICKS_PER_DAY = 24000;
+const TIME_SPEED = 1.0;
+
+// Minecraft準拠の明るさ係数
 function getSkyLightFactor(time) {
-    if (time >= 0 && time < 12000) {
-        return 1.0; // 昼 (10分間)
-    } else if (time >= 12000 && time < 13000) {
-        const t = (time - 12000) / 1000;
-        return THREE.MathUtils.lerp(1.0, 0.1, t); // 夕焼け (1.5分)
-    } else if (time >= 13000 && time < 23000) {
-        return 0.1; // 夜 (7分間、月明かり程度の 10%)
-    } else {
-        const t = (time - 23000) / 1000;
-        return THREE.MathUtils.lerp(0.1, 1.0, t); // 朝焼け (1.5分)
+    // 0: 日の出, 6000: 正午, 12000: 日没, 18000: 真夜中
+
+    // --- 昼間 ---
+    if (time >= 0 && time < 11000) return 1.0;
+
+    // --- 日没（夕焼け） ---
+    if (time >= 11000 && time < 13000) {
+        const t = (time - 11000) / 2000;
+        return THREE.MathUtils.lerp(1.0, 0.1, t);
     }
+
+    // --- 深夜（ここを22800まで延長） ---
+    if (time >= 13000 && time < 22800) return 0.1;
+
+    // --- 朝焼け（22800から日の出の24000にかけて一気に明るくする） ---
+    if (time >= 22800 && time < 24000) {
+        const t = (time - 22800) / 1200; // 期間を短くして変化を急にする
+        return THREE.MathUtils.lerp(0.1, 1.0, t);
+    }
+
+    return 1.0;
 }
 
 /* ======================================================
-   【改善後】Minecraft完全準拠：空とフォグの色更新
+   【最新・完全版】空とフォグの色更新システム
    ====================================================== */
-function updateSkyAndFogColor(time) {
+function updateSkyAndFogColor(time, sunY) {
     let r, g, b;
 
-    // Minecraftのカラー定義（RGB）
-    const day = { r: 120, g: 167, b: 255 };    // #78A7FF (鮮やかな昼)
-    const sunset = { r: 255, g: 141, b: 93 }; // #FF8D5D (夕焼けオレンジ)
-    const night = { r: 12, g: 12, b: 20 };     // #0C0C14 (深い夜)
+    const COLORS = {
+        DAY: { r: 120, g: 167, b: 255 }, // 澄んだ青空
+        SUNSET: { r: 240, g: 160, b: 80 },  // 夕焼け（温かみのあるオレンジ）
+        NIGHT: { r: 10, g: 10, b: 20 },  // 深い夜（紺）
+        DAWN: { r: 255, g: 180, b: 100 }  // 朝焼け（少し黄色に近いオレンジ）
+    };
 
-    if (time >= 0 && time < 12000) {
-        // --- 昼 ---
-        ({ r, g, b } = day);
+    // --- A. ベースカラーの決定 (Lerpによる滑らかな遷移) ---
+    let baseR, baseG, baseB;
 
-    } else if (time >= 12000 && time < 13500) {
-        // --- 夕方 (1.5時間分でじわじわ変化) ---
-        const t = (time - 12000) / 1500;
-        r = THREE.MathUtils.lerp(day.r, sunset.r, t);
-        g = THREE.MathUtils.lerp(day.g, sunset.g, t);
-        b = THREE.MathUtils.lerp(day.b, sunset.b, t);
-
-    } else if (time >= 13500 && time < 15000) {
-        // --- 日没から夜へ ---
-        const t = (time - 13500) / 1500;
-        r = THREE.MathUtils.lerp(sunset.r, night.r, t);
-        g = THREE.MathUtils.lerp(sunset.g, night.g, t);
-        b = THREE.MathUtils.lerp(sunset.b, night.b, t);
-
-    } else if (time >= 15000 && time < 22500) {
-        // --- 夜 ---
-        ({ r, g, b } = night);
-
+    if (time >= 22000 || time < 2000) {
+        // 【朝焼け・日の出フェーズ】
+        // 22000～24000(0): 夜から朝焼けへ, 0～2000: 朝焼けから昼へ
+        let t;
+        if (time >= 22000) {
+            t = (time - 22000) / 2000;
+            baseR = THREE.MathUtils.lerp(COLORS.NIGHT.r, COLORS.DAWN.r, t);
+            baseG = THREE.MathUtils.lerp(COLORS.NIGHT.g, COLORS.DAWN.g, t);
+            baseB = THREE.MathUtils.lerp(COLORS.NIGHT.b, COLORS.DAWN.b, t);
+        } else {
+            t = time / 2000;
+            baseR = THREE.MathUtils.lerp(COLORS.DAWN.r, COLORS.DAY.r, t);
+            baseG = THREE.MathUtils.lerp(COLORS.DAWN.g, COLORS.DAY.g, t);
+            baseB = THREE.MathUtils.lerp(COLORS.DAWN.b, COLORS.DAY.b, t);
+        }
+    } else if (time >= 2000 && time < 10000) {
+        // 【昼間】完全な昼の色
+        ({ r: baseR, g: baseG, b: baseB } = COLORS.DAY);
+    } else if (time >= 10000 && time < 13000) {
+        // 【夕焼け・日没フェーズ】
+        // 10000～12000: 昼から夕焼けへ, 12000～13000: 夕焼けから夜へ
+        let t;
+        if (time < 12000) {
+            t = (time - 10000) / 2000;
+            baseR = THREE.MathUtils.lerp(COLORS.DAY.r, COLORS.SUNSET.r, t);
+            baseG = THREE.MathUtils.lerp(COLORS.DAY.g, COLORS.SUNSET.g, t);
+            baseB = THREE.MathUtils.lerp(COLORS.DAY.b, COLORS.SUNSET.b, t);
+        } else {
+            t = (time - 12000) / 1000;
+            baseR = THREE.MathUtils.lerp(COLORS.SUNSET.r, COLORS.NIGHT.r, t);
+            baseG = THREE.MathUtils.lerp(COLORS.SUNSET.g, COLORS.NIGHT.g, t);
+            baseB = THREE.MathUtils.lerp(COLORS.SUNSET.b, COLORS.NIGHT.b, t);
+        }
     } else {
-        // --- 夜明け (22500〜24000) ---
-        const t = (time - 22500) / 1500;
-        r = THREE.MathUtils.lerp(night.r, day.r, t);
-        g = THREE.MathUtils.lerp(night.g, day.g, t);
-        b = THREE.MathUtils.lerp(night.b, day.b, t);
+        // 【深夜】
+        ({ r: baseR, g: baseG, b: baseB } = COLORS.NIGHT);
     }
 
-    // 整数化してHEXカラーに変換
+    r = baseR; g = baseG; b = baseB;
+
+    // --- B. 視線による方向別カラー補正 (水平線付近のグロー効果) ---
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+
+    const angle = (time / TICKS_PER_DAY) * Math.PI * 2;
+    const sunDir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0).normalize();
+
+    // 太陽が地平線に近い時だけ色を混ぜる (y成分が小さい時)
+    const isSunrise = (time >= 21000 || time < 3000);
+    const isSunset = (time >= 9000 && time < 14000);
+
+    if (isSunrise || isSunset) {
+        const dotSun = camDir.dot(sunDir);
+        if (dotSun > 0) {
+            // 太陽の高さ(y)に基づいて効果の強さを調整 (地平線付近で最大)
+            const heightFactor = Math.max(0, 1 - Math.abs(sunDir.y) * 1.5);
+            const glow = Math.pow(dotSun, 3) * 0.8 * heightFactor;
+            const targetColor = isSunrise ? COLORS.DAWN : COLORS.SUNSET;
+
+            r = THREE.MathUtils.lerp(r, targetColor.r, glow);
+            g = THREE.MathUtils.lerp(g, targetColor.g, glow);
+            b = THREE.MathUtils.lerp(b, targetColor.b, glow);
+        }
+    }
+
+    // --- C. 太陽直視時の眩しさ (白飛びを抑えつつ表現) ---
+    if (sunY > 0) {
+        const lookAtSunFactor = camDir.dot(sunDir);
+        if (lookAtSunFactor > 0.92) {
+            // 指数を上げて眩しさの範囲を絞り、太陽の高さに応じて強度を変える
+            const intensity = Math.pow(lookAtSunFactor, 25) * 35 * Math.max(0, sunDir.y);
+            r += intensity; g += intensity * 0.9; b += intensity * 0.7;
+        }
+    }
+
+    // --- D. 最終適用 (明るさ倍率とクランプ) ---
+    const brightness = globalBrightnessMultiplier;
+    r = Math.max(0, Math.min(255, r * brightness));
+    g = Math.max(0, Math.min(255, g * brightness));
+    b = Math.max(0, Math.min(255, b * brightness));
+
     const hexColor = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
 
-    // レンダラーの背景とフォグに適用
+    // 背景とフォグに適用
     renderer.setClearColor(hexColor);
     if (scene.fog) {
         scene.fog.color.setHex(hexColor);
@@ -329,7 +473,6 @@ const terrainKeyHash = (x, z) => (((x & 0xFFFF) << 16) | (z & 0xFFFF)) >>> 0;
 
 const MAX_CACHE_SIZE = 15000;
 const terrainHeightCache = new Map();
-const terrainCacheKeys = [];
 
 const SEA_LEVEL = 62;             // 本家マイクラの海面(Y=62)
 const BASE_HEIGHT = 63;           // 標準的な地表のベース(Y=63)
@@ -4714,7 +4857,7 @@ function animate() {
     // 1. -------- 昼夜サイクルの進行 --------
     if (player.spawnFixed) {
         gameTime = (gameTime + delta * 20 * TIME_SPEED) % TICKS_PER_DAY;
-        updateSkyAndFogColor(gameTime);
+        updateSunMoonPosition();
     }
 
     // 2. -------- ブロックの明るさ（シェーダー）への反映 --------
@@ -4947,6 +5090,7 @@ function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0) {
     ui.menu.style.display = 'none';
     ui.loading.style.display = 'flex';
     initCanvas();
+    initSunMoon();
 
     // --- ★最重要: setTimeout の外で即座に時間をセット ---
     // これにより、500msの待機中に初期値(0)で動くのを防ぎます
