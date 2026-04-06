@@ -2880,10 +2880,17 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         container.add(mesh);
     }
 
-    // --- 5. カスタムメッシュ結合 ---
+    // =========================================================
+    // --- 5. カスタムメッシュ結合 (マルチマテリアル化による最適化版) ---
+    // =========================================================
+    const cutoutGeometries = [], cutoutMaterials = [];
+    const waterGeometries = [], waterMaterials = [];
+    const cutoutMatMap = new Map(), waterMatMap = new Map();
+
     for (const [type, geoms] of customGeomBatches.entries()) {
-        const merged = mergeBufferGeometries(geoms, true);
+        const mergedGeom = mergeBufferGeometries(geoms, true);
         const baseMat = (getBlockMaterials(+type) || [])[0];
+
         const isWater = type === BLOCK_TYPES.WATER || baseMat?.userData?.isWater === true;
         const isGlass = type === BLOCK_TYPES.GLASS || type === 12;
         const isCutout = _blockConfigFastArray[type]?.geometryType === "cross" || isGlass;
@@ -2893,9 +2900,39 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         fadeMat.userData = { originMat: baseMat, shaderUniforms: baseMat?.userData?.shaderUniforms };
         if (baseMat?.onBeforeCompile) fadeMat.onBeforeCompile = baseMat.onBeforeCompile;
 
-        const mesh = new THREE.Mesh(merged, fadeMat);
-        mesh.renderOrder = isWater ? 10 : (isGlass || isCutout ? 1 : 0);
-        container.add(mesh);
+        // 透過(草・ガラス等)と半透明(水)で振り分け
+        const targetGeoms = isWater ? waterGeometries : cutoutGeometries;
+        const targetMats = isWater ? waterMaterials : cutoutMaterials;
+        const targetMap = isWater ? waterMatMap : cutoutMatMap;
+
+        let matIndex = targetMap.get(fadeMat.uuid);
+        if (matIndex === undefined) {
+            matIndex = targetMats.length;
+            targetMats.push(fadeMat);
+            targetMap.set(fadeMat.uuid, matIndex);
+        }
+
+        // ジオメトリのグループをマテリアルインデックスに合わせて上書き
+        const vCount = mergedGeom.attributes.position.count;
+        const iCount = mergedGeom.index ? mergedGeom.index.count : vCount;
+        mergedGeom.clearGroups();
+        mergedGeom.addGroup(0, iCount, matIndex);
+
+        targetGeoms.push(mergedGeom);
+    }
+
+    // それぞれ1つのMeshにマージしてシーンに追加 (チャンク内のカスタム系ドローコールが最大2回に)
+    if (cutoutGeometries.length > 0) {
+        const finalCutoutGeom = mergeBufferGeometries(cutoutGeometries, true);
+        const cutoutMesh = new THREE.Mesh(finalCutoutGeom, cutoutMaterials);
+        cutoutMesh.renderOrder = 1;
+        container.add(cutoutMesh);
+    }
+    if (waterGeometries.length > 0) {
+        const finalWaterGeom = mergeBufferGeometries(waterGeometries, true);
+        const waterMesh = new THREE.Mesh(finalWaterGeom, waterMaterials);
+        waterMesh.renderOrder = 10;
+        container.add(waterMesh);
     }
 
     return container;

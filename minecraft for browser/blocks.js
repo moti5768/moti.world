@@ -178,9 +178,9 @@ export const BLOCK_CONFIG = {
         id: 6,
         textures: { all: "textures/blocks/coal_ore.png" }
     }),
-    PLANKS: createBlockConfig({
+    PLANKS_OAK: createBlockConfig({
         id: 7,
-        textures: { all: "textures/blocks/planks.png" }
+        textures: { all: "textures/blocks/planks_oak.png" }
     }),
     BRICK: createBlockConfig({
         id: 8,
