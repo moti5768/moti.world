@@ -1338,14 +1338,21 @@ function axisSeparatedCollisionResolve(dt) {
             vel.y = 0;
         }
     } else if (checkAABBCollision(getPlayerAABBAt(posY))) {
-        if (vel.y > 0) {
-            // 天井にぶつかった場合
-            y = orig.y - 0.02; // 💡 わずかに下に押し下げることで、即座に落下＆着地判定をさせる
-            vel.y = -0.05;     // 💡 0ではなく、最初から下向きの初速を与える
-        } else {
-            // 地面に着地した場合
+
+        // --- 飛行モード中の上方向衝突は押し戻さない ---
+        if (flightMode && vel.y > 0) {
+            vel.y = 0;
+        }
+
+        // // --- 通常モードの天井衝突 ---
+        // else if (vel.y > 0) {
+        //     y = orig.y - 0.02;
+        //     vel.y = -0.05;
+        // }
+
+        // --- 地面に着地した場合 ---
+        else {
             if (wasUnderwater) {
-                // 💡 修正点：水中の場合は、潜り続けられるよう位置のみキープし、速度低下ペナルティを回避
                 y = newPos.y;
             } else {
                 y = resolveVerticalCollision(newPos.y, y, newPos.x, newPos.z);
