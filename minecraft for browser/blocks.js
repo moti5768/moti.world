@@ -854,7 +854,7 @@ export function applyMetadataTransform(target, metadata, blockId) {
         }
         if (rotation !== 0) {
             _transMat.makeRotationY(rotation * (Math.PI / 2));
-            _rotMat.multiply(_transMat);
+            _rotMat.premultiply(_transMat);
         }
 
         // 行列合成: T(0.5) * R * T(-0.5)

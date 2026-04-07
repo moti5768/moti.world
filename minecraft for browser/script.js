@@ -2954,7 +2954,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                         const angle = (meta & 3) * Math.PI / 2;
                         if (angle !== 0) {
                             _mTemp.makeRotationY(angle); // 外部変数を再利用
-                            _r1.multiply(_mTemp);
+                            _r1.premultiply(_mTemp);
                         }
                         _m1.premultiply(_r1);
 
