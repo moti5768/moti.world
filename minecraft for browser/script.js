@@ -2786,6 +2786,9 @@ const _mTemp = new THREE.Matrix4();
 
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
+    const currentSkyLight = (typeof getSkyLightFactor === "function" && typeof gameTime !== "undefined")
+        ? (Math.floor(15 * getSkyLightFactor(gameTime)) << 4) : 15;
+
     const baseX = cx * CH_S, baseZ = cz * CH_S;
     const container = new THREE.Object3D();
 
@@ -2846,8 +2849,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             const nLx = wx & 15, nLz = wz & 15;
             return neighborLightMap[ly + CHUNK_HEIGHT * (nLz + CHUNK_SIZE * nLx)];
         }
-        return (typeof getSkyLightFactor === "function" && typeof gameTime !== "undefined")
-            ? (Math.floor(15 * getSkyLightFactor(gameTime)) << 4) : 15;
+        return currentSkyLight;
     }
 
     // --- 修正版：getVisMask ---
@@ -2908,10 +2910,14 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     const customGeomCache = new Map(), customGeomBatches = new Map(), faceGeoms = new Map();
     let hasAnySolidBlock = false;
 
+    let effectiveMaxY = voxelData.maxY !== undefined ? voxelData.maxY : CHUNK_HEIGHT - 1;
+
     for (let x = 0; x < CHUNK_SIZE; x++) {
         for (let z = 0; z < CHUNK_SIZE; z++) {
             const columnIndex = CHUNK_HEIGHT * (z + CHUNK_SIZE * x);
-            for (let y = CHUNK_HEIGHT - 1; y >= 0; y--) {
+            // yの開始地点を有効な高さに制限
+            for (let y = effectiveMaxY; y >= 0; y--) {
+
                 const currentIdx = columnIndex + y;
                 const rawData = voxelData[currentIdx];
                 if ((rawData & 0xFFF) === BLOCK_TYPES.SKY) continue;
