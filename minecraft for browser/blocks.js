@@ -441,46 +441,78 @@ function applyErrorTexture(tex) {
 }
 
 // グローバルキャッシュ
-const materialCache = new Map();      // ブロック構成ごとのキャッシュ
-function createMaterialsFromBlockConfig(blockConfig) {
-    const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
-    const { geometryType, transparent, textures } = blockConfig;
+// ========================================================
+// 1. シェーダー書き換えロジックの共通化 (メモリ・コンパイル最適化)
+// ========================================================
+/**
+ * 全ブロック共通の頂点シェーダー注入ロジック
+ */
+function onBeforeCompileBlock(shader, mat) {
+    // ユニフォームの参照をシェーダーに渡す
+    shader.uniforms.u_skyFactor = mat.userData.shaderUniforms.u_skyFactor;
+    shader.uniforms.u_isLightSource = mat.userData.shaderUniforms.u_isLightSource;
 
+    const vertexInjection = `
+        #include <color_vertex>
+        // vColor.r に空の明るさ、vColor.g にブロックの明るさが格納されている前提
+        float skyLight = vColor.r; 
+        float blockLight = vColor.g; 
+        
+        if (u_isLightSource > 0.5) {
+            vColor.rgb = vec3(1.0);
+        } else {
+            // 明るい方の光を採用し、空の光には時間帯係数をかける
+            vColor.rgb = vec3(max(skyLight * u_skyFactor, blockLight));
+        }
+    `;
+
+    shader.vertexShader = `
+        uniform float u_skyFactor;
+        uniform float u_isLightSource;
+        ${shader.vertexShader}
+    `.replace('#include <color_vertex>', vertexInjection);
+}
+
+// ========================================================
+// 2. メイン関数
+// ========================================================
+const materialCache = new Map(); // ブロック構成ごとのキャッシュ
+
+export function createMaterialsFromBlockConfig(blockConfig) {
     const cacheKey = blockConfig.id;
     if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
 
-    const opacity = (blockConfig.opacity !== undefined) ? blockConfig.opacity : 1.0;
+    const { geometryType, transparent, textures, id, lightLevel, opacity = 1.0 } = blockConfig;
 
-    const isStairsOrSlab = geometryType === "stairs" || geometryType === "slab";
-    const isCross = geometryType === "cross" || geometryType === "leaves";
-    const isWater = geometryType === "water";
-    const isGlass = blockConfig.id === 12;
+    // --- 判定ロジックの整理 ---
+    const isWater = (id === 18);
+    const isLightSource = (lightLevel !== undefined && lightLevel > 0);
 
-    // 💡 【修正】真偽値（true/false）ではなく、数値の lightLevel を見て光源かどうかを判定する
-    const isLightSource = (blockConfig.lightLevel !== undefined && blockConfig.lightLevel > 0);
+    // 半透明ブレンドは「水」のみ適用（描画順バグ防止）
+    const isBlendTransparent = isWater;
 
-    // 💡 透過ブレンド（半透明）にするのは、純粋な「水（ID: 18）」の時だけにする！
-    const isBlendTransparent = (blockConfig.id === 18);
+    // ガラス・草などは AlphaCutout (alphaTest) で処理
+    const isAlphaCutout = transparent === true && !isBlendTransparent;
 
-    // 💡 光源や、透過ブレンドする水以外の「透明フラグ付きブロック」をカットアウト対象にする
-    const isAlphaCutout = transparent === true && !isBlendTransparent && !isLightSource;
+    // 表示面の決定
+    const isCrossOrLeaves = (geometryType === "cross" || geometryType === "leaves");
+    const side = (isCrossOrLeaves || isWater) ? THREE.DoubleSide : THREE.FrontSide;
 
-    // 水と溶岩（geometryType === "water"）は両面描画(DoubleSide)にしておく
-    const side = (isCross || isWater) ? THREE.DoubleSide : THREE.FrontSide;
-    const useVertexColors = (!isStairsOrSlab && !isCross && !isWater);
+    // 頂点カラー（ライティング）を使用するか
+    const isStairsOrSlab = (geometryType === "stairs" || geometryType === "slab");
+    const useVertexColors = (!isStairsOrSlab && !isCrossOrLeaves && !isWater);
 
-    function resolveTexturePath(face) {
-        if (textures && textures.all) return textures.all;
-        if (textures && textures[face]) return textures[face];
-        if (textures && textures.side) return textures.side;
-        return blockConfig.fallbackTexture || null;
-    }
+    // 同一ブロック内でテクスチャが重複する場合、マテリアルを再利用するためのローカルキャッシュ
+    const localMatCache = new Map();
 
-    // --- 改善後：マテリアル設定部分の抜粋 ---
+    /**
+     * 個別の面マテリアルを生成・取得する
+     */
+    function getMat(face) {
+        const texPath = resolveTexturePath(face);
 
-    function getMat(texPathOrNone) {
-        const isWater = (blockConfig.id === 18);
-        const isLava = (blockConfig.id === 19);
+        // すでに同じテクスチャのマテリアルを作っていればそれを返す（ドローコール削減）
+        if (localMatCache.has(texPath)) return localMatCache.get(texPath);
 
         const materialOptions = {
             color: blockConfig.defaultColor ?? 0xffffff,
@@ -488,64 +520,69 @@ function createMaterialsFromBlockConfig(blockConfig) {
             opacity: opacity,
             vertexColors: useVertexColors,
             side: side,
-            depthWrite: !isBlendTransparent,
+            depthWrite: !isBlendTransparent, // 水以外は深度を書き込む（透けないように）
             alphaTest: isAlphaCutout ? 0.5 : 0,
         };
 
-        if (texPathOrNone && texPathOrNone !== "none") {
-            materialOptions.map = cachedLoadTexture(texPathOrNone, blockConfig.fallbackTexture);
+        if (texPath && texPath !== "none") {
+            materialOptions.map = cachedLoadTexture(texPath, blockConfig.fallbackTexture);
         }
 
         const mat = new THREE.MeshBasicMaterial(materialOptions);
 
-        // ユニフォームの初期化を確実に
+        // シェーダーで使用する変数を保持
         mat.userData.shaderUniforms = {
             u_skyFactor: { value: 1.0 },
             u_isLightSource: { value: isLightSource ? 1.0 : 0.0 }
         };
 
-        mat.onBeforeCompile = (shader) => {
-            shader.uniforms.u_skyFactor = mat.userData.shaderUniforms.u_skyFactor;
-            shader.uniforms.u_isLightSource = mat.userData.shaderUniforms.u_isLightSource;
+        // シェーダーコンパイル時にロジックを注入
+        mat.onBeforeCompile = (shader) => onBeforeCompileBlock(shader, mat);
 
-            // 頂点シェーダーの注入（改善前より整理）
-            shader.vertexShader = `
-            uniform float u_skyFactor;
-            uniform float u_isLightSource;
-            ${shader.vertexShader}
-        `.replace(
-                '#include <color_vertex>',
-                `
-            #include <color_vertex>
-            float skyLight = vColor.r; 
-            float blockLight = vColor.g; 
-            
-            if (u_isLightSource > 0.5) {
-                vColor.rgb = vec3(1.0);
-            } else {
-                vColor.rgb = vec4(max(skyLight * u_skyFactor, blockLight)).rgb;
-            }
-            `
-            );
-        };
+        localMatCache.set(texPath, mat);
         return mat;
     }
 
-    if (textures && textures.all) {
-        const mat = getMat(textures.all);
-        const arr = [mat, mat, mat, mat, mat, mat];
-        materialCache.set(cacheKey, arr);
-        return arr;
+    /**
+     * 面の名前に応じて適切なテクスチャパスを返す
+     */
+    function resolveTexturePath(face) {
+        if (textures) {
+            if (textures.all) return textures.all;
+            if (textures[face]) return textures[face];
+            if (textures.side && face !== "top" && face !== "bottom") return textures.side;
+            if (textures.top && face === "top") return textures.top;
+            if (textures.bottom && face === "bottom") return textures.bottom;
+        }
+        return blockConfig.fallbackTexture || null;
     }
 
-    const materials = FACE_ORDER.map(f => getMat(resolveTexturePath(f)));
-    materialCache.set(cacheKey, materials);
-    return materials;
+    // --- マテリアル配列の構築 ---
+    const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
+    let resultMaterials;
+
+    if (textures && textures.all) {
+        // 全面同じ場合は1つのインスタンスで埋める
+        const singleMat = getMat("all");
+        resultMaterials = [singleMat, singleMat, singleMat, singleMat, singleMat, singleMat];
+    } else {
+        // 面ごとに取得（同じテクスチャなら getMat 内でキャッシュが効く）
+        resultMaterials = FACE_ORDER.map(face => getMat(face));
+    }
+
+    materialCache.set(cacheKey, resultMaterials);
+    return resultMaterials;
 }
 
 
 // マテリアルのキャッシュ（ブロックIDごと）
 const BLOCK_MATERIALS_CACHE = new Map();
+// BLOCK_CONFIG から各ブロック設定を高速に取得するためのルックアップテーブル
+const blockConfigLookup = {};
+for (const cfg of Object.values(BLOCK_CONFIG)) {
+    blockConfigLookup[cfg.id] = cfg;
+}
+
 
 /**
  * 指定ブロックタイプのマテリアル配列を返す。  
@@ -590,13 +627,6 @@ export function getBlockMaterials(blockType) {
 // 標準ジオメトリとカスタムジオメトリのキャッシュ
 const cachedBlockGeometries = {};
 const cachedCustomGeometries = {};
-
-// BLOCK_CONFIG から各ブロック設定を高速に取得するためのルックアップテーブル
-const blockConfigLookup = {};
-for (const cfg of Object.values(BLOCK_CONFIG)) {
-    blockConfigLookup[cfg.id] = cfg;
-}
-
 /**
  * 横面のライティング用 UV 座標を最適化する関数  
  * 対象は、法線の Y 成分が 0 に近い（＝横向き）の頂点
@@ -787,140 +817,144 @@ export function getBlockGeometry(type, config) {
     return geom;
 }
 
-// 行列計算用の作業用変数（使い回してGCを抑える）
+// --- 1. ファイルスコープで作業用変数を固定 (GC対策) ---
 const _tmpMat = new THREE.Matrix4();
+const _rotMat = new THREE.Matrix4();
+const _transMat = new THREE.Matrix4();
+const _vec3 = new THREE.Vector3(); // Box3の計算などに使い回す
+const _center = new THREE.Vector3(0.5, 0.5, 0.5);
+
+// Box3の8頂点計算用の固定配列（毎回生成しない）
+const _boxPoints = Array.from({ length: 8 }, () => new THREE.Vector3());
 
 /**
  * ブロックの中心を軸に、メタデータに応じた回転と反転を適用する
- * target が Box3 の場合は、回転後に AABB (軸に平行な境界ボックス) を再計算して
- * min > max による判定消失を防ぐ。
  */
 export function applyMetadataTransform(target, metadata, blockId) {
-    if (!metadata && metadata !== 0) return;
+    if (metadata === undefined || metadata === null) return;
 
     const cfg = getBlockConfiguration(blockId);
     if (!cfg) return;
 
-    let finalMat;
-    let rotateMat = new THREE.Matrix4();
+    // 行列の初期化
+    _tmpMat.identity();
+    _rotMat.identity();
 
-    // --- A. 原木 (isLog) の専用ロジック ---
     if (cfg.isLog) {
-        finalMat = getLogRotationMatrix(metadata);
-        // Object3Dへの適用用に回転成分だけ抽出
-        rotateMat.extractRotation(finalMat);
-    }
-    // --- B. 既存のハーフブロック・階段ロジック ---
-    else {
+        const logMat = getLogRotationMatrix(metadata);
+        _tmpMat.copy(logMat);
+        _rotMat.extractRotation(_tmpMat);
+    } else {
         const rotation = metadata & 3;
         const isUpsideDown = (metadata >> 2) & 1;
-        if (isUpsideDown) rotateMat.makeRotationX(Math.PI);
+
+        // 回転行列 R の構築
+        if (isUpsideDown) {
+            _rotMat.makeRotationX(Math.PI);
+        }
         if (rotation !== 0) {
-            const yRot = new THREE.Matrix4().makeRotationY(rotation * (Math.PI / 2));
-            rotateMat.multiply(yRot);
+            _transMat.makeRotationY(rotation * (Math.PI / 2));
+            _rotMat.multiply(_transMat);
         }
 
-        const center = new THREE.Vector3(0.5, 0.5, 0.5);
-        finalMat = new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z);
-        finalMat.premultiply(rotateMat);
-        finalMat.premultiply(new THREE.Matrix4().makeTranslation(center.x, center.y, center.z));
+        // 行列合成: T(0.5) * R * T(-0.5)
+        // 1. 中心から原点へ
+        _tmpMat.makeTranslation(-_center.x, -_center.y, -_center.z);
+        // 2. 回転適用 ( R * T )
+        _tmpMat.premultiply(_rotMat);
+        // 3. 原点から中心へ ( T_inv * R * T )
+        _transMat.makeTranslation(_center.x, _center.y, _center.z);
+        _tmpMat.premultiply(_transMat);
     }
 
-    // --- D. ターゲットへの適用 ---
     if (target instanceof THREE.Box3) {
-        const points = [
-            new THREE.Vector3(target.min.x, target.min.y, target.min.z),
-            new THREE.Vector3(target.min.x, target.min.y, target.max.z),
-            new THREE.Vector3(target.min.x, target.max.y, target.min.z),
-            new THREE.Vector3(target.min.x, target.max.y, target.max.z),
-            new THREE.Vector3(target.max.x, target.min.y, target.min.z),
-            new THREE.Vector3(target.max.x, target.min.y, target.max.z),
-            new THREE.Vector3(target.max.x, target.max.y, target.min.z),
-            new THREE.Vector3(target.max.x, target.max.y, target.max.z)
-        ];
+        // 頂点座標のセット
+        _boxPoints[0].set(target.min.x, target.min.y, target.min.z);
+        _boxPoints[1].set(target.min.x, target.min.y, target.max.z);
+        _boxPoints[2].set(target.min.x, target.max.y, target.min.z);
+        _boxPoints[3].set(target.min.x, target.max.y, target.max.z);
+        _boxPoints[4].set(target.max.x, target.min.y, target.min.z);
+        _boxPoints[5].set(target.max.x, target.min.y, target.max.z);
+        _boxPoints[6].set(target.max.x, target.max.y, target.min.z);
+        _boxPoints[7].set(target.max.x, target.max.y, target.max.z);
+
         target.makeEmpty();
-        for (const p of points) {
-            p.applyMatrix4(finalMat);
-            target.expandByPoint(p);
+        for (let i = 0; i < 8; i++) {
+            _boxPoints[i].applyMatrix4(_tmpMat);
+            target.expandByPoint(_boxPoints[i]);
         }
-        // スラブの上付き補正
+
+        // スラブの上付き補正（当たり判定用）
         if (!cfg.isLog && cfg.isSlab && !cfg.directional && ((metadata >> 2) & 1)) {
-            target.translate(new THREE.Vector3(0, 0.5, 0));
+            _vec3.set(0, 0.5, 0);
+            target.translate(_vec3);
         }
     } else if (target instanceof THREE.Object3D) {
-        // 回転を適用
-        target.quaternion.setFromRotationMatrix(rotateMat);
+        // 回転の適用
+        target.quaternion.setFromRotationMatrix(_rotMat);
 
-        // オフセット補正
-        if (cfg.isLog) {
-            // 原木は中心回転なので、メッシュ自体のposition補正は不要（ジオメトリが0.5ずれている前提）
-        } else {
+        // Y座標の絶対補正 (再計算に強いロジック)
+        if (!cfg.isLog) {
             const isUpsideDown = (metadata >> 2) & 1;
-            if (isUpsideDown) {
-                target.position.y += (cfg.isSlab && !cfg.directional) ? 0.5 : 1.0;
-            }
+            const baseY = Math.floor(target.position.y);
+            // スラブかつ方向性なし(通常ハーフ)の場合は 0.5、階段などのフルブロック回転は 1.0
+            const offset = isUpsideDown ? ((cfg.isSlab && !cfg.directional) ? 0.5 : 1.0) : 0;
+            target.position.y = baseY + offset;
         }
     }
 }
 
 /**
- * マルチマテリアル対応ブロックメッシュ生成
- * @param {number} rawBlockType - ブロック種識別子（回転データを含む場合がある）
+ * マルチマテリアル対応ブロックメッシュ生成 (最適化版)
+ * @param {number} rawBlockType - ブロック種識別子
  * @param {THREE.Vector3} pos - 配置座標
- * @param {number} metadata - メタデータ（回転・反転フラグ。rawBlockTypeに含まれる場合は自動抽出）
+ * @param {number} metadata - メタデータ
  * @returns {THREE.Mesh|null}
  */
 export function createBlockMesh(rawBlockType, pos, metadata = 0) {
-    // 1. 下位12ビット(0xFFF)でマスクし、純粋なブロックIDのみを抽出する
+    // 1. 純粋なブロックIDの抽出
     const blockId = Number(rawBlockType) & 0xFFF;
-
-    // もし metadata が明示的に渡されていない(0)かつ、rawBlockType にメタデータが含まれている場合、
-    // rawBlockType からメタデータ(13ビット目以降)を抽出して補完する
     const finalMetadata = metadata !== 0 ? metadata : (Number(rawBlockType) >> 12);
 
-    // 2. 浄化した ID で設定を取得
+    // 2. 設定の取得
     const config = getBlockConfiguration(blockId);
     if (!config) {
         console.error("Unknown block type ID:", blockId, "(raw:", rawBlockType, ")");
         return null;
     }
 
-    // 3. ジオメトリ取得
+    // 3. ジオメトリとマテリアルの取得
     const geometry = getBlockGeometry(config.geometryType, config);
-
-    // 4. マテリアル取得（getBlockMaterials 側でも & 0xFFF が行われる前提）
     const materials = getBlockMaterials(blockId);
-    if (!materials) {
-        console.error("No materials found for block type ID:", blockId);
-        return null;
-    }
+    if (!materials) return null;
 
-    // 5. Mesh作成
+    // 4. Mesh作成
     let mesh = new THREE.Mesh(geometry, materials);
 
-    // 6. 向きと反転を適用（位置を決める前に中心座標基準で回転させる）
-    applyMetadataTransform(mesh, finalMetadata);
-
-    // 7. 位置設定
+    // 5. 位置と回転の適用
+    // 💡 改善点: applyMetadataTransform 内で加算ではなく絶対座標をセットするように修正
+    // (※前述の applyMetadataTransform の修正とセットで運用してください)
     mesh.position.copy(pos);
+    applyMetadataTransform(mesh, finalMetadata, blockId);
+
     mesh.castShadow = false;
     mesh.receiveShadow = false;
 
-    // 8. 当たり判定の構築
+    // 6. 当たり判定の構築 (GC対策版)
     let boxes = [];
     if (typeof config.customCollision === "function") {
-        // カスタム判定（階段・ハーフ等）: config側で用意されたBox3のクローンを取得
         boxes = config.customCollision();
     } else if (config.collision) {
-        // 標準ブロック
-        const height = config.geometryType === "slab" ? 0.5 : 1;
-        boxes = [new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, height, 1))];
+        // 💡 改善点: getCustomCollision ヘルパーを使い、定数からクローンするように統一
+        // getCustomCollision("cube") は [Box3(0,0,0 to 1,1,1)] を返す想定
+        const typeKey = config.geometryType === "slab" ? "slab" : "cube";
+        boxes = getCustomCollision(typeKey);
     }
 
-    // 9. 当たり判定も回転させてから、ワールド座標(pos)へ移動
+    // 7. 当たり判定の座標変換
     mesh.userData.collisionBoxes = boxes.map(box => {
-        applyMetadataTransform(box, finalMetadata); // 回転を適用
-        box.translate(pos);                        // 設置ワールド座標に移動
+        applyMetadataTransform(box, finalMetadata, blockId);
+        box.translate(pos);
         return box;
     });
 

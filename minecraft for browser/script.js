@@ -153,13 +153,14 @@ const perlinNoise3D = (x, y, z) => {
 };
 
 
-
-
 /* ======================================================
    【定数・グローバル変数】
    ====================================================== */
 let cloudTiles = new Map();
 let globalBrightnessMultiplier = 1.0;
+let gameTime = 0;
+const TICKS_PER_DAY = 24000;
+const TIME_SPEED = 1.0;
 
 /* ======================================================
    【新・昼夜サイクルシステム】
@@ -216,13 +217,13 @@ function initSunMoon() {
 function updateSunMoonPosition() {
     if (!sunMesh || !moonMesh || !player) return;
 
+    // 1. 角度と向きベクトルを計算（外部の _tmpSunDir を直接更新）
     const angle = (gameTime / TICKS_PER_DAY) * Math.PI * 2;
+    _tmpSunDir.set(Math.cos(angle), Math.sin(angle), 0).normalize();
 
-    // 向きのベクトルを先に計算
-    const sunDir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0);
-
-    const sunX = sunDir.x * CELESTIAL_ORBIT_RADIUS;
-    const sunY = sunDir.y * CELESTIAL_ORBIT_RADIUS;
+    // 2. プレイヤー位置を基準とした配置座標
+    const sunX = _tmpSunDir.x * CELESTIAL_ORBIT_RADIUS;
+    const sunY = _tmpSunDir.y * CELESTIAL_ORBIT_RADIUS;
 
     sunMesh.position.set(player.position.x + sunX, player.position.y + sunY, player.position.z);
     sunMesh.lookAt(player.position);
@@ -230,22 +231,14 @@ function updateSunMoonPosition() {
     moonMesh.position.set(player.position.x - sunX, player.position.y - sunY, player.position.z);
     moonMesh.lookAt(player.position);
 
-    // 表示判定（地平線の下に少し隠れるまで出す）
+    // 3. 表示判定
     sunMesh.visible = (sunY > -150);
     moonMesh.visible = (sunY < 150);
 
-    // ★重要: sunDir を渡して、視線補正の計算を一致させる
-    updateSkyAndFogColor(gameTime, sunY, sunDir);
+    // 4. 空の色の更新。計算済みの sunY と、向きベクトル(_tmpSunDir)をそのまま利用する
+    // ※引数として sunDir も渡すように修正
+    updateSkyAndFogColor(gameTime, sunY, _tmpSunDir);
 }
-
-
-
-
-
-
-let gameTime = 0;
-const TICKS_PER_DAY = 24000;
-const TIME_SPEED = 1.0;
 
 // Minecraft準拠の明るさ係数
 function getSkyLightFactor(time) {
@@ -275,132 +268,174 @@ function getSkyLightFactor(time) {
 /* ======================================================
    【最新・完全版】空とフォグの色更新システム
    ====================================================== */
-function updateSkyAndFogColor(time, sunY) {
-    let r, g, b;
+// --- 関数の外で定義して使い回す（メモリ確保を1回のみにする） ---
+const SKY_COLORS = {
+    DAY: { r: 120, g: 167, b: 255 },
+    SUNSET: { r: 240, g: 160, b: 80 },
+    NIGHT: { r: 10, g: 10, b: 20 },
+    DAWN: { r: 255, g: 180, b: 100 }
+};
 
-    const COLORS = {
-        DAY: { r: 120, g: 167, b: 255 }, // 澄んだ青空
-        SUNSET: { r: 240, g: 160, b: 80 },  // 夕焼け（温かみのあるオレンジ）
-        NIGHT: { r: 10, g: 10, b: 20 },  // 深い夜（紺）
-        DAWN: { r: 255, g: 180, b: 100 }  // 朝焼け（少し黄色に近いオレンジ）
-    };
+const _tmpCamDir = new THREE.Vector3();
+const _tmpSunDir = new THREE.Vector3();
+const _skyColorObj = new THREE.Color();
 
-    // --- A. ベースカラーの決定 (Lerpによる滑らかな遷移) ---
+/**
+ * 空と霧の色を更新する（最適化版）
+ */
+function updateSkyAndFogColor(time, sunY, sunDir) {
     let baseR, baseG, baseB;
 
+    // --- A. ベースカラーの決定 (変更なし) ---
     if (time >= 22000 || time < 2000) {
-        // 【朝焼け・日の出フェーズ】
-        // 22000～24000(0): 夜から朝焼けへ, 0～2000: 朝焼けから昼へ
         let t;
         if (time >= 22000) {
             t = (time - 22000) / 2000;
-            baseR = THREE.MathUtils.lerp(COLORS.NIGHT.r, COLORS.DAWN.r, t);
-            baseG = THREE.MathUtils.lerp(COLORS.NIGHT.g, COLORS.DAWN.g, t);
-            baseB = THREE.MathUtils.lerp(COLORS.NIGHT.b, COLORS.DAWN.b, t);
+            baseR = THREE.MathUtils.lerp(SKY_COLORS.NIGHT.r, SKY_COLORS.DAWN.r, t);
+            baseG = THREE.MathUtils.lerp(SKY_COLORS.NIGHT.g, SKY_COLORS.DAWN.g, t);
+            baseB = THREE.MathUtils.lerp(SKY_COLORS.NIGHT.b, SKY_COLORS.DAWN.b, t);
         } else {
             t = time / 2000;
-            baseR = THREE.MathUtils.lerp(COLORS.DAWN.r, COLORS.DAY.r, t);
-            baseG = THREE.MathUtils.lerp(COLORS.DAWN.g, COLORS.DAY.g, t);
-            baseB = THREE.MathUtils.lerp(COLORS.DAWN.b, COLORS.DAY.b, t);
+            baseR = THREE.MathUtils.lerp(SKY_COLORS.DAWN.r, SKY_COLORS.DAY.r, t);
+            baseG = THREE.MathUtils.lerp(SKY_COLORS.DAWN.g, SKY_COLORS.DAY.g, t);
+            baseB = THREE.MathUtils.lerp(SKY_COLORS.DAWN.b, SKY_COLORS.DAY.b, t);
         }
     } else if (time >= 2000 && time < 10000) {
-        // 【昼間】完全な昼の色
-        ({ r: baseR, g: baseG, b: baseB } = COLORS.DAY);
+        baseR = SKY_COLORS.DAY.r; baseG = SKY_COLORS.DAY.g; baseB = SKY_COLORS.DAY.b;
     } else if (time >= 10000 && time < 13000) {
-        // 【夕焼け・日没フェーズ】
-        // 10000～12000: 昼から夕焼けへ, 12000～13000: 夕焼けから夜へ
         let t;
         if (time < 12000) {
             t = (time - 10000) / 2000;
-            baseR = THREE.MathUtils.lerp(COLORS.DAY.r, COLORS.SUNSET.r, t);
-            baseG = THREE.MathUtils.lerp(COLORS.DAY.g, COLORS.SUNSET.g, t);
-            baseB = THREE.MathUtils.lerp(COLORS.DAY.b, COLORS.SUNSET.b, t);
+            baseR = THREE.MathUtils.lerp(SKY_COLORS.DAY.r, SKY_COLORS.SUNSET.r, t);
+            baseG = THREE.MathUtils.lerp(SKY_COLORS.DAY.g, SKY_COLORS.SUNSET.g, t);
+            baseB = THREE.MathUtils.lerp(SKY_COLORS.DAY.b, SKY_COLORS.SUNSET.b, t);
         } else {
             t = (time - 12000) / 1000;
-            baseR = THREE.MathUtils.lerp(COLORS.SUNSET.r, COLORS.NIGHT.r, t);
-            baseG = THREE.MathUtils.lerp(COLORS.SUNSET.g, COLORS.NIGHT.g, t);
-            baseB = THREE.MathUtils.lerp(COLORS.SUNSET.b, COLORS.NIGHT.b, t);
+            baseR = THREE.MathUtils.lerp(SKY_COLORS.SUNSET.r, SKY_COLORS.NIGHT.r, t);
+            baseG = THREE.MathUtils.lerp(SKY_COLORS.SUNSET.g, SKY_COLORS.NIGHT.g, t);
+            baseB = THREE.MathUtils.lerp(SKY_COLORS.SUNSET.b, SKY_COLORS.NIGHT.b, t);
         }
     } else {
-        // 【深夜】
-        ({ r: baseR, g: baseG, b: baseB } = COLORS.NIGHT);
+        baseR = SKY_COLORS.NIGHT.r; baseG = SKY_COLORS.NIGHT.g; baseB = SKY_COLORS.NIGHT.b;
     }
 
-    r = baseR; g = baseG; b = baseB;
+    let r = baseR, g = baseG, b = baseB;
 
-    // --- B. 視線による方向別カラー補正 (水平線付近のグロー効果) ---
-    const camDir = new THREE.Vector3();
-    camera.getWorldDirection(camDir);
+    // --- B. 視線による方向別カラー補正 ---
+    camera.getWorldDirection(_tmpCamDir);
 
-    const angle = (time / TICKS_PER_DAY) * Math.PI * 2;
-    const sunDir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0).normalize();
-
-    // 太陽が地平線に近い時だけ色を混ぜる (y成分が小さい時)
+    // ★修正点: 内部での角度再計算(angle = ... normalize())を削除し、引数の sunDir を使う
     const isSunrise = (time >= 21000 || time < 3000);
     const isSunset = (time >= 9000 && time < 14000);
 
     if (isSunrise || isSunset) {
-        const dotSun = camDir.dot(sunDir);
+        const dotSun = _tmpCamDir.dot(sunDir);
         if (dotSun > 0) {
-            // 太陽の高さ(y)に基づいて効果の強さを調整 (地平線付近で最大)
             const heightFactor = Math.max(0, 1 - Math.abs(sunDir.y) * 1.5);
             const glow = Math.pow(dotSun, 3) * 0.8 * heightFactor;
-            const targetColor = isSunrise ? COLORS.DAWN : COLORS.SUNSET;
+            const target = isSunrise ? SKY_COLORS.DAWN : SKY_COLORS.SUNSET;
 
-            r = THREE.MathUtils.lerp(r, targetColor.r, glow);
-            g = THREE.MathUtils.lerp(g, targetColor.g, glow);
-            b = THREE.MathUtils.lerp(b, targetColor.b, glow);
+            r = THREE.MathUtils.lerp(r, target.r, glow);
+            g = THREE.MathUtils.lerp(g, target.g, glow);
+            b = THREE.MathUtils.lerp(b, target.b, glow);
         }
     }
 
-    // --- C. 太陽直視時の眩しさ (白飛びを抑えつつ表現) ---
+    // --- C. 太陽直視時の眩しさ ---
     if (sunY > 0) {
-        const lookAtSunFactor = camDir.dot(sunDir);
+        const lookAtSunFactor = _tmpCamDir.dot(sunDir);
         if (lookAtSunFactor > 0.92) {
-            // 指数を上げて眩しさの範囲を絞り、太陽の高さに応じて強度を変える
             const intensity = Math.pow(lookAtSunFactor, 25) * 35 * Math.max(0, sunDir.y);
             r += intensity; g += intensity * 0.9; b += intensity * 0.7;
         }
     }
 
-    // --- D. 最終適用 (明るさ倍率とクランプ) ---
-    const brightness = globalBrightnessMultiplier;
-    r = Math.max(0, Math.min(255, r * brightness));
-    g = Math.max(0, Math.min(255, g * brightness));
-    b = Math.max(0, Math.min(255, b * brightness));
+    // --- D. 最終適用 ---
+    const m = globalBrightnessMultiplier / 255;
+    _skyColorObj.setRGB(
+        Math.max(0, Math.min(1, r * m)),
+        Math.max(0, Math.min(1, g * m)),
+        Math.max(0, Math.min(1, b * m))
+    );
 
-    const hexColor = (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
-
-    // 背景とフォグに適用
-    renderer.setClearColor(hexColor);
+    renderer.setClearColor(_skyColorObj);
     if (scene.fog) {
-        scene.fog.color.setHex(hexColor);
+        scene.fog.color.copy(_skyColorObj);
     }
 }
 /* ======================================================
    【新・チャンク保存管理システム (クラスなし版) - 高速最適化ver】
    ====================================================== */
 const ChunkSaveManager = {
+    // 実際に変更されたブロックデータ（Uint16Array）を保持
     modifiedChunks: new Map(),
 
+    // 💡 追加：チャンクごとの更新メタ情報（再描画フラグや更新された高さの範囲）
+    // キーは encodeChunkKey(cx, cz) で生成したもの
+    chunkUpdateInfo: new Map(),
+
     // インデックス計算（>>> 0 で符号なし32bit整数を保証）
+    // y(0-255: 8bit), z(0-15: 4bit), x(0-15: 4bit) をパッキング
     getBlockIndex: function (lx, ly, lz) {
         return ((ly | 0) + ((lz | 0) << 8) + ((lx | 0) << 12)) >>> 0;
     },
 
+    /**
+     * 指定した座標のブロックを書き換え、更新フラグを立てる
+     */
+    /**
+ * 指定した座標のブロックを書き換え、自分と隣接チャンクに更新フラグを立てる
+ */
     setBlock: function (cx, cz, lx, ly, lz, blockType) {
         if (ly < 0 || ly >= CHUNK_HEIGHT) return;
+
         const key = encodeChunkKey(cx, cz);
         let dataArray = this.modifiedChunks.get(key);
+
+        // 1. 初めてこのチャンクを編集する場合、ベースデータを生成
         if (!dataArray) {
             dataArray = this.captureBaseChunkData(cx, cz);
-            dataArray[this.getBlockIndex(lx, ly, lz)] = blockType;
             this.modifiedChunks.set(key, dataArray);
+        }
+
+        // 2. ブロックデータを更新
+        dataArray[this.getBlockIndex(lx, ly, lz)] = blockType;
+
+        // 3. 更新メタ情報の記録（自分自身）
+        this._markChunkForUpdate(cx, cz, ly);
+
+        // 4. 境界チェック：隣接するチャンクも再描画対象にする
+        // これにより、境界を跨いだ光の計算（getLightLevel）の不整合による点滅を防ぎます
+        if (lx === 0) this._markChunkForUpdate(cx - 1, cz, ly);
+        if (lx === 15) this._markChunkForUpdate(cx + 1, cz, ly);
+        if (lz === 0) this._markChunkForUpdate(cx, cz - 1, ly);
+        if (lz === 15) this._markChunkForUpdate(cx, cz + 1, ly);
+    },
+
+    /**
+     * 💡 内部用補助関数：指定されたチャンクに更新フラグと高さ情報を記録する
+     */
+    _markChunkForUpdate: function (cx, cz, ly) {
+        const key = encodeChunkKey(cx, cz);
+        let info = this.chunkUpdateInfo.get(key);
+
+        if (!info) {
+            info = {
+                maxModifiedY: ly,
+                minModifiedY: ly,
+                needsRebuild: true
+            };
+            this.chunkUpdateInfo.set(key, info);
         } else {
-            dataArray[this.getBlockIndex(lx, ly, lz)] = blockType;
+            if (ly > info.maxModifiedY) info.maxModifiedY = ly;
+            if (ly < info.minModifiedY) info.minModifiedY = ly;
+            info.needsRebuild = true;
         }
     },
 
+    /**
+     * ブロックの取得（変更済みデータがあればそれを、なければ null を返す）
+     */
     getBlock: function (cx, cz, lx, ly, lz) {
         if (ly < 0 || ly >= CHUNK_HEIGHT) return null;
         const key = encodeChunkKey(cx, cz);
@@ -409,7 +444,8 @@ const ChunkSaveManager = {
     },
 
     /**
-     * 地形生成のコアロジック（高速化・リファクタリング版）
+     * 地形生成のコアロジック（高速化版）
+     * ユーザーが初めてそのチャンクに手を加えた時に呼ばれる
      */
     captureBaseChunkData: function (cx, cz) {
         // 初期値はすべて 0 (BLOCK_TYPES.SKY)
@@ -433,43 +469,41 @@ const ChunkSaveManager = {
                 data[columnIdx] = BLOCK_TYPES.BEDROCK;
 
                 // 2. 地層・洞窟の判定 (y=1 から 地表sHeightまで)
-                // 💡 地表より上の「空気」のループを完全にカット
                 for (let y = 1; y < sHeight; y++) {
                     const idx = (columnIdx + y) | 0;
 
-                    // 洞窟判定 (Y=5以上から判定、それ以外は石・土)
+                    // 洞窟判定
                     if (y > 4 && isCave(worldX, y, worldZ, sHeight)) {
-                        // 溶岩湖（Y=11以下）
                         data[idx] = (y <= 11) ? BLOCK_TYPES.LAVA : 0;
                     } else {
-                        // 通常の地層ロジックをインライン化（関数呼び出しコスト削減）
+                        // 地層ロジック
                         if (y === sHeight - 1) {
-                            // 地表面
                             data[idx] = (y < SEA_LEVEL) ? BLOCK_TYPES.DIRT : BLOCK_TYPES.GRASS;
                         } else if (y >= sHeight - 4) {
-                            // 浅い層
                             data[idx] = BLOCK_TYPES.DIRT;
                         } else {
-                            // 深い層
                             data[idx] = BLOCK_TYPES.STONE;
                         }
                     }
                 }
 
-                // 3. 水の配置 (地形が海面より低い場合のみ)
+                // 3. 水の配置
                 for (let y = sHeight; y <= SEA_LEVEL; y++) {
                     data[(columnIdx + y) | 0] = BLOCK_TYPES.WATER;
                 }
-
-                // 💡 sHeight および SEA_LEVEL より高い高度は Uint16Array の初期値(0)なので
-                // 明示的に 0 を代入する必要はなく、ループ自体を回さないのが最速です。
             }
         }
         return data;
+    },
+
+    /**
+     * メッシュ更新後に呼び出し、フラグをクリアする
+     */
+    clearUpdateFlag: function (cx, cz) {
+        const info = this.chunkUpdateInfo.get(encodeChunkKey(cx, cz));
+        if (info) info.needsRebuild = false;
     }
 };
-// 末尾に `>>> 0` をつけるだけで、V8エンジンはこれを「常に正の数（符号なし32bit）」として爆速処理します。
-const terrainKeyHash = (x, z) => (((x & 0xFFFF) << 16) | (z & 0xFFFF)) >>> 0;
 
 const MAX_CACHE_SIZE = 15000;
 const terrainHeightCache = new Map();
@@ -864,27 +898,6 @@ function checkAABBCollision(aabb, velocity, dt) {
 /* ======================================================
    【地形生成】（フラクタルノイズ＋ユーザー変更反映・最適化・強化版）
    ====================================================== */
-const MAX_SEARCH_DEPTH = 32;
-/**
- * 💡 リファクタリング：既存ブロックの探索（足元判定など）を独立化
- * getTerrainHeightから分離し、役割を明確にしました。
- */
-function findHighestBlockY(worldX, worldZ, startY) {
-    const xInt = worldX | 0;
-    const zInt = worldZ | 0;
-    let y = startY | 0;
-
-    // 下方向に最大32ブロック探索
-    const lowLimit = Math.max(0, (y - MAX_SEARCH_DEPTH) | 0);
-    for (; y >= lowLimit; y--) {
-        // getVoxelAtWorld を直接参照することで高速に判定
-        if (getVoxelAtWorld(xInt, y, zInt) !== 0) {
-            return (y + 1) | 0;
-        }
-    }
-    return -Infinity;
-}
-
 /**
  * 💡 リファクタリング：純粋な地形生成（ノイズ）専用関数
  * キーの衝突対策と、スパイク防止のキャッシュ管理を導入。
@@ -932,8 +945,6 @@ const BLOCK_CONFIG_BY_ID = new Map(Object.values(BLOCK_CONFIG).map(c => [c.id, c
 function getBlockConfigById(id) {
     return BLOCK_CONFIG_BY_ID.get(id) || null;
 }
-
-const { SKY, WATER, GRASS, DIRT, STONE, BEDROCK } = BLOCK_TYPES;
 
 function getVoxelHash(x, y, z) {
     const ox = (Math.floor(x) + 512) & 0x3FF; // 10ビット (0~1023)
@@ -1575,17 +1586,28 @@ const FACE_KEYS = Object.keys(faceData);
 // ✅ 改善後：Mapを使うことで、数値キー（Number）を文字列化せずにそのまま保持
 const columnModifications = new Map();
 
+// ✅ 改善後：チャンク単位で管理するように修正
 function markColumnModified(wx, wz, modY) {
-    const key = terrainKeyHash(wx, wz);
+    // 1. ブロック座標をチャンク座標に変換（負の座標対応）
+    const cx = Math.floor(wx / CHUNK_SIZE);
+    const cz = Math.floor(wz / CHUNK_SIZE);
+
+    // 2. チャンク座標から唯一無二のキーを生成
+    const key = encodeChunkKey(cx, cz);
 
     let col = columnModifications.get(key);
     if (!col) {
+        // blocks は後で「どの座標が書き換わったか」を詳細に持つなら必要ですが、
+        // チャンク全体の再メッシュ（再描画）が目的なら maxModifiedY だけで十分です。
         col = { maxModifiedY: modY, blocks: [] };
         columnModifications.set(key, col);
     }
-    col.maxModifiedY = col.maxModifiedY > modY ? col.maxModifiedY : modY; // Math.max 呼び出しコストを排除
-}
 
+    // チャンク内で最も高い更新位置を記録（影の再計算などに利用）
+    if (modY > col.maxModifiedY) {
+        col.maxModifiedY = modY;
+    }
+}
 // 🪚 改善①: traverseを使わず再帰呼び出しと一時配列生成を排除
 function disposeMesh(mesh) {
     if (!mesh) return;
@@ -2747,11 +2769,17 @@ const _dirVectors = [
     new THREE.Vector3(0, 0, 1),  // 4: pz
     new THREE.Vector3(0, 0, -1)  // 5: nz
 ];
+const CH_H = CHUNK_HEIGHT;
+const CH_S = CHUNK_SIZE;
+const STRIDE_Z = CH_H;
+const STRIDE_X = CH_H * CH_S;
+const SKY = BLOCK_TYPES.SKY;
 // 計算用の一時変数（GC対策：これらを再利用する）
 const _mTemp = new THREE.Matrix4();
 
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
-    const baseX = cx * CHUNK_SIZE, baseZ = cz * CHUNK_SIZE;
+
+    const baseX = cx * CH_S, baseZ = cz * CH_S;
     const container = new THREE.Object3D();
 
     clearCaches();
@@ -2765,17 +2793,31 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         isNewChunk = true;
     }
 
+    // --- 【修正】隣接チャンクデータを関数内で取得 ---
+    const neighborData = {
+        px: ChunkSaveManager.modifiedChunks.get(encodeChunkKey(cx + 1, cz)),
+        nx: ChunkSaveManager.modifiedChunks.get(encodeChunkKey(cx - 1, cz)),
+        pz: ChunkSaveManager.modifiedChunks.get(encodeChunkKey(cx, cz + 1)),
+        nz: ChunkSaveManager.modifiedChunks.get(encodeChunkKey(cx, cz - 1))
+    };
+
     // --- データアクセス・ヘルパー ---
     function get(x, y, z) {
-        if (y < 0 || y >= CHUNK_HEIGHT) return BLOCK_TYPES.SKY;
-        let val;
-        if (x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE) {
-            val = voxelData[y + CHUNK_HEIGHT * (z + CHUNK_SIZE * x)];
-        } else {
-            const wx = baseX + x, wy = BEDROCK_LEVEL + y, wz = baseZ + z;
-            val = getVoxelAtWorld(wx, wy, wz, globalTerrainCache, { raw: true });
+        if (y < 0 || y >= CH_H) return BLOCK_TYPES.SKY;
+
+        // チャンク内
+        if (x >= 0 && x < CH_S && z >= 0 && z < CH_S) {
+            return voxelData[y + (z * STRIDE_Z) + (x * STRIDE_X)] & 0xFFF;
         }
-        return val & 0xFFF;
+
+        // 【軽量化】隣接配列があれば直接アクセス（Map検索を回避）
+        if (x >= CH_S && neighborData.px) return neighborData.px[y + (z * STRIDE_Z) + (0 * STRIDE_X)] & 0xFFF;
+        if (x < 0 && neighborData.nx) return neighborData.nx[y + (z * STRIDE_Z) + (15 * STRIDE_X)] & 0xFFF;
+        if (z >= CH_S && neighborData.pz) return neighborData.pz[y + (0 * STRIDE_Z) + (x * STRIDE_X)] & 0xFFF;
+        if (z < 0 && neighborData.nz) return neighborData.nz[y + (15 * STRIDE_Z) + (x * STRIDE_X)] & 0xFFF;
+
+        // 最終手段（未ロード領域など）
+        return getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z, globalTerrainCache, { raw: true }) & 0xFFF;
     }
 
     let lightMap = chunkLightCache.get(chunkKey);
@@ -2805,11 +2847,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     function getVisMask(x, y, z, type, index) {
         const cached = _globalVisCache[index];
         if (cached !== 0) return cached;
-
-        // --- 不足していた定数の定義 ---
-        const STRIDE_Z = CHUNK_HEIGHT;
-        const STRIDE_X = CHUNK_HEIGHT * CHUNK_SIZE;
-        const SKY = BLOCK_TYPES.SKY;
 
         const myTrans = _isTransparentBlock[type];
         const myCustom = _isCustomGeometryBlock[type];
@@ -3066,7 +3103,9 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
     if (opaqueGeometries.length > 0) {
         const finalGeom = mergeBufferGeometries(opaqueGeometries, true);
+        finalGeom.computeBoundingSphere();
         const mesh = new THREE.Mesh(finalGeom, chunkMaterials);
+        mesh.frustumCulled = true;
         mesh.userData.finalizeFade = function () {
             if (!mesh.material) return;
             if (Array.isArray(mesh.material)) {
@@ -3544,9 +3583,9 @@ function pickFirstValidHit(raycaster, objects, action) {
         freeVec(tempNormal);
     }
 }
-// ----------------------------------------
-// メイン：破壊/設置（新システム・負の座標完全準拠）
-// ----------------------------------------
+/**
+ * 破壊/設置メインシステム（負の座標・高パフォーマンス完全準拠版）
+ */
 function interactWithBlock(action) {
     if (action !== "place" && action !== "destroy") {
         console.warn("未知のアクション:", action);
@@ -3557,170 +3596,116 @@ function interactWithBlock(action) {
     const TOP_FACE_THRESHOLD = 0.9;
     const TOP_Y_EPS = 1e-3;
 
+    // レイキャスターの設定
     raycaster.near = 0.01;
     raycaster.far = BLOCK_INTERACT_RANGE;
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
 
+    // 1. 周辺チャンクの収集（Math.floorによる負の座標対応）
     const pCx = Math.floor(player.position.x / CHUNK_SIZE);
     const pCz = Math.floor(player.position.z / CHUNK_SIZE);
 
     const objects = [];
     for (let x = -1; x <= 1; x++) {
         for (let z = -1; z <= 1; z++) {
-            const cx = pCx + x;
-            const cz = pCz + z;
-
-            const chunkKey = encodeChunkKey(cx, cz);
+            const chunkKey = encodeChunkKey(pCx + x, pCz + z);
             const chunkMesh = loadedChunks.get(chunkKey);
-            if (chunkMesh) {
-                objects.push(chunkMesh);
-            }
+            if (chunkMesh) objects.push(chunkMesh);
         }
     }
-
     objects.push(...Object.values(placedCustomBlocks));
 
     const intersect = pickFirstValidHit(raycaster, objects, action);
-
     if (!intersect) {
         console.warn("破壊/設置対象が見つかりません");
         return;
     }
 
     const { base, dir, target, rawNormal } = computeHitBlockAndTarget(intersect, action);
-    const candidate = target;
 
-    const candidateHash = getVoxelHash(candidate.x, candidate.y, candidate.z);
+    // 2. 座標を整数(Block単位)に即座に変換して固定（不整合防止の最重要項目）
+    // target(設置先) か base(破壊対象) を選択
+    const rawPos = (action === "place") ? target : base;
+    const b = {
+        x: Math.floor(rawPos.x),
+        y: Math.floor(rawPos.y),
+        z: Math.floor(rawPos.z)
+    };
 
-    const candCx = getChunkCoord(candidate.x);
-    const candCz = getChunkCoord(candidate.z);
+    // 3. チャンク座標とローカル座標の計算
+    // チャンクサイズ16の場合、ビット論理積 & 15 が負の数に対して最も速く正確
+    const candCx = Math.floor(b.x / CHUNK_SIZE);
+    const candCz = Math.floor(b.z / CHUNK_SIZE);
+    const candLx = b.x & (CHUNK_SIZE - 1);
+    const candLz = b.z & (CHUNK_SIZE - 1);
 
-    // 💡 負の座標でも安全に 0 ～ 15 を算出する数学的剰余
-    let candLx = candidate.x % CHUNK_SIZE;
-    if (candLx < 0) candLx += CHUNK_SIZE;
-    let candLz = candidate.z % CHUNK_SIZE;
-    if (candLz < 0) candLz += CHUNK_SIZE;
+    const candidateHash = getVoxelHash(b.x, b.y, b.z);
 
-    let voxel = ChunkSaveManager.getBlock(candCx, candCz, candLx, candidate.y, candLz)
-        ?? getVoxelAtWorld(candidate.x, candidate.y, candidate.z, globalTerrainCache, true);
+    // ブロックデータの取得
+    let voxel = ChunkSaveManager.getBlock(candCx, candCz, candLx, b.y, candLz)
+        ?? getVoxelAtWorld(b.x, b.y, b.z, globalTerrainCache, true);
 
-    // 💡 破壊・設置判定のために、既存ブロックのID部分(下位12ビット)だけを抽出して設定を取得
-    let cfg = getBlockConfiguration(voxel & 0xFFF);
+    // ID(下位12bit)抽出
+    const voxelIdOnly = voxel & 0xFFF;
+    let cfg = getBlockConfiguration(voxelIdOnly);
 
-    const candidateCenter = new THREE.Vector3(candidate.x + 0.5, candidate.y + 0.5, candidate.z + 0.5);
-    const cameraPos = camera.position ? camera.position : new THREE.Vector3(0, 0, 0);
-    const distToCandidate = cameraPos.distanceTo(candidateCenter);
-    if (distToCandidate > BLOCK_INTERACT_RANGE + 0.6) {
-        console.warn("ターゲットは射程外です:", distToCandidate.toFixed(2));
+    // 距離チェック
+    const candidateCenter = new THREE.Vector3(b.x + 0.5, b.y + 0.5, b.z + 0.5);
+    const cameraPos = camera.position || new THREE.Vector3(0, 0, 0);
+    if (cameraPos.distanceTo(candidateCenter) > BLOCK_INTERACT_RANGE + 0.6) {
+        console.warn("ターゲットは射程外です");
         return;
     }
 
-    const belowBlockBox = new THREE.Box3(
-        new THREE.Vector3(candidate.x + EPS, candidate.y - 1 + EPS, candidate.z + EPS),
-        new THREE.Vector3(candidate.x + 1 - EPS, candidate.y - EPS, candidate.z + 1 - EPS)
-    );
-
+    // AABB取得
     let playerBox = null;
-    try {
-        playerBox = getPlayerAABB();
-    } catch (e) {
-        playerBox = null;
-    }
-
-    const topPlaneY = candidate.y + 1;
-    const isTopFaceByNormal = rawNormal.y > TOP_FACE_THRESHOLD;
-    const hitPointIsAtTop = (Math.abs(intersect.point.y - topPlaneY) <= TOP_Y_EPS) || (intersect.point.y > topPlaneY - TOP_Y_EPS);
-    const isActuallyTopAttempt = isTopFaceByNormal || hitPointIsAtTop || (dir.y > 0);
-
-    if (action === "place" && playerBox) {
-        const playerFeetY = playerBox.min.y;
-        const isAboveFeet = candidate.y >= Math.floor(playerFeetY + EPS);
-        const overlaps = playerBox.intersectsBox(belowBlockBox);
-
-        if (sneakActive && overlaps && isActuallyTopAttempt) {
-            console.warn("自分の立っているブロックの上面には設置できません（安全判定）");
-            return;
-        }
-
-        if (isAboveFeet && isActuallyTopAttempt) {
-            if (lastPlacedKey !== null) {
-                const sameColumn = (candidate.x === Math.floor(player.position.x) && candidate.z === Math.floor(player.position.z));
-                const higherThanLast = true;
-
-                const playerCenterX = (playerBox.min.x + playerBox.max.x) / 2;
-                const playerCenterZ = (playerBox.min.z + playerBox.max.z) / 2;
-                const dx = Math.abs(playerCenterX - (candidate.x + 0.5));
-                const dz = Math.abs(playerCenterZ - (candidate.z + 0.5));
-                const isDirectlyAbove = dx < 0.4 && dz < 0.4;
-
-                if (sameColumn && higherThanLast && isDirectlyAbove && !player.onGround) {
-                    console.warn("真上でのジャンプ中縦連続設置は禁止");
-                    return;
-                }
-            }
-        }
-    }
+    try { playerBox = getPlayerAABB(); } catch (e) { }
 
     // ====================
-    // 破壊
+    // 破壊セクション
     // ====================
     if (action === "destroy") {
-        const destroyHash = getVoxelHash(base.x, base.y, base.z);
-
-        const baseCx = getChunkCoord(base.x);
-        const baseCz = getChunkCoord(base.z);
-
-        let baseLx = base.x % CHUNK_SIZE;
-        if (baseLx < 0) baseLx += CHUNK_SIZE;
-        let baseLz = base.z % CHUNK_SIZE;
-        if (baseLz < 0) baseLz += CHUNK_SIZE;
-
-        let destroyVoxel = ChunkSaveManager.getBlock(baseCx, baseCz, baseLx, base.y, baseLz)
-            ?? getVoxelAtWorld(base.x, base.y, base.z, globalTerrainCache, true);
-
-        // ID部分のみを抽出して判定
-        const destroyBaseId = destroyVoxel & 0xFFF;
-        const destroyCfg = getBlockConfiguration(destroyBaseId);
-
-        if (destroyCfg?.targetblock === false) {
-            console.warn("破壊不可ブロックです");
-            return;
-        }
-        if (destroyBaseId === BLOCK_TYPES.SKY) {
+        if (voxelIdOnly === BLOCK_TYPES.SKY) {
             console.warn("空気は破壊できません");
             return;
         }
-
-        const blockCenter = new THREE.Vector3(base.x + 0.5, base.y + 0.5, base.z + 0.5);
-        createMinecraftBreakParticles(blockCenter, destroyBaseId, 1.0);
-
-        if (placedCustomBlocks.has(destroyHash)) {
-            scene.remove(placedCustomBlocks.get(destroyHash));
-            placedCustomBlocks.delete(destroyHash);
+        if (cfg?.targetblock === false) {
+            console.warn("破壊不可ブロックです");
+            return;
         }
 
-        ChunkSaveManager.setBlock(baseCx, baseCz, baseLx, base.y, baseLz, BLOCK_TYPES.SKY);
-        console.log("破壊完了:", base);
+        createMinecraftBreakParticles(candidateCenter, voxelIdOnly, 1.0);
 
-        markColumnModified(base.x, base.z, base.y);
-        updateAffectedChunks(base, false);
+        // カスタムモデル（扉や看板など）の削除処理
+        if (placedCustomBlocks.has(candidateHash)) {
+            scene.remove(placedCustomBlocks.get(candidateHash));
+            placedCustomBlocks.delete(candidateHash);
+        }
+
+        // 保存データ更新
+        ChunkSaveManager.setBlock(candCx, candCz, candLx, b.y, candLz, BLOCK_TYPES.SKY);
+
+        // 周辺更新
+        markColumnModified(b.x, b.z, b.y);
+        updateAffectedChunks(b, false);
         updateBlockSelection();
         updateBlockInfo();
         return;
     }
 
     // ====================
-    // 設置
+    // 設置セクション
     // ====================
     if (action === "place") {
         if (activeBlockType === BLOCK_TYPES.SKY) return;
 
-        if (candidate.y <= -1 || candidate.y >= BEDROCK_LEVEL + CHUNK_HEIGHT) {
+        // 高度制限
+        if (b.y <= -1 || b.y >= BEDROCK_LEVEL + CHUNK_HEIGHT) {
             addChatMessage("設置制限高度外です。", "#ff5555");
             return;
         }
 
-        const voxelIdOnly = voxel & 0xFFF;
+        // 上書き可能判定（水や草など）
         if (voxelIdOnly !== BLOCK_TYPES.SKY) {
             const currentCfg = getBlockConfiguration(voxelIdOnly);
             if (currentCfg?.geometryType === "water" || currentCfg?.overwrite === true) {
@@ -3728,37 +3713,44 @@ function interactWithBlock(action) {
                     scene.remove(placedCustomBlocks.get(candidateHash));
                     placedCustomBlocks.delete(candidateHash);
                 }
-                ChunkSaveManager.setBlock(candCx, candCz, candLx, candidate.y, candLz, BLOCK_TYPES.SKY);
+                ChunkSaveManager.setBlock(candCx, candCz, candLx, b.y, candLz, BLOCK_TYPES.SKY);
             } else {
+                return; // 置けない
+            }
+        }
+
+        // プレイヤー自身との衝突判定
+        const newBlockCfg = getBlockConfiguration(activeBlockType);
+        if (newBlockCfg?.collision !== false && playerBox) {
+            if (blockIntersectsPlayer(b, playerBox, 0.0)) return;
+        }
+
+        // 特殊設置制限（スニーク、ジャンプ縦積みなど）のロジック
+        if (playerBox) {
+            const isActuallyTopAttempt = (rawNormal.y > TOP_FACE_THRESHOLD) || (dir.y > 0);
+            const overlapsBelow = playerBox.intersectsBox(new THREE.Box3(
+                new THREE.Vector3(b.x + EPS, b.y - 1 + EPS, b.z + EPS),
+                new THREE.Vector3(b.x + 1 - EPS, b.y - EPS, b.z + 1 - EPS)
+            ));
+
+            if (sneakActive && overlapsBelow && isActuallyTopAttempt) {
+                console.warn("足元への設置禁止(スニーク中安全判定)");
                 return;
             }
         }
 
-        const newBlockCfg = getBlockConfiguration(activeBlockType);
-        if (newBlockCfg?.collision !== false && blockIntersectsPlayer(candidate, playerBox ?? getPlayerAABB(), 0.0)) {
-            return;
-        }
-
-        // --- ロジック移行部分 ---
+        // メタデータ（回転など）の計算
         const camDir = new THREE.Vector3();
         camera.getWorldDirection(camDir);
+        const metaData = calculatePlacementMeta(activeBlockType, camDir, rawNormal, intersect.point);
+        const blockDataToSave = (activeBlockType & 0xFFF) | (metaData << 12);
 
-        // blocks.js の共通関数を呼び出し
-        const metaData = calculatePlacementMeta(
-            activeBlockType,
-            camDir,
-            rawNormal,
-            intersect.point
-        );
-
-        const blockDataToSave = activeBlockType | (metaData << 12);
-        // -----------------------
-
-        ChunkSaveManager.setBlock(candCx, candCz, candLx, candidate.y, candLz, blockDataToSave);
+        // 設置実行
+        ChunkSaveManager.setBlock(candCx, candCz, candLx, b.y, candLz, blockDataToSave);
         lastPlacedKey = candidateHash;
 
-        markColumnModified(candidate.x, candidate.z, candidate.y);
-        updateAffectedChunks(candidate, false);
+        markColumnModified(b.x, b.z, b.y);
+        updateAffectedChunks(b, false);
         updateBlockSelection();
         updateBlockInfo();
         return;
@@ -3994,7 +3986,7 @@ const createHotbarItemPreview = async blockConfig => {
         : await create3DPreview(config, 64);
 };
 
-window.addEventListener("DOMContentLoaded", async () => {
+async function itemspreview() {
     const inventoryEl = document.getElementById("inventory");
 
     const promises = Object.values(BLOCK_CONFIG).map(async blockConfig => {
@@ -4030,7 +4022,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     const items = await Promise.all(promises);
     items.filter(Boolean).forEach(item => inventoryEl.appendChild(item));
-});
+}
 
 
 // --- ホットバー初期化 ---
@@ -4522,7 +4514,6 @@ const getPooledParticle = () => {
 };
 
 const releasePooledParticle = p => {
-    p.userData = {};
     p.visible = false;
     if (p.parent) p.parent.remove(p);
     if (p.geometry && !p.geometry.__cached) {
@@ -4562,13 +4553,18 @@ const createMinecraftBreakParticles = (pos, blockType, lifetime = 3.0) => {
                 p.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
 
                 rndVec.set((Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2);
-
-                p.userData = {
-                    origin: basePos.clone(),
-                    velocity: rndVec.clone(),
-                    lifetime: 0.2 + Math.random() * (lifetime - 0.2),
-                    elapsed: 0
-                };
+                if (!p.userData.origin) {
+                    p.userData = {
+                        origin: new THREE.Vector3(),
+                        velocity: new THREE.Vector3(),
+                        lifetime: 0,
+                        elapsed: 0
+                    };
+                }
+                p.userData.origin.copy(basePos);
+                p.userData.velocity.copy(rndVec);
+                p.userData.lifetime = 0.2 + Math.random() * (lifetime - 0.2);
+                p.userData.elapsed = 0;
                 group.add(p);
             }
         }
@@ -4579,6 +4575,12 @@ const createMinecraftBreakParticles = (pos, blockType, lifetime = 3.0) => {
     return group;
 };
 
+const PUSH_DIRS = [
+    { x: 1, z: 0 }, { x: -1, z: 0 },
+    { x: 0, z: 1 }, { x: 0, z: -1 }
+];
+// 結果を格納するための使い回し用配列（長さ4の固定長）
+const _validCandidates = new Array(4);
 const updateBlockParticles = delta => {
     const ag = activeParticleGroups;
     for (let gi = ag.length - 1; gi >= 0; gi--) {
@@ -4622,13 +4624,10 @@ const updateBlockParticles = delta => {
                         ud.velocity.z *= 0.7;
                     }
                     else if (p.position.y < topY - 0.1) {
-                        const pushDirs = [
-                            { x: 1, z: 0 }, { x: -1, z: 0 },
-                            { x: 0, z: 1 }, { x: 0, z: -1 }
-                        ];
+                        let validCount = 0; // 今回見つかった候補の数
 
-                        const validCandidates = [];
-                        for (const dir of pushDirs) {
+                        for (let di = 0; di < 4; di++) {
+                            const dir = PUSH_DIRS[di];
                             const checkCx = getChunkCoord(bx + dir.x);
                             const checkCz = getChunkCoord(bz + dir.z);
 
@@ -4636,16 +4635,16 @@ const updateBlockParticles = delta => {
                                 ?? getVoxelAtWorld(bx + dir.x, by, bz + dir.z, globalTerrainCache, { raw: true });
 
                             if (sideVoxel === BLOCK_TYPES.SKY || sideVoxel === BLOCK_TYPES.WATER) {
-                                validCandidates.push(dir);
+                                _validCandidates[validCount++] = dir; // 配列を作り直さず上書き
                             }
                         }
 
-                        if (validCandidates.length > 0) {
-                            const chosenDir = validCandidates[Math.floor(Math.random() * validCandidates.length)];
+                        if (validCount > 0) {
+                            // 見つかった数(validCount)の中からランダムに選ぶ
+                            const chosenDir = _validCandidates[Math.floor(Math.random() * validCount)];
 
                             p.position.x += chosenDir.x * 0.1;
                             p.position.z += chosenDir.z * 0.1;
-
                             ud.velocity.x = chosenDir.x * 1.5;
                             ud.velocity.z = chosenDir.z * 1.5;
                             ud.velocity.y = 0;
@@ -4845,7 +4844,7 @@ function animate() {
             const groundY = Math.floor(BASE_HEIGHT + heightModifier);
             player.position.y = (player.position.y === 40) ? groundY + 0.1 : player.position.y;
             player.spawnFixed = true;
-            updateSkyAndFogColor(gameTime);
+            updateSunMoonPosition();
         } else {
             player.velocity.y = 0;
             updateChunks();
@@ -4872,7 +4871,6 @@ function animate() {
         const activeUpdates = pendingChunkUpdates.size + chunkQueue.length;
         const modifiedCount = ChunkSaveManager.modifiedChunks.size;
 
-        // 💡 ドローコール数とポリゴン数を取得
         const drawCalls = renderer.info.render.calls;
         const triangles = renderer.info.render.triangles;
 
@@ -4979,7 +4977,27 @@ function animate() {
         cloudGridTimer = 0;
     }
 
-    // 9. -------- 最終処理 & レンダリング --------
+    // 9. -------- ドローコール最適化（垂直方向カリング） --------
+    const isLookingDown = camera.rotation.x < -1.2;
+
+    // エラー修正ポイント: activeChunks ではなく loadedChunks を使用
+    loadedChunks.forEach((chunk) => {
+        if (!chunk.mesh && !chunk.waterMesh) return;
+
+        if (isLookingDown) {
+            // 中心から2チャンク（32ブロック）以上離れている場合は非表示
+            const dist = Math.hypot(chunk.x - pCx, chunk.z - pCz);
+            const isVisible = (dist <= 2);
+            if (chunk.mesh) chunk.mesh.visible = isVisible;
+            if (chunk.waterMesh) chunk.waterMesh.visible = isVisible;
+        } else {
+            // 通常時は可視性を復元
+            if (chunk.mesh) chunk.mesh.visible = true;
+            if (chunk.waterMesh) chunk.waterMesh.visible = true;
+        }
+    });
+
+    // 10. -------- 最終処理 & レンダリング --------
     updateScreenOverlay();
     resetLastPlacedIfOnGround();
     renderer.render(scene, camera);
@@ -5021,7 +5039,7 @@ document.getElementById('btn-back-to-menu').onclick = () => {
 // 3. 生成開始
 document.getElementById('btn-start-game').onclick = async () => {
     const seed = applySeed(ui.seedInput.value);
-    startGame(seed);
+    await startGame(seed);
 };
 
 // 保存データから再開（最新修正版）
@@ -5061,7 +5079,7 @@ document.getElementById('btn-load-saved').onclick = async () => {
             // --- E. ゲーム開始 ---
             // 引数の順番：(seed, position, modifiedChunks, gameTime)
             if (typeof startGame === 'function') {
-                startGame(
+                await startGame(
                     saveData.seed,
                     startPos,
                     saveData.chunks,
@@ -5085,7 +5103,7 @@ document.getElementById('btn-load-saved').onclick = async () => {
 };
 
 // 引数に savedTime = 0 を追加
-function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0) {
+async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0) {
     ui.config.style.display = 'none';
     ui.menu.style.display = 'none';
     ui.loading.style.display = 'flex';
@@ -5098,7 +5116,7 @@ function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0) {
         gameTime = savedTime;
     }
 
-    setTimeout(() => {
+    setTimeout(async () => {
         if (typeof applySeed === 'function') {
             applySeed(seed);
         }
@@ -5123,8 +5141,12 @@ function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0) {
         }
 
         // --- 3. 描画の反映 ---
-        if (typeof updateSkyAndFogColor === 'function') {
-            updateSkyAndFogColor(gameTime);
+        if (typeof updateSunMoonPosition === 'function') {
+            // 内部で正しく3引数の updateSkyAndFogColor を呼び出してくれます
+            updateSunMoonPosition();
+        } else if (typeof updateSkyAndFogColor === 'function') {
+            // もし updateSunMoonPosition が使えない場合の予備（防衛策）
+            updateSkyAndFogColor(gameTime, 0, _tmpSunDir);
         }
         console.log("時間を復元しました:", gameTime);
 
@@ -5136,7 +5158,7 @@ function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0) {
         // saveWorldData(seed, startPos, ChunkSaveManager.modifiedChunks, gameTime);
 
         addChatMessage(savedPos ? "データをロードしました" : `世界を新しく生成しました`, "#ffff00");
-
+        await itemspreview();
         animate(); // ループ開始
     }, 500);
 }
