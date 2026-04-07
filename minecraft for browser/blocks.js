@@ -144,7 +144,7 @@ export const BLOCK_CONFIG = {
         itemdisplay: false,
         collision: false,
         geometryType: "none", // 描画しない
-        transparent: false,
+        transparent: true,
         opacity: 1,
         overwrite: true,
         screenFill: false,

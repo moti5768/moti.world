@@ -2457,7 +2457,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
 
             for (let y = 255; y >= 0; y = (y - 1) | 0) {
                 const idx = (xzBase | y) | 0;
-                const type = voxelData[idx] | 0;
+                const type = voxelData[idx] & 0xFFF;
 
                 if (currentSky === 15 && type !== 0) { // BLOCK_TYPES.SKY = 0 と仮定
                     const cfg = _blockConfigFastArray[type];
@@ -2494,7 +2494,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
                 const mySky = (lightData[idx] >> 4) & 15;
 
                 if (nSky > 1 && (nSky - 1) > mySky) {
-                    const type = voxelData[idx] | 0;
+                    const type = voxelData[idx] & 0xFFF;
                     if (type === 0 || (_blockConfigFastArray[type] && _blockConfigFastArray[type].transparent)) {
                         lightData[idx] = (((nSky - 1) << 4) | (lightData[idx] & 15)) | 0;
                         queue[tail++] = idx;
@@ -2529,7 +2529,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
                     const nIdx = (y | (nz << 8) | (nx << 12)) | 0;
 
                     if (((nm[nIdx] >> 4) & 15) < nextSky) {
-                        const nt = nv[nIdx] | 0;
+                        const nt = nv[nIdx] & 0xFFF;
                         if (nt === 0 || (_blockConfigFastArray[nt] && _blockConfigFastArray[nt].transparent)) {
                             nm[nIdx] = ((nextSky << 4) | (nm[nIdx] & 15)) | 0;
                             pendingChunkUpdates.add(nKeys[i]);
@@ -2541,7 +2541,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
 
             const nIdx = (idx + MOVE_OFFSETS[i]) | 0;
             if (((lightData[nIdx] >> 4) & 15) < nextSky) {
-                const type = voxelData[nIdx] | 0;
+                const type = voxelData[nIdx] & 0xFFF;
                 if (type === 0 || (_blockConfigFastArray[type] && _blockConfigFastArray[type].transparent)) {
                     lightData[nIdx] = ((nextSky << 4) | (lightData[nIdx] & 15)) | 0;
                     queue[tail++] = nIdx;
@@ -2558,7 +2558,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
 
     // 2-A: 発光ブロック（松明など）の走査
     for (let i = 0; i < TOTAL_CELLS; i = (i + 1) | 0) {
-        const type = voxelData[i] | 0;
+        const type = voxelData[i] & 0xFFF;
         const cfg = _blockConfigFastArray[type];
         if (cfg && cfg.lightLevel > 0) {
             lightData[i] = ((lightData[i] & 240) | (cfg.lightLevel & 15)) | 0;
@@ -2586,7 +2586,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
                 const myBlock = lightData[idx] & 15;
 
                 if (nBlock > 1 && (nBlock - 1) > myBlock) {
-                    const type = voxelData[idx] | 0;
+                    const type = voxelData[idx] & 0xFFF;
                     if (type === 0 || (_blockConfigFastArray[type] && _blockConfigFastArray[type].transparent)) {
                         lightData[idx] = ((lightData[idx] & 240) | ((nBlock - 1) & 15)) | 0;
                         queue[tail++] = idx;
@@ -2621,7 +2621,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
                     const nIdx = (y | (nz << 8) | (nx << 12)) | 0;
 
                     if ((nm[nIdx] & 15) < nextBlock) {
-                        const nt = nv[nIdx] | 0;
+                        const nt = nv[nIdx] & 0xFFF;
                         if (nt === 0 || (_blockConfigFastArray[nt] && _blockConfigFastArray[nt].transparent)) {
                             nm[nIdx] = ((nm[nIdx] & 240) | (nextBlock & 15)) | 0;
                             pendingChunkUpdates.add(nKeys[i]);
@@ -2633,7 +2633,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
 
             const nIdx = (idx + MOVE_OFFSETS[i]) | 0;
             if ((lightData[nIdx] & 15) < nextBlock) {
-                const type = voxelData[nIdx] | 0;
+                const type = voxelData[nIdx] & 0xFFF;
                 if (type === 0 || (_blockConfigFastArray[type] && _blockConfigFastArray[type].transparent)) {
                     lightData[nIdx] = ((lightData[nIdx] & 240) | (nextBlock & 15)) | 0;
                     queue[tail++] = nIdx;
@@ -4341,11 +4341,6 @@ function updateBlockSelection() {
             if (isUpsideDown) {
                 sOffset.y += 0.5;
             }
-        } else if (config.geometryType === "stairs") {
-            // 階段は常にフルブロック(1x1x1)の枠を表示するため、
-            // もし設定で小さいサイズになっていても 1.0 に上書きする
-            sSize = { x: 1.01, y: 1.01, z: 1.01 };
-            sOffset = { x: 0.5, y: 0.5, z: 0.5 };
         }
 
         center.set(x + sOffset.x, y + sOffset.y, z + sOffset.z);
