@@ -20,7 +20,8 @@ const CUSTOM_COLLISION_CACHE = {
     stairs: [createBox(0, 0, 0, 1, 0.5, 1), createBox(0.5, 0.5, 0, 1, 1, 1)],
     slab: [createBox(0, 0, 0, 1, 0.5, 1)],
     cross: [createBox(0.25, 0, 0.25, 0.75, 1, 0.75)],
-    carpet: [createBox(0, 0, 0, 1, 0.0625, 1)]
+    carpet: [createBox(0, 0, 0, 1, 0.0625, 1)],
+    ladder: [createBox(0, 0, 0, 1, 1, 0.125)]
 };
 
 // --- カスタム衝突判定取得関数 ---
@@ -30,24 +31,89 @@ function getCustomCollision(type) {
     return base.map(box => box.clone());
 }
 
-export function getLogRotationMatrix(metadata) {
-    const matrix = new THREE.Matrix4();
-    const axis = metadata & 3; // 0:Y, 1:X, 2:Z
-    const center = 0.5;
+/**
+ * メタデータ（回転・上下反転）を考慮して衝突判定箱を変換する
+ */
+// 🟢 関数外で1回だけ生成して使い回す (オブジェクトプール)
+const _v = Array.from({ length: 8 }, () => new THREE.Vector3());
+// 🟢 0, 90, 180, 270度の値をあらかじめ持っておく
+const _SIN = [0, 1, 0, -1];
+const _COS = [1, 0, -1, 0];
+export function applyRotationToCollisionBox(relBox, metaData, targetBox) {
+    const rotation = metaData & 3;
+    const isUpsideDown = (metaData & 4) !== 0;
 
-    // 1. 中心へ移動
-    matrix.makeTranslation(-center, -center, -center);
+    targetBox.copy(relBox);
 
-    // 2. 軸に応じて回転
-    if (axis === 1) { // X軸向き（横）
-        matrix.premultiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2));
-    } else if (axis === 2) { // Z軸向き（奥行）
-        matrix.premultiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+    if (isUpsideDown) {
+        const minY = targetBox.min.y;
+        const maxY = targetBox.max.y;
+        targetBox.min.y = 1.0 - maxY;
+        targetBox.max.y = 1.0 - minY;
     }
 
-    // 3. 元の位置に戻す
-    matrix.premultiply(new THREE.Matrix4().makeTranslation(center, center, center));
-    return matrix;
+    if (rotation === 0) return;
+
+    // 🟢 既存のインスタンスに値をセット (new しない)
+    const min = targetBox.min, max = targetBox.max;
+    _v[0].set(min.x, min.y, min.z);
+    _v[1].set(min.x, min.y, max.z);
+    _v[2].set(min.x, max.y, min.z);
+    _v[3].set(min.x, max.y, max.z);
+    _v[4].set(max.x, min.y, min.z);
+    _v[5].set(max.x, min.y, max.z);
+    _v[6].set(max.x, max.y, min.z);
+    _v[7].set(max.x, max.y, max.z);
+
+    // 🟢 テーブルから値を引く (計算しない)
+    const s = _SIN[rotation];
+    const c = _COS[rotation];
+
+    targetBox.makeEmpty();
+    for (let i = 0; i < 8; i++) {
+        const p = _v[i];
+        const px = p.x - 0.5;
+        const pz = p.z - 0.5;
+
+        p.x = (px * c + pz * s) + 0.5;
+        p.z = (-px * s + pz * c) + 0.5;
+
+        targetBox.expandByPoint(p);
+    }
+}
+
+export function getCustomGeometryMatrix(meta, outTransformMat, outRotationMat, tempMat) {
+    outTransformMat.makeTranslation(-0.5, -0.5, -0.5);
+    outRotationMat.identity();
+
+    // 上下反転（meta第3ビット）
+    if ((meta >> 2) & 1) {
+        outRotationMat.makeRotationX(Math.PI);
+    }
+
+    // 回転（meta下位2ビット）
+    const angle = (meta & 3) * Math.PI / 2;
+    if (angle !== 0) {
+        tempMat.makeRotationY(angle);
+        outRotationMat.premultiply(tempMat);
+    }
+
+    outTransformMat.premultiply(outRotationMat);
+}
+
+const LOG_MATRICES = [
+    new THREE.Matrix4(), // Axis 0: Y (Identity / 回転なし)
+    new THREE.Matrix4().makeTranslation(-0.5, -0.5, -0.5)
+        .premultiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2))
+        .premultiply(new THREE.Matrix4().makeTranslation(0.5, 0.5, 0.5)), // Axis 1: X
+    new THREE.Matrix4().makeTranslation(-0.5, -0.5, -0.5)
+        .premultiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
+        .premultiply(new THREE.Matrix4().makeTranslation(0.5, 0.5, 0.5)), // Axis 2: Z
+];
+export function getLogRotationMatrix(metadata) {
+    const axis = (metadata & 3) % 3; // 0, 1, 2に限定
+    // 🟢 既存の行列をコピーして返すだけ（計算なし、newは1回のみ）
+    return LOG_MATRICES[axis].clone();
 }
 
 /**
@@ -61,6 +127,15 @@ export function getLogRotationMatrix(metadata) {
 export function calculatePlacementMeta(blockId, camDir, rawNormal, intersectPoint) {
     const cfg = getBlockConfiguration(blockId);
     if (!cfg) return 0;
+
+    if (cfg.isLadder) {
+        // クリックした壁の面にピッタリ吸着する方向を返す
+        if (rawNormal.z > 0.5) return 0; // 南面をクリック -> 南向き
+        if (rawNormal.z < -0.5) return 2; // 北面をクリック -> 北向き
+        if (rawNormal.x > 0.5) return 1; // 東面をクリック -> 東向き
+        if (rawNormal.x < -0.5) return 3; // 西面をクリック -> 西向き
+        return 0;
+    }
 
     // --- 1. 原木 (isLog) 専用ロジック ---
     if (cfg.isLog) {
@@ -108,10 +183,11 @@ const defaultBlockConfig = {
     targetblock: true,
     screenFill: true,
     textures: {},
-    customCollision: null,  // ← 追加
+    customCollision: null,
     hardness: 1.0,
     Gamma: 1.0,
     lightLevel: 0,
+    lightOpacity: 1, // デフォルトの光の減衰量（透過ブロックを通る時に追加で引かれる値）
     drop: null,
     cullAdjacentFaces: true,
     overwrite: false,
@@ -148,142 +224,168 @@ export const BLOCK_CONFIG = {
         opacity: 1,
         overwrite: true,
         screenFill: false,
-        textures: {}
+        textures: {},
     }),
+
     GRASS: createBlockConfig({
         id: 1,
         textures: {
             top: "textures/blocks/grass_top.png",
             side: "textures/blocks/grass_side.png",
-            bottom: "textures/blocks/dirt.png"
-        }
+            bottom: "textures/blocks/dirt.png",
+        },
     }),
+
     DIRT: createBlockConfig({
         id: 2,
-        textures: { all: "textures/blocks/dirt.png" }
+        textures: { all: "textures/blocks/dirt.png" },
     }),
+
     STONE: createBlockConfig({
         id: 3,
-        textures: { all: "textures/blocks/stone.png" }
+        textures: { all: "textures/blocks/stone.png" },
     }),
+
     COBBLE_STONE: createBlockConfig({
         id: 4,
-        textures: { all: "textures/blocks/cobblestone.png" }
+        textures: { all: "textures/blocks/cobblestone.png" },
     }),
+
     COBBLE_STONE_MOSSY: createBlockConfig({
         id: 5,
-        textures: { all: "textures/blocks/cobblestone_mossy.png" }
+        textures: { all: "textures/blocks/cobblestone_mossy.png" },
     }),
+
     COAL_ORE: createBlockConfig({
         id: 6,
-        textures: { all: "textures/blocks/coal_ore.png" }
+        textures: { all: "textures/blocks/coal_ore.png" },
     }),
+
     PLANKS_OAK: createBlockConfig({
         id: 7,
-        textures: { all: "textures/blocks/planks_oak.png" }
+        textures: { all: "textures/blocks/planks_oak.png" },
     }),
+
     BRICK: createBlockConfig({
         id: 8,
-        textures: { all: "textures/blocks/brick.png" }
+        textures: { all: "textures/blocks/brick.png" },
     }),
+
     BEDROCK: createBlockConfig({
         id: 9,
-        textures: { all: "textures/blocks/bedrock.png" }
+        textures: { all: "textures/blocks/bedrock.png" },
     }),
+
     STONE_STAIRS: createBlockConfig({
         id: 10,
         textures: {
             top: "textures/blocks/stone.png",
             bottom: "textures/blocks/stone.png",
-            side: "textures/blocks/stone.png"
+            side: "textures/blocks/stone.png",
         },
         geometryType: "stairs",
         transparent: true,
+        lightOpacity: 0,
         directional: true,
         customCollision: () => getCustomCollision("stairs"),
         cullAdjacentFaces: false,
         screenFill: false,
-        hardness: 2.0
+        hardness: 2.0,
     }),
+
     STONE_SLAB: createBlockConfig({
         id: 11,
         textures: { all: "textures/blocks/stone.png" },
         geometryType: "slab",
         transparent: true,
+        lightOpacity: 0,
         isSlab: true,
         customCollision: () => getCustomCollision("slab"),
         cullAdjacentFaces: false,
         screenFill: false,
         hardness: 1.5,
         selectionSize: { x: 1, y: 0.5, z: 1 },
-        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 }
+        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 },
     }),
+
     GLASS: createBlockConfig({
         id: 12,
         textures: { all: "textures/blocks/glass.png" },
         transparent: true,
+        lightOpacity: 0,
         geometryType: "cube",
-        screenFill: false
+        screenFill: false,
     }),
+
     FLOWER: createBlockConfig({
         id: 13,
         textures: { all: "textures/blocks/flower.png" },
         collision: false,
         geometryType: "cross",
         transparent: true,
+        lightOpacity: 0,
         customCollision: () => getCustomCollision("cross"),
         cullAdjacentFaces: false,
         screenFill: false,
         previewType: "2D",
         selectionSize: { x: 0.4, y: 0.6, z: 0.4 },
-        selectionOffset: { x: 0.5, y: 0.3, z: 0.5 }
+        selectionOffset: { x: 0.5, y: 0.3, z: 0.5 },
     }),
+
     FLOWER_ROSE: createBlockConfig({
         id: 14,
         textures: { all: "textures/blocks/flower_rose.png" },
         collision: false,
         geometryType: "cross",
         transparent: true,
+        lightOpacity: 0,
         customCollision: () => getCustomCollision("cross"),
         cullAdjacentFaces: false,
         screenFill: false,
         previewType: "2D",
         selectionSize: { x: 0.4, y: 0.6, z: 0.4 },
-        selectionOffset: { x: 0.5, y: 0.3, z: 0.5 }
+        selectionOffset: { x: 0.5, y: 0.3, z: 0.5 },
     }),
+
     TALLGRASS: createBlockConfig({
         id: 15,
         textures: { all: "textures/blocks/tallgrass.png" },
         collision: false,
         geometryType: "cross",
         transparent: true,
+        lightOpacity: 0,
         customCollision: () => getCustomCollision("cross"),
         cullAdjacentFaces: false,
         screenFill: false,
         previewType: "2D",
         selectionSize: { x: 0.8, y: 0.8, z: 0.8 },
-        selectionOffset: { x: 0.5, y: 0.4, z: 0.5 }
+        selectionOffset: { x: 0.5, y: 0.4, z: 0.5 },
     }),
+
     LEAVES: createBlockConfig({
         id: 16,
         textures: { all: "textures/blocks/leaves.png" },
         geometryType: "leaves",
         transparent: true,
         cullAdjacentFaces: false,
-        screenFill: false
+        lightOpacity: 1,
+        screenFill: false,
     }),
+
     WOOL_CARPET: createBlockConfig({
         id: 17,
         textures: { all: "textures/blocks/wool_colored_white.png" },
         geometryType: "carpet",
         transparent: true,
+        lightOpacity: 0,
         customCollision: () => getCustomCollision("carpet"),
         Gamma: 0.8,
         cullAdjacentFaces: false,
         screenFill: false,
         selectionSize: { x: 1, y: 0.0625, z: 1 },
-        selectionOffset: { x: 0.5, y: 0.03125, z: 0.5 }
+        selectionOffset: { x: 0.5, y: 0.03125, z: 0.5 },
     }),
+
     WATER: createBlockConfig({
         id: 18,
         textures: { all: "textures/blocks/water.png" },
@@ -291,10 +393,12 @@ export const BLOCK_CONFIG = {
         transparent: true,
         opacity: 0.8,
         targetblock: false,
+        lightOpacity: 2,
         overwrite: true,
         geometryType: "water",
-        previewType: "2D"
+        previewType: "2D",
     }),
+
     LAVA: createBlockConfig({
         id: 19,
         textures: { all: "textures/blocks/lava.png" },
@@ -305,49 +409,71 @@ export const BLOCK_CONFIG = {
         overwrite: true,
         geometryType: "water",
         lightLevel: 15,
-        previewType: "2D"
+        previewType: "2D",
     }),
+
     GLOWSTONE: createBlockConfig({
-        id: 20, // 重複しない新しいID
-        textures: { all: "textures/blocks/glowstone.png" }, // 使用するテクスチャパス
+        id: 20,
+        textures: { all: "textures/blocks/glowstone.png" },
         geometryType: "cube",
         lightLevel: 15,
-        hardness: 1.0
+        hardness: 1.0,
     }),
+
     LOG_OAK: createBlockConfig({
         id: 21,
         isLog: true,
         textures: {
             top: "textures/blocks/log_oak_top.png",
             bottom: "textures/blocks/log_oak_top.png",
-            side: "textures/blocks/log_oak.png"
-        }
+            side: "textures/blocks/log_oak.png",
+        },
     }),
+
     SAPLING_OAK: createBlockConfig({
         id: 22,
         textures: { all: "textures/blocks/sapling_oak.png" },
         collision: false,
         geometryType: "cross",
         transparent: true,
+        lightOpacity: 0,
         customCollision: () => getCustomCollision("cross"),
         cullAdjacentFaces: false,
         screenFill: false,
         previewType: "2D",
         selectionSize: { x: 0.8, y: 0.8, z: 0.8 },
-        selectionOffset: { x: 0.5, y: 0.4, z: 0.5 }
+        selectionOffset: { x: 0.5, y: 0.4, z: 0.5 },
     }),
+
     DEADBUSH: createBlockConfig({
         id: 23,
         textures: { all: "textures/blocks/deadbush.png" },
         collision: false,
         geometryType: "cross",
         transparent: true,
+        lightOpacity: 0,
         customCollision: () => getCustomCollision("cross"),
         cullAdjacentFaces: false,
         screenFill: false,
         previewType: "2D",
         selectionSize: { x: 0.8, y: 0.8, z: 0.8 },
-        selectionOffset: { x: 0.5, y: 0.4, z: 0.5 }
+        selectionOffset: { x: 0.5, y: 0.4, z: 0.5 },
+    }),
+
+    LADDER: createBlockConfig({
+        id: 24,
+        textures: { all: "textures/blocks/ladder.png" },
+        geometryType: "ladder",
+        transparent: true,
+        collision: true,
+        isLadder: true,
+        cullAdjacentFaces: false,
+        screenFill: false,
+        previewType: "2D",
+        lightOpacity: 0,
+        customCollision: () => getCustomCollision("ladder"),
+        selectionSize: { x: 1, y: 1, z: 0.125 },
+        selectionOffset: { x: 0.5, y: 0.5, z: 0.0625 },
     }),
 };
 
@@ -495,7 +621,7 @@ export function createMaterialsFromBlockConfig(blockConfig) {
     const isAlphaCutout = transparent === true && !isBlendTransparent;
 
     // 表示面の決定
-    const isCrossOrLeaves = (geometryType === "cross" || geometryType === "leaves");
+    const isCrossOrLeaves = (geometryType === "cross" || geometryType === "leaves" || geometryType === "ladder");
     const side = (isCrossOrLeaves || isWater) ? THREE.DoubleSide : THREE.FrontSide;
 
     // 頂点カラー（ライティング）を使用するか
@@ -804,6 +930,14 @@ export function getBlockGeometry(type, config) {
             adjustSideUVsForCarpet(geom, 0.0625);       // 横面 UV 高さに合わせる
             break;
 
+        case "ladder":
+            geom = new THREE.PlaneGeometry(1, 1);
+            // 1. テクスチャをプレイヤー側（手前）に向ける
+            // geom.rotateY(Math.PI);
+            // 2. 重要：0.95 ではなく 0.05 に変更（ブロックの手前側の面に寄せる）
+            geom.translate(0.5, 0.5, 0.05);
+            geom.addGroup(0, 6, 0);
+            break;
         default:
             geom = new THREE.BoxGeometry(1, 1, 1);
             geom.translate(0.5, 0.5, 0.5);
@@ -836,7 +970,7 @@ export function applyMetadataTransform(target, metadata, blockId) {
     const cfg = getBlockConfiguration(blockId);
     if (!cfg) return;
 
-    // 行列の初期化
+    // 行列の初期化 (_tmpMat, _rotMat, _transMat, _center は事前に定義されている前提)
     _tmpMat.identity();
     _rotMat.identity();
 
@@ -845,30 +979,35 @@ export function applyMetadataTransform(target, metadata, blockId) {
         _tmpMat.copy(logMat);
         _rotMat.extractRotation(_tmpMat);
     } else {
-        const rotation = metadata & 3;
-        const isUpsideDown = (metadata >> 2) & 1;
+        const rotation = metadata & 3; // 下位2ビット：回転(0=北, 1=東, 2=南, 3=西)
+        const isUpsideDown = (metadata >> 2) & 1; // 3ビット目：上下反転
 
-        // 回転行列 R の構築
-        if (isUpsideDown) {
+        // 1. 回転行列 R の構築
+        if (isUpsideDown && !cfg.isLadder) {
+            // ハシゴに上下反転が必要ない場合は !cfg.isLadder を追加
             _rotMat.makeRotationX(Math.PI);
         }
+
         if (rotation !== 0) {
             _transMat.makeRotationY(rotation * (Math.PI / 2));
             _rotMat.premultiply(_transMat);
         }
 
-        // 行列合成: T(0.5) * R * T(-0.5)
-        // 1. 中心から原点へ
-        _tmpMat.makeTranslation(-_center.x, -_center.y, -_center.z);
-        // 2. 回転適用 ( R * T )
-        _tmpMat.premultiply(_rotMat);
-        // 3. 原点から中心へ ( T_inv * R * T )
-        _transMat.makeTranslation(_center.x, _center.y, _center.z);
+        // 2. 行列合成: 中心(0.5, 0.5, 0.5)を軸に回転させる
+        // T(0.5) * R * T(-0.5)
+        _tmpMat.makeTranslation(-_center.x, -_center.y, -_center.z); // 原点へ
+        _tmpMat.premultiply(_rotMat);                               // 回転
+        _transMat.makeTranslation(_center.x, _center.y, _center.z);  // 中心へ戻す
         _tmpMat.premultiply(_transMat);
     }
 
+    // --- A. 当たり判定 (Box3) への適用 ---
     if (target instanceof THREE.Box3) {
-        // 頂点座標のセット
+        // 1. 【変更】ハシゴなどの「回転」が必要なブロックは、まず中心を原点(0,0,0)に持ってくる
+        _vec3.set(-_center.x, -_center.y, -_center.z);
+        target.translate(_vec3);
+
+        // 2. 8頂点に対して「純粋な回転行列(_rotMat)」だけを適用する
         _boxPoints[0].set(target.min.x, target.min.y, target.min.z);
         _boxPoints[1].set(target.min.x, target.min.y, target.max.z);
         _boxPoints[2].set(target.min.x, target.max.y, target.min.z);
@@ -880,24 +1019,30 @@ export function applyMetadataTransform(target, metadata, blockId) {
 
         target.makeEmpty();
         for (let i = 0; i < 8; i++) {
-            _boxPoints[i].applyMatrix4(_tmpMat);
+            _boxPoints[i].applyMatrix4(_rotMat); // _tmpMat ではなく _rotMat を使用
             target.expandByPoint(_boxPoints[i]);
         }
 
-        // スラブの上付き補正（当たり判定用）
+        // 3. 中心に戻す
+        _vec3.set(_center.x, _center.y, _center.z);
+        target.translate(_vec3);
+
+        // スラブの上付き補正（既存ロジック）
         if (!cfg.isLog && cfg.isSlab && !cfg.directional && ((metadata >> 2) & 1)) {
             _vec3.set(0, 0.5, 0);
             target.translate(_vec3);
         }
-    } else if (target instanceof THREE.Object3D) {
+    }
+    // --- B. 見た目 (Mesh/Object3D) への適用 ---
+    else if (target instanceof THREE.Object3D) {
         // 回転の適用
         target.quaternion.setFromRotationMatrix(_rotMat);
 
-        // Y座標の絶対補正 (再計算に強いロジック)
-        if (!cfg.isLog) {
+        // Y座標の補正
+        if (!cfg.isLog && !cfg.isLadder) { // 💡 ハシゴは絶対補正の対象外にする
             const isUpsideDown = (metadata >> 2) & 1;
             const baseY = Math.floor(target.position.y);
-            // スラブかつ方向性なし(通常ハーフ)の場合は 0.5、階段などのフルブロック回転は 1.0
+            // スラブなら0.5、階段などのフルブロックなら1.0浮かせる
             const offset = isUpsideDown ? ((cfg.isSlab && !cfg.directional) ? 0.5 : 1.0) : 0;
             target.position.y = baseY + offset;
         }
@@ -932,8 +1077,6 @@ export function createBlockMesh(rawBlockType, pos, metadata = 0) {
     let mesh = new THREE.Mesh(geometry, materials);
 
     // 5. 位置と回転の適用
-    // 💡 改善点: applyMetadataTransform 内で加算ではなく絶対座標をセットするように修正
-    // (※前述の applyMetadataTransform の修正とセットで運用してください)
     mesh.position.copy(pos);
     applyMetadataTransform(mesh, finalMetadata, blockId);
 
@@ -945,9 +1088,9 @@ export function createBlockMesh(rawBlockType, pos, metadata = 0) {
     if (typeof config.customCollision === "function") {
         boxes = config.customCollision();
     } else if (config.collision) {
-        // 💡 改善点: getCustomCollision ヘルパーを使い、定数からクローンするように統一
-        // getCustomCollision("cube") は [Box3(0,0,0 to 1,1,1)] を返す想定
-        const typeKey = config.geometryType === "slab" ? "slab" : "cube";
+        // geometryTypeをそのまま渡し、ハシゴ(ladder)なども正しく取得する
+        // ※該当キーがない場合は getCustomCollision 側で 'cube' のデフォルトが返る
+        const typeKey = config.geometryType || "cube";
         boxes = getCustomCollision(typeKey);
     }
 
