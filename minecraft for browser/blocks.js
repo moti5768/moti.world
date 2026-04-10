@@ -9,10 +9,11 @@ import { BufferGeometryUtils } from './jsm/utils/BufferGeometryUtils.js';
 // --- Box3作成ヘルパー ---
 
 function createBox(x1, y1, z1, x2, y2, z2) {
-    const b = new THREE.Box3();
-    b.min.set(x1, y1, z1);
-    b.max.set(x2, y2, z2);
-    return b;
+    // コンストラクタで直接 Vector3 を渡すことで、内部の初期化回数を減らす
+    return new THREE.Box3(
+        new THREE.Vector3(x1, y1, z1),
+        new THREE.Vector3(x2, y2, z2)
+    );
 }
 
 // --- カスタム衝突判定キャッシュ ---
@@ -25,10 +26,17 @@ const CUSTOM_COLLISION_CACHE = {
 };
 
 // --- カスタム衝突判定取得関数 ---
+// デフォルトボックスを定数化して再利用
+const DEFAULT_BOX_ARRAY = Object.freeze([createBox(0, 0, 0, 1, 1, 1)]);
+
 function getCustomCollision(type) {
-    const base = CUSTOM_COLLISION_CACHE[type] || [];
-    // 変換をかけるため、必ず新しいインスタンスを生成して返す
-    return base.map(box => box.clone());
+    const boxes = CUSTOM_COLLISION_CACHE[type] || DEFAULT_BOX_ARRAY;
+    const len = boxes.length;
+    const result = new Array(len);
+    for (let i = 0; i < len; i++) {
+        result[i] = boxes[i].clone();
+    }
+    return result;
 }
 
 /**
@@ -1069,9 +1077,13 @@ export function createBlockMesh(rawBlockType, pos, metadata = 0) {
     }
 
     // 3. ジオメトリとマテリアルの取得
-    const geometry = getBlockGeometry(config.geometryType, config);
+    // マテリアルがない場合は Mesh を作る前にリターン
     const materials = getBlockMaterials(blockId);
     if (!materials) return null;
+
+    const geometry = getBlockGeometry(config.geometryType, config);
+    // Mesh 生成（geometry が null の場合のリスクヘッジも追加）
+    if (!geometry) return null;
 
     // 4. Mesh作成
     let mesh = new THREE.Mesh(geometry, materials);
