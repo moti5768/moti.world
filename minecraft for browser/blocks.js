@@ -608,25 +608,34 @@ function onBeforeCompileBlock(shader, mat) {
 }
 
 // ========================================================
-// 2. メイン関数
+// 2. メイン関数 (最適化済み完全版)
 // ========================================================
-const materialCache = new Map(); // ブロック構成ごとのキャッシュ
 
+const materialCache = new Map(); // ブロック構成ごとのキャッシュ
+// 静的データを外に出すことで、関数呼び出しごとの配列生成を回避
+const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
+
+/**
+ * ブロックの設定からマテリアル配列を生成・取得する
+ */
 export function createMaterialsFromBlockConfig(blockConfig) {
     const cacheKey = blockConfig.id;
-    if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
+
+    // キャッシュヒット時は即座にリターン
+    const cached = materialCache.get(cacheKey);
+    if (cached) return cached;
 
     const { geometryType, transparent, textures, id, lightLevel, opacity = 1.0 } = blockConfig;
 
-    // --- 判定ロジックの整理 ---
+    // --- 判定ロジックの整理（プロパティアクセスと計算を最小化） ---
     const isWater = (id === 18);
-    const isLightSource = (lightLevel !== undefined && lightLevel > 0);
+    // undefined > 0 は false になるため、簡潔な比較で十分
+    const isLightSource = (lightLevel > 0);
 
-    // 半透明ブレンドは「水」のみ適用（描画順バグ防止）
+    // 半透明ブレンドは「水」のみ適用
     const isBlendTransparent = isWater;
-
     // ガラス・草などは AlphaCutout (alphaTest) で処理
-    const isAlphaCutout = transparent === true && !isBlendTransparent;
+    const isAlphaCutout = (transparent === true && !isBlendTransparent);
 
     // 表示面の決定
     const isCrossOrLeaves = (geometryType === "cross" || geometryType === "leaves" || geometryType === "ladder");
@@ -636,25 +645,27 @@ export function createMaterialsFromBlockConfig(blockConfig) {
     const isStairsOrSlab = (geometryType === "stairs" || geometryType === "slab");
     const useVertexColors = (!isStairsOrSlab && !isCrossOrLeaves && !isWater);
 
-    // 同一ブロック内でテクスチャが重複する場合、マテリアルを再利用するためのローカルキャッシュ
+    // 同一ブロック内でのテクスチャ重複用キャッシュ
     const localMatCache = new Map();
 
     /**
-     * 個別の面マテリアルを生成・取得する
+     * 個別の面マテリアルを生成・取得する (内部関数)
      */
     function getMat(face) {
         const texPath = resolveTexturePath(face);
 
-        // すでに同じテクスチャのマテリアルを作っていればそれを返す（ドローコール削減）
-        if (localMatCache.has(texPath)) return localMatCache.get(texPath);
+        // すでに同じテクスチャのマテリアルを作っていればそれを返す
+        const cachedMat = localMatCache.get(texPath);
+        if (cachedMat) return cachedMat;
 
+        // オプションオブジェクトの生成
         const materialOptions = {
             color: blockConfig.defaultColor ?? 0xffffff,
             transparent: isBlendTransparent,
             opacity: opacity,
             vertexColors: useVertexColors,
             side: side,
-            depthWrite: !isBlendTransparent, // 水以外は深度を書き込む（透けないように）
+            depthWrite: !isBlendTransparent,
             alphaTest: isAlphaCutout ? 0.5 : 0,
         };
 
@@ -664,13 +675,13 @@ export function createMaterialsFromBlockConfig(blockConfig) {
 
         const mat = new THREE.MeshBasicMaterial(materialOptions);
 
-        // シェーダーで使用する変数を保持
+        // シェーダー用変数の保持
         mat.userData.shaderUniforms = {
             u_skyFactor: { value: 1.0 },
             u_isLightSource: { value: isLightSource ? 1.0 : 0.0 }
         };
 
-        // シェーダーコンパイル時にロジックを注入
+        // シェーダー注入
         mat.onBeforeCompile = (shader) => onBeforeCompileBlock(shader, mat);
 
         localMatCache.set(texPath, mat);
@@ -678,45 +689,55 @@ export function createMaterialsFromBlockConfig(blockConfig) {
     }
 
     /**
-     * 面の名前に応じて適切なテクスチャパスを返す
+     * 面の名前に応じてテクスチャパスを返す (内部関数)
      */
     function resolveTexturePath(face) {
-        if (textures) {
-            if (textures.all) return textures.all;
-            if (textures[face]) return textures[face];
-            if (textures.side && face !== "top" && face !== "bottom") return textures.side;
-            if (textures.top && face === "top") return textures.top;
-            if (textures.bottom && face === "bottom") return textures.bottom;
+        if (!textures) return blockConfig.fallbackTexture || null;
+        if (textures.all) return textures.all;
+
+        // 個別指定
+        if (textures[face]) return textures[face];
+
+        // 横面(side)一括設定
+        if (textures.side && face !== "top" && face !== "bottom") {
+            return textures.side;
         }
+
+        // 上面・下面
+        if (face === "top" && textures.top) return textures.top;
+        if (face === "bottom" && textures.bottom) return textures.bottom;
+
         return blockConfig.fallbackTexture || null;
     }
 
-    // --- マテリアル配列の構築 ---
-    const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
-    let resultMaterials;
+    // --- マテリアル配列の構築 (最適化) ---
+    // map を使わず、固定長配列を for ループで埋めるのが最速
+    const resultMaterials = new Array(6);
 
     if (textures && textures.all) {
-        // 全面同じ場合は1つのインスタンスで埋める
+        // 全面同じ場合は、1つのマテリアルインスタンスを再利用
         const singleMat = getMat("all");
-        resultMaterials = [singleMat, singleMat, singleMat, singleMat, singleMat, singleMat];
+        resultMaterials.fill(singleMat);
     } else {
-        // 面ごとに取得（同じテクスチャなら getMat 内でキャッシュが効く）
-        resultMaterials = FACE_ORDER.map(face => getMat(face));
+        // 面ごとに取得
+        for (let i = 0; i < 6; i++) {
+            resultMaterials[i] = getMat(FACE_ORDER[i]);
+        }
     }
 
     materialCache.set(cacheKey, resultMaterials);
     return resultMaterials;
 }
 
-
 // マテリアルのキャッシュ（ブロックIDごと）
 const BLOCK_MATERIALS_CACHE = new Map();
+
 // BLOCK_CONFIG から各ブロック設定を高速に取得するためのルックアップテーブル
+// （初期化時に一度だけ実行されるため、このままで問題ありません）
 const blockConfigLookup = {};
 for (const cfg of Object.values(BLOCK_CONFIG)) {
     blockConfigLookup[cfg.id] = cfg;
 }
-
 
 /**
  * 指定ブロックタイプのマテリアル配列を返す。  
