@@ -378,9 +378,8 @@ function updateSkyAndFogColor(time, sunY, sunDir) {
    【新・チャンク保存管理システム (クラスなし版) - 高速最適化ver】
    ====================================================== */
 // キー計算用の定数（ChunkSaveManagerの外または冒頭に配置）
-const BIGINT_OFFSET = 2_000_000n;
-const STEP_X = 1n << 32n;
-const STEP_Z = 1n;
+const STEP_X = 1 << 16; // 32bit数値パッキングに合わせたステップ数
+const STEP_Z = 1;
 
 export const ChunkSaveManager = {
     modifiedChunks: new Map(),
@@ -460,6 +459,10 @@ export const ChunkSaveManager = {
     /**
      * 地形生成のコアロジック（Minecraft生成パイプライン準拠・軽量化版）
      */
+    // 💡 改善: メモリのゴミを出さないように共有バッファを外に定義
+    _sharedHeightMap: new Int32Array(256),
+    _sharedBiomeMap: new Array(256),
+
     captureBaseChunkData: function (cx, cz) {
         // 1. チャンク割当・初期化
         const data = new Uint16Array(65536); // 16x16x256
@@ -469,9 +472,9 @@ export const ChunkSaveManager = {
         const { SKY, STONE, DIRT, GRASS, WATER, LAVA, BEDROCK } = BLOCK_TYPES;
         const seaLevel = SEA_LEVEL | 0;
 
-        // 高速化・拡張用キャッシュ
-        const heightMap = new Int32Array(256);
-        const biomeMap = new Array(256); // 各列のバイオーム情報を保持
+        // 💡 改善: 毎回 new せず、共有バッファへの参照を渡す
+        const heightMap = this._sharedHeightMap;
+        const biomeMap = this._sharedBiomeMap;
 
         // ------------------------------------------------------
         // 4. バイオーム割当 (順序を入れ替え、地形生成の基礎とする)
@@ -1016,8 +1019,8 @@ function getVoxelHash(x, y, z) {
 
 const chunkReadOnlyCache = new Map();
 // --- 関数の外側に配置 (キャッシュ用) ---
-let _vC0_key = -1n, _vC0_data = null;
-let _vC1_key = -1n, _vC1_data = null;
+let _vC0_key = -1, _vC0_data = null;
+let _vC1_key = -1, _vC1_data = null;
 
 export function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = false) {
     const fy = y | 0;
@@ -1052,15 +1055,23 @@ export function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRa
         }
 
         // 💡 3. 今回取得したデータを「古い方のスロット」に押し込む (2世代キャッシュ)
-        _vC1_key = _vC0_key; _vC1_data = _vC0_data;
-        _vC0_key = chunkKey; _vC0_data = data;
+        if (data) {
+            _vC1_key = _vC0_key;
+            _vC1_data = _vC0_data;
+            _vC0_key = chunkKey;
+            _vC0_data = data;
+        }
     }
 
     // --- 4. 値の抽出ロジック (ここは元のまま) ---
+    if (!data) return 0;
+
     const lx = fx & 15;
     const lz = fz & 15;
     const idx = (fy + (lz << 8) + (lx << 12)) >>> 0;
-    const val = data[idx];
+
+    // インデックスが範囲外になることは基本ないが、念のため安全に取得
+    const val = data[idx] ?? 0;
 
     if (isRaw) return val;
 
@@ -1759,14 +1770,14 @@ function refreshChunkAt(cx, cz) {
 }
 
 function encodeChunkKey(cx, cz) {
-    return (BigInt(cx) + BIGINT_OFFSET) << 32n | ((BigInt(cz) + BIGINT_OFFSET) & 0xffffffffn);
+    return ((cx & 0xFFFF) << 16) | (cz & 0xFFFF);
 }
 
 const _sharedChunkCoord = { cx: 0, cz: 0 };
 
 function decodeChunkKey(key, out = _sharedChunkCoord) {
-    out.cx = Number((key >> 32n) - BIGINT_OFFSET);
-    out.cz = Number((key & 0xffffffffn) - BIGINT_OFFSET);
+    out.cx = (key >> 16);
+    out.cz = (key << 16) >> 16;
     return out;
 }
 
@@ -3293,7 +3304,7 @@ function getChunkCoord(val) {
 }
 
 // --- ループの外側で定義（使い回すためのメモリ空間を固定） ---
-const _neighbors_key = new BigUint64Array(9);
+const _neighbors_key = new Int32Array(9);
 const _neighbors_cx = new Int32Array(9);
 const _neighbors_cz = new Int32Array(9);
 const _neighbors_dx = new Int8Array(9);
@@ -5685,7 +5696,8 @@ async function loadFullSaveData() {
             const values = reqValues.result || [];
 
             for (let i = 0, len = keys.length; i < len; i++) {
-                const chunkKey = typeof keys[i] === 'bigint' ? keys[i] : BigInt(keys[i]);
+                // すべて Number として扱う
+                const chunkKey = Number(keys[i]);
                 const chunkData = values[i];
 
                 if (chunkData && chunkData.blocks) {
