@@ -218,13 +218,25 @@ const defaultBlockConfig = {
 
 // ── ユーティリティ：深いマージ（必要なら） ──
 function createBlockConfig(customConfig) {
-    return { ...defaultBlockConfig, ...customConfig }; // ← 元コードは Object.assign だった可能性
+    return { ...defaultBlockConfig, ...customConfig };
+}
+
+// 自動採番用のカウンタ
+let nextId = 0;
+
+// 定義用ヘルパー：IDを自動付与して config を作成する
+function registerBlock(config) {
+    // もし config 内に id が明示されていればそれを使い、なければ自動採番
+    const id = (config.id !== undefined) ? config.id : nextId++;
+    // 自動採番が手動IDを追い越さないように調整
+    if (id >= nextId) nextId = id + 1;
+
+    return createBlockConfig({ ...config, id });
 }
 
 // ── 個別ブロック設定 ──
 export const BLOCK_CONFIG = {
-    SKY: createBlockConfig({
-        id: 0,
+    SKY: registerBlock({
         itemdisplay: false,
         collision: false,
         geometryType: "none", // 描画しない
@@ -235,8 +247,7 @@ export const BLOCK_CONFIG = {
         textures: {},
     }),
 
-    GRASS: createBlockConfig({
-        id: 1,
+    GRASS: registerBlock({
         textures: {
             top: "textures/blocks/grass_top.png",
             side: "textures/blocks/grass_side.png",
@@ -244,48 +255,55 @@ export const BLOCK_CONFIG = {
         },
     }),
 
-    DIRT: createBlockConfig({
-        id: 2,
+    DIRT: registerBlock({
         textures: { all: "textures/blocks/dirt.png" },
     }),
 
-    STONE: createBlockConfig({
-        id: 3,
+    SAND: registerBlock({
+        textures: { all: "textures/blocks/sand.png" },
+    }),
+
+    SANDSTONE: registerBlock({
+        textures: {
+            top: "textures/blocks/sandstone_top.png",
+            side: "textures/blocks/sandstone_normal.png",
+            bottom: "textures/blocks/sandstone_bottom.png",
+        },
+    }),
+
+    SNOW: registerBlock({
+        textures: { all: "textures/blocks/snow.png" },
+    }),
+
+    STONE: registerBlock({
         textures: { all: "textures/blocks/stone.png" },
     }),
 
-    COBBLE_STONE: createBlockConfig({
-        id: 4,
+    COBBLE_STONE: registerBlock({
         textures: { all: "textures/blocks/cobblestone.png" },
     }),
 
-    COBBLE_STONE_MOSSY: createBlockConfig({
-        id: 5,
+    COBBLE_STONE_MOSSY: registerBlock({
         textures: { all: "textures/blocks/cobblestone_mossy.png" },
     }),
 
-    COAL_ORE: createBlockConfig({
-        id: 6,
+    COAL_ORE: registerBlock({
         textures: { all: "textures/blocks/coal_ore.png" },
     }),
 
-    PLANKS_OAK: createBlockConfig({
-        id: 7,
+    PLANKS_OAK: registerBlock({
         textures: { all: "textures/blocks/planks_oak.png" },
     }),
 
-    BRICK: createBlockConfig({
-        id: 8,
+    BRICK: registerBlock({
         textures: { all: "textures/blocks/brick.png" },
     }),
 
-    BEDROCK: createBlockConfig({
-        id: 9,
+    BEDROCK: registerBlock({
         textures: { all: "textures/blocks/bedrock.png" },
     }),
 
-    STONE_STAIRS: createBlockConfig({
-        id: 10,
+    STONE_STAIRS: registerBlock({
         textures: {
             top: "textures/blocks/stone.png",
             bottom: "textures/blocks/stone.png",
@@ -301,8 +319,23 @@ export const BLOCK_CONFIG = {
         hardness: 2.0,
     }),
 
-    STONE_SLAB: createBlockConfig({
-        id: 11,
+    COBBLESTONE_STAIRS: registerBlock({
+        textures: {
+            top: "textures/blocks/cobblestone.png",
+            bottom: "textures/blocks/cobblestone.png",
+            side: "textures/blocks/cobblestone.png",
+        },
+        geometryType: "stairs",
+        transparent: true,
+        lightOpacity: 0,
+        directional: true,
+        customCollision: () => getCustomCollision("stairs"),
+        cullAdjacentFaces: false,
+        screenFill: false,
+        hardness: 2.0,
+    }),
+
+    STONE_SLAB: registerBlock({
         textures: { all: "textures/blocks/stone.png" },
         geometryType: "slab",
         transparent: true,
@@ -316,8 +349,35 @@ export const BLOCK_CONFIG = {
         selectionOffset: { x: 0.5, y: 0.25, z: 0.5 },
     }),
 
-    GLASS: createBlockConfig({
-        id: 12,
+    COBBLESTONE_SLAB: registerBlock({
+        textures: { all: "textures/blocks/cobblestone.png" },
+        geometryType: "slab",
+        transparent: true,
+        lightOpacity: 0,
+        isSlab: true,
+        customCollision: () => getCustomCollision("slab"),
+        cullAdjacentFaces: false,
+        screenFill: false,
+        hardness: 1.5,
+        selectionSize: { x: 1, y: 0.5, z: 1 },
+        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 },
+    }),
+
+    PLANKS_OAK_SLAB: registerBlock({
+        textures: { all: "textures/blocks/planks_oak.png" },
+        geometryType: "slab",
+        transparent: true,
+        lightOpacity: 0,
+        isSlab: true,
+        customCollision: () => getCustomCollision("slab"),
+        cullAdjacentFaces: false,
+        screenFill: false,
+        hardness: 1.5,
+        selectionSize: { x: 1, y: 0.5, z: 1 },
+        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 },
+    }),
+
+    GLASS: registerBlock({
         textures: { all: "textures/blocks/glass.png" },
         transparent: true,
         lightOpacity: 0,
@@ -325,8 +385,7 @@ export const BLOCK_CONFIG = {
         screenFill: false,
     }),
 
-    FLOWER: createBlockConfig({
-        id: 13,
+    FLOWER: registerBlock({
         textures: { all: "textures/blocks/flower.png" },
         collision: false,
         geometryType: "cross",
@@ -340,8 +399,7 @@ export const BLOCK_CONFIG = {
         selectionOffset: { x: 0.5, y: 0.3, z: 0.5 },
     }),
 
-    FLOWER_ROSE: createBlockConfig({
-        id: 14,
+    FLOWER_ROSE: registerBlock({
         textures: { all: "textures/blocks/flower_rose.png" },
         collision: false,
         geometryType: "cross",
@@ -355,8 +413,7 @@ export const BLOCK_CONFIG = {
         selectionOffset: { x: 0.5, y: 0.3, z: 0.5 },
     }),
 
-    TALLGRASS: createBlockConfig({
-        id: 15,
+    TALLGRASS: registerBlock({
         textures: { all: "textures/blocks/tallgrass.png" },
         collision: false,
         geometryType: "cross",
@@ -370,8 +427,7 @@ export const BLOCK_CONFIG = {
         selectionOffset: { x: 0.5, y: 0.4, z: 0.5 },
     }),
 
-    LEAVES: createBlockConfig({
-        id: 16,
+    LEAVES: registerBlock({
         textures: { all: "textures/blocks/leaves.png" },
         geometryType: "leaves",
         transparent: true,
@@ -380,8 +436,7 @@ export const BLOCK_CONFIG = {
         screenFill: false,
     }),
 
-    WOOL_CARPET: createBlockConfig({
-        id: 17,
+    WHITE_WOOL_CARPET: registerBlock({
         textures: { all: "textures/blocks/wool_colored_white.png" },
         geometryType: "carpet",
         transparent: true,
@@ -394,8 +449,11 @@ export const BLOCK_CONFIG = {
         selectionOffset: { x: 0.5, y: 0.03125, z: 0.5 },
     }),
 
-    WATER: createBlockConfig({
-        id: 18,
+    WHITE_WOOL: registerBlock({
+        textures: { all: "textures/blocks/wool_colored_white.png" }
+    }),
+
+    WATER: registerBlock({
         textures: { all: "textures/blocks/water.png" },
         collision: false,
         transparent: true,
@@ -407,8 +465,7 @@ export const BLOCK_CONFIG = {
         previewType: "2D",
     }),
 
-    LAVA: createBlockConfig({
-        id: 19,
+    LAVA: registerBlock({
         textures: { all: "textures/blocks/lava.png" },
         collision: false,
         transparent: true,
@@ -420,16 +477,14 @@ export const BLOCK_CONFIG = {
         previewType: "2D",
     }),
 
-    GLOWSTONE: createBlockConfig({
-        id: 20,
+    GLOWSTONE: registerBlock({
         textures: { all: "textures/blocks/glowstone.png" },
         geometryType: "cube",
         lightLevel: 15,
         hardness: 1.0,
     }),
 
-    LOG_OAK: createBlockConfig({
-        id: 21,
+    LOG_OAK: registerBlock({
         isLog: true,
         textures: {
             top: "textures/blocks/log_oak_top.png",
@@ -438,8 +493,7 @@ export const BLOCK_CONFIG = {
         },
     }),
 
-    SAPLING_OAK: createBlockConfig({
-        id: 22,
+    SAPLING_OAK: registerBlock({
         textures: { all: "textures/blocks/sapling_oak.png" },
         collision: false,
         geometryType: "cross",
@@ -453,8 +507,7 @@ export const BLOCK_CONFIG = {
         selectionOffset: { x: 0.5, y: 0.4, z: 0.5 },
     }),
 
-    DEADBUSH: createBlockConfig({
-        id: 23,
+    DEADBUSH: registerBlock({
         textures: { all: "textures/blocks/deadbush.png" },
         collision: false,
         geometryType: "cross",
@@ -468,8 +521,7 @@ export const BLOCK_CONFIG = {
         selectionOffset: { x: 0.5, y: 0.4, z: 0.5 },
     }),
 
-    LADDER: createBlockConfig({
-        id: 24,
+    LADDER: registerBlock({
         textures: { all: "textures/blocks/ladder.png" },
         geometryType: "ladder",
         transparent: true,
@@ -485,9 +537,29 @@ export const BLOCK_CONFIG = {
     }),
 };
 
+// 文字列キー（"GRASS"）から数値IDを引くマップ
 export const BLOCK_TYPES = Object.fromEntries(
     Object.entries(BLOCK_CONFIG).map(([key, cfg]) => [key, cfg.id])
 );
+
+// 数値IDから文字列キーを引く逆引きマップ（保存用）
+const ID_TO_KEY = Object.fromEntries(
+    Object.entries(BLOCK_CONFIG).map(([key, cfg]) => [cfg.id, key])
+);
+
+/**
+ * 数値IDを文字列キーに変換する（セーブ時に使用）
+ */
+export function idToKey(id) {
+    return ID_TO_KEY[id] || "SKY";
+}
+
+/**
+ * 文字列キーを現在の数値IDに変換する（ロード時に使用）
+ */
+export function keyToId(key) {
+    return BLOCK_TYPES[key] ?? 0;
+}
 for (const cfg of Object.values(BLOCK_CONFIG)) {
     if (typeof cfg.customCollision === "function") {
         cfg._cachedCollision = cfg.customCollision();
@@ -621,29 +693,40 @@ const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
 export function createMaterialsFromBlockConfig(blockConfig) {
     const cacheKey = blockConfig.id;
 
-    // キャッシュヒット時は即座にリターン
+    // 1. キャッシュヒット時は即座にリターン
     const cached = materialCache.get(cacheKey);
     if (cached) return cached;
 
-    const { geometryType, transparent, textures, id, lightLevel, opacity = 1.0 } = blockConfig;
+    const { geometryType, transparent, textures, lightLevel, opacity = 1.0 } = blockConfig;
 
-    // --- 判定ロジックの整理（プロパティアクセスと計算を最小化） ---
-    const isWater = (id === 18);
-    // undefined > 0 は false になるため、簡潔な比較で十分
+    // --- 判定ロジックの整理（ID固定値を廃止した動的判別版） ---
+
+    const isWater = (blockConfig.isWater === true);
+
+    // ガラス判定：ID固定値を廃止。
+    // 「透明設定である」かつ「特殊形状（草やハシゴ）ではない」かつ「水ではない」ものをガラス的ブロックとみなす
+    const isGlass = (transparent === true &&
+        geometryType !== "cross" &&
+        geometryType !== "leaves" &&
+        geometryType !== "ladder" &&
+        !isWater);
+
     const isLightSource = (lightLevel > 0);
 
-    // 半透明ブレンドは「水」のみ適用
+    // 半透明ブレンドを適用するか
     const isBlendTransparent = isWater;
-    // ガラス・草などは AlphaCutout (alphaTest) で処理
+
+    // AlphaCutout（草・ハシゴなど）を適用するか
     const isAlphaCutout = (transparent === true && !isBlendTransparent);
 
     // 表示面の決定
-    const isCrossOrLeaves = (geometryType === "cross" || geometryType === "leaves" || geometryType === "ladder");
-    const side = (isCrossOrLeaves || isWater) ? THREE.DoubleSide : THREE.FrontSide;
+    const isDoubleSideGeom = (geometryType === "cross" || geometryType === "leaves" || geometryType === "ladder");
+    // ガラスは FrontSide にすることで、立方体の反対側の面（内側）を描画せず透けを防ぐ
+    const side = (isDoubleSideGeom || isWater) ? THREE.DoubleSide : THREE.FrontSide;
 
     // 頂点カラー（ライティング）を使用するか
     const isStairsOrSlab = (geometryType === "stairs" || geometryType === "slab");
-    const useVertexColors = (!isStairsOrSlab && !isCrossOrLeaves && !isWater);
+    const useVertexColors = (!isStairsOrSlab && !isDoubleSideGeom && !isWater);
 
     // 同一ブロック内でのテクスチャ重複用キャッシュ
     const localMatCache = new Map();
@@ -654,18 +737,18 @@ export function createMaterialsFromBlockConfig(blockConfig) {
     function getMat(face) {
         const texPath = resolveTexturePath(face);
 
-        // すでに同じテクスチャのマテリアルを作っていればそれを返す
         const cachedMat = localMatCache.get(texPath);
         if (cachedMat) return cachedMat;
 
-        // オプションオブジェクトの生成
+        // オプションオブジェクトの構築
         const materialOptions = {
             color: blockConfig.defaultColor ?? 0xffffff,
             transparent: isBlendTransparent,
             opacity: opacity,
             vertexColors: useVertexColors,
             side: side,
-            depthWrite: !isBlendTransparent,
+            // 【核心】ガラスの場合は透過させつつ、深度(depth)を書き込んで背後の面を隠す
+            depthWrite: isGlass ? true : !isBlendTransparent,
             alphaTest: isAlphaCutout ? 0.5 : 0,
         };
 
@@ -675,13 +758,11 @@ export function createMaterialsFromBlockConfig(blockConfig) {
 
         const mat = new THREE.MeshBasicMaterial(materialOptions);
 
-        // シェーダー用変数の保持
         mat.userData.shaderUniforms = {
             u_skyFactor: { value: 1.0 },
             u_isLightSource: { value: isLightSource ? 1.0 : 0.0 }
         };
 
-        // シェーダー注入
         mat.onBeforeCompile = (shader) => onBeforeCompileBlock(shader, mat);
 
         localMatCache.set(texPath, mat);
@@ -694,32 +775,19 @@ export function createMaterialsFromBlockConfig(blockConfig) {
     function resolveTexturePath(face) {
         if (!textures) return blockConfig.fallbackTexture || null;
         if (textures.all) return textures.all;
-
-        // 個別指定
         if (textures[face]) return textures[face];
-
-        // 横面(side)一括設定
-        if (textures.side && face !== "top" && face !== "bottom") {
-            return textures.side;
-        }
-
-        // 上面・下面
+        if (textures.side && face !== "top" && face !== "bottom") return textures.side;
         if (face === "top" && textures.top) return textures.top;
         if (face === "bottom" && textures.bottom) return textures.bottom;
-
         return blockConfig.fallbackTexture || null;
     }
 
-    // --- マテリアル配列の構築 (最適化) ---
-    // map を使わず、固定長配列を for ループで埋めるのが最速
+    // --- マテリアル配列の構築 ---
     const resultMaterials = new Array(6);
-
     if (textures && textures.all) {
-        // 全面同じ場合は、1つのマテリアルインスタンスを再利用
         const singleMat = getMat("all");
         resultMaterials.fill(singleMat);
     } else {
-        // 面ごとに取得
         for (let i = 0; i < 6; i++) {
             resultMaterials[i] = getMat(FACE_ORDER[i]);
         }
@@ -747,11 +815,19 @@ for (const cfg of Object.values(BLOCK_CONFIG)) {
  * @returns {THREE.Material[] | null} - マテリアルの配列
  */
 export function getBlockMaterials(blockType) {
-    // 1. 下位12ビット(0xFFF)でマスクし、純粋なブロックIDのみを抽出する
-    // これにより、回転しているブロック(例: ID 4106)も元のID(例: 10)として扱える
-    const bId = Number(blockType) & 0xFFF;
+    let bId;
 
-    // 2. IDベースのキャッシュを確認（向きが違ってもマテリアルは共通なため）
+    // --- 🟢 追加：文字列キーへの対応 ---
+    if (typeof blockType === "string") {
+        // 文字列（例: "GRASS"）なら、今の実行環境での数値IDを取得する
+        bId = keyToId(blockType);
+    } else {
+        // 数値なら従来通りメタデータをマスクしてIDを抽出
+        bId = Number(blockType) & 0xFFF;
+    }
+
+    // --- 🔵 以降は共通処理 ---
+    // 2. キャッシュ確認
     if (BLOCK_MATERIALS_CACHE.has(bId)) {
         return BLOCK_MATERIALS_CACHE.get(bId);
     }
@@ -759,9 +835,8 @@ export function getBlockMaterials(blockType) {
     // 3. ルックアップテーブルから設定を取得
     const config = blockConfigLookup[bId];
     if (!config) {
-        // IDが0(SKY)の場合は警告を出さずにnullを返す（描画不要なため）
         if (bId !== 0) {
-            console.warn(`Unknown block type ID: ${bId} (Original value: ${blockType})`);
+            console.warn(`Unknown block type: ${blockType} (resolved ID: ${bId})`);
         }
         return null;
     }
@@ -769,7 +844,7 @@ export function getBlockMaterials(blockType) {
     // 4. マテリアル生成
     const materials = createMaterialsFromBlockConfig(config);
 
-    // 5. 純粋なIDをキーとしてキャッシュに保存
+    // 5. キャッシュに保存
     BLOCK_MATERIALS_CACHE.set(bId, materials);
 
     return materials;

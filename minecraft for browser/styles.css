@@ -59,6 +59,7 @@ canvas {
     top: 5px;
     left: 5px;
     color: #fff;
+    text-shadow: 1.5px 1.5px black;
     font-family: monospace;
     font-size: 12px;
     padding: 5px;

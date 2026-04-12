@@ -1,7 +1,9 @@
 "use strict";
 import * as THREE from './build/three.module.js';
-import { BLOCK_CONFIG, BLOCK_TYPES, createBlockMesh, getBlockMaterials, getBlockConfiguration, getBlockGeometry, calculatePlacementMeta, applyMetadataTransform, getLogRotationMatrix, applyRotationToCollisionBox, getCustomGeometryMatrix } from './blocks.js';
+import { BLOCK_CONFIG, BLOCK_TYPES, createBlockMesh, getBlockMaterials, getBlockConfiguration, getBlockGeometry, calculatePlacementMeta, applyMetadataTransform, getLogRotationMatrix, applyRotationToCollisionBox, getCustomGeometryMatrix, idToKey, keyToId } from './blocks.js';
+import { createMinecraftBreakParticles, updateBlockParticles } from './particles.js';
 import { setMinecraftSky, loadCloudTexture, updateCloudGrid, updateCloudTiles, updateCloudOpacity, adjustCloudLayerDepth } from './cloudsky.js';
+import { determineBiome } from './biomes/biomes.js';
 
 /* ======================================================
    【修正版・高精度ノイズ関数群】
@@ -380,7 +382,7 @@ const BIGINT_OFFSET = 2_000_000n;
 const STEP_X = 1n << 32n;
 const STEP_Z = 1n;
 
-const ChunkSaveManager = {
+export const ChunkSaveManager = {
     modifiedChunks: new Map(),
     chunkUpdateInfo: new Map(),
 
@@ -456,86 +458,139 @@ const ChunkSaveManager = {
     },
 
     /**
-     * 地形生成のコアロジック（ポインタ操作・プロパティアクセス最適化版）
+     * 地形生成のコアロジック（Minecraft生成パイプライン準拠・軽量化版）
      */
     captureBaseChunkData: function (cx, cz) {
-        // 65536 = 16 * 16 * 256
-        const data = new Uint16Array(65536);
+        // 1. チャンク割当・初期化
+        const data = new Uint16Array(65536); // 16x16x256
         const baseX = (cx << 4) | 0;
         const baseZ = (cz << 4) | 0;
 
-        // 定数と設定をローカルにキャッシュしてプロパティアクセスを削減
         const { SKY, STONE, DIRT, GRASS, WATER, LAVA, BEDROCK } = BLOCK_TYPES;
         const seaLevel = SEA_LEVEL | 0;
 
-        // CAVE_SCALE をローカルに持つ（isCave内の計算を一部肩代わりするため）
+        // 高速化・拡張用キャッシュ
+        const heightMap = new Int32Array(256);
+        const biomeMap = new Array(256); // 各列のバイオーム情報を保持
+
+        // ------------------------------------------------------
+        // 4. バイオーム割当 (順序を入れ替え、地形生成の基礎とする)
+        // ------------------------------------------------------
+        for (let x = 0; x < 16; x++) {
+            const worldX = (baseX + x) | 0;
+            for (let z = 0; z < 16; z++) {
+                const worldZ = (baseZ + z) | 0;
+
+                // バイオーム決定用の大きなスケールのノイズ
+                // 0.0005 程度のスケールにすることで、バイオームが数千ブロック単位で広がる
+                const temp = fractalNoise2D(worldX * 0.0005, worldZ * 0.0005, 3) + 0.5;
+                const humidity = fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5;
+
+                // biomes.js からバイオーム設定を取得
+                const biome = determineBiome(temp, humidity);
+                biomeMap[(x << 4) | z] = biome;
+            }
+        }
+
+        // ------------------------------------------------------
+        // 3. 地形（高さマップ）生成 (Base Terrain)
+        // ------------------------------------------------------
+        for (let x = 0; x < 16; x++) {
+            const worldX = (baseX + x) | 0;
+            const xOff = (x << 12) | 0;
+
+            for (let z = 0; z < 16; z++) {
+                const worldZ = (baseZ + z) | 0;
+                const zOff = (z << 8) | 0;
+                const idxBase = (xOff + zOff) | 0;
+                const biome = biomeMap[(x << 4) | z];
+
+                // バイオーム固有のパラメータ（noiseScale, baseHeight, heightVariation）を使用
+                const hNoise = fractalNoise2D(worldX * biome.noiseScale, worldZ * biome.noiseScale, 5);
+                const sHeight = Math.floor(biome.baseHeight + (hNoise * biome.heightVariation));
+
+                heightMap[(x << 4) | z] = sHeight;
+
+                // 岩盤層
+                data[idxBase] = BEDROCK;
+
+                // 地殻層（基本はすべて石で埋める）
+                for (let y = 1; y < sHeight; y++) {
+                    data[idxBase + y] = STONE;
+                }
+
+                // 海洋層
+                for (let y = sHeight; y <= seaLevel; y++) {
+                    data[idxBase + y] = WATER;
+                }
+            }
+        }
+
+        // ------------------------------------------------------
+        // 5. カーバー処理（洞窟・渓谷） (Carvers)
+        // ------------------------------------------------------
         const scaleXZ = CAVE_SCALE_XZ;
         const scaleY = CAVE_SCALE_Y;
 
         for (let x = 0; x < 16; x++) {
-            const xOff = (x << 12) | 0;
             const worldX = (baseX + x) | 0;
-            // Yループ内で変化しない X のノイズ座標を事前計算
             const nx = worldX * scaleXZ;
+            const xOff = (x << 12) | 0;
 
             for (let z = 0; z < 16; z++) {
-                const zOff = (z << 8) | 0;
                 const worldZ = (baseZ + z) | 0;
-                // Yループ内で変化しない Z のノイズ座標を事前計算
                 const nz = worldZ * scaleXZ;
+                const zOff = (z << 8) | 0;
+                const idxBase = (xOff + zOff) | 0;
+                const sHeight = heightMap[(x << 4) | z];
 
-                // getBlockIndex(x, 0, z) 相当から開始し、idx++ で垂直移動
-                let idx = (xOff + zOff) | 0;
-
-                // 2D高さマップ：この列の高さを一度だけ取得
-                const sHeight = getTerrainHeight(worldX, worldZ) | 0;
-
-                // 1. 最下層 (y=0)
-                data[idx++] = BEDROCK;
-
-                // 2. 地層計算用の境界設定
-                const dirtBoundary = (sHeight - 4) | 0;
-                let y = 1;
-
-                // [A] 深層（石層）
-                const stoneEnd = dirtBoundary > 1 ? dirtBoundary : 1;
-                for (; y < stoneEnd; y++) {
-                    // y に依存する ny だけをループ内で計算
-                    if (y > 4 && isCave(worldX, y, worldZ, sHeight, nx, y * scaleY, nz)) {
-                        data[idx++] = (y <= 11) ? LAVA : SKY;
-                    } else {
-                        data[idx++] = STONE;
+                for (let y = 5; y < sHeight; y++) {
+                    if (isCave(worldX, y, worldZ, sHeight, nx, y * scaleY, nz)) {
+                        // 溶岩湖の高さ(11)以下なら溶岩、それ以外は空気
+                        data[idxBase + y] = (y <= 11) ? LAVA : SKY;
                     }
                 }
-
-                // [B] 土層
-                const dirtEnd = (sHeight - 1) | 0;
-                for (; y < dirtEnd; y++) {
-                    if (y > 4 && isCave(worldX, y, worldZ, sHeight, nx, y * scaleY, nz)) {
-                        data[idx++] = (y <= 11) ? LAVA : SKY;
-                    } else {
-                        data[idx++] = DIRT;
-                    }
-                }
-
-                // [C] 地表
-                if (y > 0 && y < sHeight) {
-                    if (y > 4 && isCave(worldX, y, worldZ, sHeight, nx, y * scaleY, nz)) {
-                        data[idx++] = SKY;
-                    } else {
-                        data[idx++] = (y < seaLevel) ? DIRT : GRASS;
-                    }
-                    y++;
-                }
-
-                // 3. 水の配置 (地表より上で、かつ海面以下の場合)
-                for (; y <= seaLevel; y++) {
-                    data[idx++] = WATER;
-                }
-
-                // 残りの y (seaLevel ～ 255) は Uint16Array の初期値 0 (SKY) のためループ不要
             }
         }
+
+        // ------------------------------------------------------
+        // 6. 表面ビルダー（表土配置） (Surface Builder)
+        // ------------------------------------------------------
+        for (let x = 0; x < 16; x++) {
+            const xOff = (x << 12) | 0;
+            for (let z = 0; z < 16; z++) {
+                const zOff = (z << 8) | 0;
+                const idxBase = (xOff + zOff) | 0;
+
+                const sHeight = heightMap[(x << 4) | z];
+                const biome = biomeMap[(x << 4) | z];
+                if (sHeight <= 1) continue;
+
+                const dirtBoundary = (sHeight - 4) | 0;
+                const stoneEnd = dirtBoundary > 1 ? dirtBoundary : 1;
+                const dirtEnd = (sHeight - 1) | 0;
+
+                // 中層（バイオーム固有の fillerBlock）
+                for (let y = stoneEnd; y < dirtEnd; y++) {
+                    if (data[idxBase + y] === STONE) {
+                        data[idxBase + y] = biome.fillerBlock;
+                    }
+                }
+
+                // 最表層（バイオーム固有の topBlock）
+                const topY = sHeight - 1;
+                if (data[idxBase + topY] === STONE) {
+                    // 水中の場合はバイオーム設定に関わらず DIRT または砂にする等も可能ですが、
+                    // ここではバイオーム設定を優先します。
+                    data[idxBase + topY] = (topY < seaLevel) ? biome.fillerBlock : biome.topBlock;
+                }
+            }
+        }
+
+        // 7. 構造物配置 (Structures) - 未実装
+        // 8. デコレーション配置 (Features / Decorators) - 未実装
+        // 9. エンティティ・最終調整
+
         return data;
     },
 
@@ -607,6 +662,9 @@ globalRaycaster.near = 0.01;
 const lastCamPos = new THREE.Vector3();
 const lastCamRot = new THREE.Euler();
 
+export const globalTerrainCache = new Map();
+const BEDROCK_LEVEL = 0;
+
 // ----- スポーン位置の動的設定 -----
 const spawnX = 0;
 const spawnZ = 0;
@@ -652,7 +710,7 @@ function getCurrentPlayerHeight() {
    ====================================================== */
 // フォグの色を定義（背景色とも合わせます）
 const fogColor = 0x78A7FF;
-const scene = new THREE.Scene();
+export const scene = new THREE.Scene();
 // 💡 32マス先から霧が始まり、128マス（8チャンク程度）先で完全に霧で見えなくする
 scene.fog = new THREE.FogExp2(fogColor, 0.008);
 setMinecraftSky(scene);
@@ -661,7 +719,7 @@ loadCloudTexture(() => {
     updateCloudGrid(scene, camera.position);
 });
 
-const camera = new THREE.PerspectiveCamera(
+export const camera = new THREE.PerspectiveCamera(
     80,                                 // 視野角
     window.innerWidth / window.innerHeight, // アスペクト比
     0.1,                                // near
@@ -948,14 +1006,6 @@ function getTerrainHeight(worldX, worldZ) {
     return result;
 }
 
-const globalTerrainCache = new Map();
-const BEDROCK_LEVEL = 0;
-const BLOCK_CONFIG_BY_ID = new Map(Object.values(BLOCK_CONFIG).map(c => [c.id, c]));
-
-function getBlockConfigById(id) {
-    return BLOCK_CONFIG_BY_ID.get(id) || null;
-}
-
 function getVoxelHash(x, y, z) {
     const ox = (Math.floor(x) + 512) & 0x3FF; // 10ビット (0~1023)
     const oz = (Math.floor(z) + 512) & 0x3FF; // 10ビット (0~1023)
@@ -969,7 +1019,7 @@ const chunkReadOnlyCache = new Map();
 let _vC0_key = -1n, _vC0_data = null;
 let _vC1_key = -1n, _vC1_data = null;
 
-function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = false) {
+export function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = false) {
     const fy = y | 0;
     if (fy < 0 || fy >= CHUNK_HEIGHT) return 0;
 
@@ -1421,31 +1471,6 @@ function canDescendFromSupport(centerX, centerZ, halfWidth, margin) {
         releasePooledBox(checkAABB);
     }
     return false;
-}
-
-/**
- * ブロックIDから正確な高さを返す（フルブロック、ハーフブロック、階段、カーペット対応）
- */
-function getBlockHeight(id) {
-    const config = getBlockConfiguration(id);
-    if (!config || config.collision === false) return 0.0;
-
-    // もし明示的に height が設定されていればそれを最優先
-    if (typeof config.height === "number") {
-        return config.height;
-    }
-
-    // geometryType から高さを自動判定
-    switch (config.geometryType) {
-        case "slab":
-            return 0.5;
-        case "carpet":
-            return 0.0625;
-        case "stairs":
-            return 1.0; // 階段の最大高さは 1.0 なので、一番上から降りるときは 1.0
-        default:
-            return 1.0;
-    }
 }
 
 /* ======================================================
@@ -3063,7 +3088,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         const mergedGeom = mergeBufferGeometries(geoms, true);
         const baseMat = (getBlockMaterials(+type) || [])[0];
         const isWater = type === BLOCK_TYPES.WATER || baseMat?.userData?.isWater === true;
-        const isGlass = type === BLOCK_TYPES.GLASS || type === 12;
+        const isGlass = type === BLOCK_TYPES.GLASS;
         const isCutout = _blockConfigFastArray[type]?.geometryType === "cross" || isGlass;
 
         const fadeMat = getOrCreateCustomFadeMaterial(baseMat, isCutout, isWater, isGlass).clone();
@@ -4360,256 +4385,6 @@ function updateHeadBlockInfo() {
     }
 }
 
-/* ======================================================
-   【統合・最適化】パーティクルシステム（マイクラ準拠）
-   ====================================================== */
-const particlePool = [];
-const activeParticleGroups = [];
-const GRAVITY = 9.8 * 0.8;
-
-const materialPool = new Map();
-let noTextureMaterial = null;
-
-// 💡 干渉を避けるため、名前を 'particleGeoCache' に変更
-const particleGeoCache = new Map();
-
-// --- 💡 マテリアルを Basic にし、色を「白」で統一（真っ黒防止） ---
-const getOrCreateMaterialForTexture = (texture) => {
-    if (!texture) {
-        if (!noTextureMaterial) {
-            noTextureMaterial = new THREE.MeshBasicMaterial({
-                color: 0xffffff,
-                transparent: true,
-                opacity: 1,
-                side: THREE.DoubleSide
-            });
-        }
-        return noTextureMaterial;
-    }
-
-    if (materialPool.has(texture)) return materialPool.get(texture);
-
-    const mat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        map: texture,
-        transparent: true,
-        opacity: 1,
-        side: THREE.DoubleSide
-    });
-
-    materialPool.set(texture, mat);
-    return mat;
-};
-
-const getCachedParticleGeometry = (i, j, grid, size) => {
-    const sizeInt = Math.floor(size * 100);
-    const hashKey = (grid << 24) | (i << 16) | (j << 8) | sizeInt;
-
-    // 💡 リネームしたキャッシュを参照
-    if (particleGeoCache.has(hashKey)) return particleGeoCache.get(hashKey);
-
-    const geo = new THREE.PlaneGeometry(size, size).center();
-    const uv = geo.attributes.uv.array;
-    const [u0, v0] = [i / grid, j / grid];
-    const [u1, v1] = [(i + 1) / grid, (j + 1) / grid];
-    uv.set([u0, v0, u1, v0, u1, v1, u0, v1]);
-    geo.attributes.uv.needsUpdate = true;
-    geo.__cached = true;
-
-    particleGeoCache.set(hashKey, geo);
-    return geo;
-};
-
-const getPooledParticle = () => {
-    const p = particlePool.pop();
-    if (p) {
-        p.visible = true;
-        return p;
-    }
-    const geo = new THREE.PlaneGeometry(1, 1);
-    geo.__cached = false;
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, side: THREE.DoubleSide });
-    return new THREE.Mesh(geo, mat);
-};
-
-const releasePooledParticle = p => {
-    p.visible = false;
-    if (p.parent) p.parent.remove(p);
-    if (p.geometry && !p.geometry.__cached) {
-        p.geometry.dispose();
-        p.geometry = null;
-    }
-    particlePool.push(p);
-};
-
-/**
- * マイクラ準拠の破壊パーティクルを一括生成
- */
-const createMinecraftBreakParticles = (pos, blockType, lifetime = 3.0) => {
-    const grid = 4;
-    const size = 0.5 / grid;
-    const group = new THREE.Group();
-    const texture = getBlockMaterials(blockType)?.[0]?.map || null;
-    const sharedMat = getOrCreateMaterialForTexture(texture);
-
-    const offset = new THREE.Vector3();
-    const rndVec = new THREE.Vector3();
-
-    // 💡 改善：不変な計算（割り算と固定値）をループ外へ抽出
-    const invGrid = 1 / grid;
-    const baseOffset = 0.5 * invGrid - 0.5;
-
-    for (let i = 0; i < grid; i++) {
-        const xBase = i * invGrid + baseOffset;
-        for (let j = 0; j < grid; j++) {
-            const yBase = j * invGrid + baseOffset;
-            for (let k = 0; k < grid; k++) {
-                const p = getPooledParticle();
-                p.material = sharedMat;
-                p.geometry = getCachedParticleGeometry(i, j, grid, size);
-
-                // 💡 改善：計算済みのベース値を使って演算を最小化
-                offset.set(
-                    xBase + (Math.random() - 0.5) * 0.05,
-                    yBase + (Math.random() - 0.5) * 0.05,
-                    k * invGrid + baseOffset + (Math.random() - 0.5) * 0.05
-                );
-                // 💡 改善：cloneせず引数の pos を直接コピー
-                p.position.copy(pos).add(offset);
-                p.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-
-                rndVec.set((Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2);
-                if (!p.userData.origin) {
-                    p.userData = {
-                        origin: new THREE.Vector3(),
-                        velocity: new THREE.Vector3(),
-                        lifetime: 0,
-                        elapsed: 0
-                    };
-                }
-                p.userData.origin.copy(pos); // ここも pos を直使用
-                p.userData.velocity.copy(rndVec);
-                p.userData.lifetime = 0.2 + Math.random() * (lifetime - 0.2);
-                p.userData.elapsed = 0;
-                group.add(p);
-            }
-        }
-    }
-
-    scene.add(group);
-    activeParticleGroups.push(group);
-    return group;
-};
-
-const PUSH_DIRS = [
-    { x: 1, z: 0 }, { x: -1, z: 0 },
-    { x: 0, z: 1 }, { x: 0, z: -1 }
-];
-const _validCandidates = new Array(4);
-
-const updateBlockParticles = delta => {
-    const ag = activeParticleGroups;
-    // 💡 改善①：カメラの向きは1フレーム中変化しないため、一番外側で1度だけ取得する
-    const camQuat = camera.quaternion;
-
-    for (let gi = ag.length - 1; gi >= 0; gi--) {
-        const group = ag[gi];
-        const children = group.children;
-
-        for (let pi = children.length - 1; pi >= 0; pi--) {
-            const p = children[pi];
-            const ud = p.userData;
-            ud.elapsed += delta;
-
-            p.position.x += ud.velocity.x * delta;
-            p.position.y += ud.velocity.y * delta;
-            p.position.z += ud.velocity.z * delta;
-
-            ud.velocity.y -= GRAVITY * delta;
-            ud.velocity.x *= 0.98;
-            ud.velocity.z *= 0.98;
-
-            const bx = Math.floor(p.position.x);
-            const by = Math.floor(p.position.y);
-            const bz = Math.floor(p.position.z);
-
-            // 💡 改善②：getChunkCoord 関数呼び出しを排除し、ビットシフト(>> 4)で直接チャンク座標を計算
-            // JavaScriptの右シフトは負の数にも正しく対応するため、Math.floor(x / 16) と完全に等価で高速です。
-            const pCx = bx >> 4;
-            const pCz = bz >> 4;
-
-            const voxel = ChunkSaveManager.getBlock(pCx, pCz, bx & 15, by, bz & 15)
-                ?? getVoxelAtWorld(bx, by, bz, globalTerrainCache, { raw: true });
-
-            if (voxel !== BLOCK_TYPES.SKY && voxel !== BLOCK_TYPES.WATER) {
-                const cfg = getBlockConfiguration(voxel);
-                if (!cfg || cfg.collision !== false) {
-                    const topY = by + getBlockHeight(voxel);
-
-                    if (ud.velocity.y < 0 && p.position.y >= topY - 0.1 && p.position.y <= topY + 0.2) {
-                        p.position.y = topY;
-                        ud.velocity.y = 0;
-                        ud.velocity.x *= 0.7;
-                        ud.velocity.z *= 0.7;
-                    }
-                    else if (p.position.y < topY - 0.1) {
-                        let validCount = 0;
-
-                        for (let di = 0; di < 4; di++) {
-                            const dir = PUSH_DIRS[di];
-
-                            // 💡 改善③：(bx + dir.x) のような重複する計算を変数にキャッシュ
-                            const checkX = bx + dir.x;
-                            const checkZ = bz + dir.z;
-
-                            // 💡 改善②：ここでもビットシフトを利用
-                            const checkCx = checkX >> 4;
-                            const checkCz = checkZ >> 4;
-
-                            const sideVoxel = ChunkSaveManager.getBlock(checkCx, checkCz, checkX & 15, by, checkZ & 15)
-                                ?? getVoxelAtWorld(checkX, by, checkZ, globalTerrainCache, { raw: true });
-
-                            if (sideVoxel === BLOCK_TYPES.SKY || sideVoxel === BLOCK_TYPES.WATER) {
-                                _validCandidates[validCount++] = dir;
-                            }
-                        }
-
-                        if (validCount > 0) {
-                            const chosenDir = _validCandidates[Math.floor(Math.random() * validCount)];
-                            p.position.x += chosenDir.x * 0.1;
-                            p.position.z += chosenDir.z * 0.1;
-                            ud.velocity.x = chosenDir.x * 1.5;
-                            ud.velocity.z = chosenDir.z * 1.5;
-                            ud.velocity.y = 0;
-                        } else {
-                            ud.velocity.set(0, 0, 0);
-                            ud.elapsed = ud.lifetime;
-                        }
-                    }
-                }
-            }
-
-            // 💡 改善①：ループ内で毎度プロパティアクセスせず、キャッシュした向きを使う
-            p.quaternion.copy(camQuat);
-
-            if (ud.elapsed >= ud.lifetime) {
-                if (p.material && p.material.color) {
-                    p.material.color.setRGB(1.0, 1.0, 1.0);
-                }
-                releasePooledParticle(p);
-                group.remove(p);
-            }
-        }
-
-        if (group.children.length === 0) {
-            if (group.userData && typeof group.userData.dispose === "function") {
-                group.userData.dispose();
-            }
-            scene.remove(group);
-            ag.splice(gi, 1);
-        }
-    }
-};
 /**
  * プレイヤーの AABB（当たり判定）の下半身サンプルによる水中判定
  * 下半身の下部5点（中央＋四隅）をサンプリングし、3点以上が水ブロックなら水中と判断する。
@@ -4807,6 +4582,20 @@ function animate() {
         const targetText = (typeof currentTargetBlockText !== 'undefined') ? currentTargetBlockText : "None";
         const moveMode = flightMode ? "Flight" : (wasUnderwater ? "Swimming" : "Walking");
 
+        // --- バイオーム判定ロジック ---
+        // プレイヤーの現在座標を取得
+        const px = player.position.x;
+        const pz = player.position.z;
+
+        // 地形生成時と全く同じスケール(0.0005)でノイズをサンプリング
+        const tVal = fractalNoise2D(px * 0.0005, pz * 0.0005, 3) + 0.5;
+        const hVal = fractalNoise2D(px * 0.0005 + 500, pz * 0.0005 + 500, 3) + 0.5;
+
+        // determineBiomeを実行して名前を取得
+        const biomeConfig = determineBiome(tVal, hVal);
+        const biomeName = (biomeConfig && biomeConfig.name) ? biomeConfig.name : "Unknown";
+
+        // HTMLを更新（biomeName定義の後に実行）
         fpsCounter.innerHTML = `
         <b>Minecraft classic 0.0.1</b><br>
         Seed: ${currentSeed}<br>
@@ -4816,6 +4605,7 @@ function animate() {
         ${modifiedCount} modified chunks (Saved)<br>
         C: ${loadedChunks.size} loaded. (Quality: ${CHUNK_VISIBLE_DISTANCE})<br>
         Dimension: Overworld<br>
+        <b>Biome: ${biomeName}</b><br>
         x: ${Math.round(player.position.x)} (C: ${pCx})<br>
         y: ${Math.round(player.position.y)} (feet)<br>
         z: ${Math.round(player.position.z)} (C: ${pCz})<br>
@@ -5780,29 +5570,13 @@ if (btnSettingsReset) {
     btnSettingsReset.addEventListener('click', resetSettings);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /* ======================================================
-   【保存システム】IndexedDB Manager (パフォーマンス最適化版)
+   【保存システム】IndexedDB Manager (パフォーマンス最適化・堅牢版)
    ====================================================== */
 const DB_CONFIG = { name: "MinecraftJS_Save", version: 1 };
 
 /**
- * DB接続を取得する（Promiseベース）
+ * DB接続を取得する
  */
 async function getDB() {
     return new Promise((resolve, reject) => {
@@ -5810,7 +5584,6 @@ async function getDB() {
 
         request.onupgradeneeded = (e) => {
             const db = e.target.result;
-            // ストアが存在しない場合のみ作成
             if (!db.objectStoreNames.contains("world_meta")) {
                 db.createObjectStore("world_meta");
             }
@@ -5826,30 +5599,49 @@ async function getDB() {
 
 /**
  * ワールドデータの保存
- * @param {number} seed 
- * @param {object} playerPos 
- * @param {Map} modifiedChunks 
- * @param {number} gameTime 
  */
 async function saveWorldData(seed, playerPos, modifiedChunks, gameTime) {
     const db = await getDB();
 
     return new Promise((resolve, reject) => {
-        // トランザクションを開始
         const tx = db.transaction(["world_meta", "chunks"], "readwrite");
         const metaStore = tx.objectStore("world_meta");
         const chunkStore = tx.objectStore("chunks");
 
-        // 1. メタ情報の保存
         metaStore.put(seed, "last_seed");
         metaStore.put(playerPos, "player_pos");
         metaStore.put(gameTime, "game_time");
 
-        // 2. 変更されたチャンクデータの保存
         if (modifiedChunks && modifiedChunks.size > 0) {
-            for (const [key, data] of modifiedChunks) {
-                // BigIntキーを文字列に変換して保存（IndexedDBのキー互換性のため）
-                chunkStore.put(data, key.toString());
+            for (const [key, dataArray] of modifiedChunks) {
+                // 【修正ポイント】dataArray 自体が Uint16Array なので直接 length を取る
+                if (!dataArray || !(dataArray instanceof Uint16Array)) {
+                    // もし Uint16Array でない(既に変換済み等)場合は blocks プロパティを探す
+                    const actualBlocks = dataArray.blocks || dataArray;
+                    if (!actualBlocks.length) continue;
+                }
+
+                const len = dataArray.length;
+                const serializedBlocks = new Array(len);
+
+                for (let j = 0; j < len; j++) {
+                    const val = dataArray[j];
+                    const id = val & 0xFFF;
+                    const meta = (val >> 12) & 0xF;
+
+                    serializedBlocks[j] = {
+                        k: idToKey(id), // ここで文字列化
+                        m: meta
+                    };
+                }
+
+                // 保存用オブジェクトの構築
+                const serializedData = {
+                    blocks: serializedBlocks
+                    // 必要ならここにチャンクの座標などを追加
+                };
+
+                chunkStore.put(serializedData, key.toString());
             }
         }
 
@@ -5867,29 +5659,22 @@ async function saveWorldData(seed, playerPos, modifiedChunks, gameTime) {
 
 /**
  * ワールドデータの全読み込み
- * データが存在しない場合は null を返す
- * @returns {Promise<object|null>} ロードされたデータ一式、または null
  */
 async function loadFullSaveData() {
     const db = await getDB();
 
     return new Promise((resolve, reject) => {
-        // 読み取り専用トランザクション
         const tx = db.transaction(["world_meta", "chunks"], "readonly");
         const metaStore = tx.objectStore("world_meta");
         const chunkStore = tx.objectStore("chunks");
 
-        // 各データの取得リクエスト
         const reqSeed = metaStore.get("last_seed");
         const reqPos = metaStore.get("player_pos");
         const reqTime = metaStore.get("game_time");
-
-        // チャンクの一括取得
         const reqKeys = chunkStore.getAllKeys();
         const reqValues = chunkStore.getAll();
 
         tx.oncomplete = () => {
-            // 【重要】シード値すら存在しない場合は、セーブデータなしと判断して null を返す
             if (reqSeed.result === undefined) {
                 resolve(null);
                 return;
@@ -5899,20 +5684,37 @@ async function loadFullSaveData() {
             const keys = reqKeys.result || [];
             const values = reqValues.result || [];
 
-            // 取得したキーと値をMapに復元
-            // 配列の長さをキャッシュし、インクリメントで回す
             for (let i = 0, len = keys.length; i < len; i++) {
-                // すでにBigIntなら変換をスキップするチェックを入れるか、
-                // keys自体をTypedArrayなどで管理することを検討
-                chunks.set(typeof keys[i] === 'bigint' ? keys[i] : BigInt(keys[i]), values[i]);
+                const chunkKey = typeof keys[i] === 'bigint' ? keys[i] : BigInt(keys[i]);
+                const chunkData = values[i];
+
+                if (chunkData && chunkData.blocks) {
+                    const bLen = chunkData.blocks.length;
+                    const numericBlocks = new Uint16Array(bLen);
+
+                    for (let j = 0; j < bLen; j++) {
+                        const item = chunkData.blocks[j];
+                        const isObj = (item !== null && typeof item === 'object');
+                        const key = isObj ? item.k : item;
+                        const meta = isObj ? (item.m ?? 0) : 0;
+
+                        const id = keyToId(key);
+                        numericBlocks[j] = (id & 0xFFF) | ((meta & 0xF) << 12);
+                    }
+
+                    // 【重要】オブジェクト全体ではなく、Uint16Arrayそのものをセットする
+                    chunks.set(chunkKey, numericBlocks);
+                } else if (chunkData instanceof Uint16Array) {
+                    // すでに Uint16Array の場合はそのままセット（念のため）
+                    chunks.set(chunkKey, chunkData);
+                }
             }
 
-            // オブジェクトを組み立てて返す
             resolve({
-                seed: reqSeed.result,               // 保存されていたシード値
-                pos: reqPos.result ?? null,         // 座標（ない場合はnull）
-                gameTime: reqTime.result ?? 6000,   // ゲーム時間（ない場合は朝6000）
-                chunks: chunks                      // 変更されたチャンクMap
+                seed: reqSeed.result,
+                pos: reqPos.result ?? null,
+                gameTime: reqTime.result ?? 6000,
+                chunks: chunks
             });
         };
 
