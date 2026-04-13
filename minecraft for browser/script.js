@@ -5,6 +5,25 @@ import { createMinecraftBreakParticles, updateBlockParticles } from './particles
 import { setMinecraftSky, loadCloudTexture, updateCloudGrid, updateCloudTiles, updateCloudOpacity, adjustCloudLayerDepth } from './cloudsky.js';
 import { determineBiome } from './biomes/biomes.js';
 
+// 各ブロックIDが「面を完全に隠す（不透明な立方体か）」を保持する高速参照用配列
+const _isOpaqueBlock = new Uint8Array(1024); // IDの最大数に合わせて調整
+
+Object.values(BLOCK_CONFIG).forEach(cfg => {
+    // 以下の条件のいずれかに当てはまるなら「透過（不透明ではない）」とみなす
+    // 1. 透明設定(transparent)が true
+    // 2. 形状が cube ではない（階段、ハーフブロック、草など）
+    // 3. 空(SKY)である
+    const isTransparent = cfg.transparent === true;
+    const isFullCube = cfg.geometryType === "cube" || cfg.isLog === true;
+    const isSky = cfg.id === BLOCK_CONFIG.SKY.id;
+
+    if (!isSky && !isTransparent && isFullCube) {
+        _isOpaqueBlock[cfg.id] = 1; // 石、土、原木などは 1
+    } else {
+        _isOpaqueBlock[cfg.id] = 0; // ガラス、階段、水などは 0
+    }
+});
+
 /* ======================================================
    【修正版・高精度ノイズ関数群】
    ====================================================== */
@@ -412,12 +431,19 @@ export const ChunkSaveManager = {
         // 3. 更新メタ情報の記録（自分自身）
         this._markByKey(key, ly);
 
-        // 4. 境界チェック：BigInt()を再計算せずビット加減算で隣接キーを特定
-        if (lx === 0) this._markByKey(key - STEP_X, ly);
-        else if (lx === 15) this._markByKey(key + STEP_X, ly);
+        // 4. 境界チェック：関数呼び出しのオーバーヘッドを無くし、ビット演算をインライン化
+        // （桁あふれを防ぎつつ、encodeChunkKeyと全く同じ計算を最速で行う）
+        if (lx === 0) {
+            this._markByKey(((cx - 1) & 0xFFFF) << 16 | (cz & 0xFFFF), ly);
+        } else if (lx === 15) {
+            this._markByKey(((cx + 1) & 0xFFFF) << 16 | (cz & 0xFFFF), ly);
+        }
 
-        if (lz === 0) this._markByKey(key - STEP_Z, ly);
-        else if (lz === 15) this._markByKey(key + STEP_Z, ly);
+        if (lz === 0) {
+            this._markByKey((cx & 0xFFFF) << 16 | ((cz - 1) & 0xFFFF), ly);
+        } else if (lz === 15) {
+            this._markByKey((cx & 0xFFFF) << 16 | ((cz + 1) & 0xFFFF), ly);
+        }
     },
 
     /**
@@ -1031,7 +1057,7 @@ export function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRa
     const cx = fx >> 4;
     const cz = fz >> 4;
 
-    // 💡 1. encodeChunkKey の結果を一度だけ変数に入れる (BigInt計算コスト削減)
+    // 💡 1. encodeChunkKey の結果を一度だけ変数に入れる
     const chunkKey = encodeChunkKey(cx, cz);
     let data = null;
 
@@ -1531,7 +1557,7 @@ function isOnLadder() {
     for (let y = minY; y <= maxY; y++) {
         for (let x = minX; x <= maxX; x++) {
             for (let z = minZ; z <= maxZ; z++) {
-                const voxel = getVoxelAtWorld(x, y, z, globalTerrainCache, { raw: true });
+                const voxel = getVoxelAtWorld(x, y, z, globalTerrainCache, true);
                 if ((voxel & 0xFFF) === BLOCK_TYPES.LADDER) {
                     // --- ここから追加：詳細な当たり判定チェック ---
                     const meta = (voxel >> 12) & 0xF;
@@ -1651,7 +1677,7 @@ function updateFlightPhysics() {
     _tmpDesiredVel.copy(desiredVel);
 
     player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * accel;
-    player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * accel
+    player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * accel;
 
     // --- 垂直移動 ---
     let targetVertical = 0;
@@ -1785,7 +1811,7 @@ function decodeChunkKey(key, out = _sharedChunkCoord) {
 // 更新要求用のバッチセットと処理
 // ───────────────────────────────
 
-// pendingChunkUpdates は BigInt 値を保持する Set
+// pendingChunkUpdates はエンコードされたチャンクキー(32bit数値)を保持する Set
 let pendingChunkUpdates = new Set();
 let chunkUpdateQueue = [];
 let chunkUpdateRunning = false;
@@ -2782,7 +2808,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         if (x < 0 && neighborData.nx) return neighborData.nx[y + (z * STRIDE_Z) + (15 * STRIDE_X)] & 0xFFF;
         if (z >= CH_S && neighborData.pz) return neighborData.pz[y + (0 * STRIDE_Z) + (x * STRIDE_X)] & 0xFFF;
         if (z < 0 && neighborData.nz) return neighborData.nz[y + (15 * STRIDE_Z) + (x * STRIDE_X)] & 0xFFF;
-        return getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z, globalTerrainCache, { raw: true }) & 0xFFF;
+        return getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z, globalTerrainCache, true) & 0xFFF;
     }
 
     let lightMap = chunkLightCache.get(chunkKey);
@@ -2811,36 +2837,57 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         const cached = _globalVisCache[index];
         if (cached !== 0) return cached;
 
-        const myTrans = _isTransparentBlock[type];
-        const myCustom = _isCustomGeometryBlock[type];
+        const myType = type;
+        const myIsOpaque = _isOpaqueBlock[myType];
         let mask = 0;
 
-        // 隣接ブロックを取得して判定する一連の処理をインライン化
-        // 判定条件: 隣接が空気/空か、異なる透明ブロックか、非カスタムから見たカスタムか
+        // 隣接ブロックのIDを受け取り、自分の面を描画すべきか判定する
+        function shouldShowFace(neighborRaw) {
+            const nType = neighborRaw & 0xFFF;
+            if (nType === 0 || nType === SKY) return true;
 
+            const nIsOpaque = _isOpaqueBlock[nType];
+            if (nIsOpaque) return false; // 隣が完全な立方体なら自分は隠れる
+            if (myIsOpaque) return true;  // 自分が完全な立方体で隣が透過系なら自分は表示
+
+            // --- ここから透過ブロック同士の判定 ---
+            const myCfg = _blockConfigFastArray[myType];
+
+            // cullAdjacentFaces が true のブロック（ガラス、葉など）だけ
+            // 隣に「同じ種類」が来たときに面を消す
+            if (myCfg && myCfg.cullAdjacentFaces === true) {
+                return nType !== myType;
+            }
+
+            // それ以外（階段、スラブ、ハシゴ、草など）は、
+            // 隣が不透明フルブロックでない限り、常に自分の面を表示する
+            return true;
+        }
+
+        // --- 各方向の判定（既存のインライン処理を shouldShowFace でスリム化） ---
         // PX (+X)
-        const ntPX = (x < CH_S - 1) ? (voxelData[index + STRIDE_X] & 0xFFF) : get(x + 1, y, z);
-        if (ntPX === 0 || ntPX === SKY || (_isTransparentBlock[ntPX] && (!myTrans || ntPX !== type)) || (_isCustomGeometryBlock[ntPX] && !myCustom)) mask |= 1;
+        const ntPX = (x < CH_S - 1) ? voxelData[index + STRIDE_X] : get(x + 1, y, z);
+        if (shouldShowFace(ntPX)) mask |= 1;
 
         // NX (-X)
-        const ntNX = (x > 0) ? (voxelData[index - STRIDE_X] & 0xFFF) : get(x - 1, y, z);
-        if (ntNX === 0 || ntNX === SKY || (_isTransparentBlock[ntNX] && (!myTrans || ntNX !== type)) || (_isCustomGeometryBlock[ntNX] && !myCustom)) mask |= 2;
+        const ntNX = (x > 0) ? voxelData[index - STRIDE_X] : get(x - 1, y, z);
+        if (shouldShowFace(ntNX)) mask |= 2;
 
         // PY (+Y)
-        const ntPY = (y < CH_H - 1) ? (voxelData[index + 1] & 0xFFF) : get(x, y + 1, z);
-        if (ntPY === 0 || ntPY === SKY || (_isTransparentBlock[ntPY] && (!myTrans || ntPY !== type)) || (_isCustomGeometryBlock[ntPY] && !myCustom)) mask |= 4;
+        const ntPY = (y < CH_H - 1) ? voxelData[index + 1] : get(x, y + 1, z);
+        if (shouldShowFace(ntPY)) mask |= 4;
 
         // NY (-Y)
-        const ntNY = (y > 0) ? (voxelData[index - 1] & 0xFFF) : get(x, y - 1, z);
-        if (ntNY === 0 || ntNY === SKY || (_isTransparentBlock[ntNY] && (!myTrans || ntNY !== type)) || (_isCustomGeometryBlock[ntNY] && !myCustom)) mask |= 8;
+        const ntNY = (y > 0) ? voxelData[index - 1] : get(x, y - 1, z);
+        if (shouldShowFace(ntNY)) mask |= 8;
 
         // PZ (+Z)
-        const ntPZ = (z < CH_S - 1) ? (voxelData[index + STRIDE_Z] & 0xFFF) : get(x, y, z + 1);
-        if (ntPZ === 0 || ntPZ === SKY || (_isTransparentBlock[ntPZ] && (!myTrans || ntPZ !== type)) || (_isCustomGeometryBlock[ntPZ] && !myCustom)) mask |= 16;
+        const ntPZ = (z < CH_S - 1) ? voxelData[index + STRIDE_Z] : get(x, y, z + 1);
+        if (shouldShowFace(ntPZ)) mask |= 16;
 
         // NZ (-Z)
-        const ntNZ = (z > 0) ? (voxelData[index - STRIDE_Z] & 0xFFF) : get(x, y, z - 1);
-        if (ntNZ === 0 || ntNZ === SKY || (_isTransparentBlock[ntNZ] && (!myTrans || ntNZ !== type)) || (_isCustomGeometryBlock[ntNZ] && !myCustom)) mask |= 32;
+        const ntNZ = (z > 0) ? voxelData[index - STRIDE_Z] : get(x, y, z - 1);
+        if (shouldShowFace(ntNZ)) mask |= 32;
 
         _globalVisCache[index] = mask;
         return mask;
@@ -2850,7 +2897,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     let effectiveMaxY = voxelData.maxY !== undefined ? voxelData.maxY : CHUNK_HEIGHT - 1;
     const maxIndex = (effectiveMaxY + 2) * STRIDE_Z * STRIDE_X;
     _globalVisCache.fill(0, 0, Math.min(maxIndex, _globalVisCache.length));
-    const customGeomCache = new Map(), customGeomBatches = new Map(), faceGeoms = new Map();
+    const customGeomCache = new Map(), customGeomBatches = new Map(), materialBatches = new Map();
 
     // --- 走査ループ (最適化版) ---
     for (let x = 0; x < CHUNK_SIZE; x++) {
@@ -2935,61 +2982,52 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 // B. 通常の不透明ブロック
                 if (visMask && !useInstancing) {
                     const isRotated = !!cfg.isLog;
-
                     if (isRotated) {
                         _m1.copy(getLogRotationMatrix(meta));
                         _r1.extractRotation(_m1);
                     }
 
-                    if (!faceGeoms.has(type)) faceGeoms.set(type, new Map());
-                    const matMap = faceGeoms.get(type);
+                    // ★ 改善点：そのブロックが持つマテリアル配列を先に取得
+                    const baseMats = SharedMaterials.blocks.get(type) || getBlockMaterials(+type);
 
                     for (let faceIdx = 0; faceIdx < 6; faceIdx++) {
                         let wBit = faceIdx;
                         let wNX, wNY, wNZ, fw;
-
-                        const offset = faceIdx * 12; // 🚀 平坦化配列用のオフセット計算
+                        const offset = faceIdx * 12;
 
                         if (isRotated) {
-                            // 回転あり：法線を回転させてから可視判定
                             _n1.set(CUBE_NORMALS[offset], CUBE_NORMALS[offset + 1], CUBE_NORMALS[offset + 2]);
                             _n1.applyMatrix4(_r1);
-
-                            wNX = Math.round(_n1.x);
-                            wNY = Math.round(_n1.y);
-                            wNZ = Math.round(_n1.z);
+                            wNX = Math.round(_n1.x); wNY = Math.round(_n1.y); wNZ = Math.round(_n1.z);
                             wBit = (wNX > 0) ? 0 : (wNX < 0) ? 1 : (wNY > 0) ? 2 : (wNY < 0) ? 3 : (wNZ > 0) ? 4 : 5;
-
                             if (!((visMask >> wBit) & 1)) continue;
                             fw = (wNY > 0) ? 1.0 : (wNY < 0) ? 0.5 : (Math.abs(wNX) > 0) ? 0.8 : 0.65;
                         } else {
-                            // 🚀 回転なし：最速パス
                             if (!((visMask >> faceIdx) & 1)) continue;
-                            wNX = CUBE_NORMALS[offset];
-                            wNY = CUBE_NORMALS[offset + 1];
-                            wNZ = CUBE_NORMALS[offset + 2];
+                            wNX = CUBE_NORMALS[offset]; wNY = CUBE_NORMALS[offset + 1]; wNZ = CUBE_NORMALS[offset + 2];
                             fw = FACE_FW[faceIdx];
                         }
 
-                        // バッチ配列の取得をここで一度だけ行う
-                        if (!matMap.has(faceIdx)) matMap.set(faceIdx, { positions: [], colors: [], normals: [] });
-                        const batch = matMap.get(faceIdx);
-                        const bPos = batch.positions; // 参照をキャッシュ
+                        // ★ 改善点：faceIdx から「実際のマテリアル」を特定してバッチを取得
+                        const targetMat = baseMats[faceIdx] || baseMats[0];
+                        if (!materialBatches.has(targetMat)) {
+                            materialBatches.set(targetMat, { positions: [], colors: [], normals: [], uvs: [] });
+                        }
+                        const batch = materialBatches.get(targetMat);
+                        const bPos = batch.positions;
                         const bNorm = batch.normals;
                         const bCol = batch.colors;
+                        const bUv = batch.uvs; // UVも集約に必要
 
                         if (isRotated) {
                             for (let j = 0; j < 12; j += 3) {
                                 const oj = offset + j;
                                 _v1.set(CUBE_VERTICES[oj], CUBE_VERTICES[oj + 1], CUBE_VERTICES[oj + 2]).applyMatrix4(_m1);
                                 _n1.set(CUBE_NORMALS[oj], CUBE_NORMALS[oj + 1], CUBE_NORMALS[oj + 2]).applyMatrix4(_r1);
-                                bPos.push(_v1.x + wx);
-                                bPos.push(_v1.y + wy);
-                                bPos.push(_v1.z + wz);
+                                bPos.push(_v1.x + wx, _v1.y + wy, _v1.z + wz);
                                 bNorm.push(_n1.x, _n1.y, _n1.z);
                             }
                         } else {
-                            // 🚀 回転なし：メモリコピーに等しい速度でPush
                             for (let j = 0; j < 12; j += 3) {
                                 const oj = offset + j;
                                 bPos.push(CUBE_VERTICES[oj] + wx, CUBE_VERTICES[oj + 1] + wy, CUBE_VERTICES[oj + 2] + wz);
@@ -2997,21 +3035,16 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                             }
                         }
 
-                        // ライト計算とカラーPushの最適化
-                        const light = getLightLevel(x + wNX, y + wNY, z + wNZ);
-                        const lightS = (light >> 4) & 15;
-                        const lightB = light & 15;
-                        const brightness = fw * globalBrightnessMultiplier;
-                        const sS = Math.max(0.04, LIGHT_LEVEL_FACTORS[lightS] * brightness);
-                        const bS = Math.max(0.04, LIGHT_LEVEL_FACTORS[lightB] * brightness);
+                        // UVの追加（これがないとテクスチャがずれます）
+                        for (let j = 0; j < 8; j++) bUv.push(CUBE_UVS[j]);
 
-                        // 4頂点分をフラットにPush
-                        bCol.push(
-                            sS, bS, 0,
-                            sS, bS, 0,
-                            sS, bS, 0,
-                            sS, bS, 0
-                        );
+                        const light = getLightLevel(x + wNX, y + wNY, z + wNZ);
+                        const brightness = fw * globalBrightnessMultiplier;
+                        const sS = Math.max(0.04, LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * brightness);
+                        const bS = Math.max(0.04, LIGHT_LEVEL_FACTORS[light & 15] * brightness);
+
+                        // 4頂点分
+                        for (let v = 0; v < 4; v++) bCol.push(sS, bS, 0);
                     }
                 }
             }
@@ -3020,73 +3053,40 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
     if (!hasAnySolidBlock) return container;
 
-    // --- 4. バッチング (不透明) ---
-    const materialGuidMap = new Map();
-    const chunkMaterials = [];
-    const opaqueGeometries = [];
-
-    for (const [type, group] of faceGeoms.entries()) {
-        let totalV = 0;
-        for (const m of group.values()) totalV += m.positions.length / 3;
+    // --- 4. バッチング (不透明) [集約最適化版] ---
+    // ループ内で直接Meshを作成しcontainerに追加するため、外部配列やmergeは不要になりました
+    for (const [originMat, data] of materialBatches.entries()) {
+        const totalV = data.positions.length / 3;
         if (totalV === 0) continue;
 
-        const subGeom = new THREE.BufferGeometry();
-        const pos = new Float32Array(totalV * 3), col = new Float32Array(totalV * 3),
-            norm = new Float32Array(totalV * 3), uv = new Float32Array(totalV * 2),
-            idx = new Uint32Array((totalV / 4) * 6);
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
+        geom.setAttribute('color', new THREE.Float32BufferAttribute(data.colors, 3));
+        geom.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+        geom.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2));
 
-        let vO = 0, iO = 0, uvO = 0, gO = 0;
-        const baseMats = SharedMaterials.blocks.get(type) || getBlockMaterials(+type);
-
-        for (const [mIdx, mData] of group.entries()) {
-            const len = mData.positions.length;
-            pos.set(mData.positions, vO); col.set(mData.colors, vO); norm.set(mData.normals, vO);
-            const fC = len / 12;
-            for (let f = 0; f < fC; f++) {
-                uv.set(CUBE_UVS, uvO); uvO += 8;
-                const bV = (vO / 3) + (f * 4);
-                idx[iO] = bV; idx[iO + 1] = bV + 1; idx[iO + 2] = bV + 2;
-                idx[iO + 3] = bV; idx[iO + 4] = bV + 2; idx[iO + 5] = bV + 3;
-                iO += 6;
-            }
-            const originMat = baseMats[mIdx];
-            let guidIdx = materialGuidMap.get(originMat);
-            if (guidIdx === undefined) {
-                const fMat = originMat.clone();
-                fMat.vertexColors = true;
-                if (fMat.color) fMat.color.set(0xffffff);
-                fMat.userData = { originMat, shaderUniforms: originMat.userData?.shaderUniforms };
-                if (originMat.onBeforeCompile) fMat.onBeforeCompile = originMat.onBeforeCompile;
-                guidIdx = chunkMaterials.length;
-                materialGuidMap.set(originMat, guidIdx);
-                chunkMaterials.push(fMat);
-            }
-            subGeom.addGroup(gO, fC * 6, guidIdx);
-            gO += fC * 6;
-            vO += len;
+        const indices = new Uint32Array((totalV / 4) * 6);
+        for (let i = 0, v = 0; i < indices.length; i += 6, v += 4) {
+            indices[i] = v; indices[i + 1] = v + 1; indices[i + 2] = v + 2;
+            indices[i + 3] = v; indices[i + 4] = v + 2; indices[i + 5] = v + 3;
         }
-        subGeom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        subGeom.setAttribute('color', new THREE.BufferAttribute(col, 3));
-        subGeom.setAttribute('normal', new THREE.BufferAttribute(norm, 3));
-        subGeom.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-        subGeom.setIndex(new THREE.BufferAttribute(idx, 1));
-        opaqueGeometries.push(subGeom);
-    }
+        geom.setIndex(new THREE.BufferAttribute(indices, 1));
 
-    if (opaqueGeometries.length > 0) {
-        const finalGeom = mergeBufferGeometries(opaqueGeometries, true);
-        finalGeom.computeBoundingSphere();
-        const mesh = new THREE.Mesh(finalGeom, chunkMaterials);
+        const finalMat = originMat.clone();
+        finalMat.vertexColors = true;
+        if (finalMat.color) finalMat.color.set(0xffffff);
+        finalMat.userData = { originMat, shaderUniforms: originMat.userData?.shaderUniforms };
+        if (originMat.onBeforeCompile) finalMat.onBeforeCompile = originMat.onBeforeCompile;
+
+        const mesh = new THREE.Mesh(geom, finalMat);
         mesh.frustumCulled = true;
         mesh.userData.finalizeFade = function () {
-            if (!mesh.material) return;
-            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-            const newMats = mats.map(m => {
-                const o = m.userData?.originMat;
-                if (o) { m.dispose(); return o; }
-                return m;
-            });
-            mesh.material = Array.isArray(mesh.material) ? newMats : newMats[0];
+            if (!this.material) return;
+            const o = this.material.userData?.originMat;
+            if (o) {
+                this.material.dispose();
+                this.material = o;
+            }
         };
         container.add(mesh);
     }
@@ -3096,6 +3096,8 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     const waterGeometries = [], waterMaterials = [], waterMatMap = new Map();
 
     for (const [type, geoms] of customGeomBatches.entries()) {
+        if (geoms.length === 0) continue;
+
         const mergedGeom = mergeBufferGeometries(geoms, true);
         const baseMat = (getBlockMaterials(+type) || [])[0];
         const isWater = type === BLOCK_TYPES.WATER || baseMat?.userData?.isWater === true;
@@ -3111,12 +3113,14 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         const targetMats = isWater ? waterMaterials : cutoutMaterials;
         const targetMap = isWater ? waterMatMap : cutoutMatMap;
 
-        let mIdx = targetMap.get(fadeMat.uuid);
+        // 同じフェード用マテリアルを使い回すための判定
+        let mIdx = targetMap.get(baseMat); // マテリアルそのものをキーにする
         if (mIdx === undefined) {
             mIdx = targetMats.length;
             targetMats.push(fadeMat);
-            targetMap.set(fadeMat.uuid, mIdx);
+            targetMap.set(baseMat, mIdx);
         }
+
         mergedGeom.clearGroups();
         mergedGeom.addGroup(0, mergedGeom.index ? mergedGeom.index.count : mergedGeom.attributes.position.count, mIdx);
         targetGeoms.push(mergedGeom);
@@ -3124,11 +3128,16 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
     if (cutoutGeometries.length > 0) {
         const mesh = new THREE.Mesh(mergeBufferGeometries(cutoutGeometries, true), cutoutMaterials);
-        mesh.renderOrder = 1; container.add(mesh);
+        mesh.renderOrder = 1;
+        mesh.frustumCulled = true;
+        container.add(mesh);
     }
+
     if (waterGeometries.length > 0) {
         const mesh = new THREE.Mesh(mergeBufferGeometries(waterGeometries, true), waterMaterials);
-        mesh.renderOrder = 10; container.add(mesh);
+        mesh.renderOrder = 10;
+        mesh.frustumCulled = true;
+        container.add(mesh);
     }
 
     return container;
@@ -4150,7 +4159,7 @@ function getTargetBlockByDDA(maxDistance) {
                 let lz = z % CHUNK_SIZE; if (lz < 0) lz += CHUNK_SIZE;
 
                 const voxel = ChunkSaveManager.getBlock(cx, cz, lx, y, lz)
-                    ?? getVoxelAtWorld(x, y, z, globalTerrainCache, { raw: true });
+                    ?? getVoxelAtWorld(x, y, z, globalTerrainCache, true);
 
                 // 💡 空（SKY）でない場合の判定
                 if (voxel !== BLOCK_TYPES.SKY) {
@@ -4338,7 +4347,7 @@ function updateBlockInfo() {
     if (lz < 0) lz += CHUNK_SIZE;
 
     const rawVoxel = ChunkSaveManager.getBlock(cx, cz, lx, y, lz)
-        ?? getVoxelAtWorld(x, y, z, globalTerrainCache, { raw: true });
+        ?? getVoxelAtWorld(x, y, z, globalTerrainCache, true);
 
     // ✅ 回転値とIDを分離
     const blockId = rawVoxel & 0xFFF;
@@ -4378,7 +4387,7 @@ function updateHeadBlockInfo() {
     if (hLz < 0) hLz += CHUNK_SIZE;
 
     const rawValue = ChunkSaveManager.getBlock(cx, cz, hLx, hY, hLz)
-        ?? getVoxelAtWorld(hX, hY, hZ, globalTerrainCache, { raw: true });
+        ?? getVoxelAtWorld(hX, hY, hZ, globalTerrainCache, true);
 
     // ✅ IDと回転値を分離して表示
     const blockId = rawValue & 0xFFF;
@@ -4441,7 +4450,7 @@ function isPlayerEntireBodyInWater() {
             const cz = getChunkCoord(z);
 
             blockValue = ChunkSaveManager.getBlock(cx, cz, x & 15, y, z & 15)
-                ?? getVoxelAtWorld(x, y, z, globalTerrainCache, { raw: true });
+                ?? getVoxelAtWorld(x, y, z, globalTerrainCache, true);
 
             _waterCellCache.set(numericKey, blockValue);
         }
@@ -5609,7 +5618,7 @@ async function getDB() {
 }
 
 /**
- * ワールドデータの保存
+ * ワールドデータの保存 (改善版)
  */
 async function saveWorldData(seed, playerPos, modifiedChunks, gameTime) {
     const db = await getDB();
@@ -5624,35 +5633,30 @@ async function saveWorldData(seed, playerPos, modifiedChunks, gameTime) {
         metaStore.put(gameTime, "game_time");
 
         if (modifiedChunks && modifiedChunks.size > 0) {
-            for (const [key, dataArray] of modifiedChunks) {
-                // 【修正ポイント】dataArray 自体が Uint16Array なので直接 length を取る
-                if (!dataArray || !(dataArray instanceof Uint16Array)) {
-                    // もし Uint16Array でない(既に変換済み等)場合は blocks プロパティを探す
-                    const actualBlocks = dataArray.blocks || dataArray;
-                    if (!actualBlocks.length) continue;
-                }
+            const _idToKey = idToKey; // 外部関数の参照をローカルにキャッシュ
 
+            for (const [key, dataArray] of modifiedChunks) {
+                if (!dataArray) continue;
+
+                // dataArrayがUint16Arrayであることを前提にループを最適化
+                // 内部で毎回 instanceof をチェックしない
                 const len = dataArray.length;
                 const serializedBlocks = new Array(len);
 
                 for (let j = 0; j < len; j++) {
                     const val = dataArray[j];
+                    // ビット演算によるIDとメタデータの切り出し
                     const id = val & 0xFFF;
                     const meta = (val >> 12) & 0xF;
 
+                    // オブジェクトの生成は避けられないが、プロパティアクセスを最短にする
                     serializedBlocks[j] = {
-                        k: idToKey(id), // ここで文字列化
+                        k: _idToKey(id),
                         m: meta
                     };
                 }
 
-                // 保存用オブジェクトの構築
-                const serializedData = {
-                    blocks: serializedBlocks
-                    // 必要ならここにチャンクの座標などを追加
-                };
-
-                chunkStore.put(serializedData, key.toString());
+                chunkStore.put({ blocks: serializedBlocks }, key.toString());
             }
         }
 
@@ -5660,16 +5664,12 @@ async function saveWorldData(seed, playerPos, modifiedChunks, gameTime) {
             console.log(`[Save] 保存完了: ${modifiedChunks ? modifiedChunks.size : 0} チャンク`);
             resolve();
         };
-
-        tx.onerror = () => {
-            console.error("[Save] 保存エラー:", tx.error);
-            reject(tx.error);
-        };
+        tx.onerror = () => reject(tx.error);
     });
 }
 
 /**
- * ワールドデータの全読み込み
+ * ワールドデータの全読み込み (改善版)
  */
 async function loadFullSaveData() {
     const db = await getDB();
@@ -5694,30 +5694,39 @@ async function loadFullSaveData() {
             const chunks = new Map();
             const keys = reqKeys.result || [];
             const values = reqValues.result || [];
+            const _keyToId = keyToId; // ローカルキャッシュ
 
             for (let i = 0, len = keys.length; i < len; i++) {
-                // すべて Number として扱う
                 const chunkKey = Number(keys[i]);
                 const chunkData = values[i];
 
                 if (chunkData && chunkData.blocks) {
-                    const bLen = chunkData.blocks.length;
+                    const blocks = chunkData.blocks;
+                    const bLen = blocks.length;
                     const numericBlocks = new Uint16Array(bLen);
 
-                    for (let j = 0; j < bLen; j++) {
-                        const item = chunkData.blocks[j];
-                        const isObj = (item !== null && typeof item === 'object');
-                        const key = isObj ? item.k : item;
-                        const meta = isObj ? (item.m ?? 0) : 0;
+                    if (bLen > 0) {
+                        // 最初の要素でデータ形式を判定し、ループを分岐させる
+                        const firstItem = blocks[0];
+                        const isObjMode = (firstItem !== null && typeof firstItem === 'object');
 
-                        const id = keyToId(key);
-                        numericBlocks[j] = (id & 0xFFF) | ((meta & 0xF) << 12);
+                        if (isObjMode) {
+                            // オブジェクト形式(k, m)に最適化したループ
+                            for (let j = 0; j < bLen; j++) {
+                                const item = blocks[j];
+                                const id = _keyToId(item.k);
+                                const meta = item.m ?? 0;
+                                numericBlocks[j] = (id & 0xFFF) | ((meta & 0xF) << 12);
+                            }
+                        } else {
+                            // 文字列のみの形式に最適化したループ
+                            for (let j = 0; j < bLen; j++) {
+                                numericBlocks[j] = _keyToId(blocks[j]) & 0xFFF;
+                            }
+                        }
                     }
-
-                    // 【重要】オブジェクト全体ではなく、Uint16Arrayそのものをセットする
                     chunks.set(chunkKey, numericBlocks);
                 } else if (chunkData instanceof Uint16Array) {
-                    // すでに Uint16Array の場合はそのままセット（念のため）
                     chunks.set(chunkKey, chunkData);
                 }
             }
@@ -5730,9 +5739,6 @@ async function loadFullSaveData() {
             });
         };
 
-        tx.onerror = () => {
-            console.error("[Load] 読み込みエラー:", tx.error);
-            reject(tx.error);
-        };
+        tx.onerror = () => reject(tx.error);
     });
 }
