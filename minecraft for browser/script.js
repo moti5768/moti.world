@@ -396,9 +396,6 @@ function updateSkyAndFogColor(time, sunY, sunDir) {
 /* ======================================================
    【新・チャンク保存管理システム (クラスなし版) - 高速最適化ver】
    ====================================================== */
-// キー計算用の定数（ChunkSaveManagerの外または冒頭に配置）
-const STEP_X = 1 << 16; // 32bit数値パッキングに合わせたステップ数
-const STEP_Z = 1;
 
 export const ChunkSaveManager = {
     modifiedChunks: new Map(),
@@ -665,7 +662,6 @@ const fpsCounter = document.getElementById("fpsCounter");
 // Vector3 / Box3 Object Pool (改良版)
 // ======================================================
 const _vecPool = [];
-const _boxPool = [];
 const POOL_MAX = 1024;
 
 function allocVec() {
@@ -705,7 +701,7 @@ if (initialNoise > 0.2) {
     heightModifier += Math.pow(initialNoise - 0.2, 2) * 60;
 }
 // 本来の地表の高さ + 余裕を持たせた2ブロック上
-const spawnY = Math.max(Math.floor(BASE_HEIGHT + heightModifier), SEA_LEVEL + 5);
+const spawnY = Math.max(getTerrainHeight(spawnX, spawnZ), SEA_LEVEL + 5) + 2;
 
 let jumpCooldown = 0;
 // プレイヤーデータ
@@ -992,38 +988,30 @@ function checkAABBCollision(aabb, velocity, dt) {
     return result;
 }
 
-/* ======================================================
-   【地形生成】（フラクタルノイズ＋ユーザー変更反映・最適化・強化版）
-   ====================================================== */
-/**
- * 💡 リファクタリング：純粋な地形生成（ノイズ）専用関数
- * キーの衝突対策と、スパイク防止のキャッシュ管理を導入。
- */
 function getTerrainHeight(worldX, worldZ) {
     const xInt = worldX | 0;
     const zInt = worldZ | 0;
 
-    // 💡 修正：XOR(^)ではなく、ビットシフトと論理和(|)で正確な32bitキーを作成
-    // これにより座標の重複（ハッシュ衝突）がなくなります
     const key = ((xInt & 0xFFFF) << 16) | (zInt & 0xFFFF);
+    const cached = terrainHeightCache.get(key);
+    if (cached !== undefined) return cached;
 
-    const cachedHeight = terrainHeightCache.get(key);
-    if (cachedHeight !== undefined) return cachedHeight;
+    // --- バイオーム決定 ---
+    const temp = fractalNoise2D(xInt * 0.0005, zInt * 0.0005, 3) + 0.5;
+    const humidity = fractalNoise2D(xInt * 0.0005 + 500, zInt * 0.0005 + 500, 3) + 0.5;
 
-    // ノイズ計算（4オクターブ）
-    const noise = fractalNoise2D(xInt * NOISE_SCALE, zInt * NOISE_SCALE, 4, 0.5);
+    const biome = determineBiome(temp, humidity);
 
-    let heightModifier = noise * 35;
-    // 高地の急峻な地形を作るロジック
-    if (noise > 0.2) {
-        const diff = noise - 0.2;
-        heightModifier += (diff * diff) * 60;
-    }
+    // --- 地形高さ ---
+    const hNoise = fractalNoise2D(
+        xInt * biome.noiseScale,
+        zInt * biome.noiseScale,
+        5
+    );
 
-    const result = (BASE_HEIGHT + heightModifier) | 0;
+    const result = (biome.baseHeight + hNoise * biome.heightVariation) | 0;
 
-    // 💡 修正：キャッシュがいっぱいになった時、全部消すのではなく古いものを少し消す
-    // これにより、移動中の瞬間的なカクつき（スパイク）を抑えます
+    // キャッシュ管理（そのまま）
     if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
         const iter = terrainHeightCache.keys();
         for (let i = 0; i < 1000; i++) {
@@ -1708,7 +1696,6 @@ function updateOnGround() {
 /* ======================================================
    【チャンク生成】
    ====================================================== */
-// 🪚 改善①: traverseを使わず再帰呼び出しと一時配列生成を排除
 function disposeMesh(mesh) {
     if (!mesh) return;
 
@@ -1740,59 +1727,58 @@ function disposeMesh(mesh) {
 }
 
 function refreshChunkAt(cx, cz) {
-    const key = encodeChunkKey(cx, cz);
+    // 1. キーの生成（新バージョンのビット演算方式に合わせる）
+    const key = (cx << 16) | (cz & 0xFFFF);
     const oldChunk = loadedChunks.get(key);
 
-    // ------------------------------------------------------------
-    // 💡【根本修正2】更新時も距離チェック
-    // 遠ざかったチャンクの更新依頼が来た場合、再生成せず消去のみ行う
-    // ------------------------------------------------------------
+    // 2. プレイヤーとの距離をチェック
     const pCx = Math.floor(player.position.x / CHUNK_SIZE);
     const pCz = Math.floor(player.position.z / CHUNK_SIZE);
     const dx = Math.abs(cx - pCx);
     const dz = Math.abs(cz - pCz);
 
+    // 距離外なら削除して終了（メモリ節約）
     if (dx > CHUNK_VISIBLE_DISTANCE || dz > CHUNK_VISIBLE_DISTANCE) {
         if (oldChunk) {
             scene.remove(oldChunk);
-            disposeMesh(oldChunk); // メモリ解放
+            disposeMesh(oldChunk);
             loadedChunks.delete(key);
         }
         return;
     }
 
-    // 1. 新しいメッシュを生成
+    // 3. 新しいメッシュの生成
     const newChunk = generateChunkMeshMultiTexture(cx, cz);
     if (!newChunk) return;
 
+    // 更新時はフェードなしで即表示（操作への応答性を優先）
     newChunk.userData.fadedIn = true;
     syncSingleChunkSkyLight(newChunk);
 
-    // マテリアル設定の復元
+    // マテリアル状態の正規化（トラバースを1回に集約）
     newChunk.traverse(child => {
         if (child.isMesh && child.material) {
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            mats.forEach(m => {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            for (const m of materials) {
                 const ud = m.userData;
                 if (ud) {
                     if (ud.realTransparent !== undefined) m.transparent = ud.realTransparent;
                     if (ud.realDepthWrite !== undefined) m.depthWrite = ud.realDepthWrite;
                     if (ud.realOpacity !== undefined) m.opacity = ud.realOpacity;
                 }
-            });
+            }
         }
     });
 
-    // 2. シーン入れ替え
+    // 4. シーンへの反映
     scene.add(newChunk);
     loadedChunks.set(key, newChunk);
 
-    // 3. 古いチャンクを完全に破棄
+    // 5. 旧メッシュの完全破棄（GPUメモリ解放）
     if (oldChunk) {
         scene.remove(oldChunk);
-        disposeMesh(oldChunk); // 💡 disposeMesh関数を呼んでGPUメモリを解放
+        disposeMesh(oldChunk);
     }
-
 }
 
 function encodeChunkKey(cx, cz) {
@@ -1808,149 +1794,178 @@ function decodeChunkKey(key, out = _sharedChunkCoord) {
 }
 
 // ───────────────────────────────
-// 更新要求用のバッチセットと処理
+// 更新要求用のバッチセットと処理（最適化完全版）
 // ───────────────────────────────
 
-// pendingChunkUpdates はエンコードされたチャンクキー(32bit数値)を保持する Set
+// 内部管理用：Setを併用してキュー内の重複チェックを O(1) にする
 let pendingChunkUpdates = new Set();
 let chunkUpdateQueue = [];
+let chunkUpdateLookup = new Set();
 let chunkUpdateRunning = false;
 
-// チャンク更新要求
+// 静的定数・キャッシュ
+const CHUNK_MAX_FRAME_TIME = 8;
+const NEIGHBOR_OFFSETS = [
+    [1, 0], [-1, 0], [0, 1], [0, -1]
+];
+
+/**
+ * チャンク更新要求
+ */
 function requestChunkUpdate(cx, cz) {
-    if (!chunkUpdateQueue.some(([x, z]) => x === cx && z === cz)) {
+    // 💡 共通のエンコード関数を使用して、負の座標でも一貫性を保つ
+    const key = encodeChunkKey(cx, cz);
+
+    if (!chunkUpdateLookup.has(key)) {
+        chunkUpdateLookup.add(key);
         chunkUpdateQueue.push([cx, cz]);
     }
     scheduleChunkUpdate();
 }
 
+/**
+ * requestAnimationFrameから呼ばれるステップ実行
+ * 既存の(function step(){...})()による毎回の関数生成を回避
+ */
+function stepChunkUpdate() {
+    const start = performance.now();
+
+    while (chunkUpdateQueue.length > 0) {
+        const coords = chunkUpdateQueue.shift();
+        const cx = coords[0];
+        const cz = coords[1];
+
+        // 参照用セットから削除
+        chunkUpdateLookup.delete((cx << 16) | (cz & 0xFFFF));
+
+        // 外部定義の再描画処理を呼び出し
+        refreshChunkAt(cx, cz);
+
+        if (performance.now() - start > CHUNK_MAX_FRAME_TIME) break;
+    }
+
+    if (chunkUpdateQueue.length > 0) {
+        requestAnimationFrame(stepChunkUpdate);
+    } else {
+        chunkUpdateRunning = false;
+    }
+}
+
 function scheduleChunkUpdate() {
     if (chunkUpdateRunning) return;
     chunkUpdateRunning = true;
-
-    const MAX_FRAME_TIME = 12; // 1フレームに許容するミリ秒
-
-    (function step() {
-        const start = performance.now();
-
-        while (chunkUpdateQueue.length > 0) {
-            const [cx, cz] = chunkUpdateQueue.shift();
-            refreshChunkAt(cx, cz);
-
-            if (performance.now() - start > MAX_FRAME_TIME) {
-                break;
-            }
-        }
-
-        if (chunkUpdateQueue.length > 0) {
-            requestAnimationFrame(step); // 確実に次フレームで分散実行させる
-        } else {
-            chunkUpdateRunning = false;
-        }
-    })();
+    requestAnimationFrame(stepChunkUpdate);
 }
 
 // ==========================================
-// 周辺の自動チャンク生成キュー (歩行中の読み込み)
+// 周辺の自動チャンク生成キュー (最適化完全版)
 // ==========================================
 let chunkQueueScheduled = false;
-let processStartTime = 0;
 
+/**
+ * チャンク生成メインループ
+ * アルゴリズム：1フレームあたりの個数と時間を制限しつつ、距離チェックを行いながら生成
+ */
 function processChunkQueue(deadline) {
+    const MAX_CHUNKS_PER_FRAME = 1;
+    const FRAME_TIME_BUDGET = 10;
+    const startTime = performance.now();
     let tasksProcessed = 0;
-    const MAX_CHUNKS_PER_FRAME = 1; // 1フレームに生成を許す最大チャンク数
-    const FRAME_TIME_BUDGET = 10;   // 1フレームに許容する最大ミリ秒 (10ms)
 
-    let chunkInfo, cx, cz, key, mesh;
-
-    processStartTime = performance.now();
-
-    // 💡 判定用に現在のプレイヤーのチャンク座標を取得
+    // プレイヤーの現在チャンク座標を一度だけ計算
     const pCx = Math.floor(player.position.x / CHUNK_SIZE);
     const pCz = Math.floor(player.position.z / CHUNK_SIZE);
 
     while (
         chunkQueue.length > 0 &&
         tasksProcessed < MAX_CHUNKS_PER_FRAME &&
-        (performance.now() - processStartTime) < FRAME_TIME_BUDGET
+        (performance.now() - startTime) < FRAME_TIME_BUDGET
     ) {
-        // 💡 pop() で末尾から高速に取得
-        chunkInfo = chunkQueue.pop();
+        const chunkInfo = chunkQueue.pop();
+        if (!chunkInfo) continue;
 
-        if (chunkInfo) {
-            cx = chunkInfo.cx;
-            cz = chunkInfo.cz;
-            key = encodeChunkKey(cx, cz);
+        const cx = chunkInfo.cx;
+        const cz = chunkInfo.cz;
+        const key = encodeChunkKey(cx, cz);
 
-            // ------------------------------------------------------------
-            // 💡【根本修正1】リアルタイム距離チェック
-            // キューに積まれている間にプレイヤーが移動した場合、ここで弾く
-            // ------------------------------------------------------------
-            const dx = Math.abs(cx - pCx);
-            const dz = Math.abs(cz - pCz);
-            if (dx > CHUNK_VISIBLE_DISTANCE || dz > CHUNK_VISIBLE_DISTANCE) {
-                continue; // 描画距離外ならこのチャンクの生成は無視して次へ
+        // 【アルゴリズム維持】リアルタイム距離チェック
+        const dx = Math.abs(cx - pCx);
+        const dz = Math.abs(cz - pCz);
+        if (dx > CHUNK_VISIBLE_DISTANCE || dz > CHUNK_VISIBLE_DISTANCE) {
+            continue;
+        }
+
+        // 未ロード時のみ生成
+        if (!loadedChunks.has(key)) {
+            const mesh = generateChunkMeshMultiTexture(cx, cz);
+            if (!mesh) {
+                tasksProcessed++;
+                continue;
             }
 
-            // まだ読み込まれていない場合のみ生成
-            if (!loadedChunks.has(key)) {
-                mesh = generateChunkMeshMultiTexture(cx, cz);
-                if (!mesh) continue;
+            syncSingleChunkSkyLight(mesh);
 
-                syncSingleChunkSkyLight(mesh);
+            // フェードイン設定の判定
+            const isNoFade = (typeof CHUNK_VISIBLE_DISTANCE !== "undefined" && CHUNK_VISIBLE_DISTANCE === 0);
+            if (isNoFade) {
+                mesh.userData.fadedIn = true;
+            } else {
+                mesh.userData.fadedIn = false;
+                setOpacityRecursive(mesh, 0);
+            }
 
-                if (typeof CHUNK_VISIBLE_DISTANCE !== "undefined" && CHUNK_VISIBLE_DISTANCE === 0) {
-                    mesh.userData.fadedIn = true;
-                } else {
-                    mesh.userData.fadedIn = false;
-                    setOpacityRecursive(mesh, 0);
-                }
+            scene.add(mesh);
+            loadedChunks.set(key, mesh);
 
-                scene.add(mesh);
-                loadedChunks.set(key, mesh);
-
-                // 隣接チャンクの更新予約
-                const neighborOffsets = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-                for (let i = 0; i < neighborOffsets.length; i++) {
-                    const nx = cx + neighborOffsets[i][0];
-                    const nz = cz + neighborOffsets[i][1];
-                    const nKey = encodeChunkKey(nx, nz);
-                    if (loadedChunks.has(nKey)) {
-                        if (typeof pendingChunkUpdates !== "undefined") {
-                            pendingChunkUpdates.add(nKey);
-                        }
+            // 隣接チャンクの更新予約（定数配列を使用してGCを抑制）
+            for (let i = 0; i < 4; i++) {
+                const off = NEIGHBOR_OFFSETS[i];
+                const nKey = encodeChunkKey(cx + off[0], cz + off[1]);
+                if (loadedChunks.has(nKey)) {
+                    if (typeof pendingChunkUpdates !== "undefined") {
+                        pendingChunkUpdates.add(nKey);
                     }
                 }
-
-                fadeInMesh(mesh, 500, () => {
-                    mesh.userData.fadedIn = true;
-                    mesh.traverse(child => {
-                        if (child.isMesh && typeof child.userData.finalizeFade === "function") {
-                            child.userData.finalizeFade();
-                        }
-                    });
-                });
             }
+
+            // フェード処理
+            fadeInMesh(mesh, 500, () => {
+                mesh.userData.fadedIn = true;
+                mesh.traverse(onMeshChildFinalize);
+            });
         }
         tasksProcessed++;
     }
 
-    if (chunkQueue.length > 0) {
-        if (!chunkQueueScheduled) {
-            chunkQueueScheduled = true;
-            if (window.requestIdleCallback) {
-                window.requestIdleCallback(() => {
-                    chunkQueueScheduled = false;
-                    processChunkQueue();
-                }, { timeout: 1000 });
-            } else {
-                requestAnimationFrame(() => {
-                    chunkQueueScheduled = false;
-                    processChunkQueue();
-                });
-            }
+    // 次のフレームまたはアイドル時間の予約
+    if (chunkQueue.length > 0 && !chunkQueueScheduled) {
+        chunkQueueScheduled = true;
+
+        if (window.requestIdleCallback) {
+            window.requestIdleCallback(onIdleCallbackHandle, { timeout: 1000 });
+        } else {
+            requestAnimationFrame(onAnimationFrameHandle);
         }
     }
+}
+
+/**
+ * 以下、コールバック用再利用関数（クロージャ生成防止）
+ */
+function onMeshChildFinalize(child) {
+    if (child.isMesh && typeof child.userData.finalizeFade === "function") {
+        child.userData.finalizeFade();
+    }
+}
+
+function onIdleCallbackHandle() {
+    chunkQueueScheduled = false;
+    processChunkQueue();
+}
+
+function onAnimationFrameHandle() {
+    chunkQueueScheduled = false;
+    processChunkQueue();
 }
 
 // 💡 シェーダー変数の参照を一括管理して、毎フレームの重いメッシュ走査をゼロにする
@@ -2311,7 +2326,6 @@ function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
 // ---------------------------------------------------------------------------
 // getCachedFaceGeometry: faceKey に対応するクワッドジオメトリをキャッシュして返す
 // ---------------------------------------------------------------------------
-// 追加
 function detectFaceDirection(geometry, group) {
     const normals = geometry.getAttribute('normal').array;
     const idx0 = geometry.index.array[group.start] * 3;
@@ -4093,17 +4107,6 @@ function initChunkBorderGeometries() {
 // 初期化の実行
 initChunkBorderGeometries();
 
-
-
-
-// ----- 選択アウトライン用オブジェクト -----
-// （1×1×1 の BoxGeometry に基づいた単純なエッジ表示）
-const selectionOutlineGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
-const selectionOutlineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
-const selectionOutlineMesh = new THREE.LineSegments(selectionOutlineGeometry, selectionOutlineMaterial);
-selectionOutlineMesh.visible = false;
-scene.add(selectionOutlineMesh);
-
 // ----- グローバル：ブロック情報表示用 DOM や、Raycaster 用オブジェクト -----
 const BLOCK_NAMES = Object.keys(BLOCK_TYPES).reduce((names, key) => {
     names[BLOCK_TYPES[key]] = key.charAt(0) + key.slice(1).toLowerCase();
@@ -4306,15 +4309,20 @@ function createSelectionLine(worldX, worldY, worldZ, box3) {
     box3.getSize(size);
     box3.getCenter(center);
 
-    // BoxGeometry作成 (Z-fighting防止のため +0.005)
-    const geom = new THREE.BoxGeometry(size.x + 0.005, size.y + 0.005, size.z + 0.005);
+    const geom = new THREE.BoxGeometry(size.x + 0.001, size.y + 0.001, size.z + 0.001);
 
-    // 斜め線を消すためのエッジ抽出
     const edges = new THREE.EdgesGeometry(geom);
 
     const line = new THREE.LineSegments(
         edges,
-        new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 })
+        new THREE.LineBasicMaterial({
+            color: 0x000000,
+            linewidth: 1,
+            // 【修正点2】手前に描画する設定を追加（Z-fighting対策）
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1
+        })
     );
 
     // ワールド座標 + ボックスのローカル中心座標
@@ -5379,10 +5387,7 @@ function setupTouchControls() {
         if (!sneakToggled) { keys["shift"] = false; sneakActive = false; }
     });
 }
-
 setupTouchControls();
-
-
 
 /* ======================================================
    【1. 設定関連のグローバル変数・DOM取得】

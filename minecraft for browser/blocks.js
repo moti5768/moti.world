@@ -2,6 +2,17 @@
 import * as THREE from "./build/three.module.js";
 import { BufferGeometryUtils } from './jsm/utils/BufferGeometryUtils.js';
 
+const ERROR_TEXTURE = (() => {
+    const data = new Uint8Array([
+        255, 0, 255, 255, 0, 0, 0, 255,
+        0, 0, 0, 255, 255, 0, 255, 255
+    ]); // 2x2 マゼンタ/ブラック
+    const tex = new THREE.DataTexture(data, 2, 2, THREE.RGBAFormat);
+    tex.magFilter = THREE.NearestFilter;
+    tex.needsUpdate = true;
+    return tex;
+})();
+
 // ================================================
 // ② ブロック定義 (BLOCK_CONFIG) の拡張
 // ================================================
@@ -577,74 +588,67 @@ const textureCache = new Map();
 // ロード中の Promise を管理するキャッシュ（重複ロードを完全に防ぐ）
 const loadingPromises = new Map();
 
+// 読み込みに失敗したパスを完全に記録する
+const failedTextureCache = new Set();
+
 function cachedLoadTexture(path, fallback = null) {
-    // 1. パスがない場合はフォールバックへ
-    if (!path) {
-        if (fallback) return cachedLoadTexture(fallback, null);
-        return getSharedEmptyTexture();
+    // パスがない、または既に失敗している場合は即「ピンク黒」
+    if (!path || path === "" || path === "none" || failedTextureCache.has(path)) {
+        if (fallback && fallback !== path && !failedTextureCache.has(fallback)) {
+            return cachedLoadTexture(fallback, null);
+        }
+        return ERROR_TEXTURE;
     }
 
-    // 2. すでに完了したキャッシュがあれば即座に返す
     if (textureCache.has(path)) return textureCache.get(path);
-
-    // 3. ロード中の場合は、その処理を待機している placeholder を返す
-    // これにより、同じパスに対して同時に1回しか textureLoader.load が走らない
     if (loadingPromises.has(path)) return textureCache.get(path);
 
-    // 4. 新規ロード開始
     const placeholder = new THREE.Texture();
+    // 初期状態（ロード中・失敗時）をピンク黒にしておく
+    placeholder.image = ERROR_TEXTURE.image;
+    placeholder.magFilter = ERROR_TEXTURE.magFilter;
+    placeholder.needsUpdate = true;
+
     textureCache.set(path, placeholder);
 
     const loadPromise = new Promise((resolve) => {
         textureLoader.load(
             path,
             (tex) => {
-                // 成功時：ピクセルパーフェクトな設定
                 tex.magFilter = THREE.NearestFilter;
                 tex.minFilter = THREE.NearestMipmapNearestFilter;
                 tex.generateMipmaps = true;
-
-                // placeholder の中身を書き換え
                 placeholder.image = tex.image;
                 placeholder.magFilter = tex.magFilter;
                 placeholder.minFilter = tex.minFilter;
                 placeholder.needsUpdate = true;
-
                 resolve(placeholder);
             },
             undefined,
-            (err) => {
-                console.warn(`Texture load failed: ${path}`);
-                if (fallback && fallback !== path) {
-                    const fbTex = cachedLoadTexture(fallback, null);
-                    // フォールバック画像がすでにロード済みなら中身をコピー
-                    if (fbTex.image) {
+            () => {
+                console.error(`[Texture] Failed to load: ${path}`);
+                failedTextureCache.add(path);
+
+                // fallback 処理
+                if (fallback && fallback !== path && !failedTextureCache.has(fallback)) {
+                    textureLoader.load(fallback, (fbTex) => {
                         placeholder.image = fbTex.image;
+                        placeholder.magFilter = THREE.NearestFilter;
                         placeholder.needsUpdate = true;
-                    }
-                } else {
-                    // 最終防衛ライン：マゼンタのチェック柄などを適用（既存のロジック）
-                    applyErrorTexture(placeholder);
+                    }, undefined, () => {
+                        failedTextureCache.add(fallback);
+                        // fallbackも失敗なら初期値のピンク黒のまま
+                    });
                 }
                 resolve(placeholder);
             }
         );
+    }).finally(() => {
+        loadingPromises.delete(path);
     });
 
     loadingPromises.set(path, loadPromise);
     return placeholder;
-}
-
-// ヘルパー：エラー時にマゼンタ色を塗る
-function applyErrorTexture(tex) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 2; canvas.height = 2;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#ff00ff'; ctx.fillRect(0, 0, 1, 1); ctx.fillRect(1, 1, 1, 1);
-    ctx.fillStyle = '#000000'; ctx.fillRect(1, 0, 1, 1); ctx.fillRect(0, 1, 1, 1);
-    tex.image = canvas;
-    tex.magFilter = THREE.NearestFilter;
-    tex.needsUpdate = true;
 }
 
 // グローバルキャッシュ
@@ -698,100 +702,70 @@ export function createMaterialsFromBlockConfig(blockConfig) {
     const cached = materialCache.get(cacheKey);
     if (cached) return cached;
 
-    const { geometryType, transparent, textures, lightLevel, opacity = 1.0 } = blockConfig;
+    const { geometryType, transparent, textures = {}, lightLevel, opacity = 1.0, fallbackTexture: fb, defaultColor = 0xffffff } = blockConfig;
 
-    // --- 判定ロジックの整理（ID固定値を廃止した動的判別版） ---
-
+    // 判定ロジックを一度だけ計算
     const isWater = (blockConfig.isWater === true);
-
-    // ガラス判定：ID固定値を廃止。
-    // 「透明設定である」かつ「特殊形状（草やハシゴ）ではない」かつ「水ではない」ものをガラス的ブロックとみなす
-    const isGlass = (transparent === true &&
-        geometryType !== "cross" &&
-        geometryType !== "leaves" &&
-        geometryType !== "ladder" &&
-        !isWater);
-
+    const isGlass = (transparent === true && geometryType !== "cross" && geometryType !== "leaves" && geometryType !== "ladder" && !isWater);
     const isLightSource = (lightLevel > 0);
-
-    // 半透明ブレンドを適用するか
     const isBlendTransparent = isWater;
-
-    // AlphaCutout（草・ハシゴなど）を適用するか
     const isAlphaCutout = (transparent === true && !isBlendTransparent);
-
-    // 表示面の決定
     const isDoubleSideGeom = (geometryType === "cross" || geometryType === "leaves" || geometryType === "ladder");
-    // ガラスは FrontSide にすることで、立方体の反対側の面（内側）を描画せず透けを防ぐ
     const side = (isDoubleSideGeom || isWater) ? THREE.DoubleSide : THREE.FrontSide;
-
-    // 頂点カラー（ライティング）を使用するか
     const isStairsOrSlab = (geometryType === "stairs" || geometryType === "slab");
     const useVertexColors = (!isStairsOrSlab && !isDoubleSideGeom && !isWater);
 
     // 同一ブロック内でのテクスチャ重複用キャッシュ
     const localMatCache = new Map();
 
-    /**
-     * 個別の面マテリアルを生成・取得する (内部関数)
-     */
-    function getMat(face) {
-        const texPath = resolveTexturePath(face);
+    // マテリアル配列の構築
+    const resultMaterials = new Array(6);
 
-        const cachedMat = localMatCache.get(texPath);
-        if (cachedMat) return cachedMat;
+    // textures.all がある場合は最短ルートを通る
+    if (textures.all) {
+        const texPath = textures.all;
+        const mat = _generateMaterial(texPath);
+        resultMaterials.fill(mat);
+    } else {
+        for (let i = 0; i < 6; i++) {
+            const face = FACE_ORDER[i];
+            // resolveTexturePath のロジックをインライン化して高速化
+            const texPath = textures[face] ||
+                ((face !== "top" && face !== "bottom") ? textures.side : null) ||
+                textures.top || textures.bottom || fb;
 
-        // オプションオブジェクトの構築
-        const materialOptions = {
-            color: blockConfig.defaultColor ?? 0xffffff,
+            let mat = localMatCache.get(texPath);
+            if (!mat) {
+                mat = _generateMaterial(texPath);
+                localMatCache.set(texPath, mat);
+            }
+            resultMaterials[i] = mat;
+        }
+    }
+
+    // 内部的なマテリアル生成ロジック（変数をキャプチャして共通化）
+    function _generateMaterial(path) {
+        const options = {
+            color: defaultColor,
             transparent: isBlendTransparent,
             opacity: opacity,
             vertexColors: useVertexColors,
             side: side,
-            // 【核心】ガラスの場合は透過させつつ、深度(depth)を書き込んで背後の面を隠す
             depthWrite: isGlass ? true : !isBlendTransparent,
             alphaTest: isAlphaCutout ? 0.5 : 0,
         };
 
-        if (texPath && texPath !== "none") {
-            materialOptions.map = cachedLoadTexture(texPath, blockConfig.fallbackTexture);
+        if (path && path !== "none") {
+            options.map = cachedLoadTexture(path, fb);
         }
 
-        const mat = new THREE.MeshBasicMaterial(materialOptions);
-
+        const mat = new THREE.MeshBasicMaterial(options);
         mat.userData.shaderUniforms = {
             u_skyFactor: { value: 1.0 },
             u_isLightSource: { value: isLightSource ? 1.0 : 0.0 }
         };
-
         mat.onBeforeCompile = (shader) => onBeforeCompileBlock(shader, mat);
-
-        localMatCache.set(texPath, mat);
         return mat;
-    }
-
-    /**
-     * 面の名前に応じてテクスチャパスを返す (内部関数)
-     */
-    function resolveTexturePath(face) {
-        if (!textures) return blockConfig.fallbackTexture || null;
-        if (textures.all) return textures.all;
-        if (textures[face]) return textures[face];
-        if (textures.side && face !== "top" && face !== "bottom") return textures.side;
-        if (face === "top" && textures.top) return textures.top;
-        if (face === "bottom" && textures.bottom) return textures.bottom;
-        return blockConfig.fallbackTexture || null;
-    }
-
-    // --- マテリアル配列の構築 ---
-    const resultMaterials = new Array(6);
-    if (textures && textures.all) {
-        const singleMat = getMat("all");
-        resultMaterials.fill(singleMat);
-    } else {
-        for (let i = 0; i < 6; i++) {
-            resultMaterials[i] = getMat(FACE_ORDER[i]);
-        }
     }
 
     materialCache.set(cacheKey, resultMaterials);
