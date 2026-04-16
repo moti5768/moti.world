@@ -6,7 +6,8 @@ export const BIOME_TYPES = {
     DESERT: 'desert',
     FOREST: 'forest',
     MOUNTAINS: 'mountains',
-    SNOWY_TUNDRA: 'snowy_tundra'
+    SNOWY_TUNDRA: 'snowy_tundra',
+    RIVER: 'river'
 };
 
 // 各バイオームの特徴定義
@@ -50,13 +51,27 @@ export const BIOME_CONFIG = {
         baseHeight: 66,
         heightVariation: 8,
         noiseScale: 0.01
+    },
+    [BIOME_TYPES.RIVER]: {
+        name: 'River',
+        topBlock: BLOCK_TYPES.DIRT, // または水ブロックとの兼ね合いで砂・土
+        fillerBlock: BLOCK_TYPES.DIRT,
+        baseHeight: 58,
+        heightVariation: 2,
+        noiseScale: 0.01
     }
 };
 
 /**
  * 温度と湿度の値（0.0 〜 1.0）からバイオームを決定する
  */
-export function determineBiome(temp, humidity) {
+export function determineBiome(temp, humidity, riverValue = 0) {
+
+    const d = Math.abs(riverValue - 0.5); // 中心線からの距離
+    if (d < 0.08) {
+        return BIOME_CONFIG[BIOME_TYPES.RIVER];
+    }
+
     if (temp < 0.3) {
         return BIOME_CONFIG[BIOME_TYPES.SNOWY_TUNDRA];
     }
