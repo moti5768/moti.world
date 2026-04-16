@@ -500,7 +500,7 @@ export const ChunkSaveManager = {
         const biomeMap = this._sharedBiomeMap;
 
         // ------------------------------------------------------
-        // 4. バイオーム割当 (順序を入れ替え、地形生成の基礎とする)
+        // 3. バイオーム割当 (順序を入れ替え、地形生成の基礎とする)
         // ------------------------------------------------------
         for (let x = 0; x < 16; x++) {
             const worldX = (baseX + x) | 0;
@@ -519,8 +519,10 @@ export const ChunkSaveManager = {
         }
 
         // ------------------------------------------------------
-        // 3. 地形（高さマップ）生成 (Base Terrain)
+        // 4. 地形（高さマップ）生成 (Base Terrain)
         // ------------------------------------------------------
+        const blendRadius = 3; // 周囲3ブロック(5x5)のバイオームを混ぜる
+
         for (let x = 0; x < 16; x++) {
             const worldX = (baseX + x) | 0;
             const xOff = (x << 12) | 0;
@@ -529,22 +531,45 @@ export const ChunkSaveManager = {
                 const worldZ = (baseZ + z) | 0;
                 const zOff = (z << 8) | 0;
                 const idxBase = (xOff + zOff) | 0;
-                const biome = biomeMap[(x << 4) | z];
 
-                // バイオーム固有のパラメータ（noiseScale, baseHeight, heightVariation）を使用
-                const hNoise = fractalNoise2D(worldX * biome.noiseScale, worldZ * biome.noiseScale, 5);
-                const sHeight = Math.floor(biome.baseHeight + (hNoise * biome.heightVariation));
+                let totalHeight = 0;
+                let totalWeight = 0;
 
+                // --- 💡 改善ポイント: 周辺バイオームをサンプリングして高さを混ぜる ---
+                for (let dx = -blendRadius; dx <= blendRadius; dx++) {
+                    for (let dz = -blendRadius; dz <= blendRadius; dz++) {
+                        const nx = (worldX + dx) | 0;
+                        const nz = (worldZ + dz) | 0;
+
+                        // サンプリング地点のバイオームを特定
+                        const nTemp = fractalNoise2D(nx * 0.0005, nz * 0.0005, 3) + 0.5;
+                        const nHum = fractalNoise2D(nx * 0.0005 + 500, nz * 0.0005 + 500, 3) + 0.5;
+                        const nBiome = determineBiome(nTemp, nHum);
+
+                        // 万が一 undefined の場合のフォールバック
+                        if (!nBiome) continue;
+
+                        // そのバイオームのパラメータで、現在の地点 (worldX, worldZ) の高さを算出
+                        const nNoise = fractalNoise2D(worldX * nBiome.noiseScale, worldZ * nBiome.noiseScale, 5);
+                        const h = nBiome.baseHeight + (nNoise * nBiome.heightVariation);
+
+                        // 中心に近いほど影響を強くする重み付け
+                        const weight = 1.0 / (1.0 + (dx * dx + dz * dz));
+                        totalHeight += h * weight;
+                        totalWeight += weight;
+                    }
+                }
+
+                const sHeight = Math.floor(totalHeight / totalWeight);
                 heightMap[(x << 4) | z] = sHeight;
+                // -------------------------------------------------------------
 
                 // 岩盤層
                 data[idxBase] = BEDROCK;
-
-                // 地殻層（基本はすべて石で埋める）
+                // 地殻層
                 for (let y = 1; y < sHeight; y++) {
                     data[idxBase + y] = STONE;
                 }
-
                 // 海洋層
                 for (let y = sHeight; y <= seaLevel; y++) {
                     data[idxBase + y] = WATER;
@@ -687,7 +712,6 @@ globalRaycaster.near = 0.01;
 const lastCamPos = new THREE.Vector3();
 const lastCamRot = new THREE.Euler();
 
-export const globalTerrainCache = new Map();
 const BEDROCK_LEVEL = 0;
 
 // ----- スポーン位置の動的設定 -----
@@ -928,7 +952,7 @@ function checkAABBCollision(aabb, velocity, dt) {
         for (let x = minX; x <= maxX; x++) {
             for (let z = minZ; z <= maxZ; z++) {
 
-                const rawVoxel = getVoxelAtWorld(x, y, z, globalTerrainCache, true);
+                const rawVoxel = getVoxelAtWorld(x, y, z, true);
                 if (!rawVoxel || rawVoxel === BLOCK_TYPES.SKY || rawVoxel === BLOCK_TYPES.WATER) {
                     continue;
                 }
@@ -1031,44 +1055,55 @@ function getVoxelHash(x, y, z) {
     return (ox << 21) | (oz << 11) | oy;
 }
 
-const chunkReadOnlyCache = new Map();
 // --- 関数の外側に配置 (キャッシュ用) ---
-let _vC0_key = -1, _vC0_data = null;
-let _vC1_key = -1, _vC1_data = null;
+const chunkReadOnlyCache = new Map();
+let _vC0_key = null, _vC0_data = null;
+let _vC1_key = null, _vC1_data = null;
 
-export function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRaw = false) {
+/**
+ * ワールド座標からブロックデータを取得する (超高速・データ完全保持版)
+ * @param {number} x, y, z - ワールド座標
+ * @param {boolean} isRaw - true: メタデータ込み(16bit), false: IDのみ(12bit)
+ */
+export function getVoxelAtWorld(x, y, z, isRaw = false) {
+    // 高さのバリデーション (高速整数化)
     const fy = y | 0;
     if (fy < 0 || fy >= CHUNK_HEIGHT) return 0;
 
+    // 💡 ユーザー指定: ビット演算による高速整数化を維持
     const fx = x | 0;
     const fz = z | 0;
+
+    // チャンク座標計算 (16x16)
     const cx = fx >> 4;
     const cz = fz >> 4;
 
-    // 💡 1. encodeChunkKey の結果を一度だけ変数に入れる
     const chunkKey = encodeChunkKey(cx, cz);
     let data = null;
 
-    // 💡 2. 【劇的高速化】Map.get を呼ぶ前に、直近2つのチャンクをチェック
-    // チャンク境界での往復（自分と隣）が発生しても、これでMapアクセスを99%回避できます
+    // --- 💡 1. 2世代キャッシュチェック (L0/L1) ---
+    // Mapアクセスを回避し、直近2つのチャンクデータを即座に参照
     if (chunkKey === _vC0_key) {
         data = _vC0_data;
     } else if (chunkKey === _vC1_key) {
         data = _vC1_data;
     } else {
-        // --- キャッシュにない場合のみ、元のMap探索を実行 ---
+        // --- 💡 2. Map探索 (L2) ---
+        // 修正済み(Map) または 読み取り専用(Map) から取得
         data = ChunkSaveManager.modifiedChunks.get(chunkKey) || chunkReadOnlyCache.get(chunkKey);
 
         if (!data) {
             data = ChunkSaveManager.captureBaseChunkData(cx, cz);
             chunkReadOnlyCache.set(chunkKey, data);
+
+            // メモリ制限 (MAX_CACHE_SIZE は script.js 定数を使用)
             if (chunkReadOnlyCache.size > MAX_CACHE_SIZE) {
                 const firstKey = chunkReadOnlyCache.keys().next().value;
                 chunkReadOnlyCache.delete(firstKey);
             }
         }
 
-        // 💡 3. 今回取得したデータを「古い方のスロット」に押し込む (2世代キャッシュ)
+        // 💡 3. キャッシュスロットの更新 (最新を L0 に)
         if (data) {
             _vC1_key = _vC0_key;
             _vC1_data = _vC0_data;
@@ -1077,21 +1112,19 @@ export function getVoxelAtWorld(x, y, z, terrainCache = globalTerrainCache, isRa
         }
     }
 
-    // --- 4. 値の抽出ロジック (ここは元のまま) ---
     if (!data) return 0;
 
+    // --- 💡 4. インデックス計算 (Y + Z*256 + X*4096) ---
     const lx = fx & 15;
     const lz = fz & 15;
     const idx = (fy + (lz << 8) + (lx << 12)) >>> 0;
 
-    // インデックスが範囲外になることは基本ないが、念のため安全に取得
     const val = data[idx] ?? 0;
 
-    if (isRaw) return val;
-
-    const blockId = val & 0xFFF;
-    const cfg = _blockConfigFastArray[blockId];
-    return (cfg && cfg.collision !== false) ? val : 0;
+    // --- 💡 5. 値の返却 (空気に書き換えず、データをそのまま返す) ---
+    // isRaw が true の場合は、メタデータ込みの 16bit 値を返す
+    // false の場合は、下位 12bit の ID 部分のみを抽出して返す
+    return isRaw ? val : (val & 0xFFF);
 }
 
 const CAVE_SCALE_XZ = 0.02;   // 少し小さくして、より大きなうねりに
@@ -1131,18 +1164,6 @@ function isCave(x, y, z, surfaceHeight, nx, ny, nz) {
     return (absN1 + Math.abs(n2)) < currentThreshold;
 }
 
-/**
- * getPreciseHeadBlockType
- * プレイヤーの頭部領域を表すベース位置 headPos（THREE.Vector3）から、
- * 複数のサンプル点を取得し、多数決により頭部のブロックIDを決定する関数です。
- *
- * ここでは、中心点と水平方向・垂直方向に少しずらした座標（合計6～7点）をサンプルし、
- * 各サンプルについて getVoxelAtWorld(x, y, z, globalTerrainCache, true) を呼び出します。
- *
- * @param {THREE.Vector3} headPos - プレイヤーの頭部中心の座標
- * @returns {number} - サンプル点の結果から多数決で決まったブロックID
- */
-// 関数の外（直上など）に1度だけ定義
 const _headOffsets = [
     [0, 0, 0], [0.2, 0, 0], [-0.2, 0, 0],
     [0, 0, 0.2], [0, 0, -0.2], [0, 0.1, 0], [0, -0.1, 0]
@@ -1157,7 +1178,7 @@ function getPreciseHeadBlockType(headPos) {
         const bx = Math.floor(headPos.x + o[0]);
         const by = Math.floor(headPos.y + o[1]);
         const bz = Math.floor(headPos.z + o[2]);
-        const id = getVoxelAtWorld(bx, by, bz, globalTerrainCache, true);
+        const id = getVoxelAtWorld(bx, by, bz, true);
 
         // Mapを使ってカウント
         const currentCount = _headCountsMap.get(id) || 0;
@@ -1208,6 +1229,9 @@ function updateScreenOverlay() {
 /* ======================================================
    【Swept AABB 衝突検出】
    ====================================================== */
+// 💡 関数の外に定義して再利用する（GC防止）
+const _sweptNormal = new THREE.Vector3();
+
 function sweptAABB(movingBox, velocity, dt, staticBox) {
     // entry/exit を再利用（new を避ける）
     const entry = _sweptTmpEntry; entry.set(0, 0, 0);
@@ -1253,8 +1277,10 @@ function sweptAABB(movingBox, velocity, dt, staticBox) {
         return { collision: false };
     }
 
-    // 法線は従来どおり new する（呼び出し側で多用されている場合はさらに再利用化可能）
-    let normal = new THREE.Vector3();
+    // 💡 new THREE.Vector3() を避けて、外で定義した _sweptNormal を使い回す
+    const normal = _sweptNormal;
+    normal.set(0, 0, 0); // 前の計算結果が残らないように初期化
+
     if (entryTime === entry.x) normal.set((velocity.x > 0) ? -1 : 1, 0, 0);
     else if (entryTime === entry.y) normal.set(0, (velocity.y > 0) ? -1 : 1, 0);
     else normal.set(0, 0, (velocity.z > 0) ? -1 : 1);
@@ -1438,19 +1464,13 @@ function axisSeparatedCollisionResolve(dt) {
         }
     } else if (checkAABBCollision(getPlayerAABBAt(posY))) {
 
-        // --- 飛行モード中の上方向衝突は押し戻さない ---
-        if (flightMode && vel.y > 0) {
+        if (vel.y > 0) {
+            // 上方向への衝突（天井・頭上）
+            // 飛行モードでも通常モードでも、めり込まないように衝突前のY座標に押し戻す
+            y = orig.y;
             vel.y = 0;
-        }
-
-        // // --- 通常モードの天井衝突 ---
-        // else if (vel.y > 0) {
-        //     y = orig.y - 0.02;
-        //     vel.y = -0.05;
-        // }
-
-        // --- 地面に着地した場合 ---
-        else {
+        } else {
+            // 下方向への衝突（地面）
             if (wasUnderwater) {
                 y = newPos.y;
             } else {
@@ -1545,7 +1565,7 @@ function isOnLadder() {
     for (let y = minY; y <= maxY; y++) {
         for (let x = minX; x <= maxX; x++) {
             for (let z = minZ; z <= maxZ; z++) {
-                const voxel = getVoxelAtWorld(x, y, z, globalTerrainCache, true);
+                const voxel = getVoxelAtWorld(x, y, z, true);
                 if ((voxel & 0xFFF) === BLOCK_TYPES.LADDER) {
                     // --- ここから追加：詳細な当たり判定チェック ---
                     const meta = (voxel >> 12) & 0xF;
@@ -2006,10 +2026,7 @@ function processPendingChunkUpdates() {
     const FRAME_BUDGET = 4.0; // 予算 4.0ms
 
     // 💡 values().next() を使い、Set の先頭から1つずつ確実に「取り出して」処理する
-    while (pendingChunkUpdates.size > 0) {
-        // 先頭のキーを取得
-        const key = pendingChunkUpdates.values().next().value;
-
+    for (const key of pendingChunkUpdates) {
         // 💡 取得したら【真っ先に】削除。これで break してもデータがロスト・重複しない
         pendingChunkUpdates.delete(key);
 
@@ -2822,7 +2839,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         if (x < 0 && neighborData.nx) return neighborData.nx[y + (z * STRIDE_Z) + (15 * STRIDE_X)] & 0xFFF;
         if (z >= CH_S && neighborData.pz) return neighborData.pz[y + (0 * STRIDE_Z) + (x * STRIDE_X)] & 0xFFF;
         if (z < 0 && neighborData.nz) return neighborData.nz[y + (15 * STRIDE_Z) + (x * STRIDE_X)] & 0xFFF;
-        return getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z, globalTerrainCache, true) & 0xFFF;
+        return getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z, true) & 0xFFF;
     }
 
     let lightMap = chunkLightCache.get(chunkKey);
@@ -2847,61 +2864,59 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         return currentSkyLight;
     }
 
+    function _shouldShowFace(myType, myIsOpaque, neighborRaw) {
+        const nType = neighborRaw & 0xFFF;
+        if (nType === 0 || nType === SKY) return true;
+
+        const nIsOpaque = _isOpaqueBlock[nType];
+        if (nIsOpaque) return false; // 隣が完全な立方体なら自分は隠れる
+        if (myIsOpaque) return true;  // 自分が完全な立方体で隣が透過系なら自分は表示
+
+        // --- ここから透過ブロック同士の判定 ---
+        const myCfg = _blockConfigFastArray[myType];
+
+        // cullAdjacentFaces が true のブロック（ガラス、葉など）だけ
+        // 隣に「同じ種類」が来たときに面を消す
+        if (myCfg && myCfg.cullAdjacentFaces === true) {
+            return nType !== myType;
+        }
+
+        // それ以外（階段、スラブ、ハシゴ、草など）は、
+        // 隣が不透明フルブロックでない限り、常に自分の面を表示する
+        return true;
+    }
+
     function getVisMask(x, y, z, type, index) {
         const cached = _globalVisCache[index];
         if (cached !== 0) return cached;
 
-        const myType = type;
-        const myIsOpaque = _isOpaqueBlock[myType];
+        const myIsOpaque = _isOpaqueBlock[type];
         let mask = 0;
 
-        // 隣接ブロックのIDを受け取り、自分の面を描画すべきか判定する
-        function shouldShowFace(neighborRaw) {
-            const nType = neighborRaw & 0xFFF;
-            if (nType === 0 || nType === SKY) return true;
-
-            const nIsOpaque = _isOpaqueBlock[nType];
-            if (nIsOpaque) return false; // 隣が完全な立方体なら自分は隠れる
-            if (myIsOpaque) return true;  // 自分が完全な立方体で隣が透過系なら自分は表示
-
-            // --- ここから透過ブロック同士の判定 ---
-            const myCfg = _blockConfigFastArray[myType];
-
-            // cullAdjacentFaces が true のブロック（ガラス、葉など）だけ
-            // 隣に「同じ種類」が来たときに面を消す
-            if (myCfg && myCfg.cullAdjacentFaces === true) {
-                return nType !== myType;
-            }
-
-            // それ以外（階段、スラブ、ハシゴ、草など）は、
-            // 隣が不透明フルブロックでない限り、常に自分の面を表示する
-            return true;
-        }
-
-        // --- 各方向の判定（既存のインライン処理を shouldShowFace でスリム化） ---
+        // --- 各方向の判定（外部関数を呼び出してスリム化） ---
         // PX (+X)
         const ntPX = (x < CH_S - 1) ? voxelData[index + STRIDE_X] : get(x + 1, y, z);
-        if (shouldShowFace(ntPX)) mask |= 1;
+        if (_shouldShowFace(type, myIsOpaque, ntPX)) mask |= 1;
 
         // NX (-X)
         const ntNX = (x > 0) ? voxelData[index - STRIDE_X] : get(x - 1, y, z);
-        if (shouldShowFace(ntNX)) mask |= 2;
+        if (_shouldShowFace(type, myIsOpaque, ntNX)) mask |= 2;
 
         // PY (+Y)
         const ntPY = (y < CH_H - 1) ? voxelData[index + 1] : get(x, y + 1, z);
-        if (shouldShowFace(ntPY)) mask |= 4;
+        if (_shouldShowFace(type, myIsOpaque, ntPY)) mask |= 4;
 
         // NY (-Y)
         const ntNY = (y > 0) ? voxelData[index - 1] : get(x, y - 1, z);
-        if (shouldShowFace(ntNY)) mask |= 8;
+        if (_shouldShowFace(type, myIsOpaque, ntNY)) mask |= 8;
 
         // PZ (+Z)
         const ntPZ = (z < CH_S - 1) ? voxelData[index + STRIDE_Z] : get(x, y, z + 1);
-        if (shouldShowFace(ntPZ)) mask |= 16;
+        if (_shouldShowFace(type, myIsOpaque, ntPZ)) mask |= 16;
 
         // NZ (-Z)
         const ntNZ = (z > 0) ? voxelData[index - STRIDE_Z] : get(x, y, z - 1);
-        if (shouldShowFace(ntNZ)) mask |= 32;
+        if (_shouldShowFace(type, myIsOpaque, ntNZ)) mask |= 32;
 
         _globalVisCache[index] = mask;
         return mask;
@@ -3523,7 +3538,7 @@ function pickFirstValidHit(raycaster, objects, action) {
             // 💡 【修正】 32bit/53bit の数値ハッシュキーを使って Map から取得する
             const hashKey = getVoxelHash(bx, by, bz);
             const voxelId = ChunkSaveManager.getBlock(cx, cz, bx & 15, by, bz & 15)
-                ?? getVoxelAtWorld(bx, by, bz, globalTerrainCache, { raw: true });
+                ?? getVoxelAtWorld(bx, by, bz, true);
 
             const cfg = getBlockConfiguration(voxelId);
 
@@ -3597,7 +3612,7 @@ function interactWithBlock(action) {
 
     // ブロックデータの取得
     let voxel = ChunkSaveManager.getBlock(candCx, candCz, candLx, b.y, candLz)
-        ?? getVoxelAtWorld(b.x, b.y, b.z, globalTerrainCache, true);
+        ?? getVoxelAtWorld(b.x, b.y, b.z, true);
 
     const voxelIdOnly = voxel & 0xFFF;
     let cfg = getBlockConfiguration(voxelIdOnly);
@@ -3744,19 +3759,53 @@ const create2DPreview = ({ id, textures = {}, previewOptions = {} }, size) => {
     canvas.style.imageRendering = "pixelated";
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
+
+    // --- 💡 共通のエラー描画処理 ---
+    const drawErrorPattern = (context, s) => {
+        const half = s / 2;
+        context.fillStyle = "#FF00FF"; // マゼンタ
+        context.fillRect(0, 0, half, half);
+        context.fillRect(half, half, half, half);
+        context.fillStyle = "#000000"; // ブラック
+        context.fillRect(half, 0, half, half);
+        context.fillRect(0, half, half, half);
+    };
+
     const src = textures.all || textures.side || textures.top;
 
-    if (!src) return (console.warn(`テクスチャなし block: ${id}`), canvas);
+    // 1. テクスチャ指定自体がない場合
+    if (!src) {
+        console.warn(`テクスチャ定義なし block: ${id}`);
+        drawErrorPattern(ctx, size);
+        // エラー状態もキャッシュに保存（毎フレームの警告を防ぐ）
+        const cacheCanvas = createCanvas(size);
+        cacheCanvas.getContext("2d").drawImage(canvas, 0, 0);
+        previewCache.set(hashKey, cacheCanvas);
+        return canvas;
+    }
 
+    // 2. テクスチャがある場合（非同期読み込み）
     loadImage(src).then(img => {
         const { x = 0, y = 0 } = previewOptions.offset || {};
+        ctx.clearRect(0, 0, size, size); // 万が一の重なり防止
         ctx.drawImage(img, x, y, size, size);
 
         // キャッシュ保存
         const cacheCanvas = createCanvas(size);
         cacheCanvas.getContext("2d").drawImage(canvas, 0, 0);
         previewCache.set(hashKey, cacheCanvas);
-    }).catch(e => console.error(`画像読み込み失敗 block: ${id}`, e));
+    }).catch(e => {
+        console.error(`画像読み込み失敗 block: ${id}`, e);
+        // 読み込み失敗時もエラーパターンを描画してキャッシュ
+        drawErrorPattern(ctx, size);
+        const cacheCanvas = createCanvas(size);
+        cacheCanvas.getContext("2d").drawImage(canvas, 0, 0);
+        previewCache.set(hashKey, cacheCanvas);
+    });
+
+    // 読み込み中も「透明」ではなく「エラー柄」を仮に返しておくと
+    // ユーザーにロード中または異常であることが伝わりやすくなります
+    drawErrorPattern(ctx, size);
 
     return canvas;
 };
@@ -3815,6 +3864,7 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
             side: THREE.FrontSide,
             transparent: m.transparent || false,
             opacity: m.opacity !== undefined ? m.opacity : 1,
+            alphaTest: m.alphaTest || 0,
         });
     });
     mesh.material = Array.isArray(mesh.material) ? newMaterials : newMaterials[0];
@@ -4162,7 +4212,7 @@ function getTargetBlockByDDA(maxDistance) {
                 let lz = z % CHUNK_SIZE; if (lz < 0) lz += CHUNK_SIZE;
 
                 const voxel = ChunkSaveManager.getBlock(cx, cz, lx, y, lz)
-                    ?? getVoxelAtWorld(x, y, z, globalTerrainCache, true);
+                    ?? getVoxelAtWorld(x, y, z, true);
 
                 // 💡 空（SKY）でない場合の判定
                 if (voxel !== BLOCK_TYPES.SKY) {
@@ -4240,7 +4290,7 @@ function updateBlockSelection() {
     if (lz < 0) lz += CHUNK_SIZE;
 
     const rawVoxel = ChunkSaveManager.getBlock(cx, cz, lx, y, lz)
-        ?? getVoxelAtWorld(x, y, z, globalTerrainCache, true);
+        ?? getVoxelAtWorld(x, y, z, true);
 
     if (!rawVoxel) {
         selectionGroup.visible = false;
@@ -4355,7 +4405,7 @@ function updateBlockInfo() {
     if (lz < 0) lz += CHUNK_SIZE;
 
     const rawVoxel = ChunkSaveManager.getBlock(cx, cz, lx, y, lz)
-        ?? getVoxelAtWorld(x, y, z, globalTerrainCache, true);
+        ?? getVoxelAtWorld(x, y, z, true);
 
     // ✅ 回転値とIDを分離
     const blockId = rawVoxel & 0xFFF;
@@ -4395,7 +4445,7 @@ function updateHeadBlockInfo() {
     if (hLz < 0) hLz += CHUNK_SIZE;
 
     const rawValue = ChunkSaveManager.getBlock(cx, cz, hLx, hY, hLz)
-        ?? getVoxelAtWorld(hX, hY, hZ, globalTerrainCache, true);
+        ?? getVoxelAtWorld(hX, hY, hZ, true);
 
     // ✅ IDと回転値を分離して表示
     const blockId = rawValue & 0xFFF;
@@ -4458,7 +4508,7 @@ function isPlayerEntireBodyInWater() {
             const cz = getChunkCoord(z);
 
             blockValue = ChunkSaveManager.getBlock(cx, cz, x & 15, y, z & 15)
-                ?? getVoxelAtWorld(x, y, z, globalTerrainCache, true);
+                ?? getVoxelAtWorld(x, y, z, true);
 
             _waterCellCache.set(numericKey, blockValue);
         }

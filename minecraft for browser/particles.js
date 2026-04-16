@@ -1,6 +1,6 @@
 "use strict";
 import * as THREE from './build/three.module.js';
-import { camera, scene, getVoxelAtWorld, globalTerrainCache, ChunkSaveManager } from './script.js';
+import { camera, scene, getVoxelAtWorld, ChunkSaveManager } from './script.js';
 import { getBlockMaterials, BLOCK_TYPES, getBlockConfiguration } from './blocks.js'
 /* ======================================================
    【統合・最適化】パーティクルシステム（マイクラ準拠）
@@ -181,7 +181,7 @@ export const updateBlockParticles = delta => {
             const pCz = bz >> 4;
 
             const voxel = ChunkSaveManager.getBlock(pCx, pCz, bx & 15, by, bz & 15)
-                ?? getVoxelAtWorld(bx, by, bz, globalTerrainCache, { raw: true });
+                ?? getVoxelAtWorld(bx, by, bz, true);
 
             if (voxel !== BLOCK_TYPES.SKY && voxel !== BLOCK_TYPES.WATER) {
                 const cfg = getBlockConfiguration(voxel);
@@ -209,7 +209,7 @@ export const updateBlockParticles = delta => {
                             const checkCz = checkZ >> 4;
 
                             const sideVoxel = ChunkSaveManager.getBlock(checkCx, checkCz, checkX & 15, by, checkZ & 15)
-                                ?? getVoxelAtWorld(checkX, by, checkZ, globalTerrainCache, { raw: true });
+                                ?? getVoxelAtWorld(checkX, by, checkZ, true);
 
                             if (sideVoxel === BLOCK_TYPES.SKY || sideVoxel === BLOCK_TYPES.WATER) {
                                 _validCandidates[validCount++] = dir;
