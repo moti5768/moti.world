@@ -513,7 +513,8 @@ export const ChunkSaveManager = {
                 const humidity = fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5;
 
                 // biomes.js からバイオーム設定を取得
-                const biome = determineBiome(temp, humidity);
+                const riverValue = fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5;
+                const biome = determineBiome(temp, humidity, riverValue);
                 biomeMap[(x << 4) | z] = biome;
             }
         }
@@ -544,7 +545,8 @@ export const ChunkSaveManager = {
                         // サンプリング地点のバイオームを特定
                         const nTemp = fractalNoise2D(nx * 0.0005, nz * 0.0005, 3) + 0.5;
                         const nHum = fractalNoise2D(nx * 0.0005 + 500, nz * 0.0005 + 500, 3) + 0.5;
-                        const nBiome = determineBiome(nTemp, nHum);
+                        const nRiver = fractalNoise2D(nx * 0.005, nz * 0.005, 2) + 0.5;
+                        const nBiome = determineBiome(nTemp, nHum, nRiver);
 
                         // 万が一 undefined の場合のフォールバック
                         if (!nBiome) continue;
@@ -1024,7 +1026,8 @@ function getTerrainHeight(worldX, worldZ) {
     const temp = fractalNoise2D(xInt * 0.0005, zInt * 0.0005, 3) + 0.5;
     const humidity = fractalNoise2D(xInt * 0.0005 + 500, zInt * 0.0005 + 500, 3) + 0.5;
 
-    const biome = determineBiome(temp, humidity);
+    const riverValue = fractalNoise2D(xInt * 0.005, zInt * 0.005, 2) + 0.5;
+    const biome = determineBiome(temp, humidity, riverValue);
 
     // --- 地形高さ ---
     const hNoise = fractalNoise2D(
@@ -1033,7 +1036,11 @@ function getTerrainHeight(worldX, worldZ) {
         5
     );
 
-    const result = (biome.baseHeight + hNoise * biome.heightVariation) | 0;
+    let result = (biome.baseHeight + hNoise * biome.heightVariation) | 0;
+
+    if (biome.name === 'River') {
+        result = SEA_LEVEL - 2;
+    }
 
     // キャッシュ管理（そのまま）
     if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
