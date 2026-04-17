@@ -5601,20 +5601,18 @@ function applyRenderDistance(val) {
     lastChunk.x = null;
     lastChunk.z = null;
 
-    // 2. フォグの設定（地形の端を隠すためだけに使用）
     if (typeof scene !== 'undefined' && scene.fog) {
-        // 地形が消えるべき距離（1チャンク16マス）
-        const terrainLimit = val * 16;
+        // 1. 最低でも16マス(1チャンク)分の視界を計算上の最小値として確保する
+        const safeLimit = Math.max(16, val * 16);
 
         if (scene.fog.isFogExp2) {
-            // 指数フォグの場合、地形の端がちょうど霞む程度の濃度に設定
-            scene.fog.density = 0.05 / (terrainLimit || 1);
+            // 指数フォグ: 密度が濃くなりすぎないよう safeLimit で割る
+            scene.fog.density = 0.8 / safeLimit;
         } else {
-            // 線形フォグの場合
-            // near: 霧が始まる距離（少し手前から）
-            // far:  地形の描画限界で霧が最大になるように設定
+            // 線形フォグ: nearがfar(safeLimit)を超えないように調整
+            // valが小さい時は足元(0)から霧を始め、遠くはsafeLimitに固定
             scene.fog.near = Math.max(0, (val - 2) * 16);
-            scene.fog.far = terrainLimit;
+            scene.fog.far = Math.max(safeLimit, scene.fog.near + 16);
         }
     }
 
