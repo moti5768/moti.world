@@ -315,11 +315,7 @@ export const BLOCK_CONFIG = {
     }),
 
     STONE_STAIRS: registerBlock({
-        textures: {
-            top: "textures/blocks/stone.png",
-            bottom: "textures/blocks/stone.png",
-            side: "textures/blocks/stone.png",
-        },
+        textures: { all: "textures/blocks/stone.png" },
         geometryType: "stairs",
         transparent: true,
         lightOpacity: 0,
@@ -331,11 +327,19 @@ export const BLOCK_CONFIG = {
     }),
 
     COBBLESTONE_STAIRS: registerBlock({
-        textures: {
-            top: "textures/blocks/cobblestone.png",
-            bottom: "textures/blocks/cobblestone.png",
-            side: "textures/blocks/cobblestone.png",
-        },
+        textures: { all: "textures/blocks/cobblestone.png" },
+        geometryType: "stairs",
+        transparent: true,
+        lightOpacity: 0,
+        directional: true,
+        customCollision: () => getCustomCollision("stairs"),
+        cullAdjacentFaces: false,
+        screenFill: false,
+        hardness: 2.0,
+    }),
+
+    PLANKS_OAK_STAIRS: registerBlock({
+        textures: { all: "textures/blocks/planks_oak.png" },
         geometryType: "stairs",
         transparent: true,
         lightOpacity: 0,
@@ -362,6 +366,24 @@ export const BLOCK_CONFIG = {
 
     COBBLESTONE_SLAB: registerBlock({
         textures: { all: "textures/blocks/cobblestone.png" },
+        geometryType: "slab",
+        transparent: true,
+        lightOpacity: 0,
+        isSlab: true,
+        customCollision: () => getCustomCollision("slab"),
+        cullAdjacentFaces: false,
+        screenFill: false,
+        hardness: 1.5,
+        selectionSize: { x: 1, y: 0.5, z: 1 },
+        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 },
+    }),
+
+    SMOOTHSTONE_SLAB: registerBlock({
+        textures: {
+            top: "textures/blocks/stone_slab_top.png",
+            bottom: "textures/blocks/stone_slab_top.png",
+            side: "textures/blocks/stone_slab_side.png",
+        },
         geometryType: "slab",
         transparent: true,
         lightOpacity: 0,
@@ -898,11 +920,65 @@ export function getBlockGeometry(type, config) {
             geom.translate(0.5, 0.5, 0.5);
             break;
 
-        case "slab":
-            geom = new THREE.BoxGeometry(1, 0.5, 1);
-            geom.translate(0.5, 0.25, 0.5);
-            adjustSideUVs(geom);
+        case "slab": {
+            const slabGeom = new THREE.BoxGeometry(1, 0.5, 1);
+            slabGeom.translate(0.5, 0.25, 0.5);
+
+            const posAttr = slabGeom.getAttribute('position');
+            const normAttr = slabGeom.getAttribute('normal');
+            const uvAttr = slabGeom.getAttribute('uv');
+            const indexAttr = slabGeom.index;
+
+            slabGeom.clearGroups();
+
+            for (let i = 0; i < indexAttr.count; i += 6) {
+                const vertexIndex = indexAttr.array[i] * 3;
+                const nx = normAttr.array[vertexIndex];
+                const ny = normAttr.array[vertexIndex + 1];
+                const nz = normAttr.array[vertexIndex + 2];
+
+                let matIdx = 0;
+                if (nx > 0.5) matIdx = 0;      // East
+                else if (nx < -0.5) matIdx = 1; // West
+                else if (ny > 0.5) matIdx = 2; // Top
+                else if (ny < -0.5) matIdx = 3; // Bottom
+                else if (nz > 0.5) matIdx = 4; // South
+                else if (nz < -0.5) matIdx = 5; // North
+
+                slabGeom.addGroup(i, 6, matIdx);
+
+                for (let f = 0; f < 6; f++) {
+                    const idx = indexAttr.array[i + f];
+                    const vx = posAttr.array[idx * 3];
+                    const vy = posAttr.array[idx * 3 + 1];
+                    const vz = posAttr.array[idx * 3 + 2];
+
+                    let u = 0, v = 0;
+                    switch (matIdx) {
+                        case 0: // East (+X)
+                            u = 1.0 - vz; v = vy; break; // 反転させて方向を合わせる
+                        case 1: // West (-X)
+                            u = vz; v = vy; break;
+                        case 2: // Top (+Y)
+                            u = vx; v = 1.0 - vz; break;
+                        case 3: // Bottom (-Y)
+                            u = vx; v = vz; break;
+                        case 4: // South (+Z)
+                            u = vx; v = vy; break;
+                        case 5: // North (-Z)
+                            u = 1.0 - vx; v = vy; break;
+                    }
+
+                    // 横面（Top/Bottom以外）の場合、高さが0.5なので、
+                    // テクスチャの下半分(0.0-0.5)をそのまま使う設定
+                    uvAttr.array[idx * 2] = u;
+                    uvAttr.array[idx * 2 + 1] = v;
+                }
+            }
+            uvAttr.needsUpdate = true;
+            geom = slabGeom;
             break;
+        }
 
         case "stairs": {
             const lower = new THREE.BoxGeometry(1, 0.5, 1);

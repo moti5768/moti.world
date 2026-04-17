@@ -479,12 +479,9 @@ export const ChunkSaveManager = {
         return dataArray[idx];
     },
 
-    /**
-     * 地形生成のコアロジック（Minecraft生成パイプライン準拠・軽量化版）
-     */
-    // 💡 改善: メモリのゴミを出さないように共有バッファを外に定義
     _sharedHeightMap: new Int32Array(256),
     _sharedBiomeMap: new Array(256),
+    _sharedPaddedBiomeMap: new Array(22 * 22),
 
     captureBaseChunkData: function (cx, cz) {
         // 1. チャンク割当・初期化
@@ -498,31 +495,38 @@ export const ChunkSaveManager = {
         // 💡 改善: 毎回 new せず、共有バッファへの参照を渡す
         const heightMap = this._sharedHeightMap;
         const biomeMap = this._sharedBiomeMap;
+        const paddedBiomeMap = this._sharedPaddedBiomeMap;
+
+        const blendRadius = 3; // 周囲3ブロック(7x7)のバイオームを混ぜる
+        const paddedSize = 16 + (blendRadius * 2); // 22
 
         // ------------------------------------------------------
-        // 3. バイオーム割当 (順序を入れ替え、地形生成の基礎とする)
+        // 3. 【最適化版】バイオーム割当 (順序を入れ替え、地形生成の基礎とする)
         // ------------------------------------------------------
-        for (let x = 0; x < 16; x++) {
+        for (let x = -blendRadius; x < 16 + blendRadius; x++) {
             const worldX = (baseX + x) | 0;
-            for (let z = 0; z < 16; z++) {
-                const worldZ = (baseZ + z) | 0;
+            const localX = x + blendRadius;
 
-                // バイオーム決定用の大きなスケールのノイズ
-                // 0.0005 程度のスケールにすることで、バイオームが数千ブロック単位で広がる
+            for (let z = -blendRadius; z < 16 + blendRadius; z++) {
+                const worldZ = (baseZ + z) | 0;
+                const localZ = z + blendRadius;
+
                 const temp = fractalNoise2D(worldX * 0.0005, worldZ * 0.0005, 3) + 0.5;
                 const humidity = fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5;
-
-                // biomes.js からバイオーム設定を取得
                 const riverValue = fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5;
-                const biome = determineBiome(temp, humidity, riverValue);
-                biomeMap[(x << 4) | z] = biome;
+
+                // 【修正箇所】ここでも 64 などの基準高さを渡す
+                const biome = determineBiome(temp, humidity, 64, riverValue);
+
+                paddedBiomeMap[localX * paddedSize + localZ] = biome;
             }
         }
 
         // ------------------------------------------------------
-        // 4. 地形（高さマップ）生成 (Base Terrain)
+        // 4. 【最適化版】地形（高さマップ）生成 (Base Terrain)
         // ------------------------------------------------------
-        const blendRadius = 3; // 周囲3ブロック(5x5)のバイオームを混ぜる
+        // メモリ確保(GC)を防ぐための再利用オブジェクト
+        const heightCache = {};
 
         for (let x = 0; x < 16; x++) {
             const worldX = (baseX + x) | 0;
@@ -533,27 +537,36 @@ export const ChunkSaveManager = {
                 const zOff = (z << 8) | 0;
                 const idxBase = (xOff + zOff) | 0;
 
+                // 🌟 中心ブロックのバイオームを本来のマップに保存 (Step 6の表土配置用)
+                biomeMap[(x << 4) | z] = paddedBiomeMap[(x + blendRadius) * paddedSize + (z + blendRadius)];
+
                 let totalHeight = 0;
                 let totalWeight = 0;
 
-                // --- 💡 改善ポイント: 周辺バイオームをサンプリングして高さを混ぜる ---
+                // 新しいブロックの計算前にキャッシュをクリア
+                for (const key in heightCache) {
+                    delete heightCache[key];
+                }
+
+                // --- 💡 改善ポイント: キャッシュを使って周辺バイオームと高さを混ぜる ---
                 for (let dx = -blendRadius; dx <= blendRadius; dx++) {
                     for (let dz = -blendRadius; dz <= blendRadius; dz++) {
-                        const nx = (worldX + dx) | 0;
-                        const nz = (worldZ + dz) | 0;
 
-                        // サンプリング地点のバイオームを特定
-                        const nTemp = fractalNoise2D(nx * 0.0005, nz * 0.0005, 3) + 0.5;
-                        const nHum = fractalNoise2D(nx * 0.0005 + 500, nz * 0.0005 + 500, 3) + 0.5;
-                        const nRiver = fractalNoise2D(nx * 0.005, nz * 0.005, 2) + 0.5;
-                        const nBiome = determineBiome(nTemp, nHum, nRiver);
+                        // サンプリング地点のバイオームを配列から直接取得 (O(1))
+                        const localX = x + dx + blendRadius;
+                        const localZ = z + dz + blendRadius;
+                        const nBiome = paddedBiomeMap[localX * paddedSize + localZ];
 
-                        // 万が一 undefined の場合のフォールバック
                         if (!nBiome) continue;
 
-                        // そのバイオームのパラメータで、現在の地点 (worldX, worldZ) の高さを算出
-                        const nNoise = fractalNoise2D(worldX * nBiome.noiseScale, worldZ * nBiome.noiseScale, 5);
-                        const h = nBiome.baseHeight + (nNoise * nBiome.heightVariation);
+                        // 🌟 そのバイオームでの現在の地点(worldX, worldZ)の高さを算出
+                        // 既に計算済みならキャッシュから取得、未計算なら計算してキャッシュに保存
+                        let h = heightCache[nBiome.name];
+                        if (h === undefined) {
+                            const nNoise = fractalNoise2D(worldX * nBiome.noiseScale, worldZ * nBiome.noiseScale, 5);
+                            h = nBiome.baseHeight + (nNoise * nBiome.heightVariation);
+                            heightCache[nBiome.name] = h;
+                        }
 
                         // 中心に近いほど影響を強くする重み付け
                         const weight = 1.0 / (1.0 + (dx * dx + dz * dz));
@@ -1025,9 +1038,11 @@ function getTerrainHeight(worldX, worldZ) {
     // --- バイオーム決定 ---
     const temp = fractalNoise2D(xInt * 0.0005, zInt * 0.0005, 3) + 0.5;
     const humidity = fractalNoise2D(xInt * 0.0005 + 500, zInt * 0.0005 + 500, 3) + 0.5;
-
     const riverValue = fractalNoise2D(xInt * 0.005, zInt * 0.005, 2) + 0.5;
-    const biome = determineBiome(temp, humidity, riverValue);
+
+    // 【修正箇所】第3引数に暫定の高さ（SEA_LEVEL等）を渡す
+    // これを入れないと determineBiome 側で height が 0 等になり、海判定になります
+    const biome = determineBiome(temp, humidity, 64, riverValue);
 
     // --- 地形高さ ---
     const hNoise = fractalNoise2D(
@@ -1038,18 +1053,18 @@ function getTerrainHeight(worldX, worldZ) {
 
     let result = (biome.baseHeight + hNoise * biome.heightVariation) | 0;
 
+    // 川のバイオームなら強制的に少し低くする
     if (biome.name === 'River') {
         result = SEA_LEVEL - 2;
     }
 
-    // キャッシュ管理（そのまま）
+    // キャッシュ処理（以下略）
     if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
         const iter = terrainHeightCache.keys();
         for (let i = 0; i < 1000; i++) {
             terrainHeightCache.delete(iter.next().value);
         }
     }
-
     terrainHeightCache.set(key, result);
     return result;
 }
@@ -2956,7 +2971,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 const wy = BEDROCK_LEVEL + y;
                 const visMask = getVisMask(x, y, z, type, currentIdx);
 
-                // A. カスタムジオメトリ
+                // --- A. カスタムジオメトリ (テクスチャ復旧 & 描画順序 整合性版) ---
                 if (_isCustomGeometryBlock[type]) {
                     if (!customGeomCache.has(type)) {
                         const m = createCustomBlockMesh(type, _sharedVec3Zero, null);
@@ -2965,11 +2980,8 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                     const template = customGeomCache.get(type);
                     if (!template || (!visMask && cfg.cullAdjacentFaces !== false)) continue;
 
-                    let batchArray = customGeomBatches.get(type);
-                    if (batchArray === undefined) {
-                        batchArray = [];
-                        customGeomBatches.set(type, batchArray);
-                    }
+                    // ブロックが持つマテリアルの配列を先に取得しておく
+                    const allMats = getBlockMaterials(+type) || [];
 
                     for (let g = 0; g < template.groups.length; g++) {
                         const group = template.groups[g];
@@ -2978,10 +2990,26 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
 
                         if (!isLadder && cfg.cullAdjacentFaces !== false && ((visMask >> dir) & 1) === 0) continue;
 
+                        // ★最重要: 面(group)ごとに正しいマテリアルを取得する
+                        const targetMat = allMats[group.materialIndex] || allMats[0];
+                        if (!targetMat) continue;
+
+                        // 【新機能】セクション5で水かどうかを判定できるよう情報を付与
+                        targetMat.userData.isWater = (type === BLOCK_TYPES.WATER || cfg.isWater === true);
+                        targetMat.userData.isGlass = (type === BLOCK_TYPES.GLASS);
+
+                        // ★修正: 数値(type)ではなく、マテリアル(targetMat)をキーにしてバッチング
+                        let batchArray = customGeomBatches.get(targetMat);
+                        if (batchArray === undefined) {
+                            batchArray = [];
+                            customGeomBatches.set(targetMat, batchArray);
+                        }
+
                         const subGeo = new THREE.BufferGeometry();
                         extractGroupGeometry(template, group, subGeo);
-                        getCustomGeometryMatrix(meta, _m1, _r1, _mTemp);
 
+                        // --- 座標変換・ライティング処理 (既存のまま) ---
+                        getCustomGeometryMatrix(meta, _m1, _r1, _mTemp);
                         _v1.copy(_dirVectors[dir]).applyMatrix4(_r1);
                         const wdx = Math.round(_v1.x), wdy = Math.round(_v1.y), wdz = Math.round(_v1.z);
 
@@ -3010,6 +3038,8 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                             colors[v * 3] = sS; colors[v * 3 + 1] = bS; colors[v * 3 + 2] = 0;
                         }
                         subGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+                        // ------------------------------------------
+
                         batchArray.push(subGeo);
                     }
                     continue;
@@ -3127,50 +3157,79 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         container.add(mesh);
     }
 
-    // --- 5. カスタムメッシュ結合 (最適化版) ---
-    const cutoutGeometries = [], cutoutMaterials = [], cutoutMatMap = new Map();
+    // --- 5. カスタムメッシュ結合 (テクスチャ復旧 & 描画順序正常化) ---
+    const opaqueGeometries = [], opaqueMaterials = [], opaqueMatMap = new Map();
     const waterGeometries = [], waterMaterials = [], waterMatMap = new Map();
 
-    for (const [type, geoms] of customGeomBatches.entries()) {
-        if (geoms.length === 0) continue;
+    for (const [baseMat, geoms] of customGeomBatches.entries()) {
+        if (!geoms || geoms.length === 0) continue;
 
+        // 1. ジオメトリの結合
         const mergedGeom = mergeBufferGeometries(geoms, true);
-        const baseMat = (getBlockMaterials(+type) || [])[0];
-        const isWater = type === BLOCK_TYPES.WATER || baseMat?.userData?.isWater === true;
-        const isGlass = type === BLOCK_TYPES.GLASS;
-        const isCutout = _blockConfigFastArray[type]?.geometryType === "cross" || isGlass;
 
+        // 2. 特性の判定
+        // baseMat が取得できなかった場合の安全策
+        if (!baseMat) continue;
+
+        const isWater = baseMat.userData?.isWater === true;
+        const isGlass = baseMat.userData?.isGlass === true;
+
+        // 階段、草、ハシゴなどは Cutout（切り抜き）として扱い、深度を書き込む（depthWrite: true）
+        // これにより水越しに消える問題を回避する
+        const isCutout = !isWater;
+
+        // 3. 表示用フェードマテリアルの生成
         const fadeMat = getOrCreateCustomFadeMaterial(baseMat, isCutout, isWater, isGlass).clone();
+
+        // --- 重要: テクスチャ欠落(黒紫)対策 ---
+        if (baseMat.map) fadeMat.map = baseMat.map;
         fadeMat.vertexColors = true;
-        fadeMat.userData = { originMat: baseMat, shaderUniforms: baseMat?.userData?.shaderUniforms };
-        if (baseMat?.onBeforeCompile) fadeMat.onBeforeCompile = baseMat.onBeforeCompile;
 
-        const targetGeoms = isWater ? waterGeometries : cutoutGeometries;
-        const targetMats = isWater ? waterMaterials : cutoutMaterials;
-        const targetMap = isWater ? waterMatMap : cutoutMatMap;
+        // 頂点カラー（ライト値）を正しく乗せるため基本色を白にリセット
+        if (fadeMat.color) fadeMat.color.set(0xffffff);
 
-        // 同じフェード用マテリアルを使い回すための判定
-        let mIdx = targetMap.get(baseMat); // マテリアルそのものをキーにする
+        fadeMat.userData = {
+            originMat: baseMat,
+            shaderUniforms: baseMat.userData?.shaderUniforms
+        };
+        if (baseMat.onBeforeCompile) fadeMat.onBeforeCompile = baseMat.onBeforeCompile;
+
+        // 4. 分類先の決定
+        // 水(透過)以外は opaque グループ(renderOrder=0)へ入れる
+        const targetGeoms = isWater ? waterGeometries : opaqueGeometries;
+        const targetMats = isWater ? waterMaterials : opaqueMaterials;
+        const targetMap = isWater ? waterMatMap : opaqueMatMap;
+
+        // 5. マルチマテリアル用インデックスの管理
+        let mIdx = targetMap.get(baseMat);
         if (mIdx === undefined) {
             mIdx = targetMats.length;
             targetMats.push(fadeMat);
             targetMap.set(baseMat, mIdx);
         }
 
+        // このジオメトリが使用するマテリアル番号を指定
         mergedGeom.clearGroups();
         mergedGeom.addGroup(0, mergedGeom.index ? mergedGeom.index.count : mergedGeom.attributes.position.count, mIdx);
         targetGeoms.push(mergedGeom);
     }
 
-    if (cutoutGeometries.length > 0) {
-        const mesh = new THREE.Mesh(mergeBufferGeometries(cutoutGeometries, true), cutoutMaterials);
-        mesh.renderOrder = 1;
+    // --- 最終的なメッシュの生成 ---
+
+    // A. 階段、草、ハシゴ、ハーフブロック等 (不透明/Cutout)
+    // renderOrder = 0 にすることで、水(10)より先に描画され、水越しに正しく見えます
+    if (opaqueGeometries.length > 0) {
+        const combinedGeom = mergeBufferGeometries(opaqueGeometries, true);
+        const mesh = new THREE.Mesh(combinedGeom, opaqueMaterials);
+        mesh.renderOrder = 0;
         mesh.frustumCulled = true;
         container.add(mesh);
     }
 
+    // B. 水・色付きガラス等 (透過)
     if (waterGeometries.length > 0) {
-        const mesh = new THREE.Mesh(mergeBufferGeometries(waterGeometries, true), waterMaterials);
+        const combinedGeom = mergeBufferGeometries(waterGeometries, true);
+        const mesh = new THREE.Mesh(combinedGeom, waterMaterials);
         mesh.renderOrder = 10;
         mesh.frustumCulled = true;
         container.add(mesh);
@@ -4667,20 +4726,22 @@ function animate() {
         const targetText = (typeof currentTargetBlockText !== 'undefined') ? currentTargetBlockText : "None";
         const moveMode = flightMode ? "Flight" : (wasUnderwater ? "Swimming" : "Walking");
 
-        // --- バイオーム判定ロジック ---
-        // プレイヤーの現在座標を取得
-        const px = player.position.x;
-        const pz = player.position.z;
+        // --- バイオーム判定ロジック（地形生成同期版） ---
+        // 1. まず座標を取得して整数化する（ここで pxInt, pzInt を定義）
+        const pxInt = Math.floor(player.position.x);
+        const pzInt = Math.floor(player.position.z);
+        const py = player.position.y;
 
-        // 地形生成時と全く同じスケール(0.0005)でノイズをサンプリング
-        const tVal = fractalNoise2D(px * 0.0005, pz * 0.0005, 3) + 0.5;
-        const hVal = fractalNoise2D(px * 0.0005 + 500, pz * 0.0005 + 500, 3) + 0.5;
+        // 2. 定義した pxInt, pzInt を使ってノイズを計算
+        const tVal = fractalNoise2D(pxInt * 0.0005, pzInt * 0.0005, 3) + 0.5;
+        const hVal = fractalNoise2D(pxInt * 0.0005 + 500, pzInt * 0.0005 + 500, 3) + 0.5;
+        const rVal = fractalNoise2D(pxInt * 0.005, pzInt * 0.005, 2) + 0.5;
 
-        // determineBiomeを実行して名前を取得
-        const biomeConfig = determineBiome(tVal, hVal);
+        // 3. バイオームを決定
+        const biomeConfig = determineBiome(tVal, hVal, 64, rVal);
         const biomeName = (biomeConfig && biomeConfig.name) ? biomeConfig.name : "Unknown";
 
-        // HTMLを更新（biomeName定義の後に実行）
+        // HTMLを更新
         fpsCounter.innerHTML = `
         <b>Minecraft classic 0.0.1</b><br>
         Seed: ${currentSeed}<br>
@@ -4691,13 +4752,14 @@ function animate() {
         C: ${loadedChunks.size} loaded. (Quality: ${CHUNK_VISIBLE_DISTANCE})<br>
         Dimension: Overworld<br>
         <b>Biome: ${biomeName}</b><br>
-        x: ${Math.round(player.position.x)} (C: ${pCx})<br>
-        y: ${Math.round(player.position.y)} (feet)<br>
-        z: ${Math.round(player.position.z)} (C: ${pCz})<br>
+        x: ${Math.round(pxInt)} (C: ${pCx})<br>
+        y: ${Math.round(py)} (feet)<br>
+        z: ${Math.round(pzInt)} (C: ${pCz})<br>
         Mode: ${moveMode} / Dash: ${dashActive ? "ON" : "OFF"}<br>
         --------------------------<br>
         TargetBlock: ${targetText}
     `;
+
         frameCount = 0;
         lastFpsTime = now;
     }
@@ -4850,12 +4912,18 @@ document.getElementById('btn-back-to-menu').onclick = () => {
 
 // 3. 生成開始
 document.getElementById('btn-start-game').onclick = async () => {
+    ui.menu.style.display = 'none';
+    ui.config.style.display = 'none';
+    ui.loading.style.display = 'flex';
     const seed = applySeed(ui.seedInput.value);
     await startGame(seed);
 };
 
 // 保存データから再開（最新修正版）
 document.getElementById('btn-load-saved').onclick = async () => {
+    ui.config.style.display = 'none';
+    ui.menu.style.display = 'none';
+    ui.loading.style.display = 'flex';
     try {
         // 1. データの読み込みを待機
         const saveData = await loadFullSaveData();
@@ -4916,63 +4984,79 @@ document.getElementById('btn-load-saved').onclick = async () => {
 
 // 引数に savedTime = 0 を追加
 async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0) {
-    ui.config.style.display = 'none';
-    ui.menu.style.display = 'none';
+    const fill = document.getElementById('loading-fill');
+
+    // プログレスバー更新用の補助関数
+    const updateProgress = async (percent) => {
+        if (fill) fill.style.width = `${percent}%`;
+        // 重要：ブラウザに描画を強制させるための「一休み」
+        await new Promise(resolve => requestAnimationFrame(resolve));
+    };
+
+    // 0%：開始
     ui.loading.style.display = 'flex';
+    await updateProgress(0);
+
     initCanvas();
     initSunMoon();
 
-    // --- ★最重要: setTimeout の外で即座に時間をセット ---
-    // これにより、500msの待機中に初期値(0)で動くのを防ぎます
     if (typeof gameTime !== 'undefined') {
         gameTime = savedTime;
     }
 
-    setTimeout(async () => {
-        if (typeof applySeed === 'function') {
-            applySeed(seed);
-        }
+    // 20%：基本システム初期化完了
+    await updateProgress(20);
 
-        // --- 1. データの復元 ---
-        if (savedChunks instanceof Map && savedChunks.size > 0) {
-            ChunkSaveManager.modifiedChunks = savedChunks;
-        } else {
-            ChunkSaveManager.modifiedChunks = ChunkSaveManager.modifiedChunks || new Map();
-        }
+    // --- 1. シード値とデータの適用 ---
+    if (typeof applySeed === 'function') {
+        applySeed(seed);
+    }
 
-        // --- 2. プレイヤー位置・視点の反映 ---
-        const startPos = savedPos ? savedPos : { x: 0, y: 40, z: 0, yaw: 0, pitch: 0 };
-        if (typeof player !== 'undefined') {
-            player.position.set(startPos.x, startPos.y, startPos.z);
-            player.spawnFixed = !!savedPos;
-        }
-        // 視点(カメラ角度)の復元
-        if (typeof yaw !== 'undefined' && typeof pitch !== 'undefined') {
-            yaw = startPos.yaw || 0;
-            pitch = startPos.pitch || 0;
-        }
+    if (savedChunks instanceof Map && savedChunks.size > 0) {
+        ChunkSaveManager.modifiedChunks = savedChunks;
+    } else {
+        ChunkSaveManager.modifiedChunks = ChunkSaveManager.modifiedChunks || new Map();
+    }
+    // 40%：データ構造の準備完了
+    await updateProgress(40);
 
-        // --- 3. 描画の反映 ---
-        if (typeof updateSunMoonPosition === 'function') {
-            // 内部で正しく3引数の updateSkyAndFogColor を呼び出してくれます
-            updateSunMoonPosition();
-        } else if (typeof updateSkyAndFogColor === 'function') {
-            // もし updateSunMoonPosition が使えない場合の予備（防衛策）
-            updateSkyAndFogColor(gameTime, 0, _tmpSunDir);
-        }
-        console.log("時間を復元しました:", gameTime);
+    // --- 2. プレイヤー位置・視点の反映 ---
+    const startPos = savedPos ? savedPos : { x: 0, y: 40, z: 0, yaw: 0, pitch: 0 };
+    if (typeof player !== 'undefined') {
+        player.position.set(startPos.x, startPos.y, startPos.z);
+        player.spawnFixed = !!savedPos;
+    }
+    if (typeof yaw !== 'undefined' && typeof pitch !== 'undefined') {
+        yaw = startPos.yaw || 0;
+        pitch = startPos.pitch || 0;
+    }
+    // 60%：座標・視点確定
+    await updateProgress(60);
 
-        ui.loading.style.display = 'none';
+    // --- 3. 描画・システム反映 ---
+    if (typeof updateSunMoonPosition === 'function') {
+        updateSunMoonPosition();
+    }
+    // 80%：環境設定完了
+    await updateProgress(80);
 
-        // --- ★重要: ロード直後のセーブ(上書き)をコメントアウト ---
-        // ロードが完了した瞬間にセーブすると、万が一ロードに失敗していた場合に
-        // 保存データを「壊れたデータ」で上書きしてしまうリスクがあるためです。
-        // saveWorldData(seed, startPos, ChunkSaveManager.modifiedChunks, gameTime);
-
-        addChatMessage(savedPos ? "データをロードしました" : `世界を新しく生成しました`, "#ffff00");
+    // --- 4. アイテムプレビュー生成（ここが一番重い想定） ---
+    if (typeof itemspreview === 'function') {
         await itemspreview();
+    }
+
+    // 100%：すべてのロードが完了
+    await updateProgress(100);
+
+    // 完了を視認させるため、一瞬だけ待ってから閉じる
+    setTimeout(() => {
+        ui.loading.style.display = 'none';
+        addChatMessage(savedPos ? "データをロードしました" : "世界を新しく生成しました", "#ffff00");
         animate(); // ループ開始
-    }, 500);
+        ui.config.style.display = 'none';
+        ui.menu.style.display = 'none';
+        ui.loading.style.display = 'none';
+    }, 150);
 }
 
 
@@ -4993,7 +5077,7 @@ function updatePauseUI() {
 }
 
 /* ======================================================
-   【修正版】保存してタイトルへ戻る
+   保存してタイトルへ戻る
    ====================================================== */
 const btnSaveAndQuit = document.getElementById("btn-save-quit");
 
@@ -5024,8 +5108,16 @@ if (btnSaveAndQuit) {
         }
     };
 }
+/* ======================================================
+   保存せずにタイトルへ戻る
+   ====================================================== */
+const btn_noSaveAndQuit = document.getElementById("btn-nosave-quit");
 
-
+if (btn_noSaveAndQuit) {
+    btn_noSaveAndQuit.onclick = () => {
+        window.location.reload();
+    };
+}
 
 /* ======================================================
    【チャットログシステム】
