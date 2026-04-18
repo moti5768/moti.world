@@ -1769,18 +1769,13 @@ function disposeMesh(mesh) {
 }
 
 function refreshChunkAt(cx, cz) {
-    // 1. キーの生成（新バージョンのビット演算方式に合わせる）
     const key = (cx << 16) | (cz & 0xFFFF);
     const oldChunk = loadedChunks.get(key);
 
-    // 2. プレイヤーとの距離をチェック
-    const pCx = Math.floor(player.position.x / CHUNK_SIZE);
-    const pCz = Math.floor(player.position.z / CHUNK_SIZE);
-    const dx = Math.abs(cx - pCx);
-    const dz = Math.abs(cz - pCz);
-
-    // 距離外なら削除して終了（メモリ節約）
-    if (dx > CHUNK_VISIBLE_DISTANCE || dz > CHUNK_VISIBLE_DISTANCE) {
+    // 1. 距離チェック（変更なし）
+    const pCx = (player.position.x / CHUNK_SIZE) | 0; // 高速化: Math.floorのかわり
+    const pCz = (player.position.z / CHUNK_SIZE) | 0;
+    if (Math.abs(cx - pCx) > CHUNK_VISIBLE_DISTANCE || Math.abs(cz - pCz) > CHUNK_VISIBLE_DISTANCE) {
         if (oldChunk) {
             scene.remove(oldChunk);
             disposeMesh(oldChunk);
@@ -1789,36 +1784,29 @@ function refreshChunkAt(cx, cz) {
         return;
     }
 
-    // 3. 新しいメッシュの生成
+    // 2. 新しいメッシュの生成（古いのはまだ消さない！）
     const newChunk = generateChunkMeshMultiTexture(cx, cz);
-    if (!newChunk) return;
+    if (!newChunk) {
+        // 空気チャンクになった場合のみ消す
+        if (oldChunk) {
+            scene.remove(oldChunk);
+            disposeMesh(oldChunk);
+            loadedChunks.delete(key);
+        }
+        return;
+    }
 
-    // 更新時はフェードなしで即表示（操作への応答性を優先）
+    // 3. 属性の直接セット
     newChunk.userData.fadedIn = true;
     syncSingleChunkSkyLight(newChunk);
 
-    // マテリアル状態の正規化（トラバースを1回に集約）
-    newChunk.traverse(child => {
-        if (child.isMesh && child.material) {
-            const materials = Array.isArray(child.material) ? child.material : [child.material];
-            for (const m of materials) {
-                const ud = m.userData;
-                if (ud) {
-                    if (ud.realTransparent !== undefined) m.transparent = ud.realTransparent;
-                    if (ud.realDepthWrite !== undefined) m.depthWrite = ud.realDepthWrite;
-                    if (ud.realOpacity !== undefined) m.opacity = ud.realOpacity;
-                }
-            }
-        }
-    });
-
-    // 4. シーンへの反映
+    // 4. 入れ替え（ここが重要：追加してから消すことでチラつきを防ぐ）
     scene.add(newChunk);
     loadedChunks.set(key, newChunk);
 
-    // 5. 旧メッシュの完全破棄（GPUメモリ解放）
     if (oldChunk) {
         scene.remove(oldChunk);
+        // 重要：geometryは必ず消すが、materialは共有しているなら消さない設計にする
         disposeMesh(oldChunk);
     }
 }
