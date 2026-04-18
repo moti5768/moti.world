@@ -2214,17 +2214,30 @@ function releaseChunkMesh(mesh) {
     mesh.traverse(obj => {
         if (!obj.isMesh) return;
 
-        // 1. ジオメトリ（頂点情報）はGPUから必ず破棄する
+        // 1. ジオメトリは常に破棄
         if (obj.geometry) {
             obj.geometry.dispose();
             obj.geometry = null;
         }
 
-        // 2. マテリアルは dispose() しない（他と使い回しているため参照を外すだけ）
-        obj.material = null;
+        // 2. マテリアルの処理
+        if (obj.material) {
+            // 配列（マルチマテリアル）の場合も考慮
+            const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+
+            for (const mat of materials) {
+                // userData等に「これは共有マテリアルか？」のフラグを持たせておくと安全
+                // もしくは、生成時に clone() したものはここで必ず dispose() する
+                if (mat.userData && mat.userData.isShared) {
+                    // 共有マテリアルなら何もしない
+                } else {
+                    mat.dispose(); // クローンされたマテリアルは破棄！
+                }
+            }
+            obj.material = null;
+        }
     });
 
-    // メッシュをプールに返す
     chunkPool.push(mesh);
 }
 
@@ -2236,25 +2249,22 @@ const _SHARED_ZERO_NORMAL = new Float32Array([0, 0, 0]);
 const _SHARED_ZERO_UV = new Float32Array([0, 0]);
 const _SHARED_ZERO_COLOR = new Float32Array([1, 1, 1]);
 
-/**
- * 複数の BufferGeometry をマージして１つのジオメトリを生成する（マテリアルグループ対応）
- * パフォーマンス重視、属性構成は最初のジオメトリに準拠
- */
 function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
     if (!geometries || geometries.length === 0) return null;
     if (geometries.length === 1) return geometries[0];
 
     const first = geometries[0];
-    const hasNormal = first.hasAttribute && first.hasAttribute('normal');
-    const hasUV = first.hasAttribute && first.hasAttribute('uv');
-    const hasColor = first.hasAttribute && first.hasAttribute('color');
+    // .attributes を直接参照することでメソッド呼び出しを減らす
+    const hasNormal = first.attributes['normal'] !== undefined;
+    const hasUV = first.attributes['uv'] !== undefined;
+    const hasColor = first.attributes['color'] !== undefined;
 
     // 1. 合計頂点数／インデックス数を一括算出
     let vertexCount = 0;
     let indexCount = 0;
-    for (let i = 0; i < geometries.length; i++) {
+    for (let i = 0, l = geometries.length; i < l; i++) {
         const g = geometries[i];
-        const p = g.getAttribute && g.getAttribute('position');
+        const p = g.attributes['position'];
         if (!p) continue;
         vertexCount += p.count;
         indexCount += g.index ? g.index.count : p.count;
@@ -2262,7 +2272,7 @@ function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
 
     if (vertexCount === 0) return null;
 
-    // 2. インデックス配列型の選択とバッファ確保
+    // 2. バッファの確保
     const IndexArray = (vertexCount > 65535 || indexCount > 65535) ? Uint32Array : Uint16Array;
 
     const posArray = new Float32Array(vertexCount * 3);
@@ -2271,52 +2281,68 @@ function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
     const colorArray = hasColor ? new Float32Array(vertexCount * 3) : null;
     const indexArray = new IndexArray(indexCount);
 
-    const zeroNormal = hasNormal ? _SHARED_ZERO_NORMAL : null;
-    const zeroUV = hasUV ? _SHARED_ZERO_UV : null;
-    const zeroColor = hasColor ? _SHARED_ZERO_COLOR : null;
-
     let posOff = 0, normOff = 0, uvOff = 0, colorOff = 0, idxOff = 0, vertOff = 0;
     const groups = [];
 
-    // helper: 既存ロジックを維持
-    const fillArray = (dest, srcAttr, offset, count, stride, zeroArr) => {
-        if (!dest) return offset;
-        if (srcAttr && srcAttr.array) {
-            dest.set(srcAttr.array, offset);
-            return offset + srcAttr.array.length;
-        }
-        const totalLen = count * stride;
-        for (let i = 0; i < totalLen; i += stride) {
-            dest.set(zeroArr, offset + i);
-        }
-        return offset + totalLen;
-    };
-
     // 3. データの流し込み
-    for (let i = 0; i < geometries.length; i++) {
+    for (let i = 0, l = geometries.length; i < l; i++) {
         const g = geometries[i];
-        const p = g.getAttribute('position');
+        const attr = g.attributes;
+        const p = attr['position'];
         if (!p) continue;
 
         const count = p.count;
-        const n = hasNormal ? g.getAttribute('normal') : null;
-        const uv = hasUV ? g.getAttribute('uv') : null;
-        const c = hasColor ? g.getAttribute('color') : null;
 
-        // Position コピー
+        // --- Position コピー ---
         posArray.set(p.array, posOff);
         posOff += p.array.length;
 
-        // 他属性の補完コピー
-        if (hasNormal) normOff = fillArray(normArray, n, normOff, count, 3, zeroNormal);
-        if (hasUV) uvOff = fillArray(uvArray, uv, uvOff, count, 2, zeroUV);
-        if (hasColor) colorOff = fillArray(colorArray, c, colorOff, count, 3, zeroColor);
+        // --- Normal 補完コピー ---
+        if (hasNormal) {
+            const n = attr['normal'];
+            if (n && n.array) {
+                normArray.set(n.array, normOff);
+                normOff += n.array.length;
+            } else {
+                const len = count * 3;
+                // JSのループを使わず、C++レベルで高速にゼロ埋め
+                normArray.fill(0, normOff, normOff + len);
+                normOff += len;
+            }
+        }
 
-        // Index の計算とコピー
+        // --- UV 補完コピー ---
+        if (hasUV) {
+            const uv = attr['uv'];
+            if (uv && uv.array) {
+                uvArray.set(uv.array, uvOff);
+                uvOff += uv.array.length;
+            } else {
+                const len = count * 2;
+                uvArray.fill(0, uvOff, uvOff + len);
+                uvOff += len;
+            }
+        }
+
+        // --- Color 補完コピー ---
+        if (hasColor) {
+            const c = attr['color'];
+            if (c && c.array) {
+                colorArray.set(c.array, colorOff);
+                colorOff += c.array.length;
+            } else {
+                const len = count * 3;
+                // 色がない場合は白(1.0)で埋める
+                colorArray.fill(1, colorOff, colorOff + len);
+                colorOff += len;
+            }
+        }
+
+        // --- Index の計算 (ここはオフセット加算が必要なためループが必要) ---
         const idx = g.index ? g.index.array : null;
         const startIdxOff = idxOff;
         if (idx) {
-            for (let j = 0; j < idx.length; j++) {
+            for (let j = 0, len = idx.length; j < len; j++) {
                 indexArray[idxOff++] = idx[j] + vertOff;
             }
         } else {
@@ -2325,10 +2351,10 @@ function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
             }
         }
 
-        // マテリアルグループの継承
+        // --- マテリアルグループの継承 ---
         const gIdxCount = idx ? idx.length : count;
         if (g.groups && g.groups.length > 0) {
-            for (let j = 0; j < g.groups.length; j++) {
+            for (let j = 0, gl = g.groups.length; j < gl; j++) {
                 const gr = g.groups[j];
                 groups.push({
                     start: startIdxOff + gr.start,
@@ -2347,7 +2373,7 @@ function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
         vertOff += count;
     }
 
-    // 4. ジオメトリの構築
+    // 4. 最終的なジオメトリの構築
     const merged = new THREE.BufferGeometry();
     merged.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
     if (hasNormal) merged.setAttribute('normal', new THREE.BufferAttribute(normArray, 3));
@@ -2355,11 +2381,13 @@ function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
     if (hasColor) merged.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
     merged.setIndex(new THREE.BufferAttribute(indexArray, 1));
 
-    for (let i = 0; i < groups.length; i++) {
+    // まとめてグループを追加
+    for (let i = 0, l = groups.length; i < l; i++) {
         merged.addGroup(groups[i].start, groups[i].count, groups[i].materialIndex);
     }
 
     if (computeNormals && !hasNormal) merged.computeVertexNormals();
+
     return merged;
 }
 // ---------------------------------------------------------------------------
@@ -2828,6 +2856,41 @@ const SKY = BLOCK_TYPES.SKY;
 const _mTemp = new THREE.Matrix4();
 
 function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
+
+    const createBatch = () => ({
+        pos: new Float32Array(12000),
+        col: new Float32Array(12000),
+        norm: new Float32Array(12000),
+        uv: new Float32Array(8000),
+        ptr: 0,   // pos, col, norm 用の書き込み位置
+        uvPtr: 0, // uv 用の書き込み位置
+
+        // 容量が足りない場合に動的に拡張するメソッド
+        ensureCapacity(neededPos, neededUv) {
+            if (this.ptr + neededPos > this.pos.length || this.uvPtr + neededUv > this.uv.length) {
+                // 現在のサイズの2倍、または必要なサイズ分を確保
+                const newSize = Math.max(this.pos.length * 2, this.ptr + neededPos + 1200);
+                const newUvSize = Math.max(this.uv.length * 2, this.uvPtr + neededUv + 800);
+
+                const newPos = new Float32Array(newSize);
+                const newCol = new Float32Array(newSize);
+                const newNorm = new Float32Array(newSize);
+                const newUv = new Float32Array(newUvSize);
+
+                // 既存データのコピー
+                newPos.set(this.pos);
+                newCol.set(this.col);
+                newNorm.set(this.norm);
+                newUv.set(this.uv);
+
+                this.pos = newPos;
+                this.col = newCol;
+                this.norm = newNorm;
+                this.uv = newUv;
+            }
+        }
+    });
+
     const currentSkyLight = (typeof getSkyLightFactor === "function" && typeof gameTime !== "undefined")
         ? (Math.floor(15 * getSkyLightFactor(gameTime)) << 4) : 15;
 
@@ -2869,20 +2932,36 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         lightMap = generateChunkLightMap(chunkKey, voxelData);
     }
 
+    const nbLMs = {
+        px: chunkLightCache.get(encodeChunkKey(cx + 1, cz)),
+        nx: chunkLightCache.get(encodeChunkKey(cx - 1, cz)),
+        pz: chunkLightCache.get(encodeChunkKey(cx, cz + 1)),
+        nz: chunkLightCache.get(encodeChunkKey(cx, cz - 1))
+    };
+
+    // 改善された getLightLevel
     function getLightLevel(lx, ly, lz) {
         if (ly < 0) return 0;
-        if (ly >= CHUNK_HEIGHT) return 15;
-        if (lx >= 0 && lx < CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE) {
-            return lightMap[ly + CHUNK_HEIGHT * (lz + CHUNK_SIZE * lx)];
+        if (ly >= CH_H) return 15;
+
+        // 1. チャンク内 (0-15) かどうかの高速判定 (lx & ~15 は lx が 0-15 なら 0 になる)
+        if ((lx & ~15) === 0 && (lz & ~15) === 0) {
+            return lightMap[ly + CH_H * (lz + (lx << 4))];
         }
-        const wx = baseX + lx, wz = baseZ + lz;
-        const nCx = Math.floor(wx / CHUNK_SIZE), nCz = Math.floor(wz / CHUNK_SIZE);
-        const nKey = encodeChunkKey(nCx, nCz);
-        const neighborLightMap = chunkLightCache.get(nKey);
-        if (neighborLightMap) {
-            const nLx = wx & 15, nLz = wz & 15;
-            return neighborLightMap[ly + CHUNK_HEIGHT * (nLz + CHUNK_SIZE * nLx)];
+
+        // 2. チャンク外のアクセス（Math.floor や Map.get を一切排除）
+        let nlMap = null;
+        if (lx < 0) nlMap = nbLMs.nx;
+        else if (lx >= 16) nlMap = nbLMs.px;
+        else if (lz < 0) nlMap = nbLMs.nz;
+        else if (lz >= 16) nlMap = nbLMs.pz;
+
+        if (nlMap) {
+            // lx & 15 は modulo 16 と同等だが高速。 lx << 4 は 16 倍と同等。
+            return nlMap[ly + CH_H * ((lz & 15) + ((lx & 15) << 4))];
         }
+
+        // 3. 隣接データがない場合
         return currentSkyLight;
     }
 
@@ -3045,7 +3124,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                     continue;
                 }
 
-                // B. 通常の不透明ブロック
+                // --- [ループ内] B. 通常の不透明ブロック ---
                 if (visMask && !useInstancing) {
                     const isRotated = !!cfg.isLog;
                     if (isRotated) {
@@ -3053,17 +3132,15 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                         _r1.extractRotation(_m1);
                     }
 
-                    // ★ 改善点：そのブロックが持つマテリアル配列を先に取得
                     const baseMats = SharedMaterials.blocks.get(type) || getBlockMaterials(+type);
 
                     for (let faceIdx = 0; faceIdx < 6; faceIdx++) {
-                        let wBit = faceIdx;
-                        let wNX, wNY, wNZ, fw;
+                        let wBit = faceIdx, wNX, wNY, wNZ, fw;
                         const offset = faceIdx * 12;
 
+                        // --- 1. 面の可視性判定と法線計算 ---
                         if (isRotated) {
-                            _n1.set(CUBE_NORMALS[offset], CUBE_NORMALS[offset + 1], CUBE_NORMALS[offset + 2]);
-                            _n1.applyMatrix4(_r1);
+                            _n1.set(CUBE_NORMALS[offset], CUBE_NORMALS[offset + 1], CUBE_NORMALS[offset + 2]).applyMatrix4(_r1);
                             wNX = Math.round(_n1.x); wNY = Math.round(_n1.y); wNZ = Math.round(_n1.z);
                             wBit = (wNX > 0) ? 0 : (wNX < 0) ? 1 : (wNY > 0) ? 2 : (wNY < 0) ? 3 : (wNZ > 0) ? 4 : 5;
                             if (!((visMask >> wBit) & 1)) continue;
@@ -3074,43 +3151,56 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                             fw = FACE_FW[faceIdx];
                         }
 
-                        // ★ 改善点：faceIdx から「実際のマテリアル」を特定してバッチを取得
+                        // --- 2. バッチの取得と容量確保 ---
                         const targetMat = baseMats[faceIdx] || baseMats[0];
-                        if (!materialBatches.has(targetMat)) {
-                            materialBatches.set(targetMat, { positions: [], colors: [], normals: [], uvs: [] });
+                        let batch = materialBatches.get(targetMat);
+                        if (!batch) {
+                            batch = createBatch();
+                            materialBatches.set(targetMat, batch);
                         }
-                        const batch = materialBatches.get(targetMat);
-                        const bPos = batch.positions;
-                        const bNorm = batch.normals;
-                        const bCol = batch.colors;
-                        const bUv = batch.uvs; // UVも集約に必要
 
-                        if (isRotated) {
-                            for (let j = 0; j < 12; j += 3) {
-                                const oj = offset + j;
+                        // 書き込み前に一括で容量チェック（1面分：位置12要素、UV8要素）
+                        batch.ensureCapacity(12, 8);
+
+                        let p = batch.ptr;
+                        let up = batch.uvPtr;
+
+                        // --- 3. 頂点座標と法線の代入 ---
+                        for (let j = 0; j < 12; j += 3) {
+                            const oj = offset + j;
+                            if (isRotated) {
                                 _v1.set(CUBE_VERTICES[oj], CUBE_VERTICES[oj + 1], CUBE_VERTICES[oj + 2]).applyMatrix4(_m1);
+                                batch.pos[p] = _v1.x + wx; batch.pos[p + 1] = _v1.y + wy; batch.pos[p + 2] = _v1.z + wz;
                                 _n1.set(CUBE_NORMALS[oj], CUBE_NORMALS[oj + 1], CUBE_NORMALS[oj + 2]).applyMatrix4(_r1);
-                                bPos.push(_v1.x + wx, _v1.y + wy, _v1.z + wz);
-                                bNorm.push(_n1.x, _n1.y, _n1.z);
+                                batch.norm[p] = _n1.x; batch.norm[p + 1] = _n1.y; batch.norm[p + 2] = _n1.z;
+                            } else {
+                                batch.pos[p] = CUBE_VERTICES[oj] + wx; batch.pos[p + 1] = CUBE_VERTICES[oj + 1] + wy; batch.pos[p + 2] = CUBE_VERTICES[oj + 2] + wz;
+                                batch.norm[p] = CUBE_NORMALS[oj]; batch.norm[p + 1] = CUBE_NORMALS[oj + 1]; batch.norm[p + 2] = CUBE_NORMALS[oj + 2];
                             }
-                        } else {
-                            for (let j = 0; j < 12; j += 3) {
-                                const oj = offset + j;
-                                bPos.push(CUBE_VERTICES[oj] + wx, CUBE_VERTICES[oj + 1] + wy, CUBE_VERTICES[oj + 2] + wz);
-                                bNorm.push(CUBE_NORMALS[oj], CUBE_NORMALS[oj + 1], CUBE_NORMALS[oj + 2]);
-                            }
+                            p += 3;
                         }
 
-                        // UVの追加（これがないとテクスチャがずれます）
-                        for (let j = 0; j < 8; j++) bUv.push(CUBE_UVS[j]);
+                        // --- 4. UVの代入 ---
+                        for (let j = 0; j < 8; j++) {
+                            batch.uv[up++] = CUBE_UVS[j];
+                        }
 
+                        // --- 5. ライトとカラーの書き込み ---
                         const light = getLightLevel(x + wNX, y + wNY, z + wNZ);
                         const brightness = fw * globalBrightnessMultiplier;
                         const sS = Math.max(0.04, LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * brightness);
                         const bS = Math.max(0.04, LIGHT_LEVEL_FACTORS[light & 15] * brightness);
 
-                        // 4頂点分
-                        for (let v = 0; v < 4; v++) bCol.push(sS, bS, 0);
+                        let cp = batch.ptr; // カラー書き込み開始位置
+                        for (let v = 0; v < 4; v++) {
+                            batch.col[cp++] = sS;
+                            batch.col[cp++] = bS;
+                            batch.col[cp++] = 0;
+                        }
+
+                        // ポインタを最終更新
+                        batch.ptr = p;
+                        batch.uvPtr = up;
                     }
                 }
             }
@@ -3120,17 +3210,21 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     if (!hasAnySolidBlock) return container;
 
     // --- 4. バッチング (不透明) [集約最適化版] ---
-    // ループ内で直接Meshを作成しcontainerに追加するため、外部配列やmergeは不要になりました
-    for (const [originMat, data] of materialBatches.entries()) {
-        const totalV = data.positions.length / 3;
-        if (totalV === 0) continue;
+    for (const [originMat, batch] of materialBatches.entries()) {
+        // 【修正】data.positions.length ではなく、書き込みポインタ batch.ptr をチェック
+        if (!batch || batch.ptr === 0) continue;
 
         const geom = new THREE.BufferGeometry();
-        geom.setAttribute('position', new THREE.Float32BufferAttribute(data.positions, 3));
-        geom.setAttribute('color', new THREE.Float32BufferAttribute(data.colors, 3));
-        geom.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
-        geom.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2));
 
+        // 【修正】型付き配列の「実際にデータを入れた部分」だけを抜き出して属性にセット
+        // subarray(開始, 終了) を使うことで、余計なメモリ確保なしで部分参照できます
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(batch.pos.subarray(0, batch.ptr), 3));
+        geom.setAttribute('color', new THREE.Float32BufferAttribute(batch.col.subarray(0, batch.ptr), 3));
+        geom.setAttribute('normal', new THREE.Float32BufferAttribute(batch.norm.subarray(0, batch.ptr), 3));
+        geom.setAttribute('uv', new THREE.Float32BufferAttribute(batch.uv.subarray(0, batch.uvPtr), 2));
+
+        // 【修正】頂点数は座標配列の要素数 / 3
+        const totalV = batch.ptr / 3;
         const indices = new Uint32Array((totalV / 4) * 6);
         for (let i = 0, v = 0; i < indices.length; i += 6, v += 4) {
             indices[i] = v; indices[i + 1] = v + 1; indices[i + 2] = v + 2;
@@ -3138,14 +3232,22 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         }
         geom.setIndex(new THREE.BufferAttribute(indices, 1));
 
+        // マテリアルのクローンと設定
         const finalMat = originMat.clone();
         finalMat.vertexColors = true;
         if (finalMat.color) finalMat.color.set(0xffffff);
-        finalMat.userData = { originMat, shaderUniforms: originMat.userData?.shaderUniforms };
+
+        // userData の継承（オプショナルチェイニングで安全に）
+        finalMat.userData = {
+            originMat,
+            shaderUniforms: originMat.userData ? originMat.userData.shaderUniforms : null
+        };
         if (originMat.onBeforeCompile) finalMat.onBeforeCompile = originMat.onBeforeCompile;
 
         const mesh = new THREE.Mesh(geom, finalMat);
         mesh.frustumCulled = true;
+
+        // フェード（透明度変化など）終了時の後処理
         mesh.userData.finalizeFade = function () {
             if (!this.material) return;
             const o = this.material.userData?.originMat;
@@ -3154,12 +3256,16 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 this.material = o;
             }
         };
+
         container.add(mesh);
     }
 
-    // --- 5. カスタムメッシュ結合 (テクスチャ復旧 & 描画順序正常化) ---
+    // --- 5. カスタムメッシュ結合 (メモリリーク対策 & 描画順序正常化) ---
     const opaqueGeometries = [], opaqueMaterials = [], opaqueMatMap = new Map();
     const waterGeometries = [], waterMaterials = [], waterMatMap = new Map();
+
+    // ★ 追跡用：この関数内で生成された、最終メッシュ以外の全ジオメトリを保持
+    const disposables = [];
 
     for (const [baseMat, geoms] of customGeomBatches.entries()) {
         if (!geoms || geoms.length === 0) continue;
@@ -3167,25 +3273,23 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         // 1. ジオメトリの結合
         const mergedGeom = mergeBufferGeometries(geoms, true);
 
-        // 2. 特性の判定
-        // baseMat が取得できなかった場合の安全策
-        if (!baseMat) continue;
+        // ★ geoms (subGeoの配列) を disposables に追加
+        for (let i = 0; i < geoms.length; i++) disposables.push(geoms[i]);
+
+        if (!baseMat) {
+            disposables.push(mergedGeom); // 使わない場合も破棄リストへ
+            continue;
+        }
 
         const isWater = baseMat.userData?.isWater === true;
         const isGlass = baseMat.userData?.isGlass === true;
-
-        // 階段、草、ハシゴなどは Cutout（切り抜き）として扱い、深度を書き込む（depthWrite: true）
-        // これにより水越しに消える問題を回避する
         const isCutout = !isWater;
 
         // 3. 表示用フェードマテリアルの生成
         const fadeMat = getOrCreateCustomFadeMaterial(baseMat, isCutout, isWater, isGlass).clone();
 
-        // --- 重要: テクスチャ欠落(黒紫)対策 ---
         if (baseMat.map) fadeMat.map = baseMat.map;
         fadeMat.vertexColors = true;
-
-        // 頂点カラー（ライト値）を正しく乗せるため基本色を白にリセット
         if (fadeMat.color) fadeMat.color.set(0xffffff);
 
         fadeMat.userData = {
@@ -3195,12 +3299,10 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         if (baseMat.onBeforeCompile) fadeMat.onBeforeCompile = baseMat.onBeforeCompile;
 
         // 4. 分類先の決定
-        // 水(透過)以外は opaque グループ(renderOrder=0)へ入れる
         const targetGeoms = isWater ? waterGeometries : opaqueGeometries;
         const targetMats = isWater ? waterMaterials : opaqueMaterials;
         const targetMap = isWater ? waterMatMap : opaqueMatMap;
 
-        // 5. マルチマテリアル用インデックスの管理
         let mIdx = targetMap.get(baseMat);
         if (mIdx === undefined) {
             mIdx = targetMats.length;
@@ -3208,16 +3310,15 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
             targetMap.set(baseMat, mIdx);
         }
 
-        // このジオメトリが使用するマテリアル番号を指定
         mergedGeom.clearGroups();
         mergedGeom.addGroup(0, mergedGeom.index ? mergedGeom.index.count : mergedGeom.attributes.position.count, mIdx);
+
         targetGeoms.push(mergedGeom);
+        // ★ 結合用の材料になった mergedGeom も後で破棄するためリストへ
+        disposables.push(mergedGeom);
     }
 
-    // --- 最終的なメッシュの生成 ---
-
-    // A. 階段、草、ハシゴ、ハーフブロック等 (不透明/Cutout)
-    // renderOrder = 0 にすることで、水(10)より先に描画され、水越しに正しく見えます
+    // A. 不透明/Cutout
     if (opaqueGeometries.length > 0) {
         const combinedGeom = mergeBufferGeometries(opaqueGeometries, true);
         const mesh = new THREE.Mesh(combinedGeom, opaqueMaterials);
@@ -3226,7 +3327,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         container.add(mesh);
     }
 
-    // B. 水・色付きガラス等 (透過)
+    // B. 透過 (水)
     if (waterGeometries.length > 0) {
         const combinedGeom = mergeBufferGeometries(waterGeometries, true);
         const mesh = new THREE.Mesh(combinedGeom, waterMaterials);
@@ -3234,6 +3335,14 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         mesh.frustumCulled = true;
         container.add(mesh);
     }
+
+    // ★★★ 仕上げ: 中間ジオメトリを一括破棄 ★★★
+    // これにより、GPUメモリ上の不要な BufferAttribute が解放されます
+    for (let i = 0; i < disposables.length; i++) {
+        disposables[i].dispose();
+    }
+    // 配列を空にして参照を切る
+    disposables.length = 0;
 
     return container;
 }
@@ -4921,9 +5030,6 @@ document.getElementById('btn-start-game').onclick = async () => {
 
 // 保存データから再開（最新修正版）
 document.getElementById('btn-load-saved').onclick = async () => {
-    ui.config.style.display = 'none';
-    ui.menu.style.display = 'none';
-    ui.loading.style.display = 'flex';
     try {
         // 1. データの読み込みを待機
         const saveData = await loadFullSaveData();
@@ -4931,7 +5037,9 @@ document.getElementById('btn-load-saved').onclick = async () => {
         // 2. データの存在チェック
         // loadFullSaveDataがデータなしの時にnullを返すようになったため、シンプルに判定可能
         if (saveData) {
-
+            ui.config.style.display = 'none';
+            ui.menu.style.display = 'none';
+            ui.loading.style.display = 'flex';
             // --- A. シード値の適用 ---
             // 数値として保存されているシードを適用
             if (typeof applySeed === 'function') {
@@ -5743,7 +5851,7 @@ if (btnSettingsReset) {
 }
 
 /* ======================================================
-   【保存システム】IndexedDB Manager (パフォーマンス最適化・堅牢版)
+   【保存システム】IndexedDB Manager (高速パレット結合版)
    ====================================================== */
 const DB_CONFIG = { name: "MinecraftJS_Save", version: 1 };
 
@@ -5770,7 +5878,8 @@ async function getDB() {
 }
 
 /**
- * ワールドデータの保存 (改善版)
+ * ワールドデータの保存
+ * Uint16Arrayを文字列パレット形式に変換して一括保存
  */
 async function saveWorldData(seed, playerPos, modifiedChunks, gameTime) {
     const db = await getDB();
@@ -5785,35 +5894,31 @@ async function saveWorldData(seed, playerPos, modifiedChunks, gameTime) {
         metaStore.put(gameTime, "game_time");
 
         if (modifiedChunks && modifiedChunks.size > 0) {
-            const _idToKey = idToKey; // 外部関数の参照をローカルにキャッシュ
+            const _idToKey = idToKey; // blocks.jsの関数
 
             for (const [key, dataArray] of modifiedChunks) {
                 if (!dataArray) continue;
 
-                // dataArrayがUint16Arrayであることを前提にループを最適化
-                // 内部で毎回 instanceof をチェックしない
                 const len = dataArray.length;
-                const serializedBlocks = new Array(len);
+                let chunkString = "";
 
+                // 高速な文字列結合 (オブジェクトを生成しない)
                 for (let j = 0; j < len; j++) {
                     const val = dataArray[j];
-                    // ビット演算によるIDとメタデータの切り出し
                     const id = val & 0xFFF;
                     const meta = (val >> 12) & 0xF;
 
-                    // オブジェクトの生成は避けられないが、プロパティアクセスを最短にする
-                    serializedBlocks[j] = {
-                        k: _idToKey(id),
-                        m: meta
-                    };
+                    // 「キー:メタ」の形式で結合。最後以外にカンマを付ける
+                    chunkString += _idToKey(id) + ":" + meta + (j === len - 1 ? "" : ",");
                 }
 
-                chunkStore.put({ blocks: serializedBlocks }, key.toString());
+                // 文字列として保存することで、blocks.jsの順番変更に耐性を持たせる
+                chunkStore.put({ s: chunkString }, key.toString());
             }
         }
 
         tx.oncomplete = () => {
-            console.log(`[Save] 保存完了: ${modifiedChunks ? modifiedChunks.size : 0} チャンク`);
+            console.log(`[Save] 保存完了: ${modifiedChunks ? modifiedChunks.size : 0} チャンク (CompactString)`);
             resolve();
         };
         tx.onerror = () => reject(tx.error);
@@ -5821,7 +5926,8 @@ async function saveWorldData(seed, playerPos, modifiedChunks, gameTime) {
 }
 
 /**
- * ワールドデータの全読み込み (改善版)
+ * ワールドデータの読み込み
+ * 保存時の文字列キーを現在の最新IDにマッピングし直す
  */
 async function loadFullSaveData() {
     const db = await getDB();
@@ -5846,40 +5952,57 @@ async function loadFullSaveData() {
             const chunks = new Map();
             const keys = reqKeys.result || [];
             const values = reqValues.result || [];
-            const _keyToId = keyToId; // ローカルキャッシュ
+            const _keyToId = keyToId;
 
             for (let i = 0, len = keys.length; i < len; i++) {
                 const chunkKey = Number(keys[i]);
                 const chunkData = values[i];
+                if (!chunkData) continue;
 
-                if (chunkData && chunkData.blocks) {
+                let numericBlocks = null;
+
+                // 1. 最新の文字列パレット形式 ({ s: "stone:0,..." })
+                if (chunkData.s) {
+                    const blockStrings = chunkData.s.split(",");
+                    const bLen = blockStrings.length;
+                    numericBlocks = new Uint16Array(bLen);
+
+                    for (let j = 0; j < bLen; j++) {
+                        const parts = blockStrings[j].split(":");
+                        const id = _keyToId(parts[0]);
+                        const meta = parseInt(parts[1]) || 0;
+                        numericBlocks[j] = (id & 0xFFF) | ((meta & 0xF) << 12);
+                    }
+                }
+                // 2. 以前のオブジェクト配列形式 ({ blocks: [{k,m}, ...] })
+                else if (chunkData.blocks) {
                     const blocks = chunkData.blocks;
                     const bLen = blocks.length;
-                    const numericBlocks = new Uint16Array(bLen);
+                    numericBlocks = new Uint16Array(bLen);
 
                     if (bLen > 0) {
-                        // 最初の要素でデータ形式を判定し、ループを分岐させる
                         const firstItem = blocks[0];
                         const isObjMode = (firstItem !== null && typeof firstItem === 'object');
 
-                        if (isObjMode) {
-                            // オブジェクト形式(k, m)に最適化したループ
-                            for (let j = 0; j < bLen; j++) {
-                                const item = blocks[j];
+                        for (let j = 0; j < bLen; j++) {
+                            const item = blocks[j];
+                            if (isObjMode) {
                                 const id = _keyToId(item.k);
                                 const meta = item.m ?? 0;
                                 numericBlocks[j] = (id & 0xFFF) | ((meta & 0xF) << 12);
-                            }
-                        } else {
-                            // 文字列のみの形式に最適化したループ
-                            for (let j = 0; j < bLen; j++) {
-                                numericBlocks[j] = _keyToId(blocks[j]) & 0xFFF;
+                            } else {
+                                numericBlocks[j] = _keyToId(item) & 0xFFF;
                             }
                         }
                     }
+                }
+                // 3. 直接Uint16Arrayが保存されていた場合 (※ID不整合リスクあり)
+                else if (chunkData instanceof Uint16Array) {
+                    numericBlocks = new Uint16Array(chunkData);
+                }
+
+                if (numericBlocks) {
                     chunks.set(chunkKey, numericBlocks);
-                } else if (chunkData instanceof Uint16Array) {
-                    chunks.set(chunkKey, chunkData);
                 }
             }
 
