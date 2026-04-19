@@ -4914,7 +4914,7 @@ function animate() {
 
         // HTMLを更新
         fpsCounter.innerHTML = `
-        <b>Minecraft classic 0.0.1</b><br>
+        <b>Minecraft test 0.0.1</b><br>
         Seed: ${currentSeed}<br>
         Time: ${getGameClock(gameTime)} (${Math.floor(gameTime)} ticks)<br>
         ${fps} fps, ${activeUpdates} chunks update<br>
@@ -5334,7 +5334,7 @@ function addChatMessage(text, color = "#ffffff", duration = 6000) {
 
 // グローバルでどこからでも呼べるように window に露出
 window.addChatMessage = addChatMessage;
-addChatMessage("Minecraft classic 0.0.1", "#ffff55");
+addChatMessage("Minecraft test 0.0.1", "#ffff55");
 
 
 
