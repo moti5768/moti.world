@@ -244,29 +244,94 @@ function initSunMoon() {
     scene.add(moonMesh);
 }
 
+let starMesh;
+
+function initStars() {
+    const starCount = 2000; // 軽量＋十分綺麗
+    const positions = new Float32Array(starCount * 3);
+
+    for (let i = 0; i < starCount; i++) {
+        // 球面ランダム
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos((Math.random() * 2) - 1);
+
+        const r = CELESTIAL_ORBIT_RADIUS * 0.9;
+
+        positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+        positions[i * 3 + 1] = r * Math.cos(phi);
+        positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+    const mat = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 2,
+        sizeAttenuation: false,
+        transparent: true,
+        opacity: 0,
+        depthTest: true,
+        depthWrite: false,
+        fog: false
+    });
+
+    starMesh = new THREE.Points(geo, mat);
+    scene.add(starMesh);
+}
+
+function updateStars() {
+    if (!starMesh || !player) return;
+
+    // --- 1. 透明度の計算 ---
+    // 太陽の高さに基づく nightFactor と、時間経過によるチラつき(twinkle)を合成
+    const nightFactor = 1.0 - getSkyLightFactor(gameTime);
+    const twinkle = 0.9 + Math.sin(performance.now() * 0.001) * 0.1;
+    const starAlpha = 0.65;
+
+    starMesh.material.opacity = nightFactor * twinkle * starAlpha;
+
+    // --- 2. 回転の同期 ---
+    // 太陽たちが X, Y で円を描くため、回転軸は Z軸。
+    // gameTime から算出した絶対角度を代入することで、太陽と星の相対位置を固定。
+    const angle = (gameTime / TICKS_PER_DAY) * Math.PI * 2;
+    starMesh.rotation.z = angle;
+
+    // --- 3. プレイヤーへの追従 ---
+    // 常にプレイヤーの位置に固定することで、移動しても星が置いていかれない
+    starMesh.position.copy(player.position);
+
+    // --- 4. 表示フラグ ---
+    starMesh.visible = starMesh.material.opacity > 0.001;
+}
+
 function updateSunMoonPosition() {
     if (!sunMesh || !moonMesh || !player) return;
 
-    // 1. 角度と向きベクトルを計算（外部の _tmpSunDir を直接更新）
+    // 1. 角度と向きベクトルを計算
     const angle = (gameTime / TICKS_PER_DAY) * Math.PI * 2;
+    // Zは0で固定（縦回転の平面を定義）
     _tmpSunDir.set(Math.cos(angle), Math.sin(angle), 0).normalize();
 
-    // 2. プレイヤー位置を基準とした配置座標
+    // 2. プレイヤー位置を基準とした配置
     const sunX = _tmpSunDir.x * CELESTIAL_ORBIT_RADIUS;
     const sunY = _tmpSunDir.y * CELESTIAL_ORBIT_RADIUS;
 
+    // 太陽の配置
     sunMesh.position.set(player.position.x + sunX, player.position.y + sunY, player.position.z);
     sunMesh.lookAt(player.position);
 
+    // 月の配置（太陽の反対側）
     moonMesh.position.set(player.position.x - sunX, player.position.y - sunY, player.position.z);
     moonMesh.lookAt(player.position);
 
-    // 3. 表示判定
+    // 3. 表示判定（地平線の下に隠れる余裕を持たせる）
     sunMesh.visible = (sunY > -150);
     moonMesh.visible = (sunY < 150);
 
-    // 4. 空の色の更新。計算済みの sunY と、向きベクトル(_tmpSunDir)をそのまま利用する
-    // ※引数として sunDir も渡すように修正
+    // 💡 星の追従と表示フラグは updateStars 側で一括管理するため、ここでは行いません。
+
+    // 4. 空の色の更新
     updateSkyAndFogColor(gameTime, sunY, _tmpSunDir);
 }
 
@@ -1773,8 +1838,8 @@ function refreshChunkAt(cx, cz) {
     const oldChunk = loadedChunks.get(key);
 
     // 1. 距離チェック（変更なし）
-    const pCx = (player.position.x / CHUNK_SIZE) | 0; // 高速化: Math.floorのかわり
-    const pCz = (player.position.z / CHUNK_SIZE) | 0;
+    const pCx = Math.floor(player.position.x / CHUNK_SIZE);
+    const pCz = Math.floor(player.position.z / CHUNK_SIZE);
     if (Math.abs(cx - pCx) > CHUNK_VISIBLE_DISTANCE || Math.abs(cz - pCz) > CHUNK_VISIBLE_DISTANCE) {
         if (oldChunk) {
             scene.remove(oldChunk);
@@ -2142,6 +2207,9 @@ function fadeInMesh(object, duration = 500, onComplete) {
     const invDuration = 1 / duration; // 割り算を事前に1回だけ行う
 
     (function animate() {
+        // ★追加1：対象のメッシュがシーンから外された（破棄された）場合は即座にアニメーションを中止！
+        if (!object.parent) return;
+
         const now = performance.now();
         const elapsed = now - start;
         const t = elapsed * invDuration; // 掛け算にすることで高速化
@@ -2150,6 +2218,10 @@ function fadeInMesh(object, duration = 500, onComplete) {
             // ループ内で使用する変数をローカルに展開して高速化
             for (let i = 0, len = materials.length; i < len; i++) {
                 const m = materials[i];
+
+                // ★追加2：マテリアルが破棄されて null になっている場合の安全策
+                if (!m.mat) continue;
+
                 // 三項演算子の評価を最小限にし、プロパティアクセスを減らす
                 m.mat.opacity = m.isWater ? (t * m.targetOpacity) : t;
             }
@@ -4791,6 +4863,7 @@ function animate() {
             player.position.y = (player.position.y === 40) ? groundY + 0.1 : player.position.y;
             player.spawnFixed = true;
             updateSunMoonPosition();
+            updateStars();
         } else {
             player.velocity.y = 0;
             updateChunks();
@@ -4803,6 +4876,7 @@ function animate() {
     if (player.spawnFixed) {
         gameTime = (gameTime + delta * 20 * TIME_SPEED) % TICKS_PER_DAY;
         updateSunMoonPosition();
+        updateStars();
     }
 
     // 2. -------- ブロックの明るさ（シェーダー）への反映 --------
@@ -5095,6 +5169,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
 
     initCanvas();
     initSunMoon();
+    initStars();
 
     if (typeof gameTime !== 'undefined') {
         gameTime = savedTime;
@@ -5132,6 +5207,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     // --- 3. 描画・システム反映 ---
     if (typeof updateSunMoonPosition === 'function') {
         updateSunMoonPosition();
+        updateStars();
     }
     // 80%：環境設定完了
     await updateProgress(80);

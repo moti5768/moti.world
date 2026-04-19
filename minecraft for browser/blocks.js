@@ -318,6 +318,10 @@ export const BLOCK_CONFIG = {
         textures: { all: "textures/blocks/lapis_ore.png" },
     }),
 
+    EMERALD_ORE: registerBlock({
+        textures: { all: "textures/blocks/emerald_ore.png" },
+    }),
+
     PLANKS_OAK: registerBlock({
         textures: { all: "textures/blocks/planks_oak.png" },
     }),
