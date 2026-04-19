@@ -3161,6 +3161,21 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                         const subGeo = new THREE.BufferGeometry();
                         extractGroupGeometry(template, group, subGeo);
 
+                        // 💡 【追加】上下反転時に側面のテクスチャ(UV)が逆さまになるのを補正
+                        const isUpsideDown = (meta >> 2) & 1;
+                        if (isUpsideDown) {
+                            const uvs = subGeo.attributes.uv.array;
+                            const normals = subGeo.attributes.normal.array;
+                            for (let i = 0; i < uvs.length; i += 2) {
+                                const ny = normals[(i / 2) * 3 + 1];
+                                // 側面（法線のY成分がほぼ0）の場合にV座標を反転
+                                if (Math.abs(ny) < 0.1) {
+                                    uvs[i] = 1.0 - uvs[i];
+                                    uvs[i + 1] = 1.0 - uvs[i + 1];
+                                }
+                            }
+                        }
+
                         // --- 座標変換・ライティング処理 (既存のまま) ---
                         getCustomGeometryMatrix(meta, _m1, _r1, _mTemp);
                         _v1.copy(_dirVectors[dir]).applyMatrix4(_r1);

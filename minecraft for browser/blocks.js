@@ -1073,20 +1073,16 @@ export function getBlockGeometry(type, config) {
 
                     switch (matIdx) {
                         case 0: // 右面 (+X) 
+                            u = 1.0 - vz; v = vy; break; // 💡 左右反転を防止
                         case 1: // 左面 (-X)
-                            u = vz; // Zを横軸に
-                            v = vy; // Yを縦軸に
-                            break;
+                            u = vz; v = vy; break;
                         case 2: // 上面 (+Y)
                         case 3: // 下面 (-Y)
-                            u = vx; // Xを横軸に
-                            v = vz; // Zを縦軸に
-                            break;
+                            u = vx; v = vz; break;
                         case 4: // 正面 (+Z)
+                            u = vx; v = vy; break;
                         case 5: // 背面 (-Z)
-                            u = vx; // Xを横軸に
-                            v = vy; // Yを縦軸に
-                            break;
+                            u = 1.0 - vx; v = vy; break; // 💡 左右反転を防止
                     }
 
                     // 頂点の座標（0.0〜1.0）をそのままUVとして焼き付ける
@@ -1248,6 +1244,23 @@ export function applyMetadataTransform(target, metadata, blockId) {
             // スラブなら0.5、階段などのフルブロックなら1.0浮かせる
             const offset = isUpsideDown ? ((cfg.isSlab && !cfg.directional) ? 0.5 : 1.0) : 0;
             target.position.y = baseY + offset;
+
+            // 💡 【追加】上下反転時に側面のテクスチャ(UV)が逆さまになるのを補正
+            if (isUpsideDown && target.geometry) {
+                // 共有ジオメトリを汚染しないようクローン
+                target.geometry = target.geometry.clone();
+                const uvs = target.geometry.attributes.uv.array;
+                const normals = target.geometry.attributes.normal.array;
+                for (let i = 0; i < uvs.length; i += 2) {
+                    const ny = normals[(i / 2) * 3 + 1];
+                    // 側面（法線のY成分がほぼ0）の場合にV座標を反転
+                    if (Math.abs(ny) < 0.1) {
+                        uvs[i] = 1.0 - uvs[i];
+                        uvs[i + 1] = 1.0 - uvs[i + 1];
+                    }
+                }
+                target.geometry.attributes.uv.needsUpdate = true;
+            }
         }
     }
 }
