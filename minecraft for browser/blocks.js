@@ -515,8 +515,12 @@ export const BLOCK_CONFIG = {
         lightOpacity: 2,
         overwrite: true,
         cullAdjacentFaces: true,
+        screenFill: {
+            enabled: true,
+            opacity: 0.5
+        },
         geometryType: "water",
-        previewType: "2D",
+        previewType: "3D",
     }),
 
     LAVA: registerBlock({
@@ -529,7 +533,7 @@ export const BLOCK_CONFIG = {
         cullAdjacentFaces: true,
         geometryType: "water",
         lightLevel: 15,
-        previewType: "2D",
+        previewType: "3D",
     }),
 
     GLOWSTONE: registerBlock({
@@ -744,9 +748,27 @@ export function createMaterialsFromBlockConfig(blockConfig) {
     const cached = materialCache.get(cacheKey);
     if (cached) return cached;
 
-    const { geometryType, transparent, textures = {}, lightLevel, opacity = 1.0, fallbackTexture: fb, defaultColor = 0xffffff } = blockConfig;
+    const {
+        geometryType,
+        transparent,
+        textures = {},
+        lightLevel,
+        opacity = 1.0,
+        fallbackTexture: fb,
+        defaultColor = 0xffffff
+    } = blockConfig;
 
-    // 判定ロジックを一度だけ計算
+    // --- 🟢 アルゴリズム維持: screenFill の解析のみ追加 ---
+    let sfEnabled = false;
+    let sfOpacity = 1.0;
+    if (typeof blockConfig.screenFill === 'object' && blockConfig.screenFill !== null) {
+        sfEnabled = blockConfig.screenFill.enabled !== false;
+        sfOpacity = blockConfig.screenFill.opacity ?? 1.0;
+    } else {
+        sfEnabled = !!blockConfig.screenFill;
+    }
+
+    // 判定ロジックを一度だけ計算 (元コードのまま)
     const isWater = (blockConfig.isWater === true);
     const isGlass = (transparent === true && geometryType !== "cross" && geometryType !== "leaves" && geometryType !== "ladder" && !isWater);
     const isLightSource = (lightLevel > 0);
@@ -771,7 +793,6 @@ export function createMaterialsFromBlockConfig(blockConfig) {
     } else {
         for (let i = 0; i < 6; i++) {
             const face = FACE_ORDER[i];
-            // resolveTexturePath のロジックをインライン化して高速化
             const texPath = textures[face] ||
                 ((face !== "top" && face !== "bottom") ? textures.side : null) ||
                 textures.top || textures.bottom || fb;
@@ -785,12 +806,12 @@ export function createMaterialsFromBlockConfig(blockConfig) {
         }
     }
 
-    // 内部的なマテリアル生成ロジック（変数をキャプチャして共通化）
+    // 内部的なマテリアル生成ロジック
     function _generateMaterial(path) {
         const options = {
             color: defaultColor,
             transparent: isBlendTransparent,
-            opacity: opacity,
+            opacity: opacity, // ブロック自体の見た目は維持
             vertexColors: useVertexColors,
             side: side,
             depthWrite: isGlass ? true : !isBlendTransparent,
@@ -802,6 +823,13 @@ export function createMaterialsFromBlockConfig(blockConfig) {
         }
 
         const mat = new THREE.MeshBasicMaterial(options);
+
+        // 🟢 ここで screenFill の設定値を保持しておく (重要)
+        mat.userData.screenFill = {
+            enabled: sfEnabled,
+            opacity: sfOpacity
+        };
+
         mat.userData.shaderUniforms = {
             u_skyFactor: { value: 1.0 },
             u_isLightSource: { value: isLightSource ? 1.0 : 0.0 }

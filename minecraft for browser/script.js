@@ -461,7 +461,7 @@ function updateSkyAndFogColor(time, sunY, sunDir) {
 /* ======================================================
    【新・チャンク保存管理システム (クラスなし版) - 高速最適化ver】
    ====================================================== */
-
+const _heightCache = new Map();
 export const ChunkSaveManager = {
     modifiedChunks: new Map(),
     chunkUpdateInfo: new Map(),
@@ -546,8 +546,7 @@ export const ChunkSaveManager = {
 
     _sharedHeightMap: new Int32Array(256),
     _sharedBiomeMap: new Array(256),
-    _sharedPaddedBiomeMap: new Array(22 * 22),
-
+    _sharedPaddedBiomeMap: new Array(484),
     captureBaseChunkData: function (cx, cz) {
         // 1. チャンク割当・初期化
         const data = new Uint16Array(65536); // 16x16x256
@@ -557,100 +556,92 @@ export const ChunkSaveManager = {
         const { SKY, STONE, DIRT, GRASS, WATER, LAVA, BEDROCK } = BLOCK_TYPES;
         const seaLevel = SEA_LEVEL | 0;
 
-        // 💡 改善: 毎回 new せず、共有バッファへの参照を渡す
+        // 💡 改善: 共有バッファへの参照
         const heightMap = this._sharedHeightMap;
         const biomeMap = this._sharedBiomeMap;
         const paddedBiomeMap = this._sharedPaddedBiomeMap;
 
-        const blendRadius = 3; // 周囲3ブロック(7x7)のバイオームを混ぜる
-        const paddedSize = 16 + (blendRadius * 2); // 22
+        const blendRadius = 3;
+        const paddedSize = 22; // 16 + (3 * 2)
 
         // ------------------------------------------------------
-        // 3. 【最適化版】バイオーム割当 (順序を入れ替え、地形生成の基礎とする)
+        // 3. バイオーム割当 (地形生成の基礎)
         // ------------------------------------------------------
         for (let x = -blendRadius; x < 16 + blendRadius; x++) {
             const worldX = (baseX + x) | 0;
-            const localX = x + blendRadius;
+            const localX = (x + blendRadius) | 0;
+            const xOffset = (localX * paddedSize) | 0;
 
             for (let z = -blendRadius; z < 16 + blendRadius; z++) {
                 const worldZ = (baseZ + z) | 0;
-                const localZ = z + blendRadius;
+                const localZ = (z + blendRadius) | 0;
 
                 const temp = fractalNoise2D(worldX * 0.0005, worldZ * 0.0005, 3) + 0.5;
                 const humidity = fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5;
                 const riverValue = fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5;
 
-                // 【修正箇所】ここでも 64 などの基準高さを渡す
-                const biome = determineBiome(temp, humidity, 64, riverValue);
-
-                paddedBiomeMap[localX * paddedSize + localZ] = biome;
+                // バイオーム決定 (基準高さ64を渡す)
+                paddedBiomeMap[xOffset + localZ] = determineBiome(temp, humidity, 64, riverValue);
             }
         }
 
         // ------------------------------------------------------
-        // 4. 【最適化版】地形（高さマップ）生成 (Base Terrain)
+        // 4. 地形（高さマップ）生成 (Base Terrain)
         // ------------------------------------------------------
-        // メモリ確保(GC)を防ぐための再利用オブジェクト
-        const heightCache = {};
-
         for (let x = 0; x < 16; x++) {
             const worldX = (baseX + x) | 0;
             const xOff = (x << 12) | 0;
+            const xMapIdx = (x << 4) | 0;
 
             for (let z = 0; z < 16; z++) {
                 const worldZ = (baseZ + z) | 0;
                 const zOff = (z << 8) | 0;
                 const idxBase = (xOff + zOff) | 0;
+                const mapIdx = (xMapIdx | z) | 0;
 
-                // 🌟 中心ブロックのバイオームを本来のマップに保存 (Step 6の表土配置用)
-                biomeMap[(x << 4) | z] = paddedBiomeMap[(x + blendRadius) * paddedSize + (z + blendRadius)];
+                // 中心バイオームの保存
+                biomeMap[mapIdx] = paddedBiomeMap[(x + blendRadius) * paddedSize + (z + blendRadius)];
 
                 let totalHeight = 0;
                 let totalWeight = 0;
 
-                // 新しいブロックの計算前にキャッシュをクリア
-                for (const key in heightCache) {
-                    delete heightCache[key];
-                }
+                // 💡 改善: delete ループを廃止し Map.clear() でGC負荷を軽減
+                _heightCache.clear();
 
-                // --- 💡 改善ポイント: キャッシュを使って周辺バイオームと高さを混ぜる ---
+                // 周辺バイオームと高さを混ぜる
                 for (let dx = -blendRadius; dx <= blendRadius; dx++) {
+                    const nx = (x + dx + blendRadius) | 0;
                     for (let dz = -blendRadius; dz <= blendRadius; dz++) {
-
-                        // サンプリング地点のバイオームを配列から直接取得 (O(1))
-                        const localX = x + dx + blendRadius;
-                        const localZ = z + dz + blendRadius;
-                        const nBiome = paddedBiomeMap[localX * paddedSize + localZ];
+                        const nz = (z + dz + blendRadius) | 0;
+                        const nBiome = paddedBiomeMap[nx * paddedSize + nz];
 
                         if (!nBiome) continue;
 
-                        // 🌟 そのバイオームでの現在の地点(worldX, worldZ)の高さを算出
-                        // 既に計算済みならキャッシュから取得、未計算なら計算してキャッシュに保存
-                        let h = heightCache[nBiome.name];
+                        // キャッシュから高さを取得
+                        let h = _heightCache.get(nBiome.name);
                         if (h === undefined) {
                             const nNoise = fractalNoise2D(worldX * nBiome.noiseScale, worldZ * nBiome.noiseScale, 5);
                             h = nBiome.baseHeight + (nNoise * nBiome.heightVariation);
-                            heightCache[nBiome.name] = h;
+                            _heightCache.set(nBiome.name, h);
                         }
 
-                        // 中心に近いほど影響を強くする重み付け
                         const weight = 1.0 / (1.0 + (dx * dx + dz * dz));
                         totalHeight += h * weight;
                         totalWeight += weight;
                     }
                 }
 
-                const sHeight = Math.floor(totalHeight / totalWeight);
-                heightMap[(x << 4) | z] = sHeight;
-                // -------------------------------------------------------------
+                // 💡 ユーザー指定: ビット演算による高速整数化を維持
+                const sHeight = (totalHeight / totalWeight) | 0;
+                heightMap[mapIdx] = sHeight;
 
                 // 岩盤層
                 data[idxBase] = BEDROCK;
-                // 地殻層
+                // 地殻層 (STONE)
                 for (let y = 1; y < sHeight; y++) {
                     data[idxBase + y] = STONE;
                 }
-                // 海洋層
+                // 海洋層 (WATER)
                 for (let y = sHeight; y <= seaLevel; y++) {
                     data[idxBase + y] = WATER;
                 }
@@ -667,17 +658,17 @@ export const ChunkSaveManager = {
             const worldX = (baseX + x) | 0;
             const nx = worldX * scaleXZ;
             const xOff = (x << 12) | 0;
+            const xMapIdx = (x << 4) | 0;
 
             for (let z = 0; z < 16; z++) {
                 const worldZ = (baseZ + z) | 0;
                 const nz = worldZ * scaleXZ;
                 const zOff = (z << 8) | 0;
                 const idxBase = (xOff + zOff) | 0;
-                const sHeight = heightMap[(x << 4) | z];
+                const sHeight = heightMap[xMapIdx | z];
 
                 for (let y = 5; y < sHeight; y++) {
                     if (isCave(worldX, y, worldZ, sHeight, nx, y * scaleY, nz)) {
-                        // 溶岩湖の高さ(11)以下なら溶岩、それ以外は空気
                         data[idxBase + y] = (y <= 11) ? LAVA : SKY;
                     }
                 }
@@ -689,17 +680,19 @@ export const ChunkSaveManager = {
         // ------------------------------------------------------
         for (let x = 0; x < 16; x++) {
             const xOff = (x << 12) | 0;
+            const xMapIdx = (x << 4) | 0;
+
             for (let z = 0; z < 16; z++) {
                 const zOff = (z << 8) | 0;
-                const idxBase = (xOff + zOff) | 0;
+                const idxBase = (xOff | zOff) | 0;
+                const mapIdx = (xMapIdx | z) | 0;
 
-                const sHeight = heightMap[(x << 4) | z];
-                const biome = biomeMap[(x << 4) | z];
+                const sHeight = heightMap[mapIdx];
+                const biome = biomeMap[mapIdx];
                 if (sHeight <= 1) continue;
 
-                const dirtBoundary = (sHeight - 4) | 0;
-                const stoneEnd = dirtBoundary > 1 ? dirtBoundary : 1;
                 const dirtEnd = (sHeight - 1) | 0;
+                const stoneEnd = Math.max(1, sHeight - 4) | 0;
 
                 // 中層（バイオーム固有の fillerBlock）
                 for (let y = stoneEnd; y < dirtEnd; y++) {
@@ -709,18 +702,11 @@ export const ChunkSaveManager = {
                 }
 
                 // 最表層（バイオーム固有の topBlock）
-                const topY = sHeight - 1;
-                if (data[idxBase + topY] === STONE) {
-                    // 水中の場合はバイオーム設定に関わらず DIRT または砂にする等も可能ですが、
-                    // ここではバイオーム設定を優先します。
-                    data[idxBase + topY] = (topY < seaLevel) ? biome.fillerBlock : biome.topBlock;
+                if (data[idxBase + dirtEnd] === STONE) {
+                    data[idxBase + dirtEnd] = (dirtEnd < seaLevel) ? biome.fillerBlock : biome.topBlock;
                 }
             }
         }
-
-        // 7. 構造物配置 (Structures) - 未実装
-        // 8. デコレーション配置 (Features / Decorators) - 未実装
-        // 9. エンティティ・最終調整
 
         return data;
     },
@@ -1290,29 +1276,47 @@ function getPreciseHeadBlockType(headPos) {
  * プレイヤーの頭部領域に基づいて、オーバーレイ表示用のテクスチャを更新する処理です。
  * ここでは、getPreciseHeadBlockType() を利用してサンプル点から頭部ブロックIDを決定します。
  */
-// ✅ 関数の「外側」に1つだけ定義し、使い回す
 const _sharedHeadPos = new THREE.Vector3();
 
 function updateScreenOverlay() {
     const headY = player.position.y + getCurrentPlayerHeight() * 0.85;
-
-    // ✅ 既存の器の中身（x, y, z）だけを書き換える（ゴミが出ない！）
     _sharedHeadPos.set(player.position.x, headY, player.position.z);
 
     const voxelID = getPreciseHeadBlockType(_sharedHeadPos);
     const config = getBlockConfiguration(voxelID);
     const el = document.getElementById("screenOverlayHtml");
-    const texturePath = config?.screenFill && (config.textures.top || config.textures.all || config.textures.side);
 
+    // --- 🟢 判定ロジックの修正 ---
+    // screenFill が無効、または設定されていない場合は表示しない
+    const sf = config?.screenFill;
+    const isEnabled = typeof sf === 'object' ? sf.enabled !== false : !!sf;
+
+    if (!isEnabled) {
+        el.style.display = "none";
+        return;
+    }
+
+    // テクスチャパスの取得
+    const texturePath = config.textures.top || config.textures.all || config.textures.side;
     if (!texturePath) {
         el.style.display = "none";
         return;
     }
-    el.style.opacity = voxelID === BLOCK_TYPES.WATER ? "0.8" : "1";
+
+    // --- 🟢 透明度の決定ロジック ---
+    let finalOpacity = "1.0";
+    if (typeof sf === 'object' && sf.opacity !== undefined) {
+        // config で設定した opacity (0.1 など) を優先
+        finalOpacity = sf.opacity.toString();
+    } else if (voxelID === BLOCK_TYPES.WATER) {
+        // 古い設定形式用のフォールバック（以前の 0.8 だと濃すぎるので 0.5 等を推奨）
+        finalOpacity = "0.5";
+    }
+
+    el.style.opacity = finalOpacity;
     el.style.backgroundImage = `url(${texturePath})`;
     el.style.display = "block";
 }
-
 /* ======================================================
    【Swept AABB 衝突検出】
    ====================================================== */
@@ -1799,37 +1803,47 @@ function updateOnGround() {
     }
 }
 
-// 各面の定義：法線と面を構成する 4 つの頂点を定義
-/* ======================================================
-   【チャンク生成】
-   ====================================================== */
+/**
+ * チャンクのメッシュリソースを安全かつ完全に解放する
+ * @param {THREE.Object3D} mesh - 破棄対象のチャンクコンテナ
+ */
 function disposeMesh(mesh) {
     if (!mesh) return;
 
-    const children = mesh.children;
-    for (let i = children.length - 1; i >= 0; i--) {
-        const obj = children[i];
+    // 1. 階層下の全オブジェクトを走査してリソースを解放
+    mesh.traverse((obj) => {
+        if (!obj.isMesh) return;
 
-        // Mesh, Line, Points など、ジオメトリを持つものを対象にする
+        // --- ジオメトリの破棄 ---
+        // チャンクごとに生成される BufferGeometry は必ず dispose が必要
         if (obj.geometry) {
             obj.geometry.dispose();
         }
 
-        // マテリアルの処理
+        // --- マテリアルの破棄 ---
         if (obj.material) {
             const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-            for (let j = 0; j < mats.length; j++) {
-                // 【重要】共有マテリアルを誤って消さないためのチェック
-                // チャンク専用のマテリアルである確証がある場合のみ dispose する
-                if (mats[j] && typeof mats[j].dispose === 'function') {
-                    mats[j].dispose();
+            for (const mat of mats) {
+                // 【重要】共有マテリアルを保護し、クローンされたマテリアルのみを破棄する
+                // generateChunkMeshMultiTexture 内でセットした originMat の有無で判定
+                if (mat.userData && mat.userData.originMat) {
+                    // ※ テクスチャ(mat.map等)は originMat と共有されているため、
+                    // ここではマテリアル自体のみを dispose する（テクスチャは維持）
+                    mat.dispose();
                 }
             }
         }
+    });
 
-        // 🪚 改善ポイント: シーンから完全に取り除く
-        // これをしないと、空の Object3D がメモリ上に残り続けます
-        mesh.remove(obj);
+    // 2. シーングラフからの完全な取り除き
+    // remove を繰り返す際に index がずれないよう、後ろから削除または while を使用
+    while (mesh.children.length > 0) {
+        const child = mesh.children[0];
+
+        // もし子要素がさらに子要素を持っていた場合の参照切り
+        if (child.parent) {
+            child.parent.remove(child);
+        }
     }
 }
 
