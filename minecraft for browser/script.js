@@ -5800,6 +5800,35 @@ function setupTouchControls() {
         btnInvClose.addEventListener("mousedown", closeInv);
     }
 
+    // --- 2.5 ポーズメニュー(ESC)の制御 ---
+    const btnPause = document.getElementById("btn-pause");
+    if (btnPause) {
+        const togglePause = (e) => {
+            // インベントリが開いている時はポーズボタンを無効化（誤操作防止）
+            if (isInventoryOpen) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            // 状態の反転とUI更新
+            isPaused = !isPaused;
+            if (typeof updatePauseUI === "function") {
+                updatePauseUI();
+            }
+
+            // ポーズ画面を開く際、視点操作のIDをリセットして画面が回るのを防ぐ
+            if (isPaused) {
+                lookTouchId = null;
+                if (longPressTimer) clearTimeout(longPressTimer);
+                // マウス操作用のロックも解除
+                if (document.exitPointerLock) document.exitPointerLock();
+            }
+        };
+
+        btnPause.addEventListener("touchstart", togglePause, { passive: false });
+        btnPause.addEventListener("mousedown", togglePause);
+    }
+
     // --- 3. 視点移動 ＆ ブロック操作 ---
     canvas.addEventListener('touchstart', (e) => {
         if (isInventoryOpen) return; // インベントリ中は背景を動かさない
