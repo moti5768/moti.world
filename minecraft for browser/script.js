@@ -5676,10 +5676,9 @@ function onCanvasTouchEnd(e) {
 }
 
 // ==========================================
-// 7. タッチUI・マルチタッチ完全対応版 (安全起動型)
+// 7. タッチUI・マルチタッチ完全対応版 (閉じるボタン・干渉防止済)
 // ==========================================
 function setupTouchControls() {
-    // 【重要】rendererが準備できるまで再帰的に待機する
     if (typeof renderer === 'undefined' || !renderer.domElement) {
         setTimeout(setupTouchControls, 100);
         return;
@@ -5694,8 +5693,7 @@ function setupTouchControls() {
     let sneakToggled = false;
     const TAP_THRESHOLD = 300;
 
-    // --- 視点操作・マルチタッチ用 ---
-    let lookTouchId = null; // 右手（視点用）の指ID
+    let lookTouchId = null;
     let lastTouchX = 0, lastTouchY = 0;
     let touchStartTime = 0;
     let isLongPress = false;
@@ -5709,89 +5707,105 @@ function setupTouchControls() {
 
         const start = (e) => {
             e.preventDefault();
-            e.stopPropagation(); // ボタンを触った時に背後の視点が動くのを防ぐ
+            e.stopPropagation();
             if (onStart) onStart();
             keys[key] = true;
         };
         const end = (e) => {
             e.preventDefault();
+            e.stopPropagation();
             if (onEnd) onEnd();
             keys[key] = false;
         };
 
-        // スマホ・PC両対応
         btn.addEventListener("touchstart", start, { passive: false });
         btn.addEventListener("touchend", end, { passive: false });
         btn.addEventListener("mousedown", start);
         btn.addEventListener("mouseup", end);
     };
 
-    // --- 1. 移動系ボタン (ダブルタップでダッシュ) ---
+    // --- 1. 移動・ジャンプ・スニーク ---
     bindButton("dpad-up", "w", () => {
         const now = performance.now();
         if (now - lastForwardTapTime < TAP_THRESHOLD) dashActive = true;
         lastForwardTapTime = now;
-    }, () => {
-        dashActive = false;
-    });
-
+    }, () => { dashActive = false; });
     bindButton("dpad-down", "s");
     bindButton("dpad-left", "a");
     bindButton("dpad-right", "d");
 
-    // --- 2. ジャンプボタン (ダブルタップで飛行) ---
     const btnJump = document.getElementById("btn-jump");
     if (btnJump) {
-        const jumpHandler = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+        btnJump.addEventListener("touchstart", (e) => {
+            e.preventDefault(); e.stopPropagation();
             const now = performance.now();
-            if (now - lastJumpTime < TAP_THRESHOLD) {
-                flightMode = !flightMode;
-                jumpRequest = false;
-            } else {
-                if (flightMode) keys[" "] = true;
-                else jumpRequest = true;
-            }
+            if (now - lastJumpTime < TAP_THRESHOLD) { flightMode = !flightMode; jumpRequest = false; }
+            else { if (flightMode) keys[" "] = true; else jumpRequest = true; }
             lastJumpTime = now;
-        };
-        btnJump.addEventListener("touchstart", jumpHandler, { passive: false });
+        }, { passive: false });
         btnJump.addEventListener("touchend", (e) => {
-            e.preventDefault();
+            e.preventDefault(); e.stopPropagation();
             if (flightMode) keys[" "] = false;
         }, { passive: false });
     }
 
-    // --- 3. スニークボタン (ダブルタップでトグル) ---
     const btnSneak = document.getElementById("btn-sneak");
     if (btnSneak) {
-        const sneakHandler = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+        btnSneak.addEventListener("touchstart", (e) => {
+            e.preventDefault(); e.stopPropagation();
             const now = performance.now();
             if (now - lastSneakTime < TAP_THRESHOLD) {
-                sneakToggled = !sneakToggled;
-                keys["shift"] = sneakToggled;
-                sneakActive = sneakToggled;
-            } else {
-                keys["shift"] = true;
-                sneakActive = true;
-            }
+                sneakToggled = !sneakToggled; keys["shift"] = sneakToggled; sneakActive = sneakToggled;
+            } else { keys["shift"] = true; sneakActive = true; }
             lastSneakTime = now;
-        };
-        btnSneak.addEventListener("touchstart", sneakHandler, { passive: false });
+        }, { passive: false });
         btnSneak.addEventListener("touchend", (e) => {
-            e.preventDefault();
+            e.preventDefault(); e.stopPropagation();
             if (!sneakToggled) { keys["shift"] = false; sneakActive = false; }
         }, { passive: false });
     }
 
-    // --- 4. 視点移動 ＆ ブロック操作 (キャンバス全体) ---
+    // --- 2. インベントリの開閉制御 ---
+    const updateInvUI = () => {
+        const container = document.getElementById("inventory-container");
+        if (container) container.style.display = isInventoryOpen ? "block" : "none";
+        // インベントリが開いている時は視点操作のIDをリセット
+        if (isInventoryOpen) {
+            lookTouchId = null;
+            clearTimeout(longPressTimer);
+        }
+    };
+
+    // 開くボタン
+    const btnInvOpen = document.getElementById("btn-inventory");
+    if (btnInvOpen) {
+        const openInv = (e) => {
+            e.preventDefault(); e.stopPropagation();
+            isInventoryOpen = true;
+            updateInvUI();
+        };
+        btnInvOpen.addEventListener("touchstart", openInv, { passive: false });
+        btnInvOpen.addEventListener("mousedown", openInv);
+    }
+
+    // 閉じるボタン
+    const btnInvClose = document.getElementById("btn-inventory-close");
+    if (btnInvClose) {
+        const closeInv = (e) => {
+            e.preventDefault(); e.stopPropagation();
+            isInventoryOpen = false;
+            updateInvUI();
+        };
+        btnInvClose.addEventListener("touchstart", closeInv, { passive: false });
+        btnInvClose.addEventListener("mousedown", closeInv);
+    }
+
+    // --- 3. 視点移動 ＆ ブロック操作 ---
     canvas.addEventListener('touchstart', (e) => {
+        if (isInventoryOpen) return; // インベントリ中は背景を動かさない
+
         for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
-
-            // すでに視点操作中の指がない場合のみ、新しい指を登録
             if (lookTouchId === null) {
                 lookTouchId = touch.identifier;
                 lastTouchX = touch.clientX;
@@ -5799,7 +5813,6 @@ function setupTouchControls() {
                 touchStartTime = performance.now();
                 isLongPress = false;
 
-                // 長押し破壊タイマー開始 (0.5秒)
                 longPressTimer = setTimeout(() => {
                     isLongPress = true;
                     if (typeof startInteraction === "function") startInteraction("destroy");
@@ -5809,13 +5822,14 @@ function setupTouchControls() {
     }, { passive: false });
 
     canvas.addEventListener('touchmove', (e) => {
+        if (isInventoryOpen) return;
+
         for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
             if (touch.identifier === lookTouchId) {
                 const dx = touch.clientX - lastTouchX;
                 const dy = touch.clientY - lastTouchY;
 
-                // グローバルの yaw/pitch を更新
                 if (typeof yaw !== 'undefined' && typeof pitch !== 'undefined') {
                     yaw -= dx * TOUCH_SENSITIVITY;
                     pitch -= dy * TOUCH_SENSITIVITY;
@@ -5825,10 +5839,7 @@ function setupTouchControls() {
                 lastTouchX = touch.clientX;
                 lastTouchY = touch.clientY;
 
-                // 指が大きく動いたら長押しをキャンセル（視点移動に専念）
-                if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-                    clearTimeout(longPressTimer);
-                }
+                if (Math.abs(dx) > 10 || Math.abs(dy) > 10) clearTimeout(longPressTimer);
             }
         }
     }, { passive: false });
@@ -5841,19 +5852,15 @@ function setupTouchControls() {
                 clearTimeout(longPressTimer);
 
                 const duration = performance.now() - touchStartTime;
-                // 指を離した時、長押しでなければ「タップで設置」
                 if (!isLongPress && duration < 300) {
                     if (typeof interactWithBlock === "function") interactWithBlock("place");
                 }
-
-                // 破壊アニメーションや音の停止
                 if (typeof stopInteraction === "function") stopInteraction();
             }
         }
     }, { passive: false });
 }
 
-// 初期実行をDOM読み込み後に設定
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', setupTouchControls);
 } else {

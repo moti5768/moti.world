@@ -255,6 +255,28 @@ canvas {
     color: white;
 }
 
+#btn-inventory-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+    background: dimgray;
+    /* マイクラのバツボタン風の赤 */
+    color: white;
+    border: 2px solid #fff;
+    border-radius: 4px;
+    font-size: 24px;
+    font-weight: bold;
+    z-index: 3001;
+    /* インベントリより前面に */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    cursor: pointer;
+}
+
 #inventory {
     /* width: max-content;  ← これを削除または auto に変更 */
     width: 90vw;
