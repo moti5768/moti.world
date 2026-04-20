@@ -547,3 +547,27 @@ canvas {
     /* flexによって半分ずつに分配される */
     flex: 1;
 }
+
+/* styles.css に追加 */
+#btn-inventory {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    width: 60px;
+    height: 60px;
+    z-index: 1100;
+}
+
+/* タッチ時のハイライト防止 */
+* {
+    -webkit-tap-highlight-color: transparent;
+}
+
+canvas,
+.dpad-btn,
+.touch-action-btn {
+    touch-action: none;
+    /* ブラウザ標準のズームやスクロールを無効化 */
+    -webkit-user-select: none;
+    user-select: none;
+}

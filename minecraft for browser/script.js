@@ -244,65 +244,73 @@ function initSunMoon() {
     scene.add(moonMesh);
 }
 
-let starMesh;
+let starGroup;
 
 function initStars() {
-    const starCount = 2000; // 軽量＋十分綺麗
-    const positions = new Float32Array(starCount * 3);
+    starGroup = new THREE.Group();
 
-    for (let i = 0; i < starCount; i++) {
-        // 球面ランダム
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos((Math.random() * 2) - 1);
+    // 1. 星の密度を下げ、2種類のサイズと明るさを定義
+    const starConfigs = [
+        { count: 100, size: 3.0, alpha: 1.0 }, // 大きい星 (少なく、明るい)
+        { count: 700, size: 1.5, alpha: 0.6 }  // 小さい星 (多く、少し暗い)
+    ];
 
-        const r = CELESTIAL_ORBIT_RADIUS * 0.9;
+    starConfigs.forEach(config => {
+        const positions = new Float32Array(config.count * 3);
 
-        positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-        positions[i * 3 + 1] = r * Math.cos(phi);
-        positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-    }
+        for (let i = 0; i < config.count; i++) {
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos((Math.random() * 2) - 1);
+            const r = CELESTIAL_ORBIT_RADIUS * 0.9;
 
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+            positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+            positions[i * 3 + 1] = r * Math.cos(phi);
+            positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+        }
 
-    const mat = new THREE.PointsMaterial({
-        color: 0xffffff,
-        size: 2,
-        sizeAttenuation: false,
-        transparent: true,
-        opacity: 0,
-        depthTest: true,
-        depthWrite: false,
-        fog: false
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+        const mat = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: config.size,       // 大小のサイズを適用
+            sizeAttenuation: false,
+            transparent: true,
+            opacity: 0,
+            depthTest: true,
+            depthWrite: false,
+            fog: false
+        });
+
+        // 種類ごとのアルファ値(明るさ)を保存しておく
+        mat.userData = { baseAlpha: config.alpha };
+
+        const mesh = new THREE.Points(geo, mat);
+        starGroup.add(mesh);
     });
 
-    starMesh = new THREE.Points(geo, mat);
-    scene.add(starMesh);
+    scene.add(starGroup);
 }
 
 function updateStars() {
-    if (!starMesh || !player) return;
+    if (!starGroup || !player) return;
 
-    // --- 1. 透明度の計算 ---
-    // 太陽の高さに基づく nightFactor と、時間経過によるチラつき(twinkle)を合成
     const nightFactor = 1.0 - getSkyLightFactor(gameTime);
     const twinkle = 0.9 + Math.sin(performance.now() * 0.001) * 0.1;
-    const starAlpha = 0.65;
+    const globalAlpha = 0.65;
 
-    starMesh.material.opacity = nightFactor * twinkle * starAlpha;
+    // 子要素(大・小の星)ごとに透明度を計算して適用
+    starGroup.children.forEach(mesh => {
+        const typeAlpha = mesh.material.userData.baseAlpha || 1.0;
+        mesh.material.opacity = nightFactor * twinkle * globalAlpha * typeAlpha;
+    });
 
-    // --- 2. 回転の同期 ---
-    // 太陽たちが X, Y で円を描くため、回転軸は Z軸。
-    // gameTime から算出した絶対角度を代入することで、太陽と星の相対位置を固定。
     const angle = (gameTime / TICKS_PER_DAY) * Math.PI * 2;
-    starMesh.rotation.z = angle;
+    starGroup.rotation.z = angle;
+    starGroup.position.copy(player.position);
 
-    // --- 3. プレイヤーへの追従 ---
-    // 常にプレイヤーの位置に固定することで、移動しても星が置いていかれない
-    starMesh.position.copy(player.position);
-
-    // --- 4. 表示フラグ ---
-    starMesh.visible = starMesh.material.opacity > 0.001;
+    // 最初のグループのopacityを見て全体を表示/非表示
+    starGroup.visible = starGroup.children[0].material.opacity > 0.001;
 }
 
 function updateSunMoonPosition() {
@@ -5668,76 +5676,189 @@ function onCanvasTouchEnd(e) {
 }
 
 // ==========================================
-// 7. タッチUIボタン設定 (D-Pad / Jump / Sneak)
+// 7. タッチUI・マルチタッチ完全対応版 (安全起動型)
 // ==========================================
 function setupTouchControls() {
+    // 【重要】rendererが準備できるまで再帰的に待機する
+    if (typeof renderer === 'undefined' || !renderer.domElement) {
+        setTimeout(setupTouchControls, 100);
+        return;
+    }
+
+    const canvas = renderer.domElement;
+
+    // --- 状態管理変数 ---
     let lastForwardTapTime = 0;
     let lastJumpTime = 0;
     let lastSneakTime = 0;
     let sneakToggled = false;
     const TAP_THRESHOLD = 300;
 
+    // --- 視点操作・マルチタッチ用 ---
+    let lookTouchId = null; // 右手（視点用）の指ID
+    let lastTouchX = 0, lastTouchY = 0;
+    let touchStartTime = 0;
+    let isLongPress = false;
+    let longPressTimer = null;
+    const TOUCH_SENSITIVITY = 0.005;
+
+    // --- 補助関数: ボタン紐付け ---
     const bindButton = (id, key, onStart, onEnd) => {
         const btn = document.getElementById(id);
-        const start = (e) => { if (onStart) onStart(); keys[key] = true; e.preventDefault(); };
-        const end = (e) => { if (onEnd) onEnd(); keys[key] = false; e.preventDefault(); };
-        btn.addEventListener("touchstart", start);
+        if (!btn) return;
+
+        const start = (e) => {
+            e.preventDefault();
+            e.stopPropagation(); // ボタンを触った時に背後の視点が動くのを防ぐ
+            if (onStart) onStart();
+            keys[key] = true;
+        };
+        const end = (e) => {
+            e.preventDefault();
+            if (onEnd) onEnd();
+            keys[key] = false;
+        };
+
+        // スマホ・PC両対応
+        btn.addEventListener("touchstart", start, { passive: false });
+        btn.addEventListener("touchend", end, { passive: false });
         btn.addEventListener("mousedown", start);
-        btn.addEventListener("touchend", end);
         btn.addEventListener("mouseup", end);
     };
 
-    // 前進 (ダブルタップでダッシュ)
+    // --- 1. 移動系ボタン (ダブルタップでダッシュ) ---
     bindButton("dpad-up", "w", () => {
         const now = performance.now();
         if (now - lastForwardTapTime < TAP_THRESHOLD) dashActive = true;
         lastForwardTapTime = now;
-    }, () => { dashActive = false; });
+    }, () => {
+        dashActive = false;
+    });
 
     bindButton("dpad-down", "s");
     bindButton("dpad-left", "a");
     bindButton("dpad-right", "d");
 
-    // ジャンプ (ダブルタップで飛行)
+    // --- 2. ジャンプボタン (ダブルタップで飛行) ---
     const btnJump = document.getElementById("btn-jump");
-    const jumpHandler = (e) => {
-        const now = performance.now();
-        if (now - lastJumpTime < TAP_THRESHOLD) {
-            flightMode = !flightMode;
-            jumpRequest = false;
-        } else {
-            if (flightMode) keys[" "] = true;
-            else jumpRequest = true;
-        }
-        lastJumpTime = now;
-        e.preventDefault();
-    };
-    btnJump.addEventListener("touchstart", jumpHandler);
-    btnJump.addEventListener("mousedown", jumpHandler);
-    btnJump.addEventListener("touchend", () => { if (flightMode) keys[" "] = false; });
+    if (btnJump) {
+        const jumpHandler = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const now = performance.now();
+            if (now - lastJumpTime < TAP_THRESHOLD) {
+                flightMode = !flightMode;
+                jumpRequest = false;
+            } else {
+                if (flightMode) keys[" "] = true;
+                else jumpRequest = true;
+            }
+            lastJumpTime = now;
+        };
+        btnJump.addEventListener("touchstart", jumpHandler, { passive: false });
+        btnJump.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            if (flightMode) keys[" "] = false;
+        }, { passive: false });
+    }
 
-    // スニーク (ダブルタップでトグル)
+    // --- 3. スニークボタン (ダブルタップでトグル) ---
     const btnSneak = document.getElementById("btn-sneak");
-    const sneakHandler = (e) => {
-        const now = performance.now();
-        if (now - lastSneakTime < TAP_THRESHOLD) {
-            sneakToggled = !sneakToggled;
-            keys["shift"] = sneakToggled;
-            sneakActive = sneakToggled;
-        } else {
-            keys["shift"] = true;
-            sneakActive = true;
+    if (btnSneak) {
+        const sneakHandler = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const now = performance.now();
+            if (now - lastSneakTime < TAP_THRESHOLD) {
+                sneakToggled = !sneakToggled;
+                keys["shift"] = sneakToggled;
+                sneakActive = sneakToggled;
+            } else {
+                keys["shift"] = true;
+                sneakActive = true;
+            }
+            lastSneakTime = now;
+        };
+        btnSneak.addEventListener("touchstart", sneakHandler, { passive: false });
+        btnSneak.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            if (!sneakToggled) { keys["shift"] = false; sneakActive = false; }
+        }, { passive: false });
+    }
+
+    // --- 4. 視点移動 ＆ ブロック操作 (キャンバス全体) ---
+    canvas.addEventListener('touchstart', (e) => {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+
+            // すでに視点操作中の指がない場合のみ、新しい指を登録
+            if (lookTouchId === null) {
+                lookTouchId = touch.identifier;
+                lastTouchX = touch.clientX;
+                lastTouchY = touch.clientY;
+                touchStartTime = performance.now();
+                isLongPress = false;
+
+                // 長押し破壊タイマー開始 (0.5秒)
+                longPressTimer = setTimeout(() => {
+                    isLongPress = true;
+                    if (typeof startInteraction === "function") startInteraction("destroy");
+                }, 500);
+            }
         }
-        lastSneakTime = now;
-        e.preventDefault();
-    };
-    btnSneak.addEventListener("touchstart", sneakHandler);
-    btnSneak.addEventListener("mousedown", sneakHandler);
-    btnSneak.addEventListener("touchend", () => {
-        if (!sneakToggled) { keys["shift"] = false; sneakActive = false; }
-    });
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (touch.identifier === lookTouchId) {
+                const dx = touch.clientX - lastTouchX;
+                const dy = touch.clientY - lastTouchY;
+
+                // グローバルの yaw/pitch を更新
+                if (typeof yaw !== 'undefined' && typeof pitch !== 'undefined') {
+                    yaw -= dx * TOUCH_SENSITIVITY;
+                    pitch -= dy * TOUCH_SENSITIVITY;
+                    pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+                }
+
+                lastTouchX = touch.clientX;
+                lastTouchY = touch.clientY;
+
+                // 指が大きく動いたら長押しをキャンセル（視点移動に専念）
+                if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                    clearTimeout(longPressTimer);
+                }
+            }
+        }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (touch.identifier === lookTouchId) {
+                lookTouchId = null;
+                clearTimeout(longPressTimer);
+
+                const duration = performance.now() - touchStartTime;
+                // 指を離した時、長押しでなければ「タップで設置」
+                if (!isLongPress && duration < 300) {
+                    if (typeof interactWithBlock === "function") interactWithBlock("place");
+                }
+
+                // 破壊アニメーションや音の停止
+                if (typeof stopInteraction === "function") stopInteraction();
+            }
+        }
+    }, { passive: false });
 }
-setupTouchControls();
+
+// 初期実行をDOM読み込み後に設定
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupTouchControls);
+} else {
+    setupTouchControls();
+}
 
 /* ======================================================
    【1. 設定関連のグローバル変数・DOM取得】
