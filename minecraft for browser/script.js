@@ -852,66 +852,39 @@ camera.rotation.order = "YXZ";
 
 let renderer;
 function initCanvas() {
-    // 1. レンダラーの生成
     renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
     renderer.setClearColor(fogColor);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
-
-    // 2. HTMLのbodyに Canvas を追加
     document.body.appendChild(renderer.domElement);
 
-    // 3. 各種イベントの紐付け
-
-    // --- A. マウス・クリック系 ---
-    renderer.domElement.addEventListener("mousedown", (e) => {
-        // タッチ中（ontouchstartが存在する環境）でのマウスイベントを無視する、
-        // もしくは pointerType をチェックして「mouse」の時だけ処理するようにします
+    // --- A. マウス操作 (PC用) ---
+    // pointerdown を使うことで、マウスか指かを正確に判別できます
+    renderer.domElement.addEventListener("pointerdown", (e) => {
         if (e.pointerType === 'touch') return;
         onCanvasMouseDown(e);
     }, false);
 
     renderer.domElement.addEventListener("click", (e) => {
-        if (isInventoryOpen || pointerLocked || (inventoryContainer && inventoryContainer.contains(e.target))) return;
-        // タッチデバイスでは Pointer Lock を行わない（または専用のUIで行う）
-        if (e.target === renderer.domElement && !("ontouchstart" in window)) {
+        if (isInventoryOpen || pointerLocked) return;
+        // PC（非タッチデバイス）のみポインターロックを許可
+        if (!("ontouchstart" in window)) {
             renderer.domElement.requestPointerLock();
         }
     });
 
     renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault(), false);
 
-    // --- B. タッチ操作 (スマホ用) ---
-    renderer.domElement.addEventListener("touchstart", (e) => {
-        // 二重発火防止：ブラウザのデフォルト挙動（擬似マウスイベント）を止める
-        e.preventDefault();
-        if (e.touches.length === 1) {
-            onCanvasTouchStart(e);
-        }
-    }, { passive: false });
-
-    renderer.domElement.addEventListener("touchmove", (e) => {
-        // ズーム（2本指以上）防止と移動処理を一括管理
-        e.preventDefault();
-        if (e.touches.length === 1) {
-            onCanvasTouchMove(e);
-        }
-    }, { passive: false });
-
-    renderer.domElement.addEventListener("touchend", (e) => {
-        e.preventDefault();
-        onCanvasTouchEnd(e);
-    }, { passive: false });
-
-    // 【重要】システムによる中断時も確実にリセットする
-    renderer.domElement.addEventListener("touchcancel", (e) => {
-        onCanvasTouchEnd(e);
-    }, { passive: false });
-
-    // --- C. ズーム防止 ---
+    // --- B. ズーム防止 ---
     renderer.domElement.addEventListener('wheel', e => {
         if (e.ctrlKey) e.preventDefault();
     }, { passive: false });
+
+    // --- C. タッチ操作の初期化 ---
+    // ここで明示的に呼ぶと確実です
+    if (typeof setupTouchControls === 'function') {
+        setupTouchControls();
+    }
 }
 
 let targetCamPos = player.position.clone().add(new THREE.Vector3(0, getCurrentPlayerHeight(), 0));
