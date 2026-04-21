@@ -852,41 +852,47 @@ camera.rotation.order = "YXZ";
 
 let renderer;
 function initCanvas() {
+    // 1. レンダラーの生成（ここで初めて Canvas が作られる）
     renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
     renderer.setClearColor(fogColor);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+
+    // 2. HTMLのbodyに Canvas を追加
     document.body.appendChild(renderer.domElement);
 
-    // --- A. マウス操作 (PC用) ---
-    // pointerdown を使うことで、マウスか指かを正確に判別できます
-    renderer.domElement.addEventListener("pointerdown", (e) => {
-        if (e.pointerType === 'touch') return;
-        onCanvasMouseDown(e);
-    }, false);
+    // 3. 各種イベントの紐付け（生成直後に行う）
+
+    // --- A. マウス・クリック系 ---
+    renderer.domElement.addEventListener("mousedown", onCanvasMouseDown, false);
 
     renderer.domElement.addEventListener("click", (e) => {
-        if (isInventoryOpen || pointerLocked) return;
-        // PC（非タッチデバイス）のみポインターロックを許可
-        if (!("ontouchstart" in window)) {
+        if (isInventoryOpen || pointerLocked || (inventoryContainer && inventoryContainer.contains(e.target))) return;
+        if (e.target === renderer.domElement && !("ontouchstart" in window)) {
             renderer.domElement.requestPointerLock();
         }
     });
 
     renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault(), false);
 
-    // --- B. ズーム防止 ---
+    // --- B. タッチ操作 (スマホ用) ---
+    // 先ほど定義した関数 (onCanvasTouchStart など) を紐付けます
+    // passive: false にすることでブラウザのデフォルト挙動を抑制できるようにします
+    renderer.domElement.addEventListener("touchstart", onCanvasTouchStart, { passive: false });
+    renderer.domElement.addEventListener("touchmove", onCanvasTouchMove, { passive: false });
+    renderer.domElement.addEventListener("touchend", onCanvasTouchEnd, { passive: false });
+
+    // --- C. ズーム・ピンチ防止 ---
+    // ゲーム画面(Canvas)上での Ctrl+ホイール によるズームを防止
     renderer.domElement.addEventListener('wheel', e => {
         if (e.ctrlKey) e.preventDefault();
     }, { passive: false });
 
-    // --- C. タッチ操作の初期化 ---
-    // ここで明示的に呼ぶと確実です
-    if (typeof setupTouchControls === 'function') {
-        setupTouchControls();
-    }
+    // 2本指以上の操作（ピンチズーム）を防止
+    renderer.domElement.addEventListener('touchmove', e => {
+        if (e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
 }
-
 let targetCamPos = player.position.clone().add(new THREE.Vector3(0, getCurrentPlayerHeight(), 0));
 camera.position.copy(targetCamPos);
 // 環境光を抑えめにし、ブロックのライトレベルを際立たせる
@@ -5401,7 +5407,7 @@ if (ua.includes("mobile") || ua.indexOf("ipad") > -1 || (ua.indexOf("macintosh")
 // ==========================================
 // 2. ユーティリティ関数
 // ==========================================
-const INTERACT_SPEED = 200;
+const INTERACT_SPEED = 250;
 function startInteraction(action, key) {
     if (interactIntervalIds[key] !== null) {
         clearInterval(interactIntervalIds[key]);
@@ -5764,13 +5770,14 @@ function setupTouchControls() {
     const updateInvUI = () => {
         const container = document.getElementById("inventory-container");
         if (container) container.style.display = isInventoryOpen ? "block" : "none";
+        // インベントリが開いている時は視点操作のIDをリセット
         if (isInventoryOpen) {
             lookTouchId = null;
             clearTimeout(longPressTimer);
-            if (typeof stopInteraction === "function") stopInteraction("touch");
         }
     };
 
+    // 開くボタン
     const btnInvOpen = document.getElementById("btn-inventory");
     if (btnInvOpen) {
         const openInv = (e) => {
@@ -5782,6 +5789,7 @@ function setupTouchControls() {
         btnInvOpen.addEventListener("mousedown", openInv);
     }
 
+    // 閉じるボタン
     const btnInvClose = document.getElementById("btn-inventory-close");
     if (btnInvClose) {
         const closeInv = (e) => {
@@ -5797,60 +5805,34 @@ function setupTouchControls() {
     const btnPause = document.getElementById("btn-pause");
     if (btnPause) {
         const togglePause = (e) => {
+            // インベントリが開いている時はポーズボタンを無効化（誤操作防止）
             if (isInventoryOpen) return;
+
             e.preventDefault();
             e.stopPropagation();
+
+            // 状態の反転とUI更新
             isPaused = !isPaused;
-            if (typeof updatePauseUI === "function") updatePauseUI();
+            if (typeof updatePauseUI === "function") {
+                updatePauseUI();
+            }
+
+            // ポーズ画面を開く際、視点操作のIDをリセットして画面が回るのを防ぐ
             if (isPaused) {
                 lookTouchId = null;
                 if (longPressTimer) clearTimeout(longPressTimer);
-                if (typeof stopInteraction === "function") stopInteraction("touch");
+                // マウス操作用のロックも解除
                 if (document.exitPointerLock) document.exitPointerLock();
             }
         };
+
         btnPause.addEventListener("touchstart", togglePause, { passive: false });
         btnPause.addEventListener("mousedown", togglePause);
     }
 
-    // --- 3. 視点移動 ＆ ブロック操作 (完全版) ---
-    let isMoved = false;
-
-    // 共用の中断・終了処理を関数化
-    const handleTouchEndOrCancel = (e) => {
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            const touch = e.changedTouches[i];
-            if (touch.identifier === lookTouchId) {
-                lookTouchId = null;
-                clearTimeout(longPressTimer);
-
-                if (typeof stopInteraction === "function") {
-                    stopInteraction("touch");
-                }
-
-                const duration = performance.now() - touchStartTime;
-
-                // touchendの場合のみ設置判定を行う（cancel時は行わない）
-                if (e.type === "touchend") {
-                    if (!isLongPress && !isMoved && duration < 300) {
-                        if (typeof interactWithBlock === "function") {
-                            interactWithBlock("place");
-                            setTimeout(() => {
-                                if (typeof stopInteraction === "function") stopInteraction("touch");
-                            }, 0);
-                        }
-                    }
-                }
-                isLongPress = false;
-                isMoved = false;
-            }
-        }
-    };
-
+    // --- 3. 視点移動 ＆ ブロック操作 ---
     canvas.addEventListener('touchstart', (e) => {
-        if (isInventoryOpen || isPaused) return;
-        // ブラウザのデフォルト挙動(擬似マウスイベント等)を完全に抑制
-        e.preventDefault();
+        if (isInventoryOpen) return; // インベントリ中は背景を動かさない
 
         for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
@@ -5860,23 +5842,17 @@ function setupTouchControls() {
                 lastTouchY = touch.clientY;
                 touchStartTime = performance.now();
                 isLongPress = false;
-                isMoved = false;
 
                 longPressTimer = setTimeout(() => {
-                    if (!isMoved && lookTouchId !== null) {
-                        isLongPress = true;
-                        if (typeof startInteraction === "function") {
-                            startInteraction("destroy", "touch");
-                        }
-                    }
+                    isLongPress = true;
+                    if (typeof startInteraction === "function") startInteraction("destroy");
                 }, 500);
             }
         }
     }, { passive: false });
 
     canvas.addEventListener('touchmove', (e) => {
-        if (isInventoryOpen || isPaused) return;
-        e.preventDefault();
+        if (isInventoryOpen) return;
 
         for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
@@ -5884,26 +5860,35 @@ function setupTouchControls() {
                 const dx = touch.clientX - lastTouchX;
                 const dy = touch.clientY - lastTouchY;
 
-                if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-                    isMoved = true;
-                    clearTimeout(longPressTimer);
-                }
-
                 if (typeof yaw !== 'undefined' && typeof pitch !== 'undefined') {
                     yaw -= dx * TOUCH_SENSITIVITY;
                     pitch -= dy * TOUCH_SENSITIVITY;
                     pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
                 }
+
                 lastTouchX = touch.clientX;
                 lastTouchY = touch.clientY;
+
+                if (Math.abs(dx) > 10 || Math.abs(dy) > 10) clearTimeout(longPressTimer);
             }
         }
     }, { passive: false });
 
-    canvas.addEventListener('touchend', handleTouchEndOrCancel, { passive: false });
+    canvas.addEventListener('touchend', (e) => {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            const touch = e.changedTouches[i];
+            if (touch.identifier === lookTouchId) {
+                lookTouchId = null;
+                clearTimeout(longPressTimer);
 
-    // 指が画面外に出たとき等の暴走を防ぐために追加
-    canvas.addEventListener('touchcancel', handleTouchEndOrCancel, { passive: false });
+                const duration = performance.now() - touchStartTime;
+                if (!isLongPress && duration < 300) {
+                    if (typeof interactWithBlock === "function") interactWithBlock("place");
+                }
+                if (typeof stopInteraction === "function") stopInteraction();
+            }
+        }
+    }, { passive: false });
 }
 
 if (document.readyState === 'loading') {
