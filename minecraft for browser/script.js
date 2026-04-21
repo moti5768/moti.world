@@ -752,6 +752,7 @@ const flightSpeed = 0.225;
 const doubleTapThreshold = 300;
 let flightMode = false;
 let lastSpaceTime = 0;
+let wasUnderwater = false;
 
 let lastFpsTime = performance.now();
 let frameCount = 0;
@@ -1481,7 +1482,7 @@ function axisSeparatedCollisionResolve(dt) {
 
     const MAX_STEP_HEIGHT = 0.6; // 登れる段差の最大高さ
 
-    const canStep = isOnGround && !wasUnderwater && !flightMode;
+    const canStep = isOnGround && !flightMode;
 
     // --- 【ヘルパー】段差を安全に登れるか判定するローカル関数 ---
     function tryStepClimb(nextX, nextZ) {
@@ -4736,10 +4737,6 @@ function updateHeadBlockInfo() {
 }
 
 /**
- * プレイヤーの AABB（当たり判定）の下半身サンプルによる水中判定
- * 下半身の下部5点（中央＋四隅）をサンプリングし、3点以上が水ブロックなら水中と判断する。
- */
-/**
  * プレイヤーの AABB（当たり判定）の複数サンプルによる水中判定
  */
 const waterSamplePointsPool = Array.from({ length: 6 }, () => new THREE.Vector3()); // 💡 6点に拡張
@@ -4869,7 +4866,6 @@ function updateUnderwaterPhysics(delta) {
 }
 
 const clock = new THREE.Clock();
-let wasUnderwater = false;
 
 // タイマー管理用
 let cloudUpdateTimer = 0;
@@ -5407,7 +5403,7 @@ if (ua.includes("mobile") || ua.indexOf("ipad") > -1 || (ua.indexOf("macintosh")
 // ==========================================
 // 2. ユーティリティ関数
 // ==========================================
-const INTERACT_SPEED = 250;
+const INTERACT_SPEED = 200;
 function startInteraction(action, key) {
     if (interactIntervalIds[key] !== null) {
         clearInterval(interactIntervalIds[key]);
