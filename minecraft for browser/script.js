@@ -5407,7 +5407,7 @@ if (ua.includes("mobile") || ua.indexOf("ipad") > -1 || (ua.indexOf("macintosh")
 // ==========================================
 // 2. ユーティリティ関数
 // ==========================================
-const INTERACT_SPEED = 250;
+const INTERACT_SPEED = 200;
 function startInteraction(action, key) {
     if (interactIntervalIds[key] !== null) {
         clearInterval(interactIntervalIds[key]);
@@ -5830,10 +5830,11 @@ function setupTouchControls() {
         btnPause.addEventListener("mousedown", togglePause);
     }
 
-    // --- 3. 視点移動 ＆ ブロック操作 ---
-    canvas.addEventListener('touchstart', (e) => {
-        if (isInventoryOpen) return; // インベントリ中は背景を動かさない
+    // --- 3. 視点移動 ＆ ブロック操作 (改善版) ---
+    let isMoved = false; // ★追加：移動したかを判定するフラグ
 
+    canvas.addEventListener('touchstart', (e) => {
+        if (isInventoryOpen) return;
         for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
             if (lookTouchId === null) {
@@ -5842,10 +5843,13 @@ function setupTouchControls() {
                 lastTouchY = touch.clientY;
                 touchStartTime = performance.now();
                 isLongPress = false;
+                isMoved = false; // ★開始時は false
 
                 longPressTimer = setTimeout(() => {
-                    isLongPress = true;
-                    if (typeof startInteraction === "function") startInteraction("destroy");
+                    if (!isMoved) { // ★動いていない時だけ長押し破壊を開始
+                        isLongPress = true;
+                        if (typeof startInteraction === "function") startInteraction("destroy", "touch");
+                    }
                 }, 500);
             }
         }
@@ -5853,23 +5857,25 @@ function setupTouchControls() {
 
     canvas.addEventListener('touchmove', (e) => {
         if (isInventoryOpen) return;
-
         for (let i = 0; i < e.changedTouches.length; i++) {
             const touch = e.changedTouches[i];
             if (touch.identifier === lookTouchId) {
                 const dx = touch.clientX - lastTouchX;
                 const dy = touch.clientY - lastTouchY;
 
+                // ★一定以上動いたら「移動」とみなし、設置をキャンセル対象にする
+                if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                    isMoved = true;
+                    clearTimeout(longPressTimer);
+                }
+
                 if (typeof yaw !== 'undefined' && typeof pitch !== 'undefined') {
                     yaw -= dx * TOUCH_SENSITIVITY;
                     pitch -= dy * TOUCH_SENSITIVITY;
                     pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
                 }
-
                 lastTouchX = touch.clientX;
                 lastTouchY = touch.clientY;
-
-                if (Math.abs(dx) > 10 || Math.abs(dy) > 10) clearTimeout(longPressTimer);
             }
         }
     }, { passive: false });
@@ -5882,10 +5888,11 @@ function setupTouchControls() {
                 clearTimeout(longPressTimer);
 
                 const duration = performance.now() - touchStartTime;
-                if (!isLongPress && duration < 300) {
+                // ★「長押しでない」かつ「移動していない」場合のみ設置
+                if (!isLongPress && !isMoved && duration < 300) {
                     if (typeof interactWithBlock === "function") interactWithBlock("place");
                 }
-                if (typeof stopInteraction === "function") stopInteraction();
+                if (typeof stopInteraction === "function") stopInteraction("touch");
             }
         }
     }, { passive: false });
