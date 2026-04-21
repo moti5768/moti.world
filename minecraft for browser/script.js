@@ -5407,6 +5407,7 @@ if (ua.includes("mobile") || ua.indexOf("ipad") > -1 || (ua.indexOf("macintosh")
 // ==========================================
 // 2. ユーティリティ関数
 // ==========================================
+const INTERACT_SPEED = 250;
 function startInteraction(action, key) {
     if (interactIntervalIds[key] !== null) {
         clearInterval(interactIntervalIds[key]);
@@ -5414,7 +5415,7 @@ function startInteraction(action, key) {
     interactWithBlock(action);
     interactIntervalIds[key] = setInterval(() => {
         interactWithBlock(action);
-    }, 150);
+    }, INTERACT_SPEED);
 }
 
 function stopInteraction(key) {
