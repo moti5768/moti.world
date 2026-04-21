@@ -5830,8 +5830,8 @@ function setupTouchControls() {
         btnPause.addEventListener("mousedown", togglePause);
     }
 
-    // --- 3. 視点移動 ＆ ブロック操作 (改善版) ---
-    let isMoved = false; // ★追加：移動したかを判定するフラグ
+    // --- 3. 視点移動 ＆ ブロック操作 (完全版) ---
+    let isMoved = false;
 
     canvas.addEventListener('touchstart', (e) => {
         if (isInventoryOpen) return;
@@ -5843,12 +5843,15 @@ function setupTouchControls() {
                 lastTouchY = touch.clientY;
                 touchStartTime = performance.now();
                 isLongPress = false;
-                isMoved = false; // ★開始時は false
+                isMoved = false;
 
+                // 長押しタイマー：500ms動かなければ「連続破壊」モードへ
                 longPressTimer = setTimeout(() => {
-                    if (!isMoved) { // ★動いていない時だけ長押し破壊を開始
+                    if (!isMoved) {
                         isLongPress = true;
-                        if (typeof startInteraction === "function") startInteraction("destroy", "touch");
+                        if (typeof startInteraction === "function") {
+                            startInteraction("destroy", "touch");
+                        }
                     }
                 }, 500);
             }
@@ -5863,7 +5866,7 @@ function setupTouchControls() {
                 const dx = touch.clientX - lastTouchX;
                 const dy = touch.clientY - lastTouchY;
 
-                // ★一定以上動いたら「移動」とみなし、設置をキャンセル対象にする
+                // 5px以上の移動で「設置/長押し」をキャンセル
                 if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
                     isMoved = true;
                     clearTimeout(longPressTimer);
@@ -5887,12 +5890,27 @@ function setupTouchControls() {
                 lookTouchId = null;
                 clearTimeout(longPressTimer);
 
-                const duration = performance.now() - touchStartTime;
-                // ★「長押しでない」かつ「移動していない」場合のみ設置
-                if (!isLongPress && !isMoved && duration < 300) {
-                    if (typeof interactWithBlock === "function") interactWithBlock("place");
+                // 破壊用のインターバルを即座に停止（必須）
+                if (typeof stopInteraction === "function") {
+                    stopInteraction("touch");
                 }
-                if (typeof stopInteraction === "function") stopInteraction("touch");
+
+                const duration = performance.now() - touchStartTime;
+
+                // 短いタップ 且つ 移動していない場合のみ「設置」
+                if (!isLongPress && !isMoved && duration < 300) {
+                    if (typeof interactWithBlock === "function") {
+                        // ★重要：設置（place）の直後にリピートが走らないよう
+                        // 確実に stopInteraction でリセットをかける
+                        interactWithBlock("place");
+
+                        // タッチでの設置は常に単発であるべきなので、
+                        // 実行直後にもう一度停止を念押しする
+                        setTimeout(() => {
+                            if (typeof stopInteraction === "function") stopInteraction("touch");
+                        }, 0);
+                    }
+                }
             }
         }
     }, { passive: false });
