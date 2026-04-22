@@ -40,14 +40,25 @@
       </div>
     </div>
     <div class="panel">
-      <h2>📍 位置観測 経路記録マップ</h2>
-      <button id="togglePreview" style="width: 100px;">カメラ撮影</button>
-      <div style="display: flex; gap: 8px; margin-top: 8px;">
-        <button id="navModeBtn" class="secondary">ナビ開始(車のみ)</button>
-        <button id="cancelNavBtn" class="secondary">ナビ取り消し</button>
+
+      <div class="header">
+        <h2>📍 位置観測 経路記録マップ</h2>
+
+        <div class="header-actions">
+          <button id="togglePreview">📷 カメラ</button>
+          <button id="darkModeToggle" class="secondary">ダークモード</button>
+        </div>
+
+        <div class="nav-actions">
+          <button id="navModeBtn" class="secondary">ナビ開始</button>
+          <button id="cancelNavBtn" class="secondary">取消</button>
+        </div>
       </div>
-      <button id="darkModeToggle" class="secondary" style="margin-top:10px;">ダークモード</button>
-      <div class="row medium bold">所要時間:<span id="eta">---</span></div>
+
+      <div class="info-block">
+        <div>⏱ 所要時間 <span id="eta">---</span></div>
+        <div>🕒 最終更新 <time id="lastAge">---</time></div>
+      </div>
       <div class="row medium address-row bold">
         <span style="color: blue;">
           現在地住所:
@@ -59,7 +70,6 @@
         </span>
       </div>
 
-      <div class="row small">最終更新:<time id="lastAge">---</time></div>
       <div class="info-grid">
         <div class="stat">緯度: <div id="lat">---</div>
         </div>
@@ -81,7 +91,7 @@
         <button id="centerToggle" class="secondary">自動追尾: ON</button>
         <button id="exportJsonBtn" class="warning">JSON保存</button>
         <button style="background-color: green;"
-          onclick="if (confirm('再読み込みすると一部のデータ（ナビ中の情報など）が失われます。\nよろしいですか？')) { window.location.href = window.location.href; }">
+          onclick="if (confirm('再読み込みすると一部のデータ（ナビ中の情報など）が失われます。\nよろしいですか？')) { window.location.reload(); }">
           ページ<br>再読み込み
         </button>
         <button id="clearBtn" class="secondary">ログ<br>経路クリア</button>

@@ -1,30 +1,59 @@
 :root {
-    /* 色 */
-    --bg: #e8f0f8;
-    --card: rgba(255, 255, 255, 0.95);
-    --muted: #555;
+    /* ===== 色（階層を明確化）===== */
+    --bg: #eef3f8;
+    --card: rgba(255, 255, 255, 0.96);
+    --text: #222;
+    --muted: #666;
+    --border: rgba(0, 0, 0, 0.08);
+
     --accent: #1976d2;
+    --accent-soft: rgba(25, 118, 210, 0.1);
+
     --danger: #e53935;
     --warning: #ff9800;
+
     --marker-border: #fff;
     --polyline-color: #ff4444;
 
-    /* サイズ */
+    /* ===== サイズ ===== */
     --polyline-weight: 5;
-    --radius-card: 10px;
-    --radius-btn: 6px;
 
-    /* シャドウ */
-    --shadow-light: 0 1px 5px rgba(0, 0, 0, 0.08);
-    --shadow-medium: 0 2px 6px rgba(0, 0, 0, 0.05);
-    --shadow-card: 0 4px 10px rgba(0, 0, 0, 0.2);
-    --shadow-map: 0 8px 25px rgba(0, 0, 0, 0.2);
+    --radius-card: 12px;
+    --radius-btn: 8px;
 
-    /* フォントサイズ */
-    --fs-small: small;
-    --fs-medium: medium;
-    --fs-xlarge: x-large;
-    --fs-xxlarge: xx-large;
+    /* ===== シャドウ（柔らかく）===== */
+    --shadow-light: 0 1px 3px rgba(0, 0, 0, 0.06);
+    --shadow-medium: 0 3px 8px rgba(0, 0, 0, 0.08);
+    --shadow-card: 0 6px 16px rgba(0, 0, 0, 0.12);
+    --shadow-map: 0 10px 30px rgba(0, 0, 0, 0.18);
+
+    /* ===== フォントサイズ（固定化）===== */
+    --fs-small: 12px;
+    --fs-medium: 14px;
+    --fs-large: 18px;
+    --fs-xlarge: 22px;
+}
+
+.header {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.header-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.nav-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.header button {
+    flex: 1;
 }
 
 /* ===== ダークモード（テーマ変数切り替え）===== */
@@ -188,7 +217,8 @@ body {
     position: relative;
     display: flex;
     flex-direction: column;
-    padding: 14px;
+    padding: 12px;
+    gap: 6px;
     background: var(--card);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
@@ -216,10 +246,16 @@ h2 {
 /* ===== ステータス表示 ===== */
 .stat {
     background: #f4f4f4;
-    padding: 2px;
-    border-radius: 8px;
+    padding: 8px 6px;
+    border-radius: 10px;
     text-align: center;
     box-shadow: var(--shadow-medium);
+    font-size: 12px;
+}
+
+.stat div {
+    font-size: 14px;
+    font-weight: 700;
 }
 
 .stat div {
@@ -227,40 +263,63 @@ h2 {
     margin-top: 4px;
 }
 
+.info-block {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    padding: 6px 4px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    margin-bottom: 8px;
+}
+
 /* ===== コントロールボタン ===== */
 .controls {
     display: grid;
-    gap: 10px;
-    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-    margin-bottom: 5px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 10px;
 }
 
 button {
     border: none;
     border-radius: var(--radius-btn);
     cursor: pointer;
-    font-size: .95em;
-    padding: 3px;
-    transition: .2s;
+    font-size: 13px;
+    padding: 8px 10px;
+    /* ←押しやすさ改善 */
+    transition: transform .15s, box-shadow .15s, background .2s;
     background: var(--accent);
     color: #fff;
+    line-height: 1.2;
 }
 
+/* ホバーで軽く浮かせる */
 button:hover {
-    opacity: .85;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-light);
 }
 
+/* 押したとき */
+button:active {
+    transform: scale(0.96);
+    box-shadow: none;
+}
+
+/* セカンダリのサイズ統一 */
 button.secondary {
-    background: #666;
-    padding: 2px 6px;
+    background: #444;
+    padding: 8px 10px;
 }
 
+/* 色だけ変える（サイズは統一） */
 button.warning {
     background: var(--warning);
+    font-weight: 600;
 }
 
 button.danger {
     background: var(--danger);
+    font-weight: 600;
 }
 
 /* ===== ユーティリティ ===== */
@@ -334,38 +393,47 @@ button.danger {
 
 .log-entry {
     background: #f7f7f8;
-    margin-bottom: 6px;
-    padding: 10px;
-    border-radius: 8px;
+    margin-bottom: 8px;
+    padding: 10px 10px 9px;
+    border-radius: 10px;
     box-shadow: var(--shadow-light);
+    line-height: 1.4;
+    /* ←読みやすさUP */
 }
 
+/* 時刻は少し控えめに */
 .log-entry .time {
-    font-weight: 600;
+    font-weight: 500;
     margin-bottom: 4px;
-    font-size: .85em;
-    color: #333;
+    font-size: 11px;
+    color: #666;
 }
 
+/* 座標はさらに補助情報に */
 .log-entry .coords {
-    font-size: .82em;
+    font-size: 11px;
     color: var(--muted);
     margin-bottom: 4px;
 }
 
+/* 住所を主役に */
 .log-entry .address {
-    font-size: .87em;
-    font-weight: 500;
-    margin-bottom: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
     word-break: break-word;
 }
 
+/* 情報行を崩れにくく */
 .log-entry .info {
     display: flex;
-    gap: 8px;
-    font-size: .82em;
+    flex-wrap: wrap;
+    /* ←これ重要 */
+    gap: 6px 10px;
+    font-size: 11px;
 }
 
+/* 精度だけ少し強調 */
 .log-entry .accuracy {
     font-weight: 600;
 }

@@ -257,27 +257,62 @@ async function initMap() {
 
 // ===== ユーティリティ =====
 function toFixedOrDash(v, d = 6) {
+    // 1. 基本チェック
     if (!Number.isFinite(v)) return '---';
-    // 0〜20 に制限（toFixed 仕様の安全範囲）
-    const digits = Math.max(0, Math.min(20, Math.floor(d)));
-    let s = Number(v).toFixed(digits);
-    // -0 / -0.000 を "0" / "0.000" に修正
-    if (/^-0(\.0+)?$/.test(s)) {
-        s = s.replace('-', '');
+
+    // 2. 桁数のクランプ
+    const digits = Math.max(0, Math.min(20, d | 0)); // Math.floorの代わりにビット論理和で高速整数化
+
+    // 3. 変換（Number(v)は不要なので省略）
+    let s = v.toFixed(digits);
+
+    // 4. マイナスゼロ対策（正規表現を使わない高速な判定）
+    // vが負の数かつ、数値として評価した時に0であれば、それは -0.00... である
+    if (v < 0 && parseFloat(s) === 0) {
+        s = s.slice(1); // 先頭の '-' を削るだけで、replaceより高速
     }
+
     return s;
 }
 const now = () => Date.now();
-function haversine(a, b) {
-    const R = 6371000;
-    const toRad = Math.PI / 180;
-    const φ1 = a[0] * toRad, φ2 = b[0] * toRad;
-    const Δφ = (b[0] - a[0]) * toRad;
-    const Δλ = (b[1] - a[1]) * toRad;
-    const sinΔφ = Math.sin(Δφ / 2);
-    const sinΔλ = Math.sin(Δλ / 2);
-    const aa = sinΔφ * sinΔφ + Math.cos(φ1) * Math.cos(φ2) * sinΔλ * sinΔλ;
-    return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+const R_EARTH = 6371000;
+const TO_RAD = Math.PI / 180;
+
+// 計算済みの cos値を保持するキャッシュ (メモリリーク防止のため WeakMap を使用)
+const cosCache = new WeakMap();
+
+/**
+ * 緯度の cos 値をキャッシュ付きで取得する内部関数
+ */
+function getCosLat(p) {
+    if (cosCache.has(p)) return cosCache.get(p);
+    const val = Math.cos(p[0] * TO_RAD);
+    cosCache.set(p, val);
+    return val;
+}
+
+/**
+ * 2点間の距離(m)を計算（ハバースイン公式）
+ * 最適化：Math.cos の計算回数をキャッシュにより削減
+ */
+function haversine(p1, p2) {
+    if (!p1 || !p2) return 0;
+
+    // ラジアン差分
+    const dLat = (p2[0] - p1[0]) * TO_RAD;
+    const dLon = (p2[1] - p1[1]) * TO_RAD;
+
+    // sin計算（べき乗演算子 **2 よりも単純な掛け算の方がわずかに高速）
+    const sLat = Math.sin(dLat / 2);
+    const sLon = Math.sin(dLon / 2);
+
+    // ハバースイン公式（cos値をキャッシュから取得）
+    const a = sLat * sLat +
+        getCosLat(p1) * getCosLat(p2) *
+        (sLon * sLon);
+
+    // asin より精度の安定している atan2 を採用
+    return R_EARTH * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 function directionName(deg) {
     if (deg == null || isNaN(deg) || deg < 0 || deg > 360) return '---';
@@ -285,15 +320,41 @@ function directionName(deg) {
     const idx = Math.round(deg / 45) & 7;
     return `${dirs[idx]} (${Math.round(deg)}°)`;
 }
+let cachedTotalDist = 0;   // 今までの合計距離を保存
+let lastCalcPathLen = 0;   // 前回計算時のセグメント数
+let lastCalcSegLen = 0;    // 前回計算時の最後のセグメント内の座標数
 // ===== 距離・速度計算 =====
 function calcTotalDistance() {
-    let total = 0;
-    for (const seg of pathSegments) {
-        for (let i = 1; i < seg.length; i++) {
-            total += haversine(seg[i - 1], seg[i]);
+    // 1. 経路データがない場合は0を返す
+    if (!pathSegments || pathSegments.length === 0) return 0;
+
+    // 2. ログクリアなどでデータが減った場合、キャッシュをリセットする
+    if (pathSegments.length < lastCalcPathLen) {
+        cachedTotalDist = 0;
+        lastCalcPathLen = 0;
+        lastCalcSegLen = 0;
+    }
+
+    // 3. 差分計算ループ
+    // 最後に計算したセグメントからループを開始（Math.maxでインデックス崩れを防止）
+    for (let s = Math.max(0, lastCalcPathLen - 1); s < pathSegments.length; s++) {
+        const seg = pathSegments[s];
+
+        // 前回の続きの座標からループを開始（最初の座標i=0は計算に使わないので1から）
+        const startIdx = (s === lastCalcPathLen - 1) ? Math.max(1, lastCalcSegLen) : 1;
+
+        for (let i = startIdx; i < seg.length; i++) {
+            // 新しく増えた区間だけを足していく
+            cachedTotalDist += haversine(seg[i - 1], seg[i]);
         }
     }
-    return total;
+
+    // 4. 次回のために現在の状態（長さ）を記録しておく
+    lastCalcPathLen = pathSegments.length;
+    lastCalcSegLen = pathSegments[pathSegments.length - 1].length;
+
+    // 5. 保存しておいた合計値を返す（超高速）
+    return cachedTotalDist;
 }
 function calcAvgSpeed() {
     const len = logData.length;
@@ -522,123 +583,115 @@ function showMarkerLabelLeaflet(e, text) {
     currentLabel = label;
 }
 
-// --- 住所取得 fetchAddress（キャッシュ・中断対応・距離制限・リトライ対応） ---
-const addrCache = new Map();              // キャッシュ: 緯度経度キー
-let lastAddressPoint = null;              // 最後に住所を取得した座標
-let currentAddressController = null;      // Abort用コントローラ
+// ===== ファイル上部（定数・キャッシュ定義エリア）へ移動 =====
+const ADDR_CACHE = new Map();
+let lastAddressPoint = null;
+let currentAddressController = null;
 
+const JP_PREFS = [
+    '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
+    '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
+    '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県',
+    '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県',
+    '鳥取県', '島根県', '岡山県', '広島県', '山口県',
+    '徳島県', '香川県', '愛媛県', '高知県',
+    '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'
+];
+// 正規表現を事前にコンパイル（関数外に置くことで高速化）
+const PREF_REGEX = new RegExp(JP_PREFS.join('|'));
+const HOUSE_NUM_REGEX = /^\d{1,4}(-\d{1,4})*$/;
+const ZIP_CODE_REGEX = /\d{3}-\d{4}/;
+const BUILDING_REGEX = /ビル|マンション|ハイツ|アパート/;
+
+/**
+ * 住所取得 fetchAddress（最適化版）
+ */
 async function fetchAddress(lat, lng) {
     const nowTime = Date.now();
-    const MAX_RETRIES = 2; // リトライ回数
+    const MAX_RETRIES = 2;
 
-    // === 1. 取得間隔制御（1秒以内の連続呼び出しを防ぐ） ===
+    // 1. 取得間隔制御（API負荷軽減）
     if (nowTime - lastFetchTime < 1000) return '取得間隔制御中';
 
-    // === 2. 近接チェック（15m以内ならキャッシュ／既存表示を使う） ===
-    try {
-        if (lastAddressPoint && haversine([lat, lng], lastAddressPoint) < 15) {
-            const key = `${lastAddressPoint[0].toFixed(4)},${lastAddressPoint[1].toFixed(4)}`;
-            if (addrCache.has(key)) return addrCache.get(key);
+    // 2. 近接・キャッシュチェックの統合
+    const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (ADDR_CACHE.has(cacheKey)) return ADDR_CACHE.get(cacheKey);
+
+    // 15m以内なら前回取得した住所を流用
+    if (lastAddressPoint && typeof haversine === 'function') {
+        if (haversine([lat, lng], lastAddressPoint) < 15 && lastAddressPoint.address) {
+            return lastAddressPoint.address;
         }
-    } catch (e) {
-        console.warn('近接チェック例外', e);
     }
 
     lastFetchTime = nowTime;
-    lastAddressPoint = [lat, lng];
 
-    // === 3. キャッシュ利用（約10m精度） ===
-    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
-    if (addrCache.has(key)) return addrCache.get(key);
-
-    // === 4. リトライループの開始 ===
     let retries = 0;
     while (retries <= MAX_RETRIES) {
-
-        // 既存リクエストがあれば中止
-        if (currentAddressController) {
-            try { currentAddressController.abort(); } catch (e) { /* ignore */ }
-        }
+        // 既存のリクエストがあれば中断
+        currentAddressController?.abort();
         currentAddressController = new AbortController();
-        const signal = currentAddressController.signal;
+        const { signal } = currentAddressController;
 
         try {
-            // === 5. Nominatim 逆ジオコーディング ===
             const res = await fetch(
                 `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`,
-                { signal, headers: { 'User-Agent': 'HighSpeedMap/1.0 (compatible; fetchAddress)' } }
+                {
+                    signal,
+                    headers: { 'User-Agent': 'HighSpeedMap/1.0 (compatible; fetchAddress)' }
+                }
             );
 
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
             const data = await res.json();
             const a = data.address || {};
+            const displayName = data.display_name || '';
 
-            // === 6. 日本の都道府県判定 ===
-            const jpPrefs = [
-                '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
-                '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
-                '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県',
-                '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県',
-                '鳥取県', '島根県', '岡山県', '広島県', '山口県',
-                '徳島県', '香川県', '愛媛県', '高知県',
-                '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'
-            ];
-            let joined = Object.values(a).filter(Boolean).join(' ');
-            if (data.display_name) joined += ' ' + data.display_name;
-            let prefecture = '';
-            const regex = new RegExp(jpPrefs.join('|'));
-            const match = joined.match(regex);
-            if (match) {
-                prefecture = match[0];
-            } else {
-                for (const full of jpPrefs) {
-                    const short = full.replace(/(都|道|府|県)$/, '');
-                    if (short && joined.includes(short)) {
-                        prefecture = full;
-                        break;
-                    }
-                }
+            // 3. 都道府県判定の効率化
+            let prefecture = displayName.match(PREF_REGEX)?.[0] || '';
+            if (!prefecture) {
+                // 短縮名（東京 など）でのフォールバック
+                const found = JP_PREFS.find(p => displayName.includes(p.replace(/(都|道|府|県)$/, '')));
+                if (found) prefecture = found;
             }
 
-            // === 7. 番地・建物名の補完 ===
+            // 4. 番地・建物名の抽出
             if (!a.house_number || !a.building) {
-                const parts = (data.display_name || '').split(',').map(s => s.trim());
-                if (!a.house_number) {
-                    const hn = parts.find(p => /\d{1,4}(-\d{1,4})*/.test(p) && !/\d{3}-\d{4}/.test(p));
-                    if (hn) a.house_number = hn;
-                }
-                if (!a.building) {
-                    const bd = parts.find(p => /ビル|マンション|ハイツ|アパート/.test(p));
-                    if (bd) a.building = bd;
-                }
+                const parts = displayName.split(',').map(s => s.trim());
+                // 論理代入演算子 ||= を使用（値がない場合のみ代入）
+                a.house_number ||= parts.find(p => HOUSE_NUM_REGEX.test(p) && !ZIP_CODE_REGEX.test(p));
+                a.building ||= parts.find(p => BUILDING_REGEX.test(p));
             }
 
-            // === 8. 出力形式 ===
+            // 5. 出力形式の構築
             const result = [
-                a.postcode, prefecture, a.city || a.town || a.village,
-                a.suburb || a.neighbourhood, a.road, a.house_number, a.building
+                a.postcode,
+                prefecture,
+                a.city || a.town || a.village,
+                a.suburb || a.neighbourhood,
+                a.road,
+                a.house_number,
+                a.building
             ].filter(Boolean).join(', ');
 
-            const finalAddress = result || data.display_name || '住所情報なし';
+            const finalAddress = result || displayName || '住所情報なし';
 
-            // === 9. キャッシュ保存して終了 ===
-            addrCache.set(key, finalAddress);
+            // 6. 状態とキャッシュの保存
+            ADDR_CACHE.set(cacheKey, finalAddress);
+            lastAddressPoint = [lat, lng];
+            lastAddressPoint.address = finalAddress; // 座標オブジェクトに住所を紐付け
+
             return finalAddress;
 
         } catch (err) {
-            if (err.name === 'AbortError') {
-                console.warn('住所取得中止');
-                return '住所取得中止';
-            }
+            if (err.name === 'AbortError') return '住所取得中止';
 
-            retries++;
-            if (retries <= MAX_RETRIES) {
-                console.warn(`住所取得リトライ中 (${retries}/${MAX_RETRIES})`, err);
-                // 1秒待機して再試行（API負荷軽減）
+            if (++retries <= MAX_RETRIES) {
+                console.warn(`リトライ中 (${retries}/${MAX_RETRIES})`, err);
                 await new Promise(r => setTimeout(r, 1000));
             } else {
-                console.warn('住所取得エラー（リトライ上限到達）', err);
+                console.error('住所取得エラー', err);
                 return '住所取得エラー';
             }
         } finally {
@@ -958,19 +1011,6 @@ let etaTimerRunning = false;
 let routingInProgress = false;
 let rerouting = false;
 
-// ======== 距離計算（ハバースイン） ========
-function haversineDistance([lat1, lon1], [lat2, lon2]) {
-    const R = 6371000;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(lat1 * Math.PI / 180) *
-        Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) ** 2;
-    return 2 * R * Math.asin(Math.sqrt(a));
-}
-
 // ======== スマートETA更新 ========
 function updateEtaSmart(lat, lng, speed) {
     if (!navActive || rerouting || !routePath || routePath.length === 0) return;
@@ -981,7 +1021,7 @@ function updateEtaSmart(lat, lng, speed) {
     for (let i = 0; i < routePath.length; i++) {
         const p = routePath[i];
         const coord = Array.isArray(p) ? p : [p.lat, p.lng];
-        const d = haversineDistance(current, coord);
+        const d = haversine(current, coord);
         if (d < minDist) {
             minDist = d;
             nearestIndex = i;
@@ -998,7 +1038,7 @@ function updateEtaSmart(lat, lng, speed) {
         const a = routePath[i], b = routePath[i + 1];
         const pa = Array.isArray(a) ? a : [a.lat, a.lng];
         const pb = Array.isArray(b) ? b : [b.lat, b.lng];
-        remain += haversineDistance(pa, pb);
+        remain += haversine(pa, pb);
     }
     if (remain < 3) {
         elEta.textContent = "目的地に到着";
@@ -1118,7 +1158,7 @@ function startTracking() {
         watchId = null;
     }
 
-    // 初回は低精度
+    // 初回取得（ここは早く1点目を取るために低精度でOK）
     navigator.geolocation.getCurrentPosition(
         pos => {
             retryAccuracyThreshold = MIN_ACCURACY;
@@ -1128,7 +1168,7 @@ function startTracking() {
         { enableHighAccuracy: false, timeout: 5000, maximumAge: 5000 }
     );
 
-    // 継続監視（動いている時だけ高精度）
+    // 継続監視（ナビアプリとして常に高精度を要求）
     watchId = navigator.geolocation.watchPosition(
         pos => {
             retryAccuracyThreshold = MIN_ACCURACY;
@@ -1136,9 +1176,9 @@ function startTracking() {
         },
         err => handleError(err),
         {
-            enableHighAccuracy: currentSpeed > 1.5,
+            enableHighAccuracy: true, // ✅ 常に高精度GPSを使用
             timeout: 15000,
-            maximumAge: currentSpeed > 1.5 ? 1000 : 5000
+            maximumAge: 1000 // ✅ キャッシュ時間を1秒に固定し、常に最新の座標を要求
         }
     );
 }
