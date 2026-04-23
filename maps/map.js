@@ -1135,7 +1135,17 @@ setInterval(async () => {
 // ===== エラー処理 =====
 let retryTimer = null;
 function handleError(err) {
-    console.warn('位置取得エラー', err);
+    console.warn('位置取得エラー', err.code, err.message);
+
+    // ✅ エラーコード3(TIMEOUT)の場合、watchPositionは裏で動き続けている
+    // 電車等で強制リセット(clearWatch)を繰り返すとロックオンできないため待機する
+    if (err.code === 3 && watchId !== null) {
+        console.log("タイムアウトのため再起動せず待機中...");
+        // 閾値だけ緩めて、次の応答を待つ
+        retryAccuracyThreshold = Math.max(retryAccuracyThreshold * 1.5, 100);
+        return;
+    }
+
     if (!retryTimer) {
         retryTimer = setTimeout(() => {
             retryTimer = null;
@@ -1161,7 +1171,10 @@ function startTracking() {
     // 初回取得（ここは早く1点目を取るために低精度でOK）
     navigator.geolocation.getCurrentPosition(
         pos => {
-            retryAccuracyThreshold = MIN_ACCURACY;
+            // ✅ 無条件リセットを廃止し、精度が良い場合のみリセット
+            if (pos.coords && pos.coords.accuracy <= MIN_ACCURACY) {
+                retryAccuracyThreshold = MIN_ACCURACY;
+            }
             handlePosition(pos);
         },
         err => handleError(err),
@@ -1171,14 +1184,17 @@ function startTracking() {
     // 継続監視（ナビアプリとして常に高精度を要求）
     watchId = navigator.geolocation.watchPosition(
         pos => {
-            retryAccuracyThreshold = MIN_ACCURACY;
+            // ✅ 無条件リセットを廃止し、精度が良い場合のみリセット
+            if (pos.coords && pos.coords.accuracy <= MIN_ACCURACY) {
+                retryAccuracyThreshold = MIN_ACCURACY;
+            }
             handlePosition(pos);
         },
         err => handleError(err),
         {
-            enableHighAccuracy: true, // ✅ 常に高精度GPSを使用
+            enableHighAccuracy: true,
             timeout: 15000,
-            maximumAge: 1000 // ✅ キャッシュ時間を1秒に固定し、常に最新の座標を要求
+            maximumAge: 1000
         }
     );
 }
