@@ -47,14 +47,31 @@ const getCachedParticleGeometry = (i, j, grid, size) => {
     const sizeInt = Math.floor(size * 100);
     const hashKey = (grid << 24) | (i << 16) | (j << 8) | sizeInt;
 
-    // 💡 リネームしたキャッシュを参照
     if (particleGeoCache.has(hashKey)) return particleGeoCache.get(hashKey);
 
     const geo = new THREE.PlaneGeometry(size, size).center();
     const uv = geo.attributes.uv.array;
-    const [u0, v0] = [i / grid, j / grid];
-    const [u1, v1] = [(i + 1) / grid, (j + 1) / grid];
-    uv.set([u0, v0, u1, v0, u1, v1, u0, v1]);
+
+    // UVの範囲を計算
+    const u0 = i / grid;
+    const v0 = j / grid;
+    const u1 = (i + 1) / grid;
+    const v1 = (j + 1) / grid;
+
+    /**
+     * Three.js PlaneGeometry の標準的なUV順序:
+     * [0, 1] 左上: (u0, v1)
+     * [2, 3] 右上: (u1, v1)
+     * [4, 5] 左下: (u0, v0)
+     * [6, 7] 右下: (u1, v0)
+     */
+    uv.set([
+        u0, v1, // 左上
+        u1, v1, // 右上
+        u0, v0, // 左下
+        u1, v0  // 右下
+    ]);
+
     geo.attributes.uv.needsUpdate = true;
     geo.__cached = true;
 
