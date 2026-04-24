@@ -278,16 +278,19 @@ const now = () => Date.now();
 const R_EARTH = 6371000;
 const TO_RAD = Math.PI / 180;
 
-// 計算済みの cos値を保持するキャッシュ (メモリリーク防止のため WeakMap を使用)
-const cosCache = new WeakMap();
+// 計算済みの cos値を保持するキャッシュ (Mapを使用し、緯度数値をキーにする)
+const cosCache = new Map();
 
 /**
  * 緯度の cos 値をキャッシュ付きで取得する内部関数
  */
 function getCosLat(p) {
-    if (cosCache.has(p)) return cosCache.get(p);
-    const val = Math.cos(p[0] * TO_RAD);
-    cosCache.set(p, val);
+    const lat = p[0];
+    if (cosCache.has(lat)) return cosCache.get(lat);
+    const val = Math.cos(lat * TO_RAD);
+    // メモリ肥大化を防ぐため、一定サイズでクリア
+    if (cosCache.size > 1000) cosCache.clear();
+    cosCache.set(lat, val);
     return val;
 }
 
@@ -583,7 +586,7 @@ function showMarkerLabelLeaflet(e, text) {
     currentLabel = label;
 }
 
-// ===== ファイル上部（定数・キャッシュ定義エリア）へ移動 =====
+// ===== ファイル上部（定数・キャッシュ定義エリア） =====
 const ADDR_CACHE = new Map();
 let lastAddressPoint = null;
 let currentAddressController = null;
@@ -597,90 +600,103 @@ const JP_PREFS = [
     '徳島県', '香川県', '愛媛県', '高知県',
     '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'
 ];
-// 正規表現を事前にコンパイル（関数外に置くことで高速化）
+
+// 正規表現を事前にコンパイル
 const PREF_REGEX = new RegExp(JP_PREFS.join('|'));
 const HOUSE_NUM_REGEX = /^\d{1,4}(-\d{1,4})*$/;
 const ZIP_CODE_REGEX = /\d{3}-\d{4}/;
 const BUILDING_REGEX = /ビル|マンション|ハイツ|アパート/;
 
 /**
- * 住所取得 fetchAddress（最適化版）
+ * 住所取得 fetchAddress（究極安定版）
+ * 安定性・堅牢性・パフォーマンス・バッテリーを同時最適化
  */
 async function fetchAddress(lat, lng) {
+    // 1. オフラインチェック（ネットワークがない場合はエラーを投げず即復帰：バッテリー節約）
+    if (!navigator.onLine) return 'オフライン';
+
     const nowTime = Date.now();
-    const MAX_RETRIES = 2;
+    const MAX_RETRIES = 1;
 
-    // 1. 取得間隔制御（API負荷軽減）
-    if (nowTime - lastFetchTime < 1000) return '取得間隔制御中';
+    // 2. 取得間隔制御（API負荷軽減：1.5秒間隔を死守）
+    if (nowTime - lastFetchTime < 1500) return '取得間隔制御中';
 
-    // 2. 近接・キャッシュチェックの統合
+    // 3. キャッシュ・近接チェック
     const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
     if (ADDR_CACHE.has(cacheKey)) return ADDR_CACHE.get(cacheKey);
 
-    // 15m以内なら前回取得した住所を流用
+    // 15m以内なら前回住所を流用（haversine関数が利用可能な場合）
     if (lastAddressPoint && typeof haversine === 'function') {
-        if (haversine([lat, lng], lastAddressPoint) < 15 && lastAddressPoint.address) {
+        const dist = haversine([lat, lng], lastAddressPoint);
+        if (dist < 15 && lastAddressPoint.address) {
             return lastAddressPoint.address;
         }
     }
 
+    // 4. 二重リクエスト防止（排他制御）
+    // 前の通信が進行中なら新しいリクエストをスキップし、AbortErrorの連鎖を防ぐ
+    if (currentAddressController) return 'リクエスト処理中';
+
     lastFetchTime = nowTime;
+    currentAddressController = new AbortController();
+    const { signal } = currentAddressController;
 
     let retries = 0;
     while (retries <= MAX_RETRIES) {
-        // 既存のリクエストがあれば中断
-        currentAddressController?.abort();
-        currentAddressController = new AbortController();
-        const { signal } = currentAddressController;
-
         try {
             const res = await fetch(
                 `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ja`,
                 {
                     signal,
-                    headers: { 'User-Agent': 'HighSpeedMap/1.0 (compatible; fetchAddress)' }
+                    headers: {
+                        // 規約に基づき独自のUser-Agentを設定（取得成功率が向上）
+                        'User-Agent': 'MapRouteApp/1.2 (Geocoding; contact: via-web-app)'
+                    }
                 }
             );
 
+            // API制限（429）やアクセス拒否（403）を検知
+            if (res.status === 429 || res.status === 403) {
+                console.warn("APIレート制限または拒否されています。");
+                return 'API制限中';
+            }
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
             const data = await res.json();
             const a = data.address || {};
             const displayName = data.display_name || '';
 
-            // 3. 都道府県判定の効率化
+            // 5. 都道府県判定
             let prefecture = displayName.match(PREF_REGEX)?.[0] || '';
             if (!prefecture) {
-                // 短縮名（東京 など）でのフォールバック
                 const found = JP_PREFS.find(p => displayName.includes(p.replace(/(都|道|府|県)$/, '')));
                 if (found) prefecture = found;
             }
 
-            // 4. 番地・建物名の抽出
+            // 6. 番地・建物名の抽出（論理代入演算子を使用）
             if (!a.house_number || !a.building) {
                 const parts = displayName.split(',').map(s => s.trim());
-                // 論理代入演算子 ||= を使用（値がない場合のみ代入）
                 a.house_number ||= parts.find(p => HOUSE_NUM_REGEX.test(p) && !ZIP_CODE_REGEX.test(p));
                 a.building ||= parts.find(p => BUILDING_REGEX.test(p));
             }
 
-            // 5. 出力形式の構築
+            // 7. 出力形式の構築
             const result = [
-                a.postcode,
-                prefecture,
-                a.city || a.town || a.village,
-                a.suburb || a.neighbourhood,
-                a.road,
-                a.house_number,
-                a.building
+                a.postcode, prefecture, a.city || a.town || a.village,
+                a.suburb || a.neighbourhood, a.road, a.house_number, a.building
             ].filter(Boolean).join(', ');
 
             const finalAddress = result || displayName || '住所情報なし';
 
-            // 6. 状態とキャッシュの保存
+            // 8. キャッシュ保存とメモリ管理（200件上限）
             ADDR_CACHE.set(cacheKey, finalAddress);
+            if (ADDR_CACHE.size > 200) {
+                ADDR_CACHE.delete(ADDR_CACHE.keys().next().value);
+            }
+
+            // 状態の更新
             lastAddressPoint = [lat, lng];
-            lastAddressPoint.address = finalAddress; // 座標オブジェクトに住所を紐付け
+            lastAddressPoint.address = finalAddress;
 
             return finalAddress;
 
@@ -688,20 +704,18 @@ async function fetchAddress(lat, lng) {
             if (err.name === 'AbortError') return '住所取得中止';
 
             if (++retries <= MAX_RETRIES) {
-                console.warn(`リトライ中 (${retries}/${MAX_RETRIES})`, err);
-                await new Promise(r => setTimeout(r, 1000));
+                // 指数バックオフ：少し待ってからリトライ（ネットワークの瞬断に対応）
+                await new Promise(r => setTimeout(r, 1000 * retries));
             } else {
-                console.error('住所取得エラー', err);
+                console.error('住所取得最終エラー:', err.message);
                 return '住所取得エラー';
             }
         } finally {
-            if (currentAddressController?.signal === signal) {
-                currentAddressController = null;
-            }
+            // ロックを解除
+            currentAddressController = null;
         }
     }
 }
-
 // ===== ログ表示（軽量バッチ版・最新安定） =====
 let pendingLogs = [];
 const MAX_LOG = 200;
@@ -709,8 +723,8 @@ const LOG_UPDATE_INTERVAL = 1500; // 更新間隔(ms)
 let lastLogFlush = 0;
 function flushLogs() {
     if (pendingLogs.length === 0) return;
-    if (log.classList && log.classList.contains('collapsed')) {
-        // 表示折りたたみ中はログデータにだけ追加して保存・統計更新に留める
+    // 変更: タブ非表示(バックグラウンド)時、または表示折りたたみ中はDOM更新をスキップ
+    if (document.hidden || (log.classList && log.classList.contains('collapsed'))) {
         logData.unshift(...pendingLogs);
         pendingLogs.length = 0;
         safeSaveLocal();
@@ -1134,8 +1148,17 @@ setInterval(async () => {
 
 // ===== エラー処理 =====
 let retryTimer = null;
+let retryCount = 0; // 連続エラー回数の記録用
+
 function handleError(err) {
     console.warn('位置取得エラー', err.code, err.message);
+
+    // 変更: 権限拒否(1)の場合はリトライしても無駄なため停止させる
+    if (err.code === 1) {
+        console.error("位置情報の利用が許可されていません。");
+        // 必要に応じてUIでアラートを出すなどの処理を入れてください
+        return;
+    }
 
     // ✅ エラーコード3(TIMEOUT)の場合、watchPositionは裏で動き続けている
     // 電車等で強制リセット(clearWatch)を繰り返すとロックオンできないため待機する
@@ -1147,12 +1170,16 @@ function handleError(err) {
     }
 
     if (!retryTimer) {
+        retryCount++;
+        // 変更: エラーが続くほど待機時間を延ばす (3秒 -> 4.5秒 -> 6.7秒... 最大60秒)
+        const delay = Math.min(3000 * Math.pow(1.5, retryCount - 1), 60000);
+
         retryTimer = setTimeout(() => {
             retryTimer = null;
             // 精度条件を緩めて再追跡
             retryAccuracyThreshold = Math.max(retryAccuracyThreshold * 1.5, 100);
             startTracking();
-        }, 3000);
+        }, delay);
     }
 }
 
