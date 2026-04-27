@@ -17,14 +17,12 @@ const ERROR_TEXTURE = (() => {
 // ② ブロック定義 (BLOCK_CONFIG) の拡張
 // ================================================
 
-// --- Box3作成ヘルパー ---
-
 function createBox(x1, y1, z1, x2, y2, z2) {
-    // コンストラクタで直接 Vector3 を渡すことで、内部の初期化回数を減らす
-    return new THREE.Box3(
-        new THREE.Vector3(x1, y1, z1),
-        new THREE.Vector3(x2, y2, z2)
-    );
+    const box = new THREE.Box3();
+    // 引数の中で小さい方を min に、大きい方を max にセットする
+    box.min.set(Math.min(x1, x2), Math.min(y1, y2), Math.min(z1, z2));
+    box.max.set(Math.max(x1, x2), Math.max(y1, y2), Math.max(z1, z2));
+    return box;
 }
 
 // --- カスタム衝突判定キャッシュ ---
@@ -101,6 +99,7 @@ export function applyRotationToCollisionBox(relBox, metaData, targetBox) {
     }
 }
 
+const ROT_Y_TABLE = [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
 export function getCustomGeometryMatrix(meta, outTransformMat, outRotationMat, tempMat) {
     outTransformMat.makeTranslation(-0.5, -0.5, -0.5);
     outRotationMat.identity();
@@ -111,8 +110,8 @@ export function getCustomGeometryMatrix(meta, outTransformMat, outRotationMat, t
     }
 
     // 回転（meta下位2ビット）
-    const angle = (meta & 3) * Math.PI / 2;
-    if (angle !== 0) {
+    const angle = ROT_Y_TABLE[meta & 3]; // インデックス参照のみ
+    if (angle > 0) {
         tempMat.makeRotationY(angle);
         outRotationMat.premultiply(tempMat);
     }
@@ -1273,53 +1272,53 @@ export function applyMetadataTransform(target, metadata, blockId) {
  * @returns {THREE.Mesh|null}
  */
 export function createBlockMesh(rawBlockType, pos, metadata = 0) {
-    // 1. 純粋なブロックIDの抽出
-    const blockId = Number(rawBlockType) & 0xFFF;
-    const finalMetadata = metadata !== 0 ? metadata : (Number(rawBlockType) >> 12);
+    // 1. 数値変換とID抽出を1回に統合
+    const raw = Number(rawBlockType);
+    const blockId = raw & 0xFFF;
+    const finalMetadata = metadata !== 0 ? metadata : (raw >> 12);
 
-    // 2. 設定の取得
+    // 2. 設定の取得と早期リターン
     const config = getBlockConfiguration(blockId);
     if (!config) {
         console.error("Unknown block type ID:", blockId, "(raw:", rawBlockType, ")");
         return null;
     }
 
-    // 3. ジオメトリとマテリアルの取得
-    // マテリアルがない場合は Mesh を作る前にリターン
+    // 3. マテリアルとジオメトリの取得
     const materials = getBlockMaterials(blockId);
     if (!materials) return null;
 
     const geometry = getBlockGeometry(config.geometryType, config);
-    // Mesh 生成（geometry が null の場合のリスクヘッジも追加）
     if (!geometry) return null;
 
     // 4. Mesh作成
-    let mesh = new THREE.Mesh(geometry, materials);
-
-    // 5. 位置と回転の適用
+    const mesh = new THREE.Mesh(geometry, materials);
     mesh.position.copy(pos);
     applyMetadataTransform(mesh, finalMetadata, blockId);
 
+    // 固定設定
     mesh.castShadow = false;
     mesh.receiveShadow = false;
 
-    // 6. 当たり判定の構築 (GC対策版)
-    let boxes = [];
+    // 5. 当たり判定の構築 (必要な時のみ配列を取得)
+    let boxes = null;
     if (typeof config.customCollision === "function") {
         boxes = config.customCollision();
     } else if (config.collision) {
-        // geometryTypeをそのまま渡し、ハシゴ(ladder)なども正しく取得する
-        // ※該当キーがない場合は getCustomCollision 側で 'cube' のデフォルトが返る
-        const typeKey = config.geometryType || "cube";
-        boxes = getCustomCollision(typeKey);
+        boxes = getCustomCollision(config.geometryType || "cube");
     }
 
-    // 7. 当たり判定の座標変換
-    mesh.userData.collisionBoxes = boxes.map(box => {
-        applyMetadataTransform(box, finalMetadata, blockId);
-        box.translate(pos);
-        return box;
-    });
+    // 6. 当たり判定の座標変換 (GCを抑えるため map ではなく for を使用)
+    if (boxes && boxes.length > 0) {
+        for (let i = 0, len = boxes.length; i < len; i++) {
+            const box = boxes[i];
+            applyMetadataTransform(box, finalMetadata, blockId);
+            box.translate(pos);
+        }
+        mesh.userData.collisionBoxes = boxes;
+    } else {
+        mesh.userData.collisionBoxes = [];
+    }
 
     mesh.updateMatrixWorld();
     return mesh;

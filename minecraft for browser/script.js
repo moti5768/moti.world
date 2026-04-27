@@ -219,7 +219,7 @@ function initSunMoon() {
         color: new THREE.Color(0xbbbbbb),
         fog: false
     });
-    sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), sunMat);
+    sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(450, 450), sunMat);
     scene.add(sunMesh);
 
     // --- 月の設定 ---
@@ -240,7 +240,7 @@ function initSunMoon() {
         color: new THREE.Color(0xffffff), // 月は夜に映えるので白でOK
         fog: false
     });
-    moonMesh = new THREE.Mesh(new THREE.PlaneGeometry(350, 350), moonMat);
+    moonMesh = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), moonMat);
     scene.add(moonMesh);
 }
 
