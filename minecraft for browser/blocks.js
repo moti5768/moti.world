@@ -479,8 +479,8 @@ export const BLOCK_CONFIG = {
         selectionOffset: { x: 0.5, y: 0.4, z: 0.5 },
     }),
 
-    LEAVES: registerBlock({
-        textures: { all: "textures/blocks/leaves.png" },
+    LEAVES_OAK: registerBlock({
+        textures: { all: "textures/blocks/leaves_oak.png" },
         geometryType: "leaves",
         transparent: true,
         cullAdjacentFaces: false,
