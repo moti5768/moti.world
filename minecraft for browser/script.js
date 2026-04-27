@@ -4782,10 +4782,12 @@ function isPlayerEntireBodyInWater() {
             _waterCellCache.set(numericKey, blockValue);
         }
 
-        const isWater = (blockValue === BLOCK_TYPES.WATER || blockValue === BLOCK_TYPES.LAVA);
+        // 💡 ここを修正：上位ビットのメタデータを切り落として純粋なIDにする
+        const blockId = blockValue & 0xFFF;
+        const isWater = (blockId === BLOCK_TYPES.WATER || blockId === BLOCK_TYPES.LAVA);
 
         if (i < 5) {
-            // インデックス 0〜4 は下半身の多数決用
+            // インデックス 0〜4 は下半身の判定用
             if (isWater) waterCount++;
         } else {
             // インデックス 5 は頭の判定用
@@ -4793,8 +4795,8 @@ function isPlayerEntireBodyInWater() {
         }
     }
 
-    // 💡 条件A：「下半身が水没（従来の5点中3点）」 OR 条件B：「頭が水没」
-    return (waterCount >= 3) || isHeadInWater;
+    // 💡 ここを修正：角から入った場合（1点でも触れた場合）も水没とするように「> 0」に変更
+    return (waterCount > 0) || isHeadInWater;
 }
 
 // 関数の外（直上など）に1度だけ定義
