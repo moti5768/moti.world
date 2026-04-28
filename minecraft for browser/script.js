@@ -994,14 +994,8 @@ function getCachedCollisionBoxes(voxelId) {
 /* ======================================================
    【超軽量化】AABB衝突判定システム (Garbage Collection ゼロ化)
    ====================================================== */
+const _tempWorldBox = new THREE.Box3();
 
-/**
- * AABB衝突判定（回転・上下反転メタデータ完全対応版）
- * @param {THREE.Box3} aabb - 判定対象のAABB
- * @param {THREE.Vector3} [velocity] - 移動ベクトル（動的判定時）
- * @param {number} [dt] - デルタタイム
- * @returns {Object|boolean} 動的判定時は結果オブジェクト、静的判定時は真偽値
- */
 function checkAABBCollision(aabb, velocity, dt) {
     const isDynamic = velocity !== undefined && dt !== undefined;
 
@@ -1013,29 +1007,25 @@ function checkAABBCollision(aabb, velocity, dt) {
         result.normal.set(0, 0, 0);
     }
 
-    // 判定範囲の算出
-    const minX = Math.floor(aabb.min.x - 0.1);
-    const maxX = Math.floor(aabb.max.x + 0.1);
-    const minY = Math.floor(aabb.min.y - 1.1);
-    const maxY = Math.floor(aabb.max.y + 0.1);
-    const minZ = Math.floor(aabb.min.z - 0.1);
-    const maxZ = Math.floor(aabb.max.z + 0.1);
+    // 判定範囲の算出 (floorの結果を先に変数に持つ)
+    const minX = Math.floor(aabb.min.x - 0.1), maxX = Math.floor(aabb.max.x + 0.1);
+    const minY = Math.floor(aabb.min.y - 1.1), maxY = Math.floor(aabb.max.y + 0.1);
+    const minZ = Math.floor(aabb.min.z - 0.1), maxZ = Math.floor(aabb.max.z + 0.1);
 
     const rotatedRelBox = getPooledBox();
+    const wb = _tempWorldBox; // ループ内での new や PooledBox 取得を避ける
 
     for (let y = minY; y <= maxY; y++) {
         for (let x = minX; x <= maxX; x++) {
             for (let z = minZ; z <= maxZ; z++) {
 
                 const rawVoxel = getVoxelAtWorld(x, y, z, true);
-                if (!rawVoxel || rawVoxel === BLOCK_TYPES.SKY || rawVoxel === BLOCK_TYPES.WATER) {
-                    continue;
-                }
+                // 1. 空・水・無効なボクセルを最速でスキップ
+                if (rawVoxel <= 0 || rawVoxel === BLOCK_TYPES.SKY || rawVoxel === BLOCK_TYPES.WATER) continue;
 
                 const id = rawVoxel & 0xFFF;
-                // 💡 3ビット目（値4）の上下反転フラグも含めて抽出 (0xF = 1111)
-                const metadata = (rawVoxel >> 12) & 0xF;
 
+                // 2. 衝突フラグのチェックを優先（relBoxesの取得より前に行う）
                 let coll = blockCollisionFlagCache.get(id);
                 if (coll === undefined) {
                     getCachedCollisionBoxes(id);
@@ -1046,38 +1036,41 @@ function checkAABBCollision(aabb, velocity, dt) {
                 const relBoxes = blockCollisionBoxCache.get(id);
                 if (!relBoxes) continue;
 
+                const metadata = (rawVoxel >> 12) & 0xF;
+
                 for (let j = 0; j < relBoxes.length; j++) {
-                    const rel = relBoxes[j];
+                    // メタデータを適用
+                    applyRotationToCollisionBox(relBoxes[j], metadata, rotatedRelBox);
 
-                    // 1. メタデータ（回転・反転）を適用
-                    applyRotationToCollisionBox(rel, metadata, rotatedRelBox);
-
-                    // 2. ワールド座標のAABBを作成
-                    const wb = getPooledBox();
-                    wb.min.set(rotatedRelBox.min.x + x, rotatedRelBox.min.y + y, rotatedRelBox.min.z + z);
-                    wb.max.set(rotatedRelBox.max.x + x, rotatedRelBox.max.y + y, rotatedRelBox.max.z + z);
+                    // 3. getPooledBox() を使わず、直接座標をセット（高速）
+                    wb.min.x = rotatedRelBox.min.x + x;
+                    wb.min.y = rotatedRelBox.min.y + y;
+                    wb.min.z = rotatedRelBox.min.z + z;
+                    wb.max.x = rotatedRelBox.max.x + x;
+                    wb.max.y = rotatedRelBox.max.y + y;
+                    wb.max.z = rotatedRelBox.max.z + z;
 
                     if (isDynamic) {
                         const r = sweptAABB(aabb, velocity, dt, wb);
-                        if (r.collision && r.time < result.time) {
-                            result.collision = true;
-                            result.time = r.time;
-                            result.normal.copy(r.normal);
-                        }
-
-                        // 衝突時間が極小（食い込んでいる）場合は即座に終了
-                        if (r.time < 1e-5) {
-                            releasePooledBox(wb);
-                            releasePooledBox(rotatedRelBox);
-                            return result;
+                        if (r.collision) {
+                            if (r.time < result.time) {
+                                result.collision = true;
+                                result.time = r.time;
+                                const rn = r.normal;
+                                result.normal.x = rn.x;
+                                result.normal.y = rn.y;
+                                result.normal.z = rn.z;
+                            }
+                            // 衝突時間が極小（食い込んでいる）場合は即座に終了
+                            if (r.time < 1e-5) {
+                                releasePooledBox(rotatedRelBox);
+                                return result;
+                            }
                         }
                     } else if (aabb.intersectsBox(wb)) {
-                        releasePooledBox(wb);
                         releasePooledBox(rotatedRelBox);
                         return true;
                     }
-
-                    releasePooledBox(wb);
                 }
             }
         }
@@ -1160,7 +1153,7 @@ export function getVoxelAtWorld(x, y, z, isRaw = false) {
     const cx = fx >> 4;
     const cz = fz >> 4;
 
-    const chunkKey = encodeChunkKey(cx, cz);
+    const chunkKey = ((cx & 0xFFFF) << 16) | (cz & 0xFFFF);
     let data = null;
 
     // --- 💡 1. 2世代キャッシュチェック (L0/L1) ---
@@ -1329,63 +1322,84 @@ function updateScreenOverlay() {
 /* ======================================================
    【Swept AABB 衝突検出】
    ====================================================== */
-// 💡 関数の外に定義して再利用する（GC防止）
 const _sweptNormal = new THREE.Vector3();
 
+// スコープ外で再利用オブジェクトを定義
+const _sweptResult = { collision: false, time: 0, normal: _sweptNormal };
+
 function sweptAABB(movingBox, velocity, dt, staticBox) {
-    // entry/exit を再利用（new を避ける）
-    const entry = _sweptTmpEntry; entry.set(0, 0, 0);
-    const exit = _sweptTmpExit; exit.set(0, 0, 0);
+    _sweptResult.collision = false;
 
-    // X
-    if (velocity.x > 0) {
-        entry.x = (staticBox.min.x - movingBox.max.x) / velocity.x;
-        exit.x = (staticBox.max.x - movingBox.min.x) / velocity.x;
-    } else if (velocity.x < 0) {
-        entry.x = (staticBox.max.x - movingBox.min.x) / velocity.x;
-        exit.x = (staticBox.min.x - movingBox.max.x) / velocity.x;
+    const vx = velocity.x, vy = velocity.y, vz = velocity.z;
+    const mMin = movingBox.min, mMax = movingBox.max;
+    const sMin = staticBox.min, sMax = staticBox.max;
+
+    const entry = _sweptTmpEntry;
+    const exit = _sweptTmpExit;
+
+    // X axis: 割り算を1回にして掛け算に変換
+    if (vx !== 0) {
+        const invVx = 1.0 / vx;
+        if (vx > 0) {
+            entry.x = (sMin.x - mMax.x) * invVx;
+            exit.x = (sMax.x - mMin.x) * invVx;
+        } else {
+            entry.x = (sMax.x - mMin.x) * invVx;
+            exit.x = (sMin.x - mMax.x) * invVx;
+        }
     } else {
-        entry.x = -Infinity; exit.x = Infinity;
+        entry.x = -1e9; exit.x = 1e9; // Infinityの代わりに大きな数
     }
 
-    // Y
-    if (velocity.y > 0) {
-        entry.y = (staticBox.min.y - movingBox.max.y) / velocity.y;
-        exit.y = (staticBox.max.y - movingBox.min.y) / velocity.y;
-    } else if (velocity.y < 0) {
-        entry.y = (staticBox.max.y - movingBox.min.y) / velocity.y;
-        exit.y = (staticBox.min.y - movingBox.max.y) / velocity.y;
+    // Y axis
+    if (vy !== 0) {
+        const invVy = 1.0 / vy;
+        if (vy > 0) {
+            entry.y = (sMin.y - mMax.y) * invVy;
+            exit.y = (sMax.y - mMin.y) * invVy;
+        } else {
+            entry.y = (sMax.y - mMin.y) * invVy;
+            exit.y = (sMin.y - mMax.y) * invVy;
+        }
     } else {
-        entry.y = -Infinity; exit.y = Infinity;
+        entry.y = -1e9; exit.y = 1e9;
     }
 
-    // Z
-    if (velocity.z > 0) {
-        entry.z = (staticBox.min.z - movingBox.max.z) / velocity.z;
-        exit.z = (staticBox.max.z - movingBox.min.z) / velocity.z;
-    } else if (velocity.z < 0) {
-        entry.z = (staticBox.max.z - movingBox.min.z) / velocity.z;
-        exit.z = (staticBox.min.z - movingBox.max.z) / velocity.z;
+    // Z axis
+    if (vz !== 0) {
+        const invVz = 1.0 / vz;
+        if (vz > 0) {
+            entry.z = (sMin.z - mMax.z) * invVz;
+            exit.z = (sMax.z - mMin.z) * invVz;
+        } else {
+            entry.z = (sMax.z - mMin.z) * invVz;
+            exit.z = (sMin.z - mMax.z) * invVz;
+        }
     } else {
-        entry.z = -Infinity; exit.z = Infinity;
+        entry.z = -1e9; exit.z = 1e9;
     }
 
     const entryTime = Math.max(entry.x, entry.y, entry.z);
     const exitTime = Math.min(exit.x, exit.y, exit.z);
 
+    // 早期リターン
     if (entryTime > exitTime || (entry.x < 0 && entry.y < 0 && entry.z < 0) || entry.x > dt || entry.y > dt || entry.z > dt) {
-        return { collision: false };
+        return _sweptResult;
     }
 
-    // 💡 new THREE.Vector3() を避けて、外で定義した _sweptNormal を使い回す
+    // 法線の計算
     const normal = _sweptNormal;
-    normal.set(0, 0, 0); // 前の計算結果が残らないように初期化
+    if (entryTime === entry.x) {
+        normal.set((vx > 0) ? -1 : 1, 0, 0);
+    } else if (entryTime === entry.y) {
+        normal.set(0, (vy > 0) ? -1 : 1, 0);
+    } else {
+        normal.set(0, 0, (vz > 0) ? -1 : 1);
+    }
 
-    if (entryTime === entry.x) normal.set((velocity.x > 0) ? -1 : 1, 0, 0);
-    else if (entryTime === entry.y) normal.set(0, (velocity.y > 0) ? -1 : 1, 0);
-    else normal.set(0, 0, (velocity.z > 0) ? -1 : 1);
-
-    return { collision: true, time: Math.max(0, entryTime), normal };
+    _sweptResult.collision = true;
+    _sweptResult.time = entryTime < 0 ? 0 : entryTime;
+    return _sweptResult;
 }
 
 
@@ -3015,95 +3029,96 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
         lightMap = generateChunkLightMap(chunkKey, voxelData);
     }
 
-    const nbLMs = {
-        px: chunkLightCache.get(encodeChunkKey(cx + 1, cz)),
-        nx: chunkLightCache.get(encodeChunkKey(cx - 1, cz)),
-        pz: chunkLightCache.get(encodeChunkKey(cx, cz + 1)),
-        nz: chunkLightCache.get(encodeChunkKey(cx, cz - 1))
-    };
+    const lmPX = chunkLightCache.get(encodeChunkKey(cx + 1, cz));
+    const lmNX = chunkLightCache.get(encodeChunkKey(cx - 1, cz));
+    const lmPZ = chunkLightCache.get(encodeChunkKey(cx, cz + 1));
+    const lmNZ = chunkLightCache.get(encodeChunkKey(cx, cz - 1));
+    const CH_H_L = CH_H;
 
-    // 改善された getLightLevel
     function getLightLevel(lx, ly, lz) {
+        // Y方向の境界チェック（最も頻繁にヒットする可能性が高いものを先に）
         if (ly < 0) return 0;
-        if (ly >= CH_H) return 15;
+        if (ly >= CH_H_L) return 15;
 
-        // 1. チャンク内 (0-15) かどうかの高速判定 (lx & ~15 は lx が 0-15 なら 0 になる)
-        if ((lx & ~15) === 0 && (lz & ~15) === 0) {
-            return lightMap[ly + CH_H * (lz + (lx << 4))];
+        // 2. チャンク内 (0-15) かどうかの高速判定
+        // (lx | lz) & ~15 は、lx か lz が 0-15 の範囲外（負数を含む）なら 0 以外を返す
+        if (((lx | lz) & ~15) === 0) {
+            return lightMap[ly + CH_H_L * (lz + (lx << 4))];
         }
 
-        // 2. チャンク外のアクセス（Math.floor や Map.get を一切排除）
-        let nlMap = null;
-        if (lx < 0) nlMap = nbLMs.nx;
-        else if (lx >= 16) nlMap = nbLMs.px;
-        else if (lz < 0) nlMap = nbLMs.nz;
-        else if (lz >= 16) nlMap = nbLMs.pz;
+        // 3. チャンク外（隣接チャンク）の判定
+        // 三項演算子の連鎖は、if-else 文よりも JIT コンパイラが最適化しやすい傾向にある
+        const nlMap = (lx < 0) ? lmNX :
+            (lx > 15) ? lmPX :
+                (lz < 0) ? lmNZ :
+                    (lz > 15) ? lmPZ : null;
 
         if (nlMap) {
-            // lx & 15 は modulo 16 と同等だが高速。 lx << 4 は 16 倍と同等。
-            return nlMap[ly + CH_H * ((lz & 15) + ((lx & 15) << 4))];
+            // ビット演算 & 15 を使い、lx, lz を 0-15 に正規化してインデックスを計算
+            return nlMap[ly + CH_H_L * ((lz & 15) + ((lx & 15) << 4))];
         }
 
-        // 3. 隣接データがない場合
+        // 隣接データがない場合は現在の空の明るさを返す
         return currentSkyLight;
     }
 
-    function _shouldShowFace(myType, myIsOpaque, neighborRaw) {
-        const nType = neighborRaw & 0xFFF;
-        if (nType === 0 || nType === SKY) return true;
-
-        const nIsOpaque = _isOpaqueBlock[nType];
-        if (nIsOpaque) return false; // 隣が完全な立方体なら自分は隠れる
-        if (myIsOpaque) return true;  // 自分が完全な立方体で隣が透過系なら自分は表示
-
-        // --- ここから透過ブロック同士の判定 ---
-        const myCfg = _blockConfigFastArray[myType];
-
-        // cullAdjacentFaces が true のブロック（ガラス、葉など）だけ
-        // 隣に「同じ種類」が来たときに面を消す
-        if (myCfg && myCfg.cullAdjacentFaces === true) {
-            return nType !== myType;
-        }
-
-        // それ以外（階段、スラブ、ハシゴ、草など）は、
-        // 隣が不透明フルブロックでない限り、常に自分の面を表示する
-        return true;
-    }
-
     function getVisMask(x, y, z, type, index) {
+        // 1. キャッシュチェック（最優先）
         const cached = _globalVisCache[index];
         if (cached !== 0) return cached;
 
-        const myIsOpaque = _isOpaqueBlock[type];
+        // 自分の属性を事前に一度だけ取得（ここが軽量化のポイント）
+        const myIsOpaque = _isOpaqueBlock[type] === 1;
+        const myCfg = _blockConfigFastArray[type];
+        const cullSame = (myCfg !== undefined && myCfg.cullAdjacentFaces === true);
+
+        // 境界判定用の定数を計算
+        const S_MAX = CH_S - 1;
+        const H_MAX = CH_H - 1;
+
         let mask = 0;
+        const check = (nRaw) => {
+            const nType = nRaw & 0xFFF;
 
-        // --- 各方向の判定（外部関数を呼び出してスリム化） ---
-        // PX (+X)
-        const ntPX = (x < CH_S - 1) ? voxelData[index + STRIDE_X] : get(x + 1, y, z);
-        if (_shouldShowFace(type, myIsOpaque, ntPX)) mask |= 1;
+            // [1] 隣が空気なら必ず表示
+            if (nType === 0) return 1;
 
-        // NX (-X)
-        const ntNX = (x > 0) ? voxelData[index - STRIDE_X] : get(x - 1, y, z);
-        if (_shouldShowFace(type, myIsOpaque, ntNX)) mask |= 2;
+            // [2] 隣が不透明フルブロックなら絶対に隠れる
+            if (_isOpaqueBlock[nType] === 1) return 0;
 
-        // PY (+Y)
-        const ntPY = (y < CH_H - 1) ? voxelData[index + 1] : get(x, y + 1, z);
-        if (_shouldShowFace(type, myIsOpaque, ntPY)) mask |= 4;
+            // [3] 自分が不透明なら、隣が透過（確定）なので表示
+            if (myIsOpaque) return 1;
 
-        // NY (-Y)
-        const ntNY = (y > 0) ? voxelData[index - 1] : get(x, y - 1, z);
-        if (_shouldShowFace(type, myIsOpaque, ntNY)) mask |= 8;
+            // [4] 透過ブロック同士の特殊判定（ガラスなど）
+            if (cullSame) {
+                return (nType !== type) ? 1 : 0;
+            }
 
-        // PZ (+Z)
-        const ntPZ = (z < CH_S - 1) ? voxelData[index + STRIDE_Z] : get(x, y, z + 1);
-        if (_shouldShowFace(type, myIsOpaque, ntPZ)) mask |= 16;
+            // 階段、草などは表示
+            return 1;
+        };
 
-        // NZ (-Z)
-        const ntNZ = (z > 0) ? voxelData[index - STRIDE_Z] : get(x, y, z - 1);
-        if (_shouldShowFace(type, myIsOpaque, ntNZ)) mask |= 32;
+        // --- 各方向の判定（三項演算子とビット演算で高速化） ---
+        // PX (+X: 1)
+        if (check((x < S_MAX) ? voxelData[index + STRIDE_X] : get(x + 1, y, z))) mask |= 1;
 
-        _globalVisCache[index] = mask;
-        return mask;
+        // NX (-X: 2)
+        if (check((x > 0) ? voxelData[index - STRIDE_X] : get(x - 1, y, z))) mask |= 2;
+
+        // PY (+Y: 4)
+        if (check((y < H_MAX) ? voxelData[index + 1] : get(x, y + 1, z))) mask |= 4;
+
+        // NY (-Y: 8)
+        if (check((y > 0) ? voxelData[index - 1] : get(x, y - 1, z))) mask |= 8;
+
+        // PZ (+Z: 16)
+        if (check((z < S_MAX) ? voxelData[index + STRIDE_Z] : get(x, y, z + 1))) mask |= 16;
+
+        // NZ (-Z: 32)
+        if (check((z > 0) ? voxelData[index - STRIDE_Z] : get(x, y, z - 1))) mask |= 32;
+
+        // 結果をキャッシュして返す
+        return (_globalVisCache[index] = mask);
     }
 
     let hasAnySolidBlock = false;
