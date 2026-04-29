@@ -476,6 +476,7 @@ export const BLOCK_CONFIG = {
         geometryType: "cross",
         transparent: true,
         lightOpacity: 0,
+        overwrite: true,
         customCollision: () => getCustomCollision("cross"),
         cullAdjacentFaces: false,
         screenFill: false,
