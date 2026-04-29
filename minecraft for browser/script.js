@@ -4,6 +4,8 @@ import { BLOCK_CONFIG, BLOCK_TYPES, createBlockMesh, getBlockMaterials, getBlock
 import { createMinecraftBreakParticles, updateBlockParticles } from './particles.js';
 import { setMinecraftSky, loadCloudTexture, updateCloudGrid, updateCloudTiles, updateCloudOpacity, adjustCloudLayerDepth } from './cloudsky.js';
 import { determineBiome } from './biomes/biomes.js';
+import { Features } from './features.js';
+import { FeatureRules } from './feature_rules.js';
 
 // 各ブロックIDが「面を完全に隠す（不透明な立方体か）」を保持する高速参照用配列
 const _isOpaqueBlock = new Uint8Array(1024); // IDの最大数に合わせて調整
@@ -469,10 +471,49 @@ function updateSkyAndFogColor(time, sunY, sunDir) {
 /* ======================================================
    【新・チャンク保存管理システム (クラスなし版) - 高速最適化ver】
    ====================================================== */
+const getWorldHeightAccurate = (wx, wz) => {
+    const blendRadius = 3;
+    let totalHeight = 0;
+    let totalWeight = 0;
+
+    for (let dx = -blendRadius; dx <= blendRadius; dx++) {
+        for (let dz = -blendRadius; dz <= blendRadius; dz++) {
+            const nx = (wx + dx) | 0;
+            const nz = (wz + dz) | 0;
+
+            const temp = fractalNoise2D(nx * 0.0005, nz * 0.0005, 3) + 0.5;
+            const hum = fractalNoise2D(nx * 0.0005 + 500, nz * 0.0005 + 500, 3) + 0.5;
+            const riv = fractalNoise2D(nx * 0.005, nz * 0.005, 2) + 0.5;
+            const b = determineBiome(temp, hum, 64, riv);
+
+            const nNoise = fractalNoise2D(nx * b.noiseScale, nz * b.noiseScale, 5);
+            const h = b.baseHeight + (nNoise * b.heightVariation);
+
+            const weight = 1.0 / (1.0 + (dx * dx + dz * dz));
+            totalHeight += h * weight;
+            totalWeight += weight;
+        }
+    }
+    return (totalHeight / totalWeight) | 0;
+};
 const _heightCache = new Map();
+const _externalCache = new Map();
+const _internalSetLocal = (data, lx, ly, lz, blockId, allowOverwrite, skyId, leavesId) => {
+    lx = lx | 0; ly = ly | 0; lz = lz | 0;
+    if (((lx | lz) & ~15) !== 0 || (ly >>> 8) !== 0) return;
+
+    const idx = (ly | (lz << 8) | (lx << 12)) | 0;
+    const currentId = data[idx] & 0xFFF;
+
+    // 引数として受け取った ID を使用する
+    if (currentId === skyId || currentId === leavesId || allowOverwrite) {
+        data[idx] = blockId;
+    }
+};
 export const ChunkSaveManager = {
     modifiedChunks: new Map(),
     chunkUpdateInfo: new Map(),
+    _sharedSurfaceHeights: new Int32Array(256),
 
     // 基本のインデックス計算（維持：Yが一番下の桁）
     getBlockIndex: function (lx, ly, lz) {
@@ -555,6 +596,7 @@ export const ChunkSaveManager = {
     _sharedHeightMap: new Int32Array(256),
     _sharedBiomeMap: new Array(256),
     _sharedPaddedBiomeMap: new Array(484),
+
     captureBaseChunkData: function (cx, cz) {
         // 1. チャンク割当・初期化
         const data = new Uint16Array(65536); // 16x16x256
@@ -594,124 +636,256 @@ export const ChunkSaveManager = {
         }
 
         // ------------------------------------------------------
-        // 4. 地形（高さマップ）生成 (Base Terrain)
+        // 4. 地形（高さマップ）生成 (Base Terrain) - 最適化版
         // ------------------------------------------------------
-        for (let x = 0; x < 16; x++) {
+        for (let x = 0; x < 16; x = (x + 1) | 0) {
             const worldX = (baseX + x) | 0;
             const xOff = (x << 12) | 0;
             const xMapIdx = (x << 4) | 0;
 
-            for (let z = 0; z < 16; z++) {
+            for (let z = 0; z < 16; z = (z + 1) | 0) {
                 const worldZ = (baseZ + z) | 0;
-                const zOff = (z << 8) | 0;
-                const idxBase = (xOff + zOff) | 0;
+                const xzOff = (xOff | (z << 8)) | 0; // x, z 確定時点で合成
                 const mapIdx = (xMapIdx | z) | 0;
 
-                // 中心バイオームの保存
-                biomeMap[mapIdx] = paddedBiomeMap[(x + blendRadius) * paddedSize + (z + blendRadius)];
+                // バイオーム情報の取得
+                const currentBiome = paddedBiomeMap[(x + blendRadius) * paddedSize + (z + blendRadius)];
+                biomeMap[mapIdx] = currentBiome;
 
-                let totalHeight = 0;
-                let totalWeight = 0;
+                let totalHeight = 0.0;
+                let totalWeight = 0.0;
 
-                // 💡 改善: delete ループを廃止し Map.clear() でGC負荷を軽減
-                _heightCache.clear();
+                // 💡 前回のバイオーム結果をキャッシュしてノイズ計算をスキップ
+                let lastBiomeName = "";
+                let lastH = 0.0;
 
-                // 周辺バイオームと高さを混ぜる
-                for (let dx = -blendRadius; dx <= blendRadius; dx++) {
+                // バイオームブレンディングのループ
+                for (let dx = -blendRadius; dx <= blendRadius; dx = (dx + 1) | 0) {
                     const nx = (x + dx + blendRadius) | 0;
-                    for (let dz = -blendRadius; dz <= blendRadius; dz++) {
-                        const nz = (z + dz + blendRadius) | 0;
-                        const nBiome = paddedBiomeMap[nx * paddedSize + nz];
+                    const xShift = (nx * paddedSize) | 0;
+                    const dxSq = (dx * dx) | 0; // 事前計算
 
+                    for (let dz = -blendRadius; dz <= blendRadius; dz = (dz + 1) | 0) {
+                        const nz = (z + dz + blendRadius) | 0;
+                        const nBiome = paddedBiomeMap[xShift + nz];
                         if (!nBiome) continue;
 
-                        // キャッシュから高さを取得
-                        let h = _heightCache.get(nBiome.name);
-                        if (h === undefined) {
-                            const nNoise = fractalNoise2D(worldX * nBiome.noiseScale, worldZ * nBiome.noiseScale, 5);
-                            h = nBiome.baseHeight + (nNoise * nBiome.heightVariation);
-                            _heightCache.set(nBiome.name, h);
+                        let h = 0.0;
+                        // バイオーム名が同じなら計算済みの高さを再利用
+                        if (nBiome.name === lastBiomeName) {
+                            h = lastH;
+                        } else {
+                            // プロパティアクセスを最小化するため変数に展開
+                            const ns = nBiome.noiseScale;
+                            const hv = nBiome.heightVariation;
+                            const bh = nBiome.baseHeight;
+
+                            const nNoise = fractalNoise2D(worldX * ns, worldZ * ns, 5);
+                            h = bh + (nNoise * hv);
+
+                            lastBiomeName = nBiome.name;
+                            lastH = h;
                         }
 
-                        const weight = 1.0 / (1.0 + (dx * dx + dz * dz));
+                        // 重み計算の最適化 (1.0 / (1.0 + 距離))
+                        const weight = 1.0 / (1.0 + (dxSq + dz * dz));
                         totalHeight += h * weight;
                         totalWeight += weight;
                     }
                 }
 
-                // 💡 ユーザー指定: ビット演算による高速整数化を維持
                 const sHeight = (totalHeight / totalWeight) | 0;
                 heightMap[mapIdx] = sHeight;
 
-                // 岩盤層
-                data[idxBase] = BEDROCK;
-                // 地殻層 (STONE)
-                for (let y = 1; y < sHeight; y++) {
-                    data[idxBase + y] = STONE;
+                // --- ブロック配置の高速化 ---
+                data[xzOff] = BEDROCK; // y=0
+
+                // 石の層 (1～sHeight-1)
+                for (let y = 1; y < sHeight; y = (y + 1) | 0) {
+                    data[xzOff + y] = STONE;
                 }
-                // 海洋層 (WATER)
-                for (let y = sHeight; y <= seaLevel; y++) {
-                    data[idxBase + y] = WATER;
+
+                // 水の層 (sHeight～seaLevel)
+                // sHeightがseaLevelより高い場合はループが回らないためif文不要
+                for (let y = sHeight; y <= seaLevel; y = (y + 1) | 0) {
+                    data[xzOff + y] = WATER;
                 }
             }
         }
 
         // ------------------------------------------------------
-        // 5. カーバー処理（洞窟・渓谷） (Carvers)
+        // 5. カーバー処理（洞窟・渓谷） (Carvers) - 最適化版
         // ------------------------------------------------------
         const scaleXZ = CAVE_SCALE_XZ;
         const scaleY = CAVE_SCALE_Y;
+        const LAVA_ID = BLOCK_TYPES.LAVA | 0;
+        const SKY_ID = BLOCK_TYPES.SKY | 0;
 
-        for (let x = 0; x < 16; x++) {
+        for (let x = 0; x < 16; x = (x + 1) | 0) {
             const worldX = (baseX + x) | 0;
-            const nx = worldX * scaleXZ;
+            const nx = worldX * scaleXZ; // x固定ならnxも固定
             const xOff = (x << 12) | 0;
             const xMapIdx = (x << 4) | 0;
 
-            for (let z = 0; z < 16; z++) {
+            for (let z = 0; z < 16; z = (z + 1) | 0) {
                 const worldZ = (baseZ + z) | 0;
-                const nz = worldZ * scaleXZ;
-                const zOff = (z << 8) | 0;
-                const idxBase = (xOff + zOff) | 0;
-                const sHeight = heightMap[xMapIdx | z];
+                const nz = worldZ * scaleXZ; // z固定ならnzも固定
+                const xzOff = (xOff | (z << 8)) | 0; // x,z確定時にベースインデックスを合成
 
-                for (let y = 5; y < sHeight; y++) {
+                // heightMapへのアクセスをループ外で1回にする
+                const sHeight = heightMap[xMapIdx | z] | 0;
+
+                // Yループ：ここが最も回転数が多い
+                for (let y = 5; y < sHeight; y = (y + 1) | 0) {
+                    // y * scaleY を引数として直接計算して渡す
+                    // 内部で再度計算させないよう、できるだけ計算済みの値を渡す
                     if (isCave(worldX, y, worldZ, sHeight, nx, y * scaleY, nz)) {
-                        data[idxBase + y] = (y <= 11) ? LAVA : SKY;
+                        // 三項演算子の結果を直接代入
+                        data[xzOff + y] = (y <= 11) ? LAVA_ID : SKY_ID;
                     }
                 }
             }
         }
 
         // ------------------------------------------------------
-        // 6. 表面ビルダー（表土配置） (Surface Builder)
+        // 6. 表面ビルダー（表土配置） (Surface Builder) - 最適化版
         // ------------------------------------------------------
-        for (let x = 0; x < 16; x++) {
+        const surfaceHeights = this._sharedSurfaceHeights;
+        surfaceHeights.fill(0);
+
+        const STONE_ID = BLOCK_TYPES.STONE | 0; // ループ外でIDを固定
+
+        for (let x = 0; x < 16; x = (x + 1) | 0) {
             const xOff = (x << 12) | 0;
             const xMapIdx = (x << 4) | 0;
 
-            for (let z = 0; z < 16; z++) {
-                const zOff = (z << 8) | 0;
-                const idxBase = (xOff | zOff) | 0;
+            for (let z = 0; z < 16; z = (z + 1) | 0) {
+                const xzOff = (xOff | (z << 8)) | 0;
                 const mapIdx = (xMapIdx | z) | 0;
 
-                const sHeight = heightMap[mapIdx];
+                const sHeight = heightMap[mapIdx] | 0;
                 const biome = biomeMap[mapIdx];
+
+                surfaceHeights[mapIdx] = sHeight;
+
                 if (sHeight <= 1) continue;
 
-                const dirtEnd = (sHeight - 1) | 0;
-                const stoneEnd = Math.max(1, sHeight - 4) | 0;
+                // バイオーム設定をローカル変数にキャッシュ（ドット参照を減らす）
+                const filler = biome.fillerBlock | 0;
+                const top = biome.topBlock | 0;
 
-                // 中層（バイオーム固有の fillerBlock）
-                for (let y = stoneEnd; y < dirtEnd; y++) {
-                    if (data[idxBase + y] === STONE) {
-                        data[idxBase + y] = biome.fillerBlock;
+                const dirtEnd = (sHeight - 1) | 0;
+                // Math.maxを使わず、ビット演算または三項演算子で高速化
+                let stoneEnd = (sHeight - 4) | 0;
+                if (stoneEnd < 1) stoneEnd = 1;
+
+                // 充填ブロック（土など）の配置
+                for (let y = stoneEnd; y < dirtEnd; y = (y + 1) | 0) {
+                    // data[xzOff + y] へのアクセスを最小限にする
+                    if (data[xzOff + y] === STONE_ID) {
+                        data[xzOff + y] = filler;
                     }
                 }
 
-                // 最表層（バイオーム固有の topBlock）
-                if (data[idxBase + dirtEnd] === STONE) {
-                    data[idxBase + dirtEnd] = (dirtEnd < seaLevel) ? biome.fillerBlock : biome.topBlock;
+                // 最表面（草ブロックなど）の配置
+                const topIdx = (xzOff + dirtEnd) | 0;
+                if (data[topIdx] === STONE_ID) {
+                    data[topIdx] = (dirtEnd < seaLevel) ? filler : top;
+                }
+            }
+        }
+
+        // ------------------------------------------------------
+        // 7. デコレーション（フィーチャー配置） - 完全修正版
+        // ------------------------------------------------------
+        const featureRadius = 3 | 0;
+        const LEAVES_ID = BLOCK_TYPES.LEAVES_OAK | 0;
+        const SKY_ID_VAL = BLOCK_TYPES.SKY | 0;
+
+        // ヘルパー関数はループの外で一度だけ定義
+        const getBlockBound = (lx, ly, lz) => {
+            lx = lx | 0; ly = ly | 0; lz = lz | 0;
+            if (((lx | lz) & ~15) !== 0 || (ly >>> 8) !== 0) return null;
+            return data[(ly | (lz << 8) | (lx << 12)) | 0] & 0xFFF;
+        };
+
+        const setBlockBound = (lx, ly, lz, bid, ow) =>
+            _internalSetLocal(data, lx, ly, lz, bid, ow, SKY_ID_VAL, LEAVES_ID);
+
+        for (let x = (-featureRadius | 0); x < (16 + featureRadius | 0); x = (x + 1) | 0) {
+            const worldX = (baseX + x) | 0;
+            const isLocalX = (x >= 0 && x < 16);
+
+            for (let z = (-featureRadius | 0); z < (16 + featureRadius | 0); z = (z + 1) | 0) {
+                const worldZ = (baseZ + z) | 0;
+
+                // --- ハッシュ計算 ---
+                let h = Math.imul(worldX ^ (worldZ << 16), 16777619);
+                h = Math.imul(h ^ currentSeed, 16777619);
+                h = (h ^ (h >>> 16)) >>> 0;
+                let rnd = h / 4294967296;
+
+                // 💡 修正ポイント1: 
+                // 以前はここで 0.12 以上を弾いていましたが、FeatureRules[FOREST] の FLOWER は 0.3 なので
+                // 少なくとも 0.5 程度までは通さないと花が生成されません。
+                if (rnd > 0.5) continue;
+
+                let surfaceY = 0;
+                let bName = "Default";
+
+                // --- 地形情報取得 ---
+                if (isLocalX && z >= 0 && z < 16) {
+                    const mapIdx = (x << 4) | z;
+                    surfaceY = surfaceHeights[mapIdx] | 0;
+                    bName = biomeMap[mapIdx].name;
+                } else {
+                    const cacheKey = (worldX << 16) | (worldZ & 0xFFFF);
+                    let cachedValue = _externalCache.get(cacheKey);
+                    if (cachedValue === undefined) {
+                        const y = getWorldHeightAccurate(worldX, worldZ) | 0;
+                        if (y <= seaLevel) {
+                            cachedValue = -1;
+                        } else {
+                            const temp = fractalNoise2D(worldX * 0.0005, worldZ * 0.0005, 3) + 0.5;
+                            const hum = fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5;
+                            const riv = fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5;
+                            const b = determineBiome(temp, hum, 64, riv);
+                            cachedValue = { y: y, name: b.name };
+                        }
+                        _externalCache.set(cacheKey, cachedValue);
+                    }
+                    if (cachedValue === -1 || !cachedValue) continue;
+                    surfaceY = cachedValue.y;
+                    bName = cachedValue.name;
+                }
+
+                if (surfaceY <= seaLevel) continue;
+
+                // --- ルール判定と配置 ---
+                const rules = FeatureRules[bName] || FeatureRules['Default'];
+                if (!rules) continue;
+
+                const rulesLen = rules.length | 0;
+
+                // 💡 修正ポイント2: 
+                // 累積確率アルゴリズムを維持。rnd をそのまま使い、
+                // 各ルールの chance を引き算していくことで、リスト後半の花にも順番が回るようにします。
+                for (let i = 0; i < rulesLen; i = (i + 1) | 0) {
+                    const rule = rules[i];
+                    if (rnd < rule.chance) {
+                        const featureFunc = Features[rule.feature];
+                        if (featureFunc) {
+                            // 第5引数には正規化された 0.0~1.0 の乱数を渡す必要があるため再計算
+                            const featureRnd = rnd / rule.chance;
+                            featureFunc(x, surfaceY, z, setBlockBound, featureRnd, getBlockBound);
+                        }
+                        break; // 1つの座標には1つのフィーチャーを配置して終了
+                    }
+                    // 次のルールの判定のために rnd を減算
+                    rnd -= rule.chance;
+
+                    // rnd が 0 を下回ったら、それ以降のルールに合致することはないので終了
+                    if (rnd < 0) break;
                 }
             }
         }
