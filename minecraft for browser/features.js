@@ -12,22 +12,20 @@ const ID_DEADBUSH = BLOCK_TYPES.DEADBUSH;
 export const Features = {
     // 🌳 オークの木
     OAK_TREE: (lx, ly, lz, setBlock, rnd, getBlock) => {
-        // 座標を整数に固定（負の座標でのズレを防止）
         const baseX = Math.floor(lx);
         const baseY = Math.floor(ly);
         const baseZ = Math.floor(lz);
-
-        // --- 1. 干渉チェック: 周囲3マスに他の樹木要素があったら中止 ---
         if (getBlock) {
-            for (let ox = -3; ox <= 3; ox++) {
-                for (let oz = -3; oz <= 3; oz++) {
-                    if (ox === 0 && oz === 0) continue;
-
-                    // 足元〜高さ2マス分くらいをチェック
-                    const block = getBlock(baseX + ox, baseY, baseZ + oz) & 0xFFF;
-                    if (block === ID_LOG || block === ID_LEAVES) {
-                        return; // 近くに木がある場合は、何もせず終了
-                    }
+            const offsets = [
+                [-1, -1], [0, -1], [1, -1],
+                [-1, 0], [1, 0],
+                [-1, 1], [0, 1], [1, 1],
+                [-2, 0], [2, 0], [0, -2], [0, 2]
+            ];
+            for (let i = 0; i < offsets.length; i++) {
+                const block = getBlock(baseX + offsets[i][0], baseY, baseZ + offsets[i][1]) & 0xFFF;
+                if (block === ID_LOG || block === ID_LEAVES) {
+                    return; // 近くに木がある場合は、何もせず終了
                 }
             }
         }
