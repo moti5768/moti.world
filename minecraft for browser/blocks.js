@@ -289,6 +289,11 @@ export const BLOCK_CONFIG = {
         textures: { all: "textures/blocks/stone.png" },
     }),
 
+    GRAVEL: registerBlock({
+        textures: { all: "textures/blocks/gravel.png" },
+    }),
+
+
     COBBLE_STONE: registerBlock({
         textures: { all: "textures/blocks/cobblestone.png" },
     }),
