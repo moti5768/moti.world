@@ -109,20 +109,39 @@ const perlinNoise2D = (x, y) => {
 /**
  * 複数のオクターブを重ねるフラクタルパーリンノイズ
  */
-function fractalNoise2D(x, z, octaves = 4, persistence = 0.5) {
-    let total = 0;
-    let amplitude = 1;
-    let freq = 1;
-    let maxValue = 0;
+/* ======================================================
+   【極限最適化】フラクタルノイズ生成 (JIT・浮動小数点最適化済)
+   ====================================================== */
 
-    for (let i = 0; i < octaves; i = (i + 1) | 0) {
+function fractalNoise2D(x, z, octaves = 4, persistence = 0.5) {
+    // 1. 引数の型ヒントと初期化の最適化
+    // octaves を 32bit 整数として明示
+    const nOct = octaves | 0;
+    if (nOct <= 0) return 0;
+
+    let total = 0.0;
+    let amplitude = 1.0;
+    let freq = 1.0;
+    let maxValue = 0.0;
+
+    // 2. ループ内の演算コスト削減
+    for (let i = 0; i < nOct; i = (i + 1) | 0) {
+        // freq と amplitude の乗算をまとめることでレジスタ利用を効率化
         total += perlinNoise2D(x * freq, z * freq) * amplitude;
+
         maxValue += amplitude;
+
+        // persistence が 0.5 (デフォルト) の場合、乗算よりシフト的な加算の方が速い場合があるが、
+        // 汎用性を維持しつつ、浮動小数点の連続乗算として記述
         amplitude *= persistence;
-        freq *= 2;
+
+        // freq *= 2 は freq += freq と同義。加算の方がパイプライン実行で有利なケースが多い
+        freq += freq;
     }
 
-    return maxValue === 0 ? 0 : total / maxValue;
+    // 3. 最終的な正規化
+    // 0除算を避けつつ、単一の除算で結果を返す
+    return total / maxValue;
 }
 
 // 3D用の勾配関数
@@ -648,8 +667,9 @@ export const ChunkSaveManager = {
 
                 // ブロック配置
                 data[xzOff] = BEDROCK;
+                let idx = (xzOff + 1) | 0;
                 for (let y = 1; y < sHeight; y = (y + 1) | 0) {
-                    data[xzOff + y] = STONE;
+                    data[idx++] = STONE;
                 }
                 for (let y = sHeight; y <= seaLevel; y = (y + 1) | 0) {
                     data[xzOff + y] = WATER;
@@ -1103,7 +1123,7 @@ function getCachedCollisionBoxes(voxelId) {
 }
 
 /* ======================================================
-   【超軽量化】AABB衝突判定システム (Garbage Collection ゼロ化)
+   【極限最適化版】AABB衝突判定システム
    ====================================================== */
 const _tempWorldBox = new THREE.Box3();
 
@@ -1118,48 +1138,65 @@ function checkAABBCollision(aabb, velocity, dt) {
         result.normal.set(0, 0, 0);
     }
 
-    // 判定範囲の算出 (floorの結果を先に変数に持つ)
-    const minX = Math.floor(aabb.min.x - 0.1), maxX = Math.floor(aabb.max.x + 0.1);
-    const minY = Math.floor(aabb.min.y - 1.1), maxY = Math.floor(aabb.max.y + 0.1);
-    const minZ = Math.floor(aabb.min.z - 0.1), maxZ = Math.floor(aabb.max.z + 0.1);
+    // 1. 小数点計算と floor をビット演算で高速化 (正数前提なら | 0 が最速)
+    // ただし座標が負になる可能性がある場合は Math.floor を維持
+    const minX = Math.floor(aabb.min.x - 0.1) | 0;
+    const maxX = Math.floor(aabb.max.x + 0.1) | 0;
+    const minY = Math.floor(aabb.min.y - 1.1) | 0;
+    const maxY = Math.floor(aabb.max.y + 0.1) | 0;
+    const minZ = Math.floor(aabb.min.z - 0.1) | 0;
+    const maxZ = Math.floor(aabb.max.z + 0.1) | 0;
 
     const rotatedRelBox = getPooledBox();
-    const wb = _tempWorldBox; // ループ内での new や PooledBox 取得を避ける
+    const wb = _tempWorldBox;
+    const wbMin = wb.min; // プロパティアクセスのキャッシュ
+    const wbMax = wb.max;
 
-    for (let y = minY; y <= maxY; y++) {
-        for (let x = minX; x <= maxX; x++) {
-            for (let z = minZ; z <= maxZ; z++) {
+    // キャッシュへの参照をローカル変数に保持
+    const flagCache = blockCollisionFlagCache;
+    const boxCache = blockCollisionBoxCache;
 
-                const rawVoxel = getVoxelAtWorld(x, y, z, true);
-                // 1. 空・水・無効なボクセルを最速でスキップ
-                if (rawVoxel <= 0 || rawVoxel === BLOCK_TYPES.SKY || rawVoxel === BLOCK_TYPES.WATER) continue;
+    for (let y = minY; y <= maxY; y = (y + 1) | 0) {
+        for (let x = minX; x <= maxX; x = (x + 1) | 0) {
+            for (let z = minZ; z <= maxZ; z = (z + 1) | 0) {
+
+                // 2. getVoxelAtWorld 内部での計算を想定し、引数を整数化して渡す
+                const rawVoxel = getVoxelAtWorld(x | 0, y | 0, z | 0, true) | 0;
+
+                // 3. ゼロ判定（空気）を最優先。0xFFFマスク前に弾く
+                if (rawVoxel <= 0) continue;
 
                 const id = rawVoxel & 0xFFF;
+                if (id === BLOCK_TYPES.SKY || id === BLOCK_TYPES.WATER) continue;
 
-                // 2. 衝突フラグのチェックを優先（relBoxesの取得より前に行う）
-                let coll = blockCollisionFlagCache.get(id);
+                // 4. Map.get の回数を最小化
+                let coll = flagCache.get(id);
                 if (coll === undefined) {
                     getCachedCollisionBoxes(id);
-                    coll = blockCollisionFlagCache.get(id) ?? false;
+                    coll = flagCache.get(id) ?? false;
                 }
                 if (!coll) continue;
 
-                const relBoxes = blockCollisionBoxCache.get(id);
+                const relBoxes = boxCache.get(id);
                 if (!relBoxes) continue;
 
                 const metadata = (rawVoxel >> 12) & 0xF;
 
-                for (let j = 0; j < relBoxes.length; j++) {
-                    // メタデータを適用
+                // relBoxes.length のプロパティアクセスもループ外でキャッシュ可能だが、
+                // 通常はJITが最適化するためそのまま
+                for (let j = 0, len = relBoxes.length; j < len; j = (j + 1) | 0) {
                     applyRotationToCollisionBox(relBoxes[j], metadata, rotatedRelBox);
 
-                    // 3. getPooledBox() を使わず、直接座標をセット（高速）
-                    wb.min.x = rotatedRelBox.min.x + x;
-                    wb.min.y = rotatedRelBox.min.y + y;
-                    wb.min.z = rotatedRelBox.min.z + z;
-                    wb.max.x = rotatedRelBox.max.x + x;
-                    wb.max.y = rotatedRelBox.max.y + y;
-                    wb.max.z = rotatedRelBox.max.z + z;
+                    // 5. オブジェクトの深い階層へのアクセスを避ける
+                    const rMin = rotatedRelBox.min;
+                    const rMax = rotatedRelBox.max;
+
+                    wbMin.x = rMin.x + x;
+                    wbMin.y = rMin.y + y;
+                    wbMin.z = rMin.z + z;
+                    wbMax.x = rMax.x + x;
+                    wbMax.y = rMax.y + y;
+                    wbMax.z = rMax.z + z;
 
                     if (isDynamic) {
                         const r = sweptAABB(aabb, velocity, dt, wb);
@@ -1172,7 +1209,6 @@ function checkAABBCollision(aabb, velocity, dt) {
                                 result.normal.y = rn.y;
                                 result.normal.z = rn.z;
                             }
-                            // 衝突時間が極小（食い込んでいる）場合は即座に終了
                             if (r.time < 1e-5) {
                                 releasePooledBox(rotatedRelBox);
                                 return result;
@@ -1277,23 +1313,16 @@ export function getVoxelAtWorld(x, y, z, isRaw = false) {
 
     const chunkKey = ((cx & 0xFFFF) << 16) | (cz & 0xFFFF);
     let data = null;
-
-    // --- 💡 1. 2世代キャッシュチェック (L0/L1) ---
-    // Mapアクセスを回避し、直近2つのチャンクデータを即座に参照
     if (chunkKey === _vC0_key) {
         data = _vC0_data;
     } else if (chunkKey === _vC1_key) {
         data = _vC1_data;
     } else {
-        // --- 💡 2. Map探索 (L2) ---
-        // 修正済み(Map) または 読み取り専用(Map) から取得
         data = ChunkSaveManager.modifiedChunks.get(chunkKey) || chunkReadOnlyCache.get(chunkKey);
 
         if (!data) {
             data = ChunkSaveManager.captureBaseChunkData(cx, cz);
             chunkReadOnlyCache.set(chunkKey, data);
-
-            // メモリ制限 (MAX_CACHE_SIZE は script.js 定数を使用)
             if (chunkReadOnlyCache.size > MAX_CACHE_SIZE) {
                 const firstKey = chunkReadOnlyCache.keys().next().value;
                 chunkReadOnlyCache.delete(firstKey);
@@ -1324,41 +1353,50 @@ export function getVoxelAtWorld(x, y, z, isRaw = false) {
     return isRaw ? val : (val & 0xFFF);
 }
 
-const CAVE_SCALE_XZ = 0.02;   // 少し小さくして、より大きなうねりに
-const CAVE_SCALE_Y = 0.025;   // 垂直方向もゆったりさせる
-const CAVE_THRESHOLD = 0.08;  // この値を大きくすると洞窟が太くなります
+// 定数は関数外で完全に固定（JITによるインライン化を促進）
+const CAVE_SCALE_XZ = 0.02;
+const CAVE_SCALE_Y = 0.025;
+const CAVE_THRESHOLD = 0.08;
 
-// 定数としてあらかじめ計算しておく
-const OFFSET1_X = 1234 * CAVE_SCALE_XZ;
-const OFFSET1_Y = 5678 * CAVE_SCALE_Y;
-const OFFSET1_Z = 9101 * CAVE_SCALE_XZ;
+// オフセットも事前に「加算済み」の状態で保持
+const OFF_X = 1234 * CAVE_SCALE_XZ;
+const OFF_Y = 5678 * CAVE_SCALE_Y;
+const OFF_Z = 9101 * CAVE_SCALE_XZ;
 
+/**
+ * 最適化された洞窟判定
+ */
 function isCave(x, y, z, surfaceHeight, nx, ny, nz) {
-    // 地表のすぐ下（薄皮状態）や地上には洞窟を作らない
-    if (y > surfaceHeight - 1) return false;
+    // 1. 最速の足切り：地表以上なら即終了 (|0 は整数化による高速化)
+    const depth = (surfaceHeight - y) | 0;
+    if (depth <= 0) return false;
 
-    // 地表からの深さに応じて閾値を絞り、出口付近を細くする（不自然な穴あき防止）
-    const depth = surfaceHeight - y;
-    let currentThreshold = CAVE_THRESHOLD; // 基本値: 0.08 程度
+    // 2. 閾値計算の分岐最適化
+    // 深さ5以上（大半のケース）では計算をスキップして定数を使用
+    let currentThreshold = CAVE_THRESHOLD;
     if (depth < 5) {
-        // 深さ 0〜4 の範囲で徐々に閾値を小さくする
+        // 深さ 0〜4 の場合のみ計算を行う
         currentThreshold *= (depth * 0.16 + 0.6);
     }
 
-    // 1つ目のノイズ計算
+    // 3. 1つ目のノイズ計算
     const n1 = perlinNoise3D(nx, ny, nz);
-    const absN1 = Math.abs(n1);
 
-    // 早期リターン：1つ目のノイズだけで閾値を超えていれば、2つ目は計算しない
-    // これにより 3Dノイズの計算負荷を大幅に軽減
-    if (absN1 >= currentThreshold) return false;
+    // Math.abs を使うより、範囲比較の方がJIT最適化で有利な場合がある
+    // abs(n1) < currentThreshold と同義
+    if (n1 >= currentThreshold || n1 <= -currentThreshold) {
+        return false;
+    }
 
-    // 2つ目のノイズ計算（オフセットを加えて交差させる：Worm Cave 手法）
-    // OFFSET1_X などの定数はあらかじめ計算済みのものを使用
-    const n2 = perlinNoise3D(nx + OFFSET1_X, ny + OFFSET1_Y, nz + OFFSET1_Z);
+    // 4. 2つ目のノイズ計算
+    // abs(n1) を再利用して、n2が満たすべき「残り余力」を算出
+    const absN1 = n1 < 0 ? -n1 : n1;
+    const remaining = currentThreshold - absN1;
 
-    // 2つのノイズの絶対値の合計が閾値未満なら「洞窟」と判定
-    return (absN1 + Math.abs(n2)) < currentThreshold;
+    const n2 = perlinNoise3D(nx + OFF_X, ny + OFF_Y, nz + OFF_Z);
+
+    // 最終判定：abs(n2) < remaining
+    return n2 < remaining && n2 > -remaining;
 }
 
 const _headOffsets = [
