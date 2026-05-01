@@ -1,7 +1,7 @@
 "use strict";
 import * as THREE from './build/three.module.js';
-import { camera, scene, getVoxelAtWorld, ChunkSaveManager } from './script.js';
-import { getBlockMaterials, BLOCK_TYPES, getBlockConfiguration } from './blocks.js'
+import { camera, scene, getVoxelAtWorld, ChunkSaveManager, blockCollisionBoxCache } from './script.js';
+import { getBlockMaterials, BLOCK_TYPES, getBlockConfiguration, applyRotationToCollisionBox } from './blocks.js';
 /* ======================================================
    【統合・最適化】パーティクルシステム（マイクラ準拠）
    ====================================================== */
@@ -165,6 +165,7 @@ const PUSH_DIRS = [
     { x: 0, z: 1 }, { x: 0, z: -1 }
 ];
 const _validCandidates = new Array(4);
+const _tempRotatedBox = new THREE.Box3(); // 💡 改善: メモリ確保を防ぐ再利用ボックス
 
 export const updateBlockParticles = delta => {
     const ag = activeParticleGroups;
@@ -192,18 +193,38 @@ export const updateBlockParticles = delta => {
             const by = Math.floor(p.position.y);
             const bz = Math.floor(p.position.z);
 
-            // 💡 改善②：getChunkCoord 関数呼び出しを排除し、ビットシフト(>> 4)で直接チャンク座標を計算
-            // JavaScriptの右シフトは負の数にも正しく対応するため、Math.floor(x / 16) と完全に等価で高速です。
             const pCx = bx >> 4;
             const pCz = bz >> 4;
 
-            const voxel = ChunkSaveManager.getBlock(pCx, pCz, bx & 15, by, bz & 15)
+            const rawVoxel = ChunkSaveManager.getBlock(pCx, pCz, bx & 15, by, bz & 15)
                 ?? getVoxelAtWorld(bx, by, bz, true);
 
-            if (voxel !== BLOCK_TYPES.SKY && voxel !== BLOCK_TYPES.WATER) {
-                const cfg = getBlockConfiguration(voxel);
+            // 💡 改善: rawVoxelからIDとメタデータを分離
+            const id = rawVoxel & 0xFFF;
+            const metadata = (rawVoxel >> 12) & 0xF;
+
+            // 💡 改善: メタデータを剥がした純粋なIDで比較・設定取得を行う
+            if (id !== BLOCK_TYPES.SKY && id !== BLOCK_TYPES.WATER) {
+                const cfg = getBlockConfiguration(id);
                 if (!cfg || cfg.collision !== false) {
-                    const topY = by + getBlockHeight(voxel);
+                    let topY = by + 1.0; // デフォルト高さ
+
+                    // 💡 改善: キャッシュされたAABBとメタデータを使って正確な高さを計算
+                    const relBoxes = blockCollisionBoxCache ? blockCollisionBoxCache.get(id) : null;
+                    if (relBoxes && relBoxes.length > 0) {
+                        let maxBoxY = -Infinity;
+                        for (let j = 0; j < relBoxes.length; j++) {
+                            _tempRotatedBox.makeEmpty();
+                            applyRotationToCollisionBox(relBoxes[j], metadata, _tempRotatedBox);
+                            if (_tempRotatedBox.max.y > maxBoxY) {
+                                maxBoxY = _tempRotatedBox.max.y;
+                            }
+                        }
+                        topY = by + maxBoxY;
+                    } else {
+                        // キャッシュがない場合のフォールバック
+                        topY = by + getBlockHeight(id);
+                    }
 
                     if (ud.velocity.y < 0 && p.position.y >= topY - 0.1 && p.position.y <= topY + 0.2) {
                         p.position.y = topY;
@@ -217,18 +238,19 @@ export const updateBlockParticles = delta => {
                         for (let di = 0; di < 4; di++) {
                             const dir = PUSH_DIRS[di];
 
-                            // 💡 改善③：(bx + dir.x) のような重複する計算を変数にキャッシュ
                             const checkX = bx + dir.x;
                             const checkZ = bz + dir.z;
 
-                            // 💡 改善②：ここでもビットシフトを利用
                             const checkCx = checkX >> 4;
                             const checkCz = checkZ >> 4;
 
-                            const sideVoxel = ChunkSaveManager.getBlock(checkCx, checkCz, checkX & 15, by, checkZ & 15)
+                            const rawSideVoxel = ChunkSaveManager.getBlock(checkCx, checkCz, checkX & 15, by, checkZ & 15)
                                 ?? getVoxelAtWorld(checkX, by, checkZ, true);
 
-                            if (sideVoxel === BLOCK_TYPES.SKY || sideVoxel === BLOCK_TYPES.WATER) {
+                            // 💡 改善: 隣接ブロックもIDのみ抽出して判定（水流メタデータ等による判定ミス防止）
+                            const sideId = rawSideVoxel & 0xFFF;
+
+                            if (sideId === BLOCK_TYPES.SKY || sideId === BLOCK_TYPES.WATER) {
                                 _validCandidates[validCount++] = dir;
                             }
                         }

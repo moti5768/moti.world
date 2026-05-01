@@ -1059,7 +1059,7 @@ function getPlayerAABBAt(pos) {
    【衝突判定キャッシュ＆プールシステム】
    ====================================================== */
 
-const blockCollisionBoxCache = new Map();
+export const blockCollisionBoxCache = new Map();
 const blockCollisionFlagCache = new Map();
 const pooledBoxArray = [];
 
@@ -1616,101 +1616,139 @@ function axisSeparatedCollisionResolve(dt) {
     const margin = 0.02;
     const isOnGround = player.onGround;
 
-    const MAX_STEP_HEIGHT = 0.6; // 登れる段差の最大高さ
-
+    const MAX_STEP_HEIGHT = 0.6;
     const canStep = isOnGround && !flightMode;
+    const SAFE_Y_OFFSET = 0.05;
 
-    // --- 【ヘルパー】段差を安全に登れるか判定するローカル関数 ---
-    function tryStepClimb(nextX, nextZ) {
+    // --- 【ヘルパー】段差登り判定 ---
+    function tryStepClimb(targetX, currentY, targetZ) {
         const stepResolutions = [0.0625, 0.125, 0.25, 0.5, MAX_STEP_HEIGHT];
-
         for (const step of stepResolutions) {
             const steppedPos = allocVec();
-            steppedPos.set(nextX, orig.y + step, nextZ);
-
+            steppedPos.set(targetX, currentY + step, targetZ);
             const isBlocked = checkAABBCollision(getPlayerAABBAt(steppedPos));
             freeVec(steppedPos);
 
-            if (!isBlocked) {
+            if (!isBlocked) return currentY + step;
+        }
+        return null;
+    }
+
+    let nextX = orig.x + vel.x * dt;
+    let nextZ = orig.z + vel.z * dt;
+
+    // --- 0. 斜め移動時の先行ステップ判定 (角対策) ---
+    // XとZ両方に速度がある場合、個別に判定する前に「斜め上」をチェック
+    let diagonalStepped = false;
+    if (canStep && Math.abs(vel.x) > 0 && Math.abs(vel.z) > 0) {
+        const diagPosNormal = allocVec().set(nextX, orig.y + SAFE_Y_OFFSET, nextZ);
+
+        // 斜め移動先が詰まっている場合のみステップを試行
+        if (checkAABBCollision(getPlayerAABBAt(diagPosNormal))) {
+            const climbedY = tryStepClimb(nextX, orig.y, nextZ);
+            if (climbedY !== null) {
                 newPos.x = nextX;
                 newPos.z = nextZ;
-                newPos.y += step;
-                return true;
+                newPos.y = climbedY;
+                diagonalStepped = true;
             }
         }
-        return false;
+        freeVec(diagPosNormal);
     }
 
-    // --- X軸移動 ---
-    let nextX = orig.x + vel.x * dt;
-    let xPosNormal = allocVec();
-    xPosNormal.set(nextX, orig.y, orig.z);
+    // --- 1. X軸移動 (斜めで解決済みの場合はスキップ) ---
+    if (!diagonalStepped && Math.abs(vel.x) > 0) {
+        const xPosNormal = allocVec().set(nextX, newPos.y + SAFE_Y_OFFSET, orig.z);
+        let canMoveX = !checkAABBCollision(getPlayerAABBAt(xPosNormal));
 
-    if (!checkAABBCollision(getPlayerAABBAt(xPosNormal))) {
-        if (sneakActive && isOnGround) {
-            const canDescendX = canDescendFromSupport(nextX, orig.z, halfWidth, margin);
-            if (!canDescendX) {
-                nextX = orig.x; // 崖っぷちで停止
+        // 💡 改善：天井摩擦対策（オフセット付きで天井にぶつかる場合は、オフセットなしの本来の高さで再判定）
+        if (!canMoveX) {
+            xPosNormal.y = newPos.y;
+            canMoveX = !checkAABBCollision(getPlayerAABBAt(xPosNormal));
+            xPosNormal.y = newPos.y + SAFE_Y_OFFSET; // 元の高さに戻す
+        }
+
+        if (canMoveX) {
+            if (sneakActive && isOnGround && !canDescendFromSupport(nextX, orig.z, halfWidth, margin)) {
+                nextX = orig.x;
                 vel.x = 0;
             }
-        }
-        newPos.x = nextX;
-    } else {
-        // 💡 修正点：canStep の時のみ登攀を試み、成功しなければ速度を0にする
-        const climbed = canStep && tryStepClimb(nextX, orig.z);
-        if (!climbed) {
+            newPos.x = nextX;
+        } else if (canStep) {
+            const climbedY = tryStepClimb(nextX, newPos.y, orig.z);
+            if (climbedY !== null) {
+                newPos.x = nextX;
+                newPos.y = climbedY;
+            } else {
+                newPos.x = orig.x;
+                vel.x = 0;
+            }
+        } else {
+            newPos.x = orig.x;
             vel.x = 0;
         }
+        freeVec(xPosNormal);
     }
-    freeVec(xPosNormal);
 
-    // --- Z軸移動 ---
-    let nextZ = orig.z + vel.z * dt;
-    let zPosNormal = allocVec();
-    zPosNormal.set(newPos.x, newPos.y, nextZ); // X反映後
+    // --- 2. Z軸移動 (斜めで解決済みの場合はスキップ) ---
+    if (!diagonalStepped && Math.abs(vel.z) > 0) {
+        const zPosNormal = allocVec().set(newPos.x, newPos.y + SAFE_Y_OFFSET, nextZ);
+        let canMoveZ = !checkAABBCollision(getPlayerAABBAt(zPosNormal));
 
-    if (!checkAABBCollision(getPlayerAABBAt(zPosNormal))) {
-        if (sneakActive && isOnGround) {
-            const canDescendZ = canDescendFromSupport(newPos.x, nextZ, halfWidth, margin);
-            if (!canDescendZ) {
-                nextZ = orig.z; // 崖っぷちで停止
+        // 💡 改善：天井摩擦対策（オフセット付きで天井にぶつかる場合は、オフセットなしの本来の高さで再判定）
+        if (!canMoveZ) {
+            zPosNormal.y = newPos.y;
+            canMoveZ = !checkAABBCollision(getPlayerAABBAt(zPosNormal));
+            zPosNormal.y = newPos.y + SAFE_Y_OFFSET; // 元の高さに戻す
+        }
+
+        if (canMoveZ) {
+            if (sneakActive && isOnGround && !canDescendFromSupport(newPos.x, nextZ, halfWidth, margin)) {
+                nextZ = orig.z;
                 vel.z = 0;
             }
-        }
-        newPos.z = nextZ;
-    } else {
-        // 💡 修正点：canStep の時のみ登攀を試み、成功しなければ速度を0にする
-        const climbed = canStep && tryStepClimb(newPos.x, nextZ);
-        if (!climbed) {
+            newPos.z = nextZ;
+        } else if (canStep) {
+            const climbedY = tryStepClimb(newPos.x, newPos.y, nextZ);
+            if (climbedY !== null) {
+                newPos.z = nextZ;
+                newPos.y = climbedY;
+            } else {
+                newPos.z = orig.z;
+                vel.z = 0;
+            }
+        } else {
+            newPos.z = orig.z;
             vel.z = 0;
         }
+        freeVec(zPosNormal);
     }
-    freeVec(zPosNormal);
 
-    // --- Y軸移動 (重力・着地判定) ---
-    let y = newPos.y + vel.y * dt;
-    const posY = allocVec();
-    posY.set(newPos.x, y, newPos.z);
+    // --- 3. Y軸移動 (重力・垂直衝突) ---
+    let finalY = newPos.y + vel.y * dt;
+    const posY = allocVec().set(newPos.x, finalY, newPos.z);
+    const isCollidingY = checkAABBCollision(getPlayerAABBAt(posY));
 
-    if (sneakActive && !flightMode && vel.y < 0) {
-        const canDescendY = !canDescendFromSupport(newPos.x, newPos.z, halfWidth, margin);
-        if (isOnGround && !canDescendY) {
-            y = newPos.y;
+    if (sneakActive && !flightMode && vel.y <= 0) {
+        const cannotFall = !canDescendFromSupport(newPos.x, newPos.z, halfWidth, margin);
+        if (isOnGround && cannotFall) {
+            finalY = newPos.y;
+            vel.y = 0;
+        } else if (isCollidingY) {
+            finalY = resolveVerticalCollision(newPos.y, finalY, newPos.x, newPos.z);
             vel.y = 0;
         }
-    } else if (checkAABBCollision(getPlayerAABBAt(posY))) {
-
+    } else if (isCollidingY) {
         if (vel.y > 0) {
-            // 上方向への衝突（天井・頭上）
-            // 飛行モードでも通常モードでも、めり込まないように衝突前のY座標に押し戻す
-            y = orig.y;
+            // 💡 改善：天井衝突時もバイナリサーチを使用し、頭が引っかからないギリギリ限界まで滑らかに上昇させる
+            finalY = resolveVerticalCollision(newPos.y, finalY, newPos.x, newPos.z);
             vel.y = 0;
         } else {
-            // 下方向への衝突（地面）
-            if (wasUnderwater) {
-                y = newPos.y;
+            // 地面衝突
+            if (typeof wasUnderwater !== 'undefined' && wasUnderwater) {
+                finalY = newPos.y;
             } else {
-                y = resolveVerticalCollision(newPos.y, y, newPos.x, newPos.z);
+                finalY = resolveVerticalCollision(newPos.y, finalY, newPos.x, newPos.z);
                 vel.y = 0;
             }
         }
@@ -1718,7 +1756,8 @@ function axisSeparatedCollisionResolve(dt) {
 
     freeVec(posY);
 
-    newPos.y = y;
+    // 最終的な結果をプレイヤーに反映
+    newPos.y = finalY;
     player.position.copy(newPos);
 }
 
