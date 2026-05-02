@@ -2026,18 +2026,19 @@ function updateOnGround() {
 }
 
 /**
- * チャンクのメッシュリソースを安全かつ完全に解放する
- * @param {THREE.Object3D} mesh - 破棄対象のチャンクコンテナ
+ * チャンク（Mesh）とそのリソースを完全に破棄する
+ * @param {THREE.Object3D|THREE.Mesh} mesh 破棄対象のオブジェクト
  */
 function disposeMesh(mesh) {
     if (!mesh) return;
 
     // 1. 階層下の全オブジェクトを走査してリソースを解放
     mesh.traverse((obj) => {
+        // メッシュ以外（Groupなど）はジオメトリを持たないためスキップ
         if (!obj.isMesh) return;
 
         // --- ジオメトリの破棄 ---
-        // チャンクごとに生成される BufferGeometry は必ず dispose が必要
+        // チャンクごとに生成される BufferGeometry はVRAM解放のため dispose が必須
         if (obj.geometry) {
             obj.geometry.dispose();
         }
@@ -2045,12 +2046,20 @@ function disposeMesh(mesh) {
         // --- マテリアルの破棄 ---
         if (obj.material) {
             const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+
             for (const mat of mats) {
-                // 【重要】共有マテリアルを保護し、クローンされたマテリアルのみを破棄する
-                // generateChunkMeshMultiTexture 内でセットした originMat の有無で判定
+                if (!mat) continue;
+
+                // 【重要】globalSkyUniforms からの参照解除
+                // これを忘れると、削除済みチャンクのUniformがリストに残り続け、メモリリークとFPS低下を招く
+                const uniforms = mat.shaderUniforms || (mat.userData && mat.userData.shaderUniforms);
+                if (uniforms && uniforms.u_skyFactor) {
+                    globalSkyUniforms.delete(uniforms.u_skyFactor);
+                }
+
+                // クローンされたマテリアルのみを破棄（共有元 originMat は維持）
                 if (mat.userData && mat.userData.originMat) {
-                    // ※ テクスチャ(mat.map等)は originMat と共有されているため、
-                    // ここではマテリアル自体のみを dispose する（テクスチャは維持）
+                    // テクスチャは共有されていることが多いため、ここではマテリアル本体のみを破棄
                     mat.dispose();
                 }
             }
@@ -2058,56 +2067,66 @@ function disposeMesh(mesh) {
     });
 
     // 2. シーングラフからの完全な取り除き
-    // remove を繰り返す際に index がずれないよう、後ろから削除または while を使用
+    // 子要素を一つずつ安全に切り離す
     while (mesh.children.length > 0) {
         const child = mesh.children[0];
+        // 再帰的に子要素の dispose を呼ぶ必要がある場合はここで検討
+        mesh.remove(child);
+    }
 
-        // もし子要素がさらに子要素を持っていた場合の参照切り
-        if (child.parent) {
-            child.parent.remove(child);
-        }
+    // 3. 親要素からの切り離し
+    if (mesh.parent) {
+        mesh.parent.remove(mesh);
     }
 }
 
+/**
+ * 指定された座標のチャンクを更新・リフレッシュする
+ * @param {number} cx チャンクX座標
+ * @param {number} cz チャンクZ座標
+ */
 function refreshChunkAt(cx, cz) {
     const key = (cx << 16) | (cz & 0xFFFF);
     const oldChunk = loadedChunks.get(key);
 
-    // 1. 距離チェック（変更なし）
+    // 1. プレイヤーからの距離チェック
     const pCx = Math.floor(player.position.x / CHUNK_SIZE);
     const pCz = Math.floor(player.position.z / CHUNK_SIZE);
-    if (Math.abs(cx - pCx) > CHUNK_VISIBLE_DISTANCE || Math.abs(cz - pCz) > CHUNK_VISIBLE_DISTANCE) {
+    const isOutOfRange = Math.abs(cx - pCx) > CHUNK_VISIBLE_DISTANCE ||
+        Math.abs(cz - pCz) > CHUNK_VISIBLE_DISTANCE;
+
+    if (isOutOfRange) {
         if (oldChunk) {
-            scene.remove(oldChunk);
+            // シーンからの削除とリソース解放を同時に行う
             disposeMesh(oldChunk);
             loadedChunks.delete(key);
         }
         return;
     }
 
-    // 2. 新しいメッシュの生成（古いのはまだ消さない！）
+    // 2. 新しいメッシュの生成
     const newChunk = generateChunkMeshMultiTexture(cx, cz);
+
     if (!newChunk) {
-        // 空気チャンクになった場合のみ消す
+        // 空気チャンク、または生成に失敗した場合は古いチャンクを破棄
         if (oldChunk) {
-            scene.remove(oldChunk);
             disposeMesh(oldChunk);
             loadedChunks.delete(key);
         }
         return;
     }
 
-    // 3. 属性の直接セット
+    // 3. 属性のセットアップ
     newChunk.userData.fadedIn = true;
+    // スカイライトの同期（ここで globalSkyUniforms に登録される）
     syncSingleChunkSkyLight(newChunk);
 
-    // 4. 入れ替え（ここが重要：追加してから消すことでチラつきを防ぐ）
+    // 4. 入れ替え処理（チラつき防止のため「追加」してから「削除」）
     scene.add(newChunk);
     loadedChunks.set(key, newChunk);
 
     if (oldChunk) {
-        scene.remove(oldChunk);
-        // 重要：geometryは必ず消すが、materialは共有しているなら消さない設計にする
+        // 古いチャンクをシーンから消し、GPUメモリと管理リスト(globalSkyUniforms)から解放
         disposeMesh(oldChunk);
     }
 }
@@ -2302,7 +2321,6 @@ function onAnimationFrameHandle() {
 // 💡 シェーダー変数の参照を一括管理して、毎フレームの重いメッシュ走査をゼロにする
 const globalSkyUniforms = new Set();
 
-// ✅ 新規追加：特定のメッシュ(チャンク)に、現在の昼夜の明るさを即座に同期させる関数
 function syncSingleChunkSkyLight(mesh) {
     if (!mesh) return;
 
@@ -2389,7 +2407,7 @@ let chunkQueueRunning = false;
 function fadeInMesh(object, duration = 500, onComplete) {
     if (object.userData.fadedIn) return onComplete?.();
 
-    const materials = [];
+    let materials = [];
     object.traverse(o => {
         if (!o.material) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -2398,21 +2416,18 @@ function fadeInMesh(object, duration = 500, onComplete) {
             if (!mat) continue;
 
             const uData = mat.userData || {};
-            const originalTransparent = mat.transparent;
-            const originalDepthWrite = mat.depthWrite;
             const targetOpacity = uData.realOpacity !== undefined ? uData.realOpacity : 1.0;
-            const isWater = !!uData.isWater;
-            const isAlphaCutout = !!uData.isAlphaCutout;
-
-            // 完了時に戻すべき値を計算しておく
-            const finalTransparent = uData.realTransparent !== undefined ? uData.realTransparent : originalTransparent;
-            const finalDepthWrite = uData.realDepthWrite !== undefined ? uData.realDepthWrite : originalDepthWrite;
 
             materials.push({
-                mat, targetOpacity, isWater, isAlphaCutout,
-                finalTransparent, finalDepthWrite
+                mat: mat,
+                targetOpacity: targetOpacity,
+                isWater: !!uData.isWater,
+                isAlphaCutout: !!uData.isAlphaCutout,
+                finalTransparent: uData.realTransparent !== undefined ? uData.realTransparent : mat.transparent,
+                finalDepthWrite: uData.realDepthWrite !== undefined ? uData.realDepthWrite : mat.depthWrite
             });
 
+            // 初期状態：透明にして描画順序を調整
             mat.opacity = 0;
             mat.transparent = true;
             mat.depthWrite = false;
@@ -2420,10 +2435,16 @@ function fadeInMesh(object, duration = 500, onComplete) {
         }
     });
 
-    // 💡 完了処理を共通関数化
+    // 💡 完了・中止時のクリーンアップ処理
+    const cleanup = () => {
+        materials = []; // 配列を空にして参照を切り離す
+        onComplete = null; // コールバックの参照を消す
+    };
+
     const finalize = () => {
         for (let i = 0; i < materials.length; i++) {
             const m = materials[i];
+            if (!m.mat) continue;
             m.mat.opacity = m.targetOpacity;
             m.mat.transparent = m.finalTransparent;
             m.mat.depthWrite = m.finalDepthWrite;
@@ -2432,40 +2453,45 @@ function fadeInMesh(object, duration = 500, onComplete) {
         }
         object.userData.fadedIn = true;
         onComplete?.();
+        cleanup();
     };
 
+    // マテリアルがない、または設定でアニメーション不要な場合
     if (materials.length === 0 || (typeof CHUNK_VISIBLE_DISTANCE !== "undefined" && CHUNK_VISIBLE_DISTANCE === 0)) {
         finalize();
         return;
     }
 
     const start = performance.now();
-    const invDuration = 1 / duration; // 割り算を事前に1回だけ行う
+    const invDuration = 1 / duration;
 
-    (function animate() {
-        // ★追加1：対象のメッシュがシーンから外された（破棄された）場合は即座にアニメーションを中止！
-        if (!object.parent) return;
+    let requestID;
+    const animate = (now) => {
+        // ★重要：オブジェクトがシーンから消えた、または破棄されたらループ停止
+        if (!object.parent) {
+            cancelAnimationFrame(requestID);
+            cleanup();
+            return;
+        }
 
-        const now = performance.now();
         const elapsed = now - start;
-        const t = elapsed * invDuration; // 掛け算にすることで高速化
+        const t = Math.min(elapsed * invDuration, 1); // 1を超えないようガード
+
+        for (let i = 0, len = materials.length; i < len; i++) {
+            const m = materials[i];
+            if (!m.mat) continue;
+            // 水の場合はターゲット不透明度を考慮してブレンド
+            m.mat.opacity = m.isWater ? (t * m.targetOpacity) : t;
+        }
 
         if (t < 1) {
-            // ループ内で使用する変数をローカルに展開して高速化
-            for (let i = 0, len = materials.length; i < len; i++) {
-                const m = materials[i];
-
-                // ★追加2：マテリアルが破棄されて null になっている場合の安全策
-                if (!m.mat) continue;
-
-                // 三項演算子の評価を最小限にし、プロパティアクセスを減らす
-                m.mat.opacity = m.isWater ? (t * m.targetOpacity) : t;
-            }
-            requestAnimationFrame(animate);
+            requestID = requestAnimationFrame(animate);
         } else {
             finalize();
         }
-    })();
+    };
+
+    requestID = requestAnimationFrame(animate);
 }
 
 
@@ -4465,7 +4491,10 @@ async function itemspreview() {
         if (!blockConfig.itemdisplay) return null;
         const item = document.createElement("div");
         item.className = "inventory-item";
-        item.dataset.blocktype = blockConfig?.id || "";
+        const blockId = Number(blockConfig.id); // ← 明示的に数値化
+        item.dataset.blocktype = blockId;
+
+        attachTooltip(item, blockId);
 
         const preview = await createInventoryItemPreview(blockConfig);
         preview.style.width = preview.style.height = "40px";
@@ -4496,6 +4525,98 @@ async function itemspreview() {
     items.filter(Boolean).forEach(item => inventoryEl.appendChild(item));
 }
 
+// --- グローバル変数 ---
+let tooltip;
+let lastMouseX = 0; // マウスの現在位置を常に記録
+let lastMouseY = 0;
+
+/**
+ * マウス座標にある要素を判定してツールチップを更新する共通関数
+ */
+function updateTooltipInstant() {
+    if (!tooltip || !isInventoryOpen) return;
+
+    // 現在のマウス座標にあるDOM要素を取得
+    const targetEl = document.elementFromPoint(lastMouseX, lastMouseY);
+    // その要素自体、または親要素に .inventory-item があるか探す
+    const itemEl = targetEl?.closest(".inventory-item");
+
+    if (itemEl) {
+        const blockId = itemEl.dataset.blocktype;
+        const cfg = getBlockConfiguration(blockId);
+        tooltip.textContent = cfg?.name || "Unknown";
+        tooltip.style.display = "block";
+
+        // 座標も即座に更新
+        updateTooltipPosition(lastMouseX, lastMouseY);
+    } else {
+        tooltip.style.display = "none";
+    }
+}
+
+/**
+ * ツールチップの位置を計算・表示する補助関数
+ */
+function updateTooltipPosition(clientX, clientY) {
+    if (!tooltip) return;
+    const gap = 12;
+    let x = clientX + gap;
+    let y = clientY + gap;
+
+    // 画面右端での折り返し
+    const tooltipWidth = tooltip.offsetWidth;
+    if (x + tooltipWidth > window.innerWidth) {
+        x = clientX - tooltipWidth - gap;
+    }
+
+    tooltip.style.left = x + "px";
+    tooltip.style.top = y + "px";
+}
+
+/**
+ * アイテム要素にイベントを登録
+ */
+function attachTooltip(element, blockId) {
+    element.addEventListener("mouseenter", () => {
+        if (!tooltip) return;
+        const cfg = getBlockConfiguration(blockId);
+        tooltip.textContent = cfg?.name || "Unknown";
+        tooltip.style.display = "block";
+    });
+
+    element.addEventListener("mouseleave", () => {
+        if (!tooltip) return;
+        tooltip.style.display = "none";
+    });
+}
+
+/**
+ * ツールチップの初期化
+ */
+async function initTooltip() {
+    tooltip = document.createElement("div");
+    tooltip.style.position = "fixed";
+    tooltip.style.pointerEvents = "none";
+    tooltip.style.padding = "4px 8px";
+    tooltip.style.background = "rgba(0,0,0,0.85)"; // 少し不透明度を調整
+    tooltip.style.color = "#fff";
+    tooltip.style.fontSize = "12px";
+    tooltip.style.borderRadius = "4px";
+    tooltip.style.whiteSpace = "nowrap";
+    tooltip.style.zIndex = "9999";
+    tooltip.style.display = "none";
+    tooltip.style.border = "1px solid #555"; // 縁取りを追加（Minecraft風）
+    document.body.appendChild(tooltip);
+
+    document.addEventListener("mousemove", (e) => {
+        // マウス位置を常に保存
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+
+        if (tooltip.style.display === "none") return;
+        updateTooltipPosition(e.clientX, e.clientY);
+    });
+}
 
 // --- ホットバー初期化 ---
 const hotbarEl = document.getElementById("hotbar");
@@ -5464,6 +5585,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     // --- 4. アイテムプレビュー生成（ここが一番重い想定） ---
     if (typeof itemspreview === 'function') {
         await itemspreview();
+        await initTooltip();
     }
 
     // 100%：すべてのロードが完了
@@ -5665,18 +5787,34 @@ window.addEventListener('keydown', (e) => {
 
     // --- B. Eキー (インベントリ開閉) - 最優先 ---
     if (e.code === 'KeyE') {
-        if (isPaused) return
+        if (isPaused) return;
         e.preventDefault();
         e.stopImmediatePropagation();
 
         if (isInventoryOpen) {
+            // --- インベントリを閉じる処理 ---
             isInventoryOpen = false;
             inventoryContainer.style.display = "none";
+
+            // ツールチップを確実に隠す[cite: 1]
+            if (tooltip) {
+                tooltip.style.display = "none";
+            }
+
             if (!isPaused) renderer.domElement.requestPointerLock();
         } else {
+            // --- インベントリを開く処理 ---
             isInventoryOpen = true;
             inventoryContainer.style.display = "block";
             document.exitPointerLock();
+
+            // 【追加】開いた瞬間にマウスの下にあるアイテムをチェック[cite: 1]
+            // 10msの遅延を入れることで、DOMの表示確定後に判定を走らせます
+            setTimeout(() => {
+                if (typeof updateTooltipInstant === "function") {
+                    updateTooltipInstant();
+                }
+            }, 10);
         }
         return;
     }

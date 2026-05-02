@@ -258,6 +258,7 @@ export const BLOCK_CONFIG = {
     }),
 
     GRASS: registerBlock({
+        name: "grass_block",
         textures: {
             top: "textures/blocks/grass_top.png",
             side: "textures/blocks/grass_side.png",
@@ -266,14 +267,17 @@ export const BLOCK_CONFIG = {
     }),
 
     DIRT: registerBlock({
+        name: "dirt",
         textures: { all: "textures/blocks/dirt.png" },
     }),
 
     SAND: registerBlock({
+        name: "sand",
         textures: { all: "textures/blocks/sand.png" },
     }),
 
     SANDSTONE: registerBlock({
+        name: "sandstone",
         textures: {
             top: "textures/blocks/sandstone_top.png",
             side: "textures/blocks/sandstone_normal.png",
@@ -282,63 +286,78 @@ export const BLOCK_CONFIG = {
     }),
 
     SNOW: registerBlock({
+        name: "snow",
         textures: { all: "textures/blocks/snow.png" },
     }),
 
     STONE: registerBlock({
+        name: "stone",
         textures: { all: "textures/blocks/stone.png" },
     }),
 
     GRAVEL: registerBlock({
+        name: "gravel",
         textures: { all: "textures/blocks/gravel.png" },
     }),
 
 
     COBBLE_STONE: registerBlock({
+        name: "cobblestone",
         textures: { all: "textures/blocks/cobblestone.png" },
     }),
 
     COBBLE_STONE_MOSSY: registerBlock({
+        name: "cobblestone_mossy",
         textures: { all: "textures/blocks/cobblestone_mossy.png" },
     }),
 
     COAL_ORE: registerBlock({
+        name: "coal_ore",
         textures: { all: "textures/blocks/coal_ore.png" },
     }),
 
     IRON_ORE: registerBlock({
+        name: "iron_ore",
         textures: { all: "textures/blocks/iron_ore.png" },
     }),
 
     GOLD_ORE: registerBlock({
+        name: "gold_ore",
         textures: { all: "textures/blocks/gold_ore.png" },
     }),
 
     REDSTONE_ORE: registerBlock({
+        name: "redstone_ore",
         textures: { all: "textures/blocks/redstone_ore.png" },
     }),
 
     LAPIS_ORE: registerBlock({
+        name: "lapis_ore",
         textures: { all: "textures/blocks/lapis_ore.png" },
     }),
 
     EMERALD_ORE: registerBlock({
+        name: "emerald_ore",
         textures: { all: "textures/blocks/emerald_ore.png" },
     }),
 
     PLANKS_OAK: registerBlock({
+        name: "planks_oak",
         textures: { all: "textures/blocks/planks_oak.png" },
     }),
 
     BRICK: registerBlock({
+        name: "brick",
         textures: { all: "textures/blocks/brick.png" },
     }),
 
     BEDROCK: registerBlock({
+        name: "bedrock",
         textures: { all: "textures/blocks/bedrock.png" },
     }),
 
     STONE_STAIRS: registerBlock({
+        name: "stone_stairs",
         textures: { all: "textures/blocks/stone.png" },
         geometryType: "stairs",
         transparent: true,
@@ -351,6 +370,7 @@ export const BLOCK_CONFIG = {
     }),
 
     COBBLESTONE_STAIRS: registerBlock({
+        name: "cobblestone_stairs",
         textures: { all: "textures/blocks/cobblestone.png" },
         geometryType: "stairs",
         transparent: true,
@@ -363,6 +383,7 @@ export const BLOCK_CONFIG = {
     }),
 
     PLANKS_OAK_STAIRS: registerBlock({
+        name: "planks_oak_stairs",
         textures: { all: "textures/blocks/planks_oak.png" },
         geometryType: "stairs",
         transparent: true,
@@ -375,6 +396,7 @@ export const BLOCK_CONFIG = {
     }),
 
     STONE_SLAB: registerBlock({
+        name: "stone_slab",
         textures: { all: "textures/blocks/stone.png" },
         geometryType: "slab",
         transparent: true,
@@ -389,6 +411,7 @@ export const BLOCK_CONFIG = {
     }),
 
     COBBLESTONE_SLAB: registerBlock({
+        name: "cobblestone_slab",
         textures: { all: "textures/blocks/cobblestone.png" },
         geometryType: "slab",
         transparent: true,
@@ -403,6 +426,7 @@ export const BLOCK_CONFIG = {
     }),
 
     SMOOTHSTONE_SLAB: registerBlock({
+        name: "smoothstone_slab",
         textures: {
             top: "textures/blocks/stone_slab_top.png",
             bottom: "textures/blocks/stone_slab_top.png",
@@ -421,6 +445,7 @@ export const BLOCK_CONFIG = {
     }),
 
     PLANKS_OAK_SLAB: registerBlock({
+        name: "planks_oak_slab",
         textures: { all: "textures/blocks/planks_oak.png" },
         geometryType: "slab",
         transparent: true,
@@ -435,6 +460,7 @@ export const BLOCK_CONFIG = {
     }),
 
     GLASS: registerBlock({
+        name: "glass",
         textures: { all: "textures/blocks/glass.png" },
         transparent: true,
         lightOpacity: 0,
@@ -443,6 +469,7 @@ export const BLOCK_CONFIG = {
     }),
 
     FLOWER: registerBlock({
+        name: "flower",
         textures: { all: "textures/blocks/flower.png" },
         collision: false,
         geometryType: "cross",
@@ -457,6 +484,7 @@ export const BLOCK_CONFIG = {
     }),
 
     FLOWER_ROSE: registerBlock({
+        name: "flower_rose",
         textures: { all: "textures/blocks/flower_rose.png" },
         collision: false,
         geometryType: "cross",
@@ -471,6 +499,7 @@ export const BLOCK_CONFIG = {
     }),
 
     TALLGRASS: registerBlock({
+        name: "tallgrass",
         textures: { all: "textures/blocks/tallgrass.png" },
         collision: false,
         geometryType: "cross",
@@ -486,6 +515,7 @@ export const BLOCK_CONFIG = {
     }),
 
     LEAVES_OAK: registerBlock({
+        name: "leaves_oak",
         textures: { all: "textures/blocks/leaves_oak.png" },
         geometryType: "leaves",
         transparent: true,
@@ -495,6 +525,7 @@ export const BLOCK_CONFIG = {
     }),
 
     WHITE_WOOL_CARPET: registerBlock({
+        name: "white_wool_carpet",
         textures: { all: "textures/blocks/wool_colored_white.png" },
         geometryType: "carpet",
         transparent: true,
@@ -508,10 +539,12 @@ export const BLOCK_CONFIG = {
     }),
 
     WHITE_WOOL: registerBlock({
+        name: "white_wool",
         textures: { all: "textures/blocks/wool_colored_white.png" }
     }),
 
     WATER: registerBlock({
+        name: "water",
         textures: { all: "textures/blocks/water.png" },
         collision: false,
         transparent: true,
@@ -529,6 +562,7 @@ export const BLOCK_CONFIG = {
     }),
 
     LAVA: registerBlock({
+        name: "lava",
         textures: { all: "textures/blocks/lava.png" },
         collision: false,
         transparent: true,
@@ -542,6 +576,7 @@ export const BLOCK_CONFIG = {
     }),
 
     GLOWSTONE: registerBlock({
+        name: "glowstone",
         textures: { all: "textures/blocks/glowstone.png" },
         geometryType: "cube",
         lightLevel: 15,
@@ -549,6 +584,7 @@ export const BLOCK_CONFIG = {
     }),
 
     LOG_OAK: registerBlock({
+        name: "log_oak",
         isLog: true,
         textures: {
             top: "textures/blocks/log_oak_top.png",
@@ -558,6 +594,7 @@ export const BLOCK_CONFIG = {
     }),
 
     SAPLING_OAK: registerBlock({
+        name: "sapling_oak",
         textures: { all: "textures/blocks/sapling_oak.png" },
         collision: false,
         geometryType: "cross",
@@ -572,6 +609,7 @@ export const BLOCK_CONFIG = {
     }),
 
     DEADBUSH: registerBlock({
+        name: "deadbush",
         textures: { all: "textures/blocks/deadbush.png" },
         collision: false,
         geometryType: "cross",
@@ -586,6 +624,7 @@ export const BLOCK_CONFIG = {
     }),
 
     LADDER: registerBlock({
+        name: "ladder",
         textures: { all: "textures/blocks/ladder.png" },
         geometryType: "ladder",
         transparent: true,
