@@ -1403,43 +1403,44 @@ const _headOffsets = [
     [0, 0, 0], [0.2, 0, 0], [-0.2, 0, 0],
     [0, 0, 0.2], [0, 0, -0.2], [0, 0.1, 0], [0, -0.1, 0]
 ];
-const _headCountsMap = new Map(); // ✅ 追加：カウント用のMapを外出し
+
+// 💡 改善：ブロックIDは0〜4095に収まるため、Mapではなく固定長配列で管理。GC発生をゼロにする
+const _headCounts = new Int8Array(4096);
+const _usedIds = []; // リセット用にアクセスしたIDだけを記録
 
 function getPreciseHeadBlockType(headPos) {
-    _headCountsMap.clear(); // ✅ 毎回ゴミを作らず、中身をリセットして使い回す
+    let maxCount = 0;
+    let chosenID = BLOCK_TYPES.SKY;
 
     for (let i = 0; i < _headOffsets.length; i++) {
         const o = _headOffsets[i];
         const bx = Math.floor(headPos.x + o[0]);
         const by = Math.floor(headPos.y + o[1]);
         const bz = Math.floor(headPos.z + o[2]);
-        const id = getVoxelAtWorld(bx, by, bz, true);
+        // 💡 isRaw を false にして ID のみ (12bit) を取得する
+        const id = getVoxelAtWorld(bx, by, bz, false);
 
-        // Mapを使ってカウント
-        const currentCount = _headCountsMap.get(id) || 0;
-        _headCountsMap.set(id, currentCount + 1);
-    }
+        if (_headCounts[id] === 0) {
+            _usedIds.push(id);
+        }
+        _headCounts[id]++;
 
-    let chosenID = BLOCK_TYPES.SKY;
-    let maxCount = 0;
-
-    // 最多得票のブロックIDを探す
-    for (const [id, count] of _headCountsMap.entries()) {
-        if (count > maxCount) {
-            maxCount = count;
+        if (_headCounts[id] > maxCount) {
+            maxCount = _headCounts[id];
             chosenID = id;
         }
     }
+
+    // 💡 Map.clear() の代わりに、変更した箇所だけを 0 に戻す（超高速）
+    for (let i = 0; i < _usedIds.length; i++) {
+        _headCounts[_usedIds[i]] = 0;
+    }
+    _usedIds.length = 0;
+
     return chosenID;
 }
 
-/**
- * updateScreenOverlay
- * プレイヤーの頭部領域に基づいて、オーバーレイ表示用のテクスチャを更新する処理です。
- * ここでは、getPreciseHeadBlockType() を利用してサンプル点から頭部ブロックIDを決定します。
- */
 const _sharedHeadPos = new THREE.Vector3();
-
 function updateScreenOverlay() {
     const headY = player.position.y + getCurrentPlayerHeight() * 0.85;
     _sharedHeadPos.set(player.position.x, headY, player.position.z);
@@ -2185,8 +2186,7 @@ function stepChunkUpdate() {
         const cx = coords[0];
         const cz = coords[1];
 
-        // 参照用セットから削除
-        chunkUpdateLookup.delete((cx << 16) | (cz & 0xFFFF));
+        chunkUpdateLookup.delete(encodeChunkKey(cx, cz));
 
         // 外部定義の再描画処理を呼び出し
         refreshChunkAt(cx, cz);
@@ -2267,14 +2267,16 @@ function processChunkQueue(deadline) {
             scene.add(mesh);
             loadedChunks.set(key, mesh);
 
-            // 隣接チャンクの更新予約（定数配列を使用してGCを抑制）
+            // 隣接チャンクの更新予約
             for (let i = 0; i < 4; i++) {
                 const off = NEIGHBOR_OFFSETS[i];
-                const nKey = encodeChunkKey(cx + off[0], cz + off[1]);
+                const nCx = cx + off[0];
+                const nCz = cz + off[1];
+                const nKey = encodeChunkKey(nCx, nCz);
+
                 if (loadedChunks.has(nKey)) {
-                    if (typeof pendingChunkUpdates !== "undefined") {
-                        pendingChunkUpdates.add(nKey);
-                    }
+                    // 💡 修正：無限に溜まるだけのSetへの追加をやめ、正しい更新フローに流す
+                    requestChunkUpdate(nCx, nCz);
                 }
             }
 
