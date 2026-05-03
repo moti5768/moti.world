@@ -43,7 +43,12 @@ function getCustomCollision(type) {
     const len = boxes.length;
     const result = new Array(len);
     for (let i = 0; i < len; i++) {
-        result[i] = boxes[i].clone();
+        // clone() のプロトタイプチェーンを避け、直接 Box3 をインスタンス化して値をコピー (軽量化)
+        const src = boxes[i];
+        result[i] = new THREE.Box3(
+            new THREE.Vector3(src.min.x, src.min.y, src.min.z),
+            new THREE.Vector3(src.max.x, src.max.y, src.max.z)
+        );
     }
     return result;
 }

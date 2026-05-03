@@ -3,7 +3,7 @@ import * as THREE from './build/three.module.js';
 import { BLOCK_CONFIG, BLOCK_TYPES, createBlockMesh, getBlockMaterials, getBlockConfiguration, getBlockGeometry, calculatePlacementMeta, applyMetadataTransform, getLogRotationMatrix, applyRotationToCollisionBox, getCustomGeometryMatrix, idToKey, keyToId } from './blocks.js';
 import { createMinecraftBreakParticles, updateBlockParticles } from './particles.js';
 import { setMinecraftSky, loadCloudTexture, updateCloudGrid, updateCloudTiles, updateCloudOpacity, adjustCloudLayerDepth } from './cloudsky.js';
-import { determineBiome } from './biomes/biomes.js';
+import { determineBiome, BIOME_CONFIG, BIOME_ID_TO_NAME } from './biomes/biomes.js';
 import { Features } from './features.js';
 import { FeatureRules } from './feature_rules.js';
 
@@ -524,8 +524,8 @@ export const ChunkSaveManager = {
     // 共有バッファ (メモリ再確保を防止)
     _sharedSurfaceHeights: new Int32Array(256),
     _sharedHeightMap: new Int32Array(256),
-    _sharedBiomeMap: new Array(256),
-    _sharedPaddedBiomeMap: new Array(484),      // バイオームオブジェクト用
+    _sharedBiomeMap: new Uint8Array(256), // オブジェクトではなくIDを格納
+    _sharedPaddedBiomeMap: new Uint8Array(484),      // バイオームオブジェクト用
     _sharedPaddedHeightNoiseMap: new Float32Array(484), // 事前計算済み高さノイズ用
 
     getBlockIndex: function (lx, ly, lz) {
@@ -621,7 +621,7 @@ export const ChunkSaveManager = {
                 const riverValue = fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5;
 
                 const b = determineBiome(temp, humidity, 64, riverValue);
-                paddedBiomeMap[localIdx] = b;
+                paddedBiomeMap[localIdx] = b.id | 0;
 
                 // ステップ4のループ内で毎回ノイズ計算しなくて済むよう、ここで高さを確定させる
                 const nNoise = fractalNoise2D(worldX * b.noiseScale, worldZ * b.noiseScale, 5);
@@ -640,8 +640,8 @@ export const ChunkSaveManager = {
                 const xzOff = (xOff | (z << 8)) | 0;
                 const mapIdx = (xMapIdx | z) | 0;
 
-                const currentBiome = paddedBiomeMap[(x + blendRadius) * paddedSize + (z + blendRadius)];
-                biomeMap[mapIdx] = currentBiome;
+                const currentBiomeId = paddedBiomeMap[(x + blendRadius) * paddedSize + (z + blendRadius)];
+                biomeMap[mapIdx] = currentBiomeId; // IDをそのまま保存
 
                 let totalHeight = 0.0;
                 let totalWeight = 0.0;
@@ -720,7 +720,8 @@ export const ChunkSaveManager = {
                 const xzOff = (xOff | (z << 8)) | 0;
                 const mapIdx = (xMapIdx | z) | 0;
                 const sHeight = heightMap[mapIdx] | 0;
-                const biome = biomeMap[mapIdx];
+                const biomeId = biomeMap[mapIdx];
+                const biome = BIOME_CONFIG[biomeId]; // マスターデータから設定を引く
 
                 surfaceHeights[mapIdx] = sHeight;
                 if (sHeight <= 1) continue;
@@ -797,19 +798,41 @@ export const ChunkSaveManager = {
                     let surfaceY = 0;
                     let bName = "Default";
 
-                    // 自分のチャンク内なら高速参照、外ならノイズ/キャッシュ参照
                     if (dcx === 0 && dcz === 0) {
-                        const mapIdx = (relLx << 4) | relLz;
+                        const mapIdx = (Math.floor(relLx) << 4) | Math.floor(relLz);
                         surfaceY = surfaceHeights[mapIdx] | 0;
-                        bName = biomeMap[mapIdx].name;
+                        const bId = biomeMap[mapIdx];
+                        bName = BIOME_CONFIG[bId].name; // IDから名前を解決[cite: 3]
                     } else {
                         const cacheKey = (worldX * 4294967296) + (worldZ >>> 0);
                         let cv = _externalCache.get(cacheKey);
                         if (cv === undefined) {
-                            const y = getTerrainHeight(worldX, worldZ) | 0;
+                            // 🌟 改善：隣接チャンクの座標でも、自チャンクと同じ「ブレンディング計算」を再現する
+                            let totalH = 0.0, totalW = 0.0, wIdx = 0; // 元の変数名 totalW に修正
+                            for (let bdx = -blendRadius; bdx <= blendRadius; bdx++) {
+                                for (let bdz = -blendRadius; bdz <= blendRadius; bdz++) {
+                                    const bX = (worldX + bdx) | 0;
+                                    const bZ = (worldZ + bdz) | 0;
+                                    const bTemp = fractalNoise2D(bX * 0.0005, bZ * 0.0005, 3) + 0.5;
+                                    const bHum = fractalNoise2D(bX * 0.0005 + 500, bZ * 0.0005 + 500, 3) + 0.5;
+                                    const bRiv = fractalNoise2D(bX * 0.005, bZ * 0.005, 2) + 0.5;
+                                    const b = determineBiome(bTemp, bHum, 64, bRiv);
+
+                                    const nNoise = fractalNoise2D(bX * b.noiseScale, bZ * b.noiseScale, 5);
+                                    const h = b.baseHeight + (nNoise * b.heightVariation);
+
+                                    // BLEND_WEIGHTS を正しく参照
+                                    const weight = BLEND_WEIGHTS[wIdx++];
+                                    totalH += h * weight;
+                                    totalW += weight; // ここを totalWeight から totalW に修正
+                                }
+                            }
+                            const y = (totalH / totalW) | 0; // ここも totalW に修正
+
                             if (y <= seaLevel) {
                                 cv = -1;
                             } else {
+                                // 代表地点のバイオームを判定
                                 const temp = fractalNoise2D(worldX * 0.0005, worldZ * 0.0005, 3) + 0.5;
                                 const hum = fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5;
                                 const riv = fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5;
@@ -834,9 +857,8 @@ export const ChunkSaveManager = {
                         if (rnd < rule.chance) {
                             const featureFunc = Features[rule.feature];
                             if (featureFunc) {
-                                // featureFunc は lx, lz を受け取り setBlock(lx + dx, ...) を呼ぶ
-                                // _internalSetLocal が範囲外の書き込みを自動で弾くため安全
-                                featureFunc(lx, surfaceY, lz, setBlockBound, rnd / rule.chance, getBlockBound);
+                                // 🌟 改善：worldX, worldZ を末尾に追加
+                                featureFunc(lx, surfaceY, lz, setBlockBound, rnd / rule.chance, getBlockBound, worldX, worldZ);
                             }
                             break;
                         }
