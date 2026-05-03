@@ -1297,29 +1297,36 @@ let _vC1_key = null, _vC1_data = null;
  * @param {boolean} isRaw - true: メタデータ込み(16bit), false: IDのみ(12bit)
  */
 export function getVoxelAtWorld(x, y, z, isRaw = false) {
-    // 高さのバリデーション (高速整数化)
+    // 1. 高さの高速バリデーション
+    // y < 0 || y >= 256 を 1つの演算でチェック (yが0-255以外なら真)
     const fy = y | 0;
-    if (fy < 0 || fy >= CHUNK_HEIGHT) return 0;
+    if (fy & ~255) return 0;
 
-    // 💡 ユーザー指定: ビット演算による高速整数化を維持
     const fx = x | 0;
     const fz = z | 0;
 
-    // チャンク座標計算 (16x16)
-    const cx = fx >> 4;
-    const cz = fz >> 4;
+    // 2. チャンクキーの生成 (ビット演算を最小化)
+    // cx, cz を経由せず直接計算
+    const chunkKey = ((fx >> 4) << 16) | ((fz >> 4) & 0xFFFF);
 
-    const chunkKey = ((cx & 0xFFFF) << 16) | (cz & 0xFFFF);
     let data = null;
+
+    // 3. キャッシュヒットパターンの最速化 (L0 -> L1)
     if (chunkKey === _vC0_key) {
         data = _vC0_data;
     } else if (chunkKey === _vC1_key) {
         data = _vC1_data;
+        // ヒットした L1 を L0 に昇格 (MRU戦略)
+        _vC1_key = _vC0_key; _vC1_data = _vC0_data;
+        _vC0_key = chunkKey; _vC0_data = data;
     } else {
+        // キャッシュミス時の重い処理
         data = ChunkSaveManager.modifiedChunks.get(chunkKey) || chunkReadOnlyCache.get(chunkKey);
 
         if (!data) {
-            data = ChunkSaveManager.captureBaseChunkData(cx, cz);
+            data = ChunkSaveManager.captureBaseChunkData(fx >> 4, fz >> 4);
+            if (!data) return 0;
+
             chunkReadOnlyCache.set(chunkKey, data);
             if (chunkReadOnlyCache.size > MAX_CACHE_SIZE) {
                 const firstKey = chunkReadOnlyCache.keys().next().value;
@@ -1327,27 +1334,15 @@ export function getVoxelAtWorld(x, y, z, isRaw = false) {
             }
         }
 
-        // 💡 3. キャッシュスロットの更新 (最新を L0 に)
-        if (data) {
-            _vC1_key = _vC0_key;
-            _vC1_data = _vC0_data;
-            _vC0_key = chunkKey;
-            _vC0_data = data;
-        }
+        // キャッシュ更新
+        _vC1_key = _vC0_key; _vC1_data = _vC0_data;
+        _vC0_key = chunkKey; _vC0_data = data;
     }
 
-    if (!data) return 0;
+    // 4. インデックス計算の最適化
+    // 変数への代入を減らし、ブラケット内で直接ビット演算を行う
+    const val = data[fy + ((fz & 15) << 8) + ((fx & 15) << 12)] ?? 0;
 
-    // --- 💡 4. インデックス計算 (Y + Z*256 + X*4096) ---
-    const lx = fx & 15;
-    const lz = fz & 15;
-    const idx = (fy + (lz << 8) + (lx << 12)) >>> 0;
-
-    const val = data[idx] ?? 0;
-
-    // --- 💡 5. 値の返却 (空気に書き換えず、データをそのまま返す) ---
-    // isRaw が true の場合は、メタデータ込みの 16bit 値を返す
-    // false の場合は、下位 12bit の ID 部分のみを抽出して返す
     return isRaw ? val : (val & 0xFFF);
 }
 
@@ -3245,15 +3240,30 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     };
 
     // --- データアクセス・ヘルパー ---
+    // 関数冒頭で参照をローカル変数に固定（プロパティアクセスのコスト削減）
+    const vpx = neighborData.px, vnx = neighborData.nx, vpz = neighborData.pz, vnz = neighborData.nz;
+
     function get(x, y, z) {
-        if (y < 0 || y >= CH_H) return BLOCK_TYPES.SKY;
-        if (x >= 0 && x < CH_S && z >= 0 && z < CH_S) {
-            return voxelData[y + (z * STRIDE_Z) + (x * STRIDE_X)] & 0xFFF;
+        if (y < 0 || y >= CH_H) return 0; // SKYは0と仮定
+
+        // 1. チャンク内 (ビット演算で範囲チェック)
+        // (x | z) & ~15 が 0 でなければ、xかzが 0〜15 の範囲外
+        if (((x | z) & ~15) === 0) {
+            return voxelData[y + (z << 8) + (x << 12)] & 0xFFF;
         }
-        if (x >= CH_S && neighborData.px) return neighborData.px[y + (z * STRIDE_Z) + (0 * STRIDE_X)] & 0xFFF;
-        if (x < 0 && neighborData.nx) return neighborData.nx[y + (z * STRIDE_Z) + (15 * STRIDE_X)] & 0xFFF;
-        if (z >= CH_S && neighborData.pz) return neighborData.pz[y + (0 * STRIDE_Z) + (x * STRIDE_X)] & 0xFFF;
-        if (z < 0 && neighborData.nz) return neighborData.nz[y + (15 * STRIDE_Z) + (x * STRIDE_X)] & 0xFFF;
+
+        // 2. 隣接チャンク (直接変数から取得)
+        let nData = null;
+        let lx = x, lz = z;
+
+        if (x >= 16) { nData = vpx; lx = 0; }
+        else if (x < 0) { nData = vnx; lx = 15; }
+        else if (z >= 16) { nData = vpz; lz = 0; }
+        else if (z < 0) { nData = vnz; lz = 15; }
+
+        if (nData) return nData[y + (lz << 8) + (lx << 12)] & 0xFFF;
+
+        // 3. 最終手段
         return getVoxelAtWorld(baseX + x, BEDROCK_LEVEL + y, baseZ + z, true) & 0xFFF;
     }
 
