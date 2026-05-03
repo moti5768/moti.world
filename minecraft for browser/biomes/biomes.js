@@ -2,28 +2,25 @@
 import { BLOCK_TYPES } from '../blocks.js';
 
 /**
- * アルファ版（Minecraft classic 0.0.1）用バイオーム定義
- * 種類を厳選し、地形の個性を際立たせる構成
+ * アルファ版用バイオームID定義
+ * Zero-GCキャッシュのために数値で管理
  */
 export const BIOME_TYPES = {
-    SNOWY_TUNDRA: 'snowy_tundra',
-    PLAINS: 'plains',
-    FOREST: 'forest',
-    DESERT: 'desert',
-    MOUNTAINS: 'mountains',
-    RIVER: 'river'
+    PLAINS: 0,
+    SNOWY_TUNDRA: 1,
+    FOREST: 2,
+    DESERT: 3,
+    MOUNTAINS: 4,
+    RIVER: 5
 };
 
+/**
+ * バイオームの設定データ
+ * ChunkSaveManagerが参照する id プロパティを追加
+ */
 export const BIOME_CONFIG = {
-    [BIOME_TYPES.SNOWY_TUNDRA]: {
-        name: 'Snowy Tundra',
-        topBlock: BLOCK_TYPES.SNOW,
-        fillerBlock: BLOCK_TYPES.DIRT,
-        baseHeight: 64,
-        heightVariation: 5,
-        noiseScale: 0.01
-    },
     [BIOME_TYPES.PLAINS]: {
+        id: 0,
         name: 'Plains',
         topBlock: BLOCK_TYPES.GRASS,
         fillerBlock: BLOCK_TYPES.DIRT,
@@ -31,7 +28,17 @@ export const BIOME_CONFIG = {
         heightVariation: 6,
         noiseScale: 0.01
     },
+    [BIOME_TYPES.SNOWY_TUNDRA]: {
+        id: 1,
+        name: 'Snowy Tundra',
+        topBlock: BLOCK_TYPES.SNOW,
+        fillerBlock: BLOCK_TYPES.DIRT,
+        baseHeight: 64,
+        heightVariation: 5,
+        noiseScale: 0.01
+    },
     [BIOME_TYPES.FOREST]: {
+        id: 2,
         name: 'Forest',
         topBlock: BLOCK_TYPES.GRASS,
         fillerBlock: BLOCK_TYPES.DIRT,
@@ -40,6 +47,7 @@ export const BIOME_CONFIG = {
         noiseScale: 0.02
     },
     [BIOME_TYPES.DESERT]: {
+        id: 3,
         name: 'Desert',
         topBlock: BLOCK_TYPES.SAND,
         fillerBlock: BLOCK_TYPES.SANDSTONE,
@@ -48,6 +56,7 @@ export const BIOME_CONFIG = {
         noiseScale: 0.01
     },
     [BIOME_TYPES.MOUNTAINS]: {
+        id: 4,
         name: 'Mountains',
         topBlock: BLOCK_TYPES.STONE,
         fillerBlock: BLOCK_TYPES.STONE,
@@ -56,6 +65,7 @@ export const BIOME_CONFIG = {
         noiseScale: 0.05
     },
     [BIOME_TYPES.RIVER]: {
+        id: 5,
         name: 'River',
         topBlock: BLOCK_TYPES.DIRT,
         fillerBlock: BLOCK_TYPES.DIRT,
@@ -66,8 +76,17 @@ export const BIOME_CONFIG = {
 };
 
 /**
+ * キャッシュからの逆引き用テーブル
+ * ChunkSaveManager 内の BIOME_ID_TO_NAME エラーを解決します
+ */
+export const BIOME_ID_TO_NAME = Object.values(BIOME_CONFIG).reduce((acc, config) => {
+    acc[config.id] = config.name;
+    return acc;
+}, {});
+
+/**
  * 温度、湿度、標高に基づいてバイオームを決定する
- * アルファ版向けに判定マトリックスをシンプル化
+ * 事前に定義された BIOME_CONFIG の参照を返すことで GC 負荷をゼロにします
  */
 export function determineBiome(temp, humidity, height = 64, riverValue = 0.5) {
 
@@ -95,11 +114,10 @@ export function determineBiome(temp, humidity, height = 64, riverValue = 0.5) {
     }
 
     // --- 温帯 ---
-    // 湿度が高い場合は森林、それ以外は平原
     if (humidity > 0.5) {
         return BIOME_CONFIG[BIOME_TYPES.FOREST];
     }
 
-    // デフォルト（基準バイオーム）
+    // デフォルト
     return BIOME_CONFIG[BIOME_TYPES.PLAINS];
 }
