@@ -519,6 +519,38 @@ export const BLOCK_CONFIG = {
         selectionOffset: { x: 0.5, y: 0.4, z: 0.5 },
     }),
 
+    MUSHROOM_RED: registerBlock({
+        name: "mushroom_red",
+        textures: { all: "textures/blocks/mushroom_red.png" },
+        collision: false,
+        geometryType: "cross",
+        transparent: true,
+        lightOpacity: 0,
+        overwrite: true,
+        customCollision: () => getCustomCollision("cross"),
+        cullAdjacentFaces: false,
+        screenFill: false,
+        previewType: "2D",
+        selectionSize: { x: 0.5, y: 0.5, z: 0.5 },
+        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 },
+    }),
+
+    MUSHROOM_BROWN: registerBlock({
+        name: "mushroom_brown",
+        textures: { all: "textures/blocks/mushroom_brown.png" },
+        collision: false,
+        geometryType: "cross",
+        transparent: true,
+        lightOpacity: 0,
+        overwrite: true,
+        customCollision: () => getCustomCollision("cross"),
+        cullAdjacentFaces: false,
+        screenFill: false,
+        previewType: "2D",
+        selectionSize: { x: 0.5, y: 0.5, z: 0.5 },
+        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 },
+    }),
+
     LEAVES_OAK: registerBlock({
         name: "leaves_oak",
         textures: { all: "textures/blocks/leaves_oak.png" },

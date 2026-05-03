@@ -114,34 +114,20 @@ const perlinNoise2D = (x, y) => {
    ====================================================== */
 
 function fractalNoise2D(x, z, octaves = 4, persistence = 0.5) {
-    // 1. 引数の型ヒントと初期化の最適化
-    // octaves を 32bit 整数として明示
     const nOct = octaves | 0;
-    if (nOct <= 0) return 0;
-
     let total = 0.0;
-    let amplitude = 1.0;
-    let freq = 1.0;
-    let maxValue = 0.0;
+    let amp = 1.0;
+    let f = 1.0;
+    let maxA = 0.0;
 
-    // 2. ループ内の演算コスト削減
-    for (let i = 0; i < nOct; i = (i + 1) | 0) {
-        // freq と amplitude の乗算をまとめることでレジスタ利用を効率化
-        total += perlinNoise2D(x * freq, z * freq) * amplitude;
-
-        maxValue += amplitude;
-
-        // persistence が 0.5 (デフォルト) の場合、乗算よりシフト的な加算の方が速い場合があるが、
-        // 汎用性を維持しつつ、浮動小数点の連続乗算として記述
-        amplitude *= persistence;
-
-        // freq *= 2 は freq += freq と同義。加算の方がパイプライン実行で有利なケースが多い
-        freq += freq;
+    for (let i = 0; i < nOct; i++) {
+        // インライン展開に近い形で記述し、JIT最適化を助ける
+        total += perlinNoise2D(x * f, z * f) * amp;
+        maxA += amp;
+        amp *= persistence;
+        f *= 2.0;
     }
-
-    // 3. 最終的な正規化
-    // 0除算を避けつつ、単一の除算で結果を返す
-    return total / maxValue;
+    return total / maxA;
 }
 
 // 3D用の勾配関数
@@ -486,6 +472,7 @@ function updateSkyAndFogColor(time, sunY, sunDir) {
     if (scene.fog) {
         scene.fog.color.copy(_skyColorObj);
     }
+    updateGlobalSkyLight(time);
 }
 /* ======================================================
    【新・チャンク保存管理システム (クラスなし版) - 極限最適化版】
@@ -621,11 +608,14 @@ export const ChunkSaveManager = {
                 const riverValue = fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5;
 
                 const b = determineBiome(temp, humidity, 64, riverValue);
-                paddedBiomeMap[localIdx] = b.id | 0;
+                // オブジェクトのプロパティをローカルにキャッシュ
+                const nScale = b.noiseScale;
+                const bHeight = b.baseHeight;
+                const hVar = b.heightVariation;
 
-                // ステップ4のループ内で毎回ノイズ計算しなくて済むよう、ここで高さを確定させる
-                const nNoise = fractalNoise2D(worldX * b.noiseScale, worldZ * b.noiseScale, 5);
-                paddedHMap[localIdx] = b.baseHeight + (nNoise * b.heightVariation);
+                paddedBiomeMap[localIdx] = b.id;
+                const nNoise = fractalNoise2D(worldX * nScale, worldZ * nScale, 5);
+                paddedHMap[localIdx] = bHeight + (nNoise * hVar);
             }
         }
 
@@ -745,7 +735,6 @@ export const ChunkSaveManager = {
         // ------------------------------------------------------
         // 7. デコレーション - 完全ランダム & 境界問題解決版
         // ------------------------------------------------------
-        // 木の葉の最大半径（通常2〜3）に合わせて広めにスキャン
         const decorationMargin = 6 | 0;
         const LEAVES_ID = BLOCK_TYPES.LEAVES_OAK | 0;
         const SKY_ID_VAL = BLOCK_TYPES.SKY | 0;
@@ -759,34 +748,22 @@ export const ChunkSaveManager = {
         const setBlockBound = (lx, ly, lz, bid, ow) =>
             _internalSetLocal(data, lx, ly, lz, bid, ow, SKY_ID_VAL, LEAVES_ID);
 
-        // 周辺チャンク（自分を含め9チャンク分）の生成物をチェック
-        // dx, dz は現在のチャンク(0,0)を中心とした相対チャンク座標
         for (let dcx = -1; dcx <= 1; dcx = (dcx + 1) | 0) {
             for (let dcz = -1; dcz <= 1; dcz = (dcz + 1) | 0) {
-
                 const targetBaseX = (baseX + (dcx << 4)) | 0;
                 const targetBaseZ = (baseZ + (dcz << 4)) | 0;
-
-                // 各チャンクに対して attemptsPerChunk 回の抽選を行う
-                // これにより、どのチャンクから見ても「隣にある木」が同じ位置に再現される
                 const attemptsPerChunk = 300;
 
                 for (let i = 0; i < attemptsPerChunk; i = (i + 1) | 0) {
-                    // ターゲットとなるチャンクの座標に基づいてハッシュを生成
                     let h = Math.imul(targetBaseX ^ (targetBaseZ << 16), 16777619);
                     h = Math.imul(h ^ (currentSeed + i), 16777619);
                     h = (h ^ (h >>> 16)) >>> 0;
 
-                    // そのチャンク内での相対座標 (0.0 ～ 16.0)
                     const relLx = ((h & 0xFFFF) / 65536) * 16;
                     const relLz = (((h >>> 16) & 0xFFFF) / 65536) * 16;
-
-                    // 現在処理中のチャンク(data)から見た相対座標 lx, lz
-                    // 隣のチャンクの場合は -16.0～0.0 や 16.0～32.0 になる
                     const lx = (relLx + (dcx << 4));
                     const lz = (relLz + (dcz << 4));
 
-                    // 自分のチャンクに影響を与える範囲外ならスキップ（最適化）
                     if (lx < -decorationMargin || lx > 15 + decorationMargin ||
                         lz < -decorationMargin || lz > 15 + decorationMargin) continue;
 
@@ -794,21 +771,20 @@ export const ChunkSaveManager = {
                     const worldZ = (targetBaseZ + relLz) | 0;
                     let rnd = ((Math.imul(h, 31) >>> 0) / 4294967296);
 
-                    // 表面の高さとバイオームを取得
                     let surfaceY = 0;
-                    let bName = "Default";
+                    let bId = -1; // 文字列 bName は廃止し、数値 bId を使用
 
                     if (dcx === 0 && dcz === 0) {
                         const mapIdx = (Math.floor(relLx) << 4) | Math.floor(relLz);
                         surfaceY = surfaceHeights[mapIdx] | 0;
-                        const bId = biomeMap[mapIdx];
-                        bName = BIOME_CONFIG[bId].name; // IDから名前を解決[cite: 3]
+                        bId = biomeMap[mapIdx];
                     } else {
+                        // 文字列を使わない数値キー生成
                         const cacheKey = (worldX * 4294967296) + (worldZ >>> 0);
                         let cv = _externalCache.get(cacheKey);
+
                         if (cv === undefined) {
-                            // 🌟 改善：隣接チャンクの座標でも、自チャンクと同じ「ブレンディング計算」を再現する
-                            let totalH = 0.0, totalW = 0.0, wIdx = 0; // 元の変数名 totalW に修正
+                            let totalH = 0.0, totalW = 0.0, wIdx = 0;
                             for (let bdx = -blendRadius; bdx <= blendRadius; bdx++) {
                                 for (let bdz = -blendRadius; bdz <= blendRadius; bdz++) {
                                     const bX = (worldX + bdx) | 0;
@@ -819,37 +795,38 @@ export const ChunkSaveManager = {
                                     const b = determineBiome(bTemp, bHum, 64, bRiv);
 
                                     const nNoise = fractalNoise2D(bX * b.noiseScale, bZ * b.noiseScale, 5);
-                                    const h = b.baseHeight + (nNoise * b.heightVariation);
-
-                                    // BLEND_WEIGHTS を正しく参照
+                                    const hVal = b.baseHeight + (nNoise * b.heightVariation);
                                     const weight = BLEND_WEIGHTS[wIdx++];
-                                    totalH += h * weight;
-                                    totalW += weight; // ここを totalWeight から totalW に修正
+
+                                    totalH += hVal * weight;
+                                    totalW += weight;
                                 }
                             }
-                            const y = (totalH / totalW) | 0; // ここも totalW に修正
+                            const y = (totalH / totalW) | 0;
 
                             if (y <= seaLevel) {
                                 cv = -1;
                             } else {
-                                // 代表地点のバイオームを判定
                                 const temp = fractalNoise2D(worldX * 0.0005, worldZ * 0.0005, 3) + 0.5;
                                 const hum = fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5;
                                 const riv = fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5;
                                 const b = determineBiome(temp, hum, 64, riv);
-                                cv = { y: y, name: b.name };
+                                // 🌟 修正：name ではなく id (数値) をキャッシュに保存
+                                cv = { y: y, id: b.id };
                             }
                             _externalCache.set(cacheKey, cv);
                             if (_externalCache.size > 5000) _externalCache.delete(_externalCache.keys().next().value);
                         }
+
                         if (cv === -1 || !cv) continue;
                         surfaceY = cv.y;
-                        bName = cv.name;
+                        bId = cv.id; // キャッシュから数値IDを取得
                     }
 
                     if (surfaceY <= seaLevel) continue;
 
-                    const rules = FeatureRules[bName] || FeatureRules['Default'];
+                    // 🌟 修正：bName（文字列）ではなく bId（数値）で FeatureRules を引く
+                    const rules = FeatureRules[bId] || FeatureRules['Default'];
                     if (!rules) continue;
 
                     for (let j = 0; j < rules.length; j = (j + 1) | 0) {
@@ -857,7 +834,6 @@ export const ChunkSaveManager = {
                         if (rnd < rule.chance) {
                             const featureFunc = Features[rule.feature];
                             if (featureFunc) {
-                                // 🌟 改善：worldX, worldZ を末尾に追加
                                 featureFunc(lx, surfaceY, lz, setBlockBound, rnd / rule.chance, getBlockBound, worldX, worldZ);
                             }
                             break;
@@ -2073,12 +2049,7 @@ function disposeMesh(mesh) {
             for (const mat of mats) {
                 if (!mat) continue;
 
-                // 【重要】globalSkyUniforms からの参照解除
-                // これを忘れると、削除済みチャンクのUniformがリストに残り続け、メモリリークとFPS低下を招く
-                const uniforms = mat.shaderUniforms || (mat.userData && mat.userData.shaderUniforms);
-                if (uniforms && uniforms.u_skyFactor) {
-                    globalSkyUniforms.delete(uniforms.u_skyFactor);
-                }
+                globalSkyUniforms.delete(mat);
 
                 // クローンされたマテリアルのみを破棄（共有元 originMat は維持）
                 if (mat.userData && mat.userData.originMat) {
@@ -2347,28 +2318,41 @@ const globalSkyUniforms = new Set();
 
 function syncSingleChunkSkyLight(mesh) {
     if (!mesh) return;
-
     const currentSkyFactor = getSkyLightFactor(gameTime);
 
     mesh.traverse(child => {
         if (!child.isMesh || !child.material) return;
-
         const mats = Array.isArray(child.material) ? child.material : [child.material];
 
-        for (let i = 0; i < mats.length; i++) {
-            const m = mats[i];
+        for (const m of mats) {
             if (!m) continue;
 
-            const uniforms = m.shaderUniforms || (m.userData && m.userData.shaderUniforms);
+            // 💡 修正：Uniformの中身ではなく「マテリアル自体」を記録
+            globalSkyUniforms.add(m);
 
+            // 初回適用
+            const uniforms = m.shaderUniforms || (m.userData && m.userData.shaderUniforms);
             if (uniforms && uniforms.u_skyFactor) {
                 uniforms.u_skyFactor.value = currentSkyFactor;
-                // 💡 ここでUniformオブジェクトの参照を記録しておく
-                globalSkyUniforms.add(uniforms.u_skyFactor);
             }
         }
     });
 }
+
+function updateGlobalSkyLight() {
+    const currentSkyFactor = getSkyLightFactor(gameTime);
+
+    // globalSkyUniforms は Set<Material> になっている前提
+    for (const mat of globalSkyUniforms) {
+        // 常に現在のマテリアルが保持している最新の参照を取得
+        const uniforms = mat.shaderUniforms || (mat.userData && mat.userData.shaderUniforms);
+
+        if (uniforms && uniforms.u_skyFactor) {
+            uniforms.u_skyFactor.value = currentSkyFactor;
+        }
+    }
+}
+
 /* ======================================================
    【修正版】ライトの再計算 ＋ チャンクメッシュ構築
    ====================================================== */
