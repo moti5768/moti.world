@@ -16,7 +16,10 @@ export const BIOME_TYPES = {
 
 /**
  * バイオームの設定データ
- * ChunkSaveManagerが参照する id プロパティを追加
+ * 
+ * 最適化ポイント:
+ * 1. 数値キーによる高速ルックアップ
+ * 2. 常に同じオブジェクト参照を返すことでGC負荷をゼロに抑制
  */
 export const BIOME_CONFIG = {
     [BIOME_TYPES.PLAINS]: {
@@ -77,22 +80,33 @@ export const BIOME_CONFIG = {
 
 /**
  * キャッシュからの逆引き用テーブル
- * ChunkSaveManager 内の BIOME_ID_TO_NAME エラーを解決します
+ * 
+ * 最適化ポイント:
+ * 実行時の計算を排除するため、リテラルとして定義
  */
-export const BIOME_ID_TO_NAME = Object.values(BIOME_CONFIG).reduce((acc, config) => {
-    acc[config.id] = config.name;
-    return acc;
-}, {});
+export const BIOME_ID_TO_NAME = {
+    0: 'Plains',
+    1: 'Snowy Tundra',
+    2: 'Forest',
+    3: 'Desert',
+    4: 'Mountains',
+    5: 'River'
+};
 
 /**
  * 温度、湿度、標高に基づいてバイオームを決定する
- * 事前に定義された BIOME_CONFIG の参照を返すことで GC 負荷をゼロにします
+ * 
+ * 軽量化ポイント:
+ * 1. Math.absを使わずインラインで絶対値を計算し、関数呼び出しを削減
+ * 2. 頻繁にアクセスされるBIOME_CONFIG[BIOME_TYPES.X]を直接返却
  */
 export function determineBiome(temp, humidity, height = 64, riverValue = 0.5) {
 
     // 1. 特殊地形：川の判定
-    const riverThreshold = 0.05;
-    if (Math.abs(riverValue - 0.5) < riverThreshold) {
+    const riverDiff = riverValue - 0.5;
+    const absRiverDiff = riverDiff < 0 ? -riverDiff : riverDiff;
+
+    if (absRiverDiff < 0.05) {
         return BIOME_CONFIG[BIOME_TYPES.RIVER];
     }
 
@@ -102,7 +116,6 @@ export function determineBiome(temp, humidity, height = 64, riverValue = 0.5) {
     }
 
     // 3. 気温と湿度による判定
-
     // --- 寒冷地 ---
     if (temp < 0.3) {
         return BIOME_CONFIG[BIOME_TYPES.SNOWY_TUNDRA];
