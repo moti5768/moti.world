@@ -896,6 +896,93 @@ function calculateSurfaceHeight(worldX, worldZ) {
     return (totalHeight / totalWeight) | 0;
 }
 
+
+
+
+
+
+
+//ブロックの状態
+
+/**
+ * 💡 ここに挿入: フェンスの接続マスクを取得
+ */
+function getFenceConnectionMask(x, y, z) {
+    let mask = 0;
+    const neighbors = [
+        { dx: 0, dz: -1, bit: 3 }, // 北
+        { dx: 0, dz: 1, bit: 2 }, // 南
+        { dx: 1, dz: 0, bit: 1 }, // 東
+        { dx: -1, dz: 0, bit: 0 }  // 西
+    ];
+
+    for (let i = 0; i < neighbors.length; i++) {
+        const { dx, dz, bit } = neighbors[i];
+        // 第4引数に true を渡してメタデータ（isRaw）込みで取得
+        const neighborRaw = getVoxelAtWorld(x + dx, y, z + dz, true);
+        const neighborId = neighborRaw & 0xFFF;
+
+        const cfg = getBlockConfiguration(neighborId);
+        if (cfg) {
+            // 1. 相手がフェンスである
+            const isFence = cfg.geometryType === "fence";
+            // 2. 相手が「不透明なフルブロック」である
+            const isOpaque = _isOpaqueBlock[neighborId] === 1;
+
+            if (isFence || isOpaque) {
+                mask |= (1 << bit);
+            }
+        }
+    }
+    return mask;
+}
+
+
+function getPaneConnectionMask(x, y, z) {
+    let mask = 0;
+    const neighbors = [
+        { dx: 0, dz: -1, bit: 3 }, // 北
+        { dx: 0, dz: 1, bit: 2 }, // 南
+        { dx: 1, dz: 0, bit: 1 }, // 東
+        { dx: -1, dz: 0, bit: 0 }  // 西
+    ];
+
+    for (let i = 0; i < neighbors.length; i++) {
+        const { dx, dz, bit } = neighbors[i];
+        // 第4引数に true を渡してメタデータ（isRaw）込みで取得
+        const neighborRaw = getVoxelAtWorld(x + dx, y, z + dz, true);
+        const neighborId = neighborRaw & 0xFFF;
+
+        const cfg = getBlockConfiguration(neighborId);
+        if (cfg) {
+            // 1. 相手がフェンスである
+            const isFence = cfg.geometryType === "pane";
+            // 2. 相手が「不透明なフルブロック」である
+            const isOpaque = _isOpaqueBlock[neighborId] === 1;
+
+            if (isFence || isOpaque) {
+                mask |= (1 << bit);
+            }
+        }
+    }
+    return mask;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 const MAX_CACHE_SIZE = 15000;
 const terrainHeightCache = new Map();
 
@@ -913,7 +1000,7 @@ const PLAYER_RADIUS = 0.3;
 const PLAYER_HEIGHT = 1.8;
 const SNEAK_HEIGHT = 1.65;
 
-const JUMP_INITIAL_SPEED = 0.199;
+const JUMP_INITIAL_SPEED = 0.2;
 const UP_DECEL = 0.018;
 const DOWN_ACCEL = 0.007;
 const MAX_FALL_SPEED = -1;
@@ -1945,47 +2032,59 @@ function isOnLadder() {
 }
 
 
-// === 再利用ベクトルを1回だけ確保 ===
+// === 再利用ベクトル（スコープ外で1回だけ確保） ===
 const _tmpDesiredVel = new THREE.Vector3();
 
 /* ======================================================
-   【物理更新：地上モード】
+   【物理更新：updateNormalPhysics】
    ====================================================== */
 function updateNormalPhysics() {
+    // 1. 基本スピードの決定
     let speed = dashActive ? normalDashMultiplier : playerSpeed();
     if (sneakActive) speed *= 0.3;
 
+    // 2. 視点方向に基づいた「目標速度」を取得
     getDesiredHorizontalVelocity(speed);
     _tmpDesiredVel.copy(_vDesired);
 
-    player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * 0.1;
-    player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * 0.1;
+    // 3. 加速感と方向転換のバランス調整
+    // 地上ではレスポンスを重視（0.2）、空中ではダッシュの慣性を維持（0.05）
+    let lerpFactor = player.onGround ? 0.2 : 0.05;
+
+    // 4. 水平速度の更新（線形補間アルゴリズム）
+    // 古い慣性を残しつつ、視点移動による新しい入力方向へスムーズに切り替える
+    player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * lerpFactor;
+    player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * lerpFactor;
+
+    // 5. 停止・微小速度の処理
+    const isMovingInput = _tmpDesiredVel.lengthSq() > 0.00001;
+    if (!isMovingInput && player.onGround) {
+        // 入力がない時は地上で素早く停止させる（慣性の引きずりを防止）
+        player.velocity.x *= 1.0;
+        player.velocity.z *= 1.0;
+    }
 
     if (Math.abs(player.velocity.x) < 0.001) player.velocity.x = 0;
     if (Math.abs(player.velocity.z) < 0.001) player.velocity.z = 0;
 
-    // 🌟 ハシゴの判定
+    // 6. ハシゴの判定
     const onLadder = isOnLadder();
 
     if (onLadder) {
-        // ハシゴに触れている時の処理
-        player.velocity.y = 0; // デフォルトで重力を相殺（静止）
-
+        player.velocity.y = 0; // 重力を相殺
         if (keys["w"] || keys["arrowup"] || keys[" "]) {
             player.velocity.y = 0.05;  // 上る
         } else if (keys["s"] || keys["arrowdown"]) {
             player.velocity.y = -0.05; // 下る
         } else if (sneakActive) {
-            player.velocity.y = 0;    // スニーク中は位置を固定（マイクラ仕様）
+            player.velocity.y = 0;    // スニーク停止
         } else {
-            player.velocity.y = -0.05; // 離すとゆっくり滑り落ちる
+            player.velocity.y = -0.05; // 緩やかな滑り落ち
         }
-
-        // ハシゴ中は通常のジャンプリクエストを無効化
-        jumpRequest = false;
+        jumpRequest = false; // ハシゴ中はジャンプ無効
 
     } else if (!flightMode) {
-        // 通常時の重力計算
+        // 7. 通常時の重力計算
         if (player.velocity.y >= 0) {
             player.velocity.y -= UP_DECEL;
         } else {
@@ -1996,13 +2095,17 @@ function updateNormalPhysics() {
         }
     }
 
-    // 💡 ジャンプのクールダウン
-    if (jumpCooldown > 0) {
-        jumpCooldown--;
-    }
+    // 8. ジャンプのクールダウンと実行
+    if (jumpCooldown > 0) jumpCooldown--;
 
-    // 💡 条件に「!onLadder」を追加（ハシゴ中以外でジャンプ可能）
     if (jumpRequest && player.onGround && !flightMode && !wasUnderwater && jumpCooldown === 0 && !onLadder) {
+        // 🌟 ダッシュジャンプの瞬間：
+        // 水平速度に微量のボーナスを乗せ、空中の lerpFactor (0.05) でその勢いを維持
+        if (dashActive) {
+            player.velocity.x *= 1.1;
+            player.velocity.z *= 1.1;
+        }
+
         player.velocity.y = JUMP_INITIAL_SPEED;
         player.onGround = false;
         jumpRequest = false;
@@ -2018,15 +2121,14 @@ function playerSpeed() {
    【物理更新：飛行モード用】（重力無視・一定速度移動）
    ====================================================== */
 function updateFlightPhysics() {
-    // 修正：飛行モード(flightMode)かつ非ダッシュ時のベース速度を上げる
-    let baseSpeed = playerSpeed(); // デフォルト 0.08
+    // 1. 基本速度の設定
+    let baseSpeed = playerSpeed();
     if (flightMode && !dashActive) {
-        baseSpeed = 0.15; // 飛行時の巡航速度（お好みの数値に調整してください）
+        baseSpeed = 0.15; // 飛行中の巡航速度
     }
-
     const speed = dashActive ? flightDashMultiplier : baseSpeed;
 
-    // 加速度も少し上げるとキビキビ動きます（任意）
+    // 2. 水平方向の移動（初期版の 0.05 を維持して「ヌルッ」とさせる）
     const accel = flightMode ? 0.05 : 0.5;
 
     const desiredVel = getDesiredHorizontalVelocity(speed);
@@ -2035,15 +2137,21 @@ function updateFlightPhysics() {
     player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * accel;
     player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * accel;
 
-    // --- 垂直移動 ---
+    // --- 3. 垂直移動（上下の速さを抑え、滑らかな余韻を出す） ---
     let targetVertical = 0;
     if (keys[" "] || keys["spacebar"]) {
-        targetVertical = flightSpeed;
+        // flightSpeedに0.75を掛けて、上昇・下降の最高速度を少し制限
+        targetVertical = flightSpeed * 0.75;
     } else if (keys["shift"] && flightMode) {
-        targetVertical = -flightSpeed;
+        targetVertical = -flightSpeed * 0.75;
     }
 
-    player.velocity.y += (targetVertical - player.velocity.y) * 0.1;
+    // 加速度（Lerp係数）の動的切り替え
+    // 停止時 (0.06): 水平移動(0.05)に近い、心地よい余韻で止まる
+    // 入力時 (0.3): 出だしが速すぎず、かつモタつかないバランス
+    const verticalAccel = (targetVertical === 0) ? 0.06 : 0.3;
+
+    player.velocity.y += (targetVertical - player.velocity.y) * verticalAccel;
 }
 
 /* ======================================================
@@ -3434,16 +3542,37 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
                 const wy = BEDROCK_LEVEL + y;
                 const visMask = getVisMask(x, y, z, type, currentIdx);
 
-                // --- A. カスタムジオメトリ (テクスチャ復旧 & 描画順序 整合性版) ---
+                // --- A. カスタムジオメトリ ---
                 if (_isCustomGeometryBlock[type]) {
-                    if (!customGeomCache.has(type)) {
-                        const m = createCustomBlockMesh(type, _sharedVec3Zero, null);
-                        if (m) customGeomCache.set(type, m.geometry);
+
+                    // 1. フェンスの場合、動的に接続マスクを計算する
+                    let currentMeta = meta;
+                    if (cfg.geometryType === "fence") {
+                        currentMeta = getFenceConnectionMask(wx, wy, wz);
                     }
-                    const template = customGeomCache.get(type);
+                    if (cfg.geometryType === "pane") {
+                        currentMeta = getPaneConnectionMask(wx, wy, wz);
+                    }
+
+                    // 2. キーを生成 (文字列を使わず、typeとmetaを合体させる)
+                    // typeが12bitなら、4bit分ずらしてmeta(0-15)を格納
+                    const cacheKey = (type << 4) | (currentMeta & 0xF);
+
+                    // ★修正: cacheKey を使ってチェック
+                    if (!customGeomCache.has(cacheKey)) {
+                        // ★修正: 第3引数に null ではなく currentMeta を渡す
+                        const m = createCustomBlockMesh(type, _sharedVec3Zero, currentMeta);
+                        if (m) {
+                            customGeomCache.set(cacheKey, m.geometry);
+                        }
+                    }
+
+                    // ★修正: cacheKey を使って取得
+                    const template = customGeomCache.get(cacheKey);
+
                     if (!template || (!visMask && cfg.cullAdjacentFaces !== false)) continue;
 
-                    // ブロックが持つマテリアルの配列を先に取得しておく
+                    // --- 以降、マテリアル取得などの処理 ---
                     const allMats = getBlockMaterials(+type) || [];
 
                     for (let g = 0; g < template.groups.length; g++) {
@@ -3746,51 +3875,87 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false) {
     return container;
 }
 // ------------------------------
-// CUSTOM BLOCK MESH (軽量化版)
+// CUSTOM BLOCK MESH (完全決定版)
 // ------------------------------
 const materialCache = new Map();
 const collisionCache = new Map();
 const geometryCache = new Map();
 
-function createCustomBlockMesh(type, position, rotation) {
+/**
+ * カスタムブロックのメッシュを生成する
+ * @param {string} type - ブロックの種類 (configから参照)
+ * @param {THREE.Vector3} position - 配置座標
+ * @param {number} meta - 接続状態や特殊状態 (0-15など)
+ * @param {THREE.Euler} rotation - 追加の回転（必要に応じて）
+ */
+function createCustomBlockMesh(type, position, meta = 0, rotation = null) {
     const config = getBlockConfiguration(type);
-    if (!config) { console.error("Unknown block type:", type); return null; }
+    if (!config) {
+        console.error("Unknown block type:", type);
+        return null;
+    }
 
+    // --- 1. キャッシュキーの生成 ---
+    // type(種別) と meta(形状) を組み合わせた数値キーを作成
+    // ※ rotationを頻繁に変える場合は key に含めるか検討
+    const geoKey = (type << 8) | (meta & 0xFF);
+
+    // --- 2. ジオメトリの取得 ---
     let geometry;
     if (config.geometryType) {
-        if (!geometryCache.has(type)) geometryCache.set(type, getBlockGeometry(config.geometryType, config));
-        geometry = geometryCache.get(type);
+        if (!geometryCache.has(geoKey)) {
+            // getBlockGeometry側で meta に基づいた形状生成（フェンス等）を行う
+            geometryCache.set(geoKey, getBlockGeometry(config.geometryType, config, meta));
+        }
+        geometry = geometryCache.get(geoKey);
     } else if (config.customGeometry) {
+        // 外部モデルなどの場合はそのまま、またはクローン
         geometry = config.customGeometry.clone?.() ?? config.customGeometry;
     } else {
         console.warn(`No geometry for block type: ${type}`);
         return null;
     }
 
+    // --- 3. マテリアルの取得 ---
     let materials = materialCache.get(type);
-    if (!materials) { materials = getBlockMaterials(type); materialCache.set(type, materials); }
+    if (!materials) {
+        materials = getBlockMaterials(type);
+        materialCache.set(type, materials);
+    }
 
+    // --- 4. メッシュの構築 ---
     const useMultiMaterial = Array.isArray(materials) && materials.length > 1 && geometry.groups?.length > 0;
-    const meshGeometry = config.geometryType ? geometry : geometry.clone();
-    const meshMaterial = useMultiMaterial ? materials : materials[0];
+    const meshGeometry = geometry; // 共有ジオメトリを使用
+    const meshMaterial = useMultiMaterial ? materials : (Array.isArray(materials) ? materials[0] : materials);
 
     const mesh = new THREE.Mesh(meshGeometry, meshMaterial);
     mesh.position.copy(position);
-    if (rotation) mesh.rotation.copy(rotation);
-    // ✅ 単体配置される特殊ブロックも、視点による非表示化バグを無効化する
-    mesh.frustumCulled = true;
 
-    if (!collisionCache.has(type)) {
-        const boxes = typeof config.customCollision === "function"
-            ? config.customCollision(new THREE.Vector3())
-            : (config.collision ? [new THREE.Box3(new THREE.Vector3(), new THREE.Vector3(1, config.geometryType === "slab" ? 0.5 : 1, 1))] : []);
-        collisionCache.set(type, boxes);
+    // rotation引数がある場合は適用（metaによる形状変化とは別の自由回転用）
+    if (rotation) {
+        mesh.rotation.copy(rotation);
     }
 
+    // 視界外カリングを有効化（パフォーマンス向上）
+    mesh.frustumCulled = true;
+
+    // --- 5. 衝突判定の計算 ---
+    if (!collisionCache.has(geoKey)) {
+        const boxes = typeof config.customCollision === "function"
+            ? config.customCollision(new THREE.Vector3(), meta) // metaを渡して形状に合わせる
+            : (config.collision
+                ? [new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, config.geometryType === "slab" ? 0.5 : 1, 1))]
+                : []);
+        collisionCache.set(geoKey, boxes);
+    }
+
+    // --- 6. メタデータの付与 ---
     mesh.userData = {
-        isCustomBlock: !!config.customGeometry,
+        isCustomBlock: !!config.customGeometry || !!config.geometryType,
         blockType: type,
-        collisionBoxes: collisionCache.get(type).map(box => box.clone().translate(position))
+        blockMeta: meta,
+        // 配置座標に合わせて衝突ボックスをずらして格納
+        collisionBoxes: collisionCache.get(geoKey).map(box => box.clone().translate(position))
     };
 
     mesh.updateMatrixWorld();

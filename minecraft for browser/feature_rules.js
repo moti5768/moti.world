@@ -9,6 +9,15 @@ import { BIOME_TYPES } from './biomes/biomes.js';
  *    砂漠や雪原など、装飾が少ない場所でのループ回数を減らし、CPUコストを最適化。
  */
 export const FeatureRules = {
+
+    // 川 (River)
+    [BIOME_TYPES.RIVER]: {
+        attempts: 0,
+        rules: [
+            { feature: 'GRASS', chance: 0 },
+        ]
+    },
+
     // 森林 (Forest): 木が多く、装飾密度が高い
     [BIOME_TYPES.FOREST]: {
         attempts: 200, // 森は密度を上げる
