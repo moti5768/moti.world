@@ -1285,16 +1285,21 @@ export function getBlockGeometry(type, config, meta = 0) {
             post.translate(0.5, 0.5, 0.5);
             geometries.push(applyGroup(post));
 
-            const barWidth = 0.125;
-            const barHeight = 0.125;
+            const barWidth = 0.125;  // 横幅: 4/16 (0.25)
+            const barHeight = 0.1875; // 高さ: 3/16 (0.1875)
 
-            // 接続用の棒を生成するヘルパー[cite: 1]
+            // 2. 接続用の棒を生成するヘルパーの修正
             const createBar = (x, z, bw, bd) => {
+                // 常に barHeight(0.1875) を高さとして使用するように固定
                 const b1 = new THREE.BoxGeometry(bw, barHeight, bd);
                 const b2 = b1.clone();
-                // 上下2本の棒を配置[cite: 1]
-                b1.translate(x, 0.4, z);
-                b2.translate(x, 0.8, z);
+
+                // 配置の高さ（Y座標）も本家の位置へ微調整
+                // 下の棒: 地面から 6/16 (0.375)
+                // 上の棒: 地面から 12/16 (0.75)
+                b1.translate(x, 0.375 + (barHeight / 2), z);
+                b2.translate(x, 0.75 + (barHeight / 2), z);
+
                 return [applyGroup(b1), applyGroup(b2)];
             };
 
