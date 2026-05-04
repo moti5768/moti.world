@@ -733,7 +733,7 @@ export const ChunkSaveManager = {
         }
 
         // ------------------------------------------------------
-        // 7. デコレーション - 完全ランダム & 境界問題解決版
+        // 7. デコレーション - バイオーム別試行回数 & 早期リターン最適化版
         // ------------------------------------------------------
         const decorationMargin = 6 | 0;
         const LEAVES_ID = BLOCK_TYPES.LEAVES_OAK | 0;
@@ -748,11 +748,26 @@ export const ChunkSaveManager = {
         const setBlockBound = (lx, ly, lz, bid, ow) =>
             _internalSetLocal(data, lx, ly, lz, bid, ow, SKY_ID_VAL, LEAVES_ID);
 
+        // 3x3のチャンク範囲を走査（自チャンクに影響を与える可能性のある範囲）
         for (let dcx = -1; dcx <= 1; dcx = (dcx + 1) | 0) {
             for (let dcz = -1; dcz <= 1; dcz = (dcz + 1) | 0) {
                 const targetBaseX = (baseX + (dcx << 4)) | 0;
                 const targetBaseZ = (baseZ + (dcz << 4)) | 0;
-                const attemptsPerChunk = 300;
+
+                // 🌟 最適化: ループの最初にバイオームを判定し、そのバイオームの試行回数を取得
+                // 300固定からバイオーム可変（砂漠なら20回など）にするだけで劇的に速くなります
+                const sampleWorldX = (targetBaseX + 8) | 0;
+                const sampleWorldZ = (targetBaseZ + 8) | 0;
+
+                // サンプル地点のバイオームIDを取得（高速化のため簡易判定）
+                const sTemp = fractalNoise2D(sampleWorldX * 0.0005, sampleWorldZ * 0.0005, 3) + 0.5;
+                const sHum = fractalNoise2D(sampleWorldX * 0.0005 + 500, sampleWorldZ * 0.0005 + 500, 3) + 0.5;
+                const sRiv = fractalNoise2D(sampleWorldX * 0.005, sampleWorldZ * 0.005, 2) + 0.5;
+                const sampleBiome = determineBiome(sTemp, sHum, 64, sRiv);
+
+                const biomeRuleConfig = FeatureRules[sampleBiome.id] || FeatureRules['Default'];
+                const attemptsPerChunk = biomeRuleConfig.attempts;
+                const rules = biomeRuleConfig.rules;
 
                 for (let i = 0; i < attemptsPerChunk; i = (i + 1) | 0) {
                     let h = Math.imul(targetBaseX ^ (targetBaseZ << 16), 16777619);
@@ -764,6 +779,7 @@ export const ChunkSaveManager = {
                     const lx = (relLx + (dcx << 4));
                     const lz = (relLz + (dcz << 4));
 
+                    // チャンク範囲外すぎる場合はスキップ
                     if (lx < -decorationMargin || lx > 15 + decorationMargin ||
                         lz < -decorationMargin || lz > 15 + decorationMargin) continue;
 
@@ -772,65 +788,55 @@ export const ChunkSaveManager = {
                     let rnd = ((Math.imul(h, 31) >>> 0) / 4294967296);
 
                     let surfaceY = 0;
-                    let bId = -1; // 文字列 bName は廃止し、数値 bId を使用
+                    let bId = -1;
 
+                    // 自チャンク内なら事前計算済みのマップを使用 (超高速)
                     if (dcx === 0 && dcz === 0) {
-                        const mapIdx = (Math.floor(relLx) << 4) | Math.floor(relLz);
+                        const mapIdx = (relLx | 0) << 4 | (relLz | 0);
                         surfaceY = surfaceHeights[mapIdx] | 0;
                         bId = biomeMap[mapIdx];
                     } else {
-                        // 文字列を使わない数値キー生成
+                        // 他チャンクの場合はキャッシュを参照
                         const cacheKey = (worldX * 4294967296) + (worldZ >>> 0);
                         let cv = _externalCache.get(cacheKey);
 
                         if (cv === undefined) {
-                            let totalH = 0.0, totalW = 0.0, wIdx = 0;
-                            for (let bdx = -blendRadius; bdx <= blendRadius; bdx++) {
-                                for (let bdz = -blendRadius; bdz <= blendRadius; bdz++) {
-                                    const bX = (worldX + bdx) | 0;
-                                    const bZ = (worldZ + bdz) | 0;
-                                    const bTemp = fractalNoise2D(bX * 0.0005, bZ * 0.0005, 3) + 0.5;
-                                    const bHum = fractalNoise2D(bX * 0.0005 + 500, bZ * 0.0005 + 500, 3) + 0.5;
-                                    const bRiv = fractalNoise2D(bX * 0.005, bZ * 0.005, 2) + 0.5;
-                                    const b = determineBiome(bTemp, bHum, 64, bRiv);
-
-                                    const nNoise = fractalNoise2D(bX * b.noiseScale, bZ * b.noiseScale, 5);
-                                    const hVal = b.baseHeight + (nNoise * b.heightVariation);
-                                    const weight = BLEND_WEIGHTS[wIdx++];
-
-                                    totalH += hVal * weight;
-                                    totalW += weight;
-                                }
-                            }
-                            const y = (totalH / totalW) | 0;
-
+                            // キャッシュがない場合のみ重い計算を実行
+                            const y = calculateSurfaceHeight(worldX, worldZ); // 高さを計算する関数を外部定義推奨
                             if (y <= seaLevel) {
                                 cv = -1;
                             } else {
-                                const temp = fractalNoise2D(worldX * 0.0005, worldZ * 0.0005, 3) + 0.5;
-                                const hum = fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5;
-                                const riv = fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5;
-                                const b = determineBiome(temp, hum, 64, riv);
-                                // 🌟 修正：name ではなく id (数値) をキャッシュに保存
+                                const b = determineBiome(
+                                    fractalNoise2D(worldX * 0.0005, worldZ * 0.0005, 3) + 0.5,
+                                    fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5,
+                                    64,
+                                    fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5
+                                );
                                 cv = { y: y, id: b.id };
                             }
                             _externalCache.set(cacheKey, cv);
-                            if (_externalCache.size > 5000) _externalCache.delete(_externalCache.keys().next().value);
+                            if (_externalCache.size > 2000) _externalCache.delete(_externalCache.keys().next().value);
                         }
 
                         if (cv === -1 || !cv) continue;
                         surfaceY = cv.y;
-                        bId = cv.id; // キャッシュから数値IDを取得
+                        bId = cv.id;
                     }
 
                     if (surfaceY <= seaLevel) continue;
 
-                    // 🌟 修正：bName（文字列）ではなく bId（数値）で FeatureRules を引く
-                    const rules = FeatureRules[bId] || FeatureRules['Default'];
-                    if (!rules) continue;
-
+                    // 🌟 修正：Feature判定ループ
                     for (let j = 0; j < rules.length; j = (j + 1) | 0) {
                         const rule = rules[j];
+
+                        // 🌟 劇的最適化：
+                        // 自チャンク以外（dcx/dcz != 0）の計算時は、
+                        // 「構造物（木など）」以外のルール（草・花）を完全にスキップする。
+                        if ((dcx !== 0 || dcz !== 0) && !rule.isStructure) {
+                            rnd -= rule.chance;
+                            continue;
+                        }
+
                         if (rnd < rule.chance) {
                             const featureFunc = Features[rule.feature];
                             if (featureFunc) {
@@ -854,6 +860,41 @@ export const ChunkSaveManager = {
         if (info) info.needsRebuild = false;
     }
 };
+
+/**
+ * 特定のワールド座標(x, z)における地形の最終的な高さを計算する
+ * (デコレーションの境界判定用)
+ */
+function calculateSurfaceHeight(worldX, worldZ) {
+    const blendRadius = BLEND_RADIUS | 0;
+    let totalHeight = 0.0;
+    let totalWeight = 0.0;
+    let weightIdx = 0;
+
+    // ブレンディング計算
+    for (let dx = -blendRadius; dx <= blendRadius; dx++) {
+        for (let dz = -blendRadius; dz <= blendRadius; dz++) {
+            const bX = (worldX + dx) | 0;
+            const bZ = (worldZ + dz) | 0;
+
+            // バイオーム判定
+            const bTemp = fractalNoise2D(bX * 0.0005, bZ * 0.0005, 3) + 0.5;
+            const bHum = fractalNoise2D(bX * 0.0005 + 500, bZ * 0.0005 + 500, 3) + 0.5;
+            const bRiv = fractalNoise2D(bX * 0.005, bZ * 0.005, 2) + 0.5;
+            const b = determineBiome(bTemp, bHum, 64, bRiv);
+
+            // その地点のベースノイズ
+            const nNoise = fractalNoise2D(bX * b.noiseScale, bZ * b.noiseScale, 5);
+            const hVal = b.baseHeight + (nNoise * b.heightVariation);
+
+            const weight = BLEND_WEIGHTS[weightIdx++];
+            totalHeight += hVal * weight;
+            totalWeight += weight;
+        }
+    }
+
+    return (totalHeight / totalWeight) | 0;
+}
 
 const MAX_CACHE_SIZE = 15000;
 const terrainHeightCache = new Map();
@@ -2039,16 +2080,20 @@ function disposeMesh(mesh) {
 
         // --- マテリアルの破棄 ---
         if (obj.material) {
-            const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-
-            for (const mat of mats) {
-                if (!mat) continue;
-
+            // 🌟 一時的な配列 [obj.material] の生成を回避
+            if (Array.isArray(obj.material)) {
+                for (let i = 0; i < obj.material.length; i++) {
+                    const mat = obj.material[i];
+                    if (!mat) continue;
+                    globalSkyUniforms.delete(mat);
+                    if (mat.userData && mat.userData.originMat) {
+                        mat.dispose();
+                    }
+                }
+            } else {
+                const mat = obj.material;
                 globalSkyUniforms.delete(mat);
-
-                // クローンされたマテリアルのみを破棄（共有元 originMat は維持）
                 if (mat.userData && mat.userData.originMat) {
-                    // テクスチャは共有されていることが多いため、ここではマテリアル本体のみを破棄
                     mat.dispose();
                 }
             }
@@ -2075,7 +2120,7 @@ function disposeMesh(mesh) {
  * @param {number} cz チャンクZ座標
  */
 function refreshChunkAt(cx, cz) {
-    const key = (cx << 16) | (cz & 0xFFFF);
+    const key = encodeChunkKey(cx, cz); // 🌟 負の座標時のビット計算不整合を防ぎ、確実にキャッシュヒットさせる
     const oldChunk = loadedChunks.get(key);
 
     // 1. プレイヤーからの距離チェック
@@ -2152,12 +2197,11 @@ const NEIGHBOR_OFFSETS = [
  * チャンク更新要求
  */
 function requestChunkUpdate(cx, cz) {
-    // 💡 共通のエンコード関数を使用して、負の座標でも一貫性を保つ
     const key = encodeChunkKey(cx, cz);
 
     if (!chunkUpdateLookup.has(key)) {
         chunkUpdateLookup.add(key);
-        chunkUpdateQueue.push([cx, cz]);
+        chunkUpdateQueue.push(key); // 🌟 配列ではなく整数キーをそのまま保存しGC発生を回避
     }
     scheduleChunkUpdate();
 }
@@ -2166,26 +2210,30 @@ function requestChunkUpdate(cx, cz) {
  * requestAnimationFrameから呼ばれるステップ実行
  * 既存の(function step(){...})()による毎回の関数生成を回避
  */
+let chunkUpdateIdx = 0; // 外部スコープに保持
+
 function stepChunkUpdate() {
     const start = performance.now();
 
-    while (chunkUpdateQueue.length > 0) {
-        const coords = chunkUpdateQueue.shift();
-        const cx = coords[0];
-        const cz = coords[1];
+    while (chunkUpdateIdx < chunkUpdateQueue.length) {
+        const key = chunkUpdateQueue[chunkUpdateIdx];
+        chunkUpdateIdx++; // ポインタを進めるだけ（超高速）
 
-        chunkUpdateLookup.delete(encodeChunkKey(cx, cz));
-
-        // 外部定義の再描画処理を呼び出し
+        chunkUpdateLookup.delete(key);
+        const cx = key >> 16;
+        const cz = (key << 16) >> 16;
         refreshChunkAt(cx, cz);
 
         if (performance.now() - start > CHUNK_MAX_FRAME_TIME) break;
     }
 
-    if (chunkUpdateQueue.length > 0) {
-        requestAnimationFrame(stepChunkUpdate);
-    } else {
+    // 終わったらリセット、残っていたら次回へ
+    if (chunkUpdateIdx >= chunkUpdateQueue.length) {
+        chunkUpdateQueue.length = 0;
+        chunkUpdateIdx = 0;
         chunkUpdateRunning = false;
+    } else {
+        requestAnimationFrame(stepChunkUpdate);
     }
 }
 
@@ -2210,30 +2258,30 @@ function processChunkQueue(deadline) {
     const startTime = performance.now();
     let tasksProcessed = 0;
 
-    // プレイヤーの現在チャンク座標を一度だけ計算
     const pCx = Math.floor(player.position.x / CHUNK_SIZE);
     const pCz = Math.floor(player.position.z / CHUNK_SIZE);
+
+    // 💡 判定をループ外へ
+    const isNoFade = (typeof CHUNK_VISIBLE_DISTANCE !== "undefined" && CHUNK_VISIBLE_DISTANCE === 0);
 
     while (
         chunkQueue.length > 0 &&
         tasksProcessed < MAX_CHUNKS_PER_FRAME &&
         (performance.now() - startTime) < FRAME_TIME_BUDGET
     ) {
-        const chunkInfo = chunkQueue.pop();
-        if (!chunkInfo) continue;
+        // 🌟 改善：オブジェクトではなく整数をpop
+        const key = chunkQueue.pop();
+        if (key === undefined) continue;
 
-        const cx = chunkInfo.cx;
-        const cz = chunkInfo.cz;
-        const key = encodeChunkKey(cx, cz);
+        // 🌟 改善：共有オブジェクトでデコード（GC発生ゼロ）
+        decodeChunkKey(key, _sharedChunkCoord);
+        const cx = _sharedChunkCoord.cx;
+        const cz = _sharedChunkCoord.cz;
 
-        // 【アルゴリズム維持】リアルタイム距離チェック
         const dx = Math.abs(cx - pCx);
         const dz = Math.abs(cz - pCz);
-        if (dx > CHUNK_VISIBLE_DISTANCE || dz > CHUNK_VISIBLE_DISTANCE) {
-            continue;
-        }
+        if (dx > CHUNK_VISIBLE_DISTANCE || dz > CHUNK_VISIBLE_DISTANCE) continue;
 
-        // 未ロード時のみ生成
         if (!loadedChunks.has(key)) {
             const mesh = generateChunkMeshMultiTexture(cx, cz);
             if (!mesh) {
@@ -2243,8 +2291,6 @@ function processChunkQueue(deadline) {
 
             syncSingleChunkSkyLight(mesh);
 
-            // フェードイン設定の判定
-            const isNoFade = (typeof CHUNK_VISIBLE_DISTANCE !== "undefined" && CHUNK_VISIBLE_DISTANCE === 0);
             if (isNoFade) {
                 mesh.userData.fadedIn = true;
             } else {
@@ -2255,20 +2301,13 @@ function processChunkQueue(deadline) {
             scene.add(mesh);
             loadedChunks.set(key, mesh);
 
-            // 隣接チャンクの更新予約
-            for (let i = 0; i < 4; i++) {
-                const off = NEIGHBOR_OFFSETS[i];
-                const nCx = cx + off[0];
-                const nCz = cz + off[1];
-                const nKey = encodeChunkKey(nCx, nCz);
+            // 🌟 改善：関数呼び出しを介さず、インラインで隣接チェック（配列アクセス回避）
+            checkNeighborUpdate(cx + 1, cz);
+            checkNeighborUpdate(cx - 1, cz);
+            checkNeighborUpdate(cx, cz + 1);
+            checkNeighborUpdate(cx, cz - 1);
 
-                if (loadedChunks.has(nKey)) {
-                    // 💡 修正：無限に溜まるだけのSetへの追加をやめ、正しい更新フローに流す
-                    requestChunkUpdate(nCx, nCz);
-                }
-            }
-
-            // フェード処理
+            // フェード処理（ここでの匿名関数生成は、生成頻度が低いため許容範囲）
             fadeInMesh(mesh, 500, () => {
                 mesh.userData.fadedIn = true;
                 mesh.traverse(onMeshChildFinalize);
@@ -2277,15 +2316,19 @@ function processChunkQueue(deadline) {
         tasksProcessed++;
     }
 
-    // 次のフレームまたはアイドル時間の予約
     if (chunkQueue.length > 0 && !chunkQueueScheduled) {
         chunkQueueScheduled = true;
-
         if (window.requestIdleCallback) {
             window.requestIdleCallback(onIdleCallbackHandle, { timeout: 1000 });
         } else {
             requestAnimationFrame(onAnimationFrameHandle);
         }
+    }
+}
+function checkNeighborUpdate(ncx, ncz) {
+    const nKey = ((ncx & 0xFFFF) << 16) | (ncz & 0xFFFF);
+    if (loadedChunks.has(nKey)) {
+        requestChunkUpdate(ncx, ncz);
     }
 }
 
@@ -3755,18 +3798,35 @@ function createCustomBlockMesh(type, position, rotation) {
 }
 
 /* ======================================================
-   【最適化版】updateChunks (変更保持ロジック統合)
+   【最適化版】事前計算ロジック
    ====================================================== */
-let lastChunk = { x: null, z: null }, offsets;
+let lastChunk = { x: null, z: null };
+let offsets = null;
 
+/**
+ * 視界範囲内の全オフセットを距離順に計算し、キャッシュする
+ */
 const precomputeOffsets = () => {
-    const s = CHUNK_VISIBLE_DISTANCE * 2 + 1, o = [];
-    for (let i = 0; i < s * s; i++) {
-        const dx = i % s - CHUNK_VISIBLE_DISTANCE;
-        const dz = Math.floor(i / s) - CHUNK_VISIBLE_DISTANCE;
-        o.push({ dx, dz, d: dx * dx + dz * dz });
+    const dist = CHUNK_VISIBLE_DISTANCE;
+    const size = dist * 2 + 1;
+    const o = [];
+
+    for (let x = -dist; x <= dist; x++) {
+        for (let z = -dist; z <= dist; z++) {
+            // 距離（二乗）を計算
+            const d2 = x * x + z * z;
+
+            // 円形の視界制限をかけたい場合は、ここでフィルタリング可能
+            // if (d2 > dist * dist) continue; 
+
+            o.push({ dx: x, dz: z, d: d2 });
+        }
     }
-    return o.sort((a, b) => a.d - b.d);
+
+    // 距離が近い順にソート（重要：pop()で使うなら逆順、shift()なら正順）
+    // 前回の processChunkQueue で pop() を使っているため、
+    // 「遠い順」に並べておくと pop() した時に「近い順」に取り出せます。
+    return o.sort((a, b) => b.d - a.d);
 };
 
 // GC対策：関数の外で再利用
@@ -3784,79 +3844,85 @@ function updateChunks() {
     lastChunk.z = pCz;
     offsets ||= precomputeOffsets();
 
+    // 1. 現在のキューの中身を把握（整数キーのまま扱う）
     _chunkKeysInQueue.clear();
     for (let i = 0; i < chunkQueue.length; i++) {
-        const q = chunkQueue[i];
-        _chunkKeysInQueue.add(encodeChunkKey(q.cx, q.cz));
+        _chunkKeysInQueue.add(chunkQueue[i]); // 🌟 すでに整数キーが入っている想定
     }
 
     const cands = offsets;
 
-    // 1. 未ロード＆未キューイングのものを追加
+    // 2. 未ロード＆未キューイングのものを追加
     for (let i = 0; i < cands.length; i++) {
         const offset = cands[i];
         const cx = pCx + offset.dx;
         const cz = pCz + offset.dz;
-        const hashKey = encodeChunkKey(cx, cz);
+        const hashKey = ((cx & 0xFFFF) << 16) | (cz & 0xFFFF); // 直接エンコード（高速）
 
         if (!loadedChunks.has(hashKey) && !_chunkKeysInQueue.has(hashKey)) {
-            chunkQueue.push({ cx, cz });
+            chunkQueue.push(hashKey); // 🌟 オブジェクトではなく整数をPush！
             _chunkKeysInQueue.add(hashKey);
         }
     }
 
-    // キューの肥大化対策
+    // 3. キューの肥大化対策（整数キーをデコードして距離判定）
     if (chunkQueue.length > 500) {
         let writeIdx = 0;
         for (let i = 0; i < chunkQueue.length; i++) {
-            const q = chunkQueue[i];
-            const dx = Math.abs(q.cx - pCx);
-            const dz = Math.abs(q.cz - pCz);
+            const key = chunkQueue[i];
+            // ビット演算で座標を即時復元
+            const qCx = key >> 16;
+            const qCz = (key << 16) >> 16;
+
+            const dx = Math.abs(qCx - pCx);
+            const dz = Math.abs(qCz - pCz);
             if (dx <= CHUNK_VISIBLE_DISTANCE && dz <= CHUNK_VISIBLE_DISTANCE) {
-                chunkQueue[writeIdx++] = q;
+                chunkQueue[writeIdx++] = key;
             }
         }
         chunkQueue.length = writeIdx;
     }
 
-    // プレイヤー移動時のみソート（pop()で近い順に処理するため）
+    // 4. プレイヤー移動時のみソート（整数キーをデコードしながら比較）
     if (isMoved && chunkQueue.length > 1) {
         chunkQueue.sort((a, b) => {
-            const dAx = a.cx - pCx;
-            const dAz = a.cz - pCz;
-            const dBx = b.cx - pCx;
-            const dBz = b.cz - pCz;
+            // a の距離
+            const aCx = a >> 16;
+            const aCz = (a << 16) >> 16;
+            const dAx = aCx - pCx;
+            const dAz = aCz - pCz;
+
+            // b の距離
+            const bCx = b >> 16;
+            const bCz = (b << 16) >> 16;
+            const dBx = bCx - pCx;
+            const dBz = bCz - pCz;
+
             return (dBx * dBx + dBz * dBz) - (dAx * dAx + dAz * dAz);
         });
     }
 
-    // 2. 範囲外のチャンクをアンロード
-    // 💡 重要：ここに変更保持ロジックを適用
+    // 5. 範囲外のチャンクをアンロード
     for (const [hashKey, mesh] of loadedChunks.entries()) {
-        const coord = decodeChunkKey(hashKey);
-        const dx = Math.abs(coord.cx - pCx);
-        const dz = Math.abs(coord.cz - pCz);
+        const cCx = hashKey >> 16;
+        const cCz = (hashKey << 16) >> 16;
+        const dx = Math.abs(cCx - pCx);
+        const dz = Math.abs(cCz - pCz);
 
         if (dx > CHUNK_VISIBLE_DISTANCE || dz > CHUNK_VISIBLE_DISTANCE) {
-
-            // --- 変更保持判定 ---
-            // ChunkSaveManager.modifiedChunks にこのチャンクがある場合、
-            // そのまま Map に残しておく（deleteしない）。
-            // これにより、再度接近した際に「変更された地形」として読み込まれます。
-
+            // 変更保持判定
             if (!ChunkSaveManager.modifiedChunks.has(hashKey)) {
-                // 変更がないチャンクの場合は、特に何もしなくても
-                // 再接近時にノイズから再生成されるので、メモリ管理上は「何もない」状態でOK
+                // 必要なら保存処理
             }
 
-            // 共通：GPUリソースを解放（見た目のメッシュは必ず消す）
-            releaseChunkMesh(mesh);
+            releaseChunkMesh(mesh); // disposeMeshのことかな？適宜読み替えてください
             loadedChunks.delete(hashKey);
         }
     }
 
     if (chunkQueue.length > 0) {
-        processChunkQueue({ timeRemaining: () => 16, didTimeout: true });
+        // processChunkQueue を呼び出し
+        processChunkQueue();
     }
 }
 

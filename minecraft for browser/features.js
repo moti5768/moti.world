@@ -10,7 +10,6 @@ const ID_ROSE = BLOCK_TYPES.FLOWER_ROSE;
 const ID_DEADBUSH = BLOCK_TYPES.DEADBUSH;
 
 // --- 最適化: 静的定数の定義 ---
-// 関数外で定義することで、呼び出しごとのメモリ確保(GC)をゼロにします
 const TREE_OFFSETS = [
     [-1, -1], [0, -1], [1, -1],
     [-1, 0], [1, 0],
@@ -18,28 +17,24 @@ const TREE_OFFSETS = [
     [-2, 0], [2, 0], [0, -2], [0, 2]
 ];
 
-// 除算(重い)を避けるための逆数定数 (1 / 2^32)
 const INV_2_32 = 1 / 4294967296;
 
 export const Features = {
     // 🌳 オークの木
     OAK_TREE: (lx, ly, lz, setBlock, rnd, getBlock, worldX = 0, worldZ = 0) => {
-        // 高速化: Math.floor の代わりにビット演算を使用[cite: 7]
         const baseX = lx | 0;
         const baseY = ly | 0;
         const baseZ = lz | 0;
 
-        // 座標ベースのハッシュ生成
+        // 木全体のベースとなるハッシュ（この木専用の乱数シード）
         let treeHash = Math.imul(worldX ^ (worldZ << 16), 16777619);
         treeHash = (treeHash ^ (treeHash >>> 16)) >>> 0;
-        // 高速化: 除算を乗算に変更[cite: 7]
         const treeRnd = treeHash * INV_2_32;
 
         // --- 1. 周辺チェック ---
         if (getBlock) {
             for (let i = 0; i < TREE_OFFSETS.length; i++) {
                 const off = TREE_OFFSETS[i];
-                // getBlock の座標計算をインライン化
                 const block = getBlock(baseX + off[0], baseY, baseZ + off[1]) & 0xFFF;
                 if (block === ID_LOG || block === ID_LEAVES) {
                     return;
@@ -57,22 +52,29 @@ export const Features = {
 
         const height = (4 + (treeRnd * 3)) | 0;
 
+        // 🌟 最適化: 葉の角を削る判定用に、treeHashのビット列をフラグとして使い回す
+        // これにより、ブロックごとのハッシュ計算が不要になります
+        let cornerIdx = 0;
+
         // --- 3. 葉っぱの配置 ---
         for (let y = height - 2; y <= height + 1; y++) {
             const isUpper = y >= height;
             const radius = isUpper ? 1 : 2;
 
             for (let x = -radius; x <= radius; x++) {
-                // 高速化: Math.abs を三項演算子でインライン化[cite: 7]
                 const absX = x < 0 ? -x : x;
                 for (let z = -radius; z <= radius; z++) {
                     const absZ = z < 0 ? -z : z;
 
+                    // 角のブロックの処理
                     if (absX === radius && absZ === radius) {
-                        let leafHash = Math.imul(treeHash ^ (x + 7) ^ ((z + 7) << 4) ^ (y << 8), 16777619);
-                        const leafRnd = (leafHash >>> 0) * INV_2_32;
+                        if (isUpper) continue; // 上部は必ず削る
 
-                        if (isUpper || leafRnd > 0.5) continue;
+                        // 🌟 最適化: treeHashの特定のビットをチェックして確率50%を高速に判定
+                        const skipCorner = (treeHash & (1 << cornerIdx)) !== 0;
+                        cornerIdx = (cornerIdx + 1) & 31; // 次のビットへ進める (最大32ビット)
+
+                        if (skipCorner) continue;
                     }
 
                     setBlock(baseX + x, baseY + y, baseZ + z, ID_LEAVES, true);
@@ -93,6 +95,7 @@ export const Features = {
 
     // 🌟 花
     FLOWER: (lx, ly, lz, setBlock, rnd, getBlock, worldX = 0, worldZ = 0) => {
+        // 花の種類も簡単なハッシュで決定（ここは1回なのでそのままで問題ありません）
         const flowerHash = Math.imul(worldX ^ (worldZ << 16), 16777619);
         const flowerRnd = (flowerHash >>> 0) * INV_2_32;
         setBlock(lx, ly | 0, lz, (flowerRnd > 0.5) ? ID_FLOWER : ID_ROSE, false);

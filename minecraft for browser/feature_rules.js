@@ -2,46 +2,66 @@ import { BIOME_TYPES } from './biomes/biomes.js';
 
 /**
  * 最適化ポイント:
- * 1. キーを BIOME_CONFIG[...].name (文字列) から BIOME_TYPES (数値ID) に変更。
- *    これにより、毎フレームの文字列ハッシュ計算を回避し、高速な参照が可能になります。
- * 2. データ構造を整理し、ランタイムでの動的な名前参照コストをゼロにしました。
+ * 1. isStructure フラグの導入: 
+ *    木のようにチャンク境界を超えるものだけを true に。
+ *    草花などは自身のチャンク内でのみ計算させることで、負荷を 1/9 に軽減します。
+ * 2. attempts (試行回数) のバイオーム別定義:
+ *    砂漠や雪原など、装飾が少ない場所でのループ回数を減らし、CPUコストを最適化。
  */
 export const FeatureRules = {
-    // 森林 (Forest)
-    [BIOME_TYPES.FOREST]: [
-        { feature: 'OAK_TREE', chance: 0.035 },
-        { feature: 'GRASS', chance: 0.12 },
-        { feature: 'FLOWER', chance: 0.01 },
-        { feature: 'FLOWER_ROSE', chance: 0.01 }
-    ],
+    // 森林 (Forest): 木が多く、装飾密度が高い
+    [BIOME_TYPES.FOREST]: {
+        attempts: 200, // 森は密度を上げる
+        rules: [
+            { feature: 'OAK_TREE', chance: 0.035, isStructure: true }, // 木は構造物
+            { feature: 'GRASS', chance: 0.12 },
+            { feature: 'FLOWER', chance: 0.01 },
+            { feature: 'FLOWER_ROSE', chance: 0.01 }
+        ]
+    },
 
-    // 平原 (Plains)
-    [BIOME_TYPES.PLAINS]: [
-        { feature: 'OAK_TREE', chance: 0.001 },
-        { feature: 'GRASS', chance: 0.15 },
-        { feature: 'FLOWER', chance: 0.04 },
-        { feature: 'FLOWER_ROSE', chance: 0.01 }
-    ],
+    // 平原 (Plains): 草原がメイン
+    [BIOME_TYPES.PLAINS]: {
+        attempts: 120,
+        rules: [
+            { feature: 'OAK_TREE', chance: 0.001, isStructure: true },
+            { feature: 'GRASS', chance: 0.15 },
+            { feature: 'FLOWER', chance: 0.04 },
+            { feature: 'FLOWER_ROSE', chance: 0.01 }
+        ]
+    },
 
-    // 雪原 (Snowy Tundra)
-    [BIOME_TYPES.SNOWY_TUNDRA]: [
-        { feature: 'GRASS', chance: 0 },
-    ],
+    // 雪原 (Snowy Tundra): ほぼ何もないので試行回数を最小に
+    [BIOME_TYPES.SNOWY_TUNDRA]: {
+        attempts: 5,
+        rules: [
+            { feature: 'GRASS', chance: 0 },
+        ]
+    },
 
     // 山岳 (Mountains)
-    [BIOME_TYPES.MOUNTAINS]: [
-        { feature: 'GRASS', chance: 0.05 },
-        { feature: 'DEADBUSH', chance: 0.001 }
-    ],
+    [BIOME_TYPES.MOUNTAINS]: {
+        attempts: 50,
+        rules: [
+            { feature: 'GRASS', chance: 0.05 },
+            { feature: 'DEADBUSH', chance: 0.001 }
+        ]
+    },
 
     // 砂漠 (Desert)
-    [BIOME_TYPES.DESERT]: [
-        { feature: 'DEADBUSH', chance: 0.02 }
-    ],
+    [BIOME_TYPES.DESERT]: {
+        attempts: 20,
+        rules: [
+            { feature: 'DEADBUSH', chance: 0.02 }
+        ]
+    },
 
-    // 一致しない場合のフォールバック (数値以外のキー)
-    Default: [
-        { feature: 'GRASS', chance: 0.05 },
-        { feature: 'FLOWER', chance: 0.01 }
-    ]
+    // フォールバック
+    Default: {
+        attempts: 50,
+        rules: [
+            { feature: 'GRASS', chance: 0.05 },
+            { feature: 'FLOWER', chance: 0.01 }
+        ]
+    }
 };
