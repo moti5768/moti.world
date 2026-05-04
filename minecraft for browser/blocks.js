@@ -773,6 +773,7 @@ export const BLOCK_CONFIG = {
         customCollision: (meta) => getPaneCollisionBoxes(meta),
         cullAdjacentFaces: false,
         screenFill: false,
+        previewType: "2D",
         hardness: 0.3
     }),
 };
