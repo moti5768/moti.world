@@ -763,9 +763,9 @@ export const BLOCK_CONFIG = {
     GLASS_PANE: registerBlock({
         name: "glass_pane",
         textures: {
-            top: "textures/blocks/glass.png",
-            bottom: "textures/blocks/glass.png",
-            side: "textures/blocks/glass_pane_top.png",
+            top: "textures/blocks/glass_pane_top.png",
+            bottom: "textures/blocks/glass_pane_top.png",
+            side: "textures/blocks/glass.png",
         },
         geometryType: "pane",
         transparent: true,
@@ -1350,99 +1350,68 @@ export function getBlockGeometry(type, config, meta = 0) {
             const w = meta & 1;
 
             const geometries = [];
-            const thick = 0.125;      // 枠の厚み
-            const glassThin = 0.03;   // ガラスの薄さ
-            const edgeH = 0.125;      // 上下の枠の高さ
+            // 厚みを 0.0625 (1/16) から 0.125 (2/16) に変更
+            const thick = 0.125;
             const halfThick = thick / 2;
 
-            // テクスチャ定義に基づくマテリアルインデックス
-            // Index 0: side (glass.png)
-            // Index 2: top (glass_pane_top.png)
-            // Index 3: bottom (glass_pane_top.png)
-            const MAT_GLASS = 0;
-            const MAT_FRAME_TOP = 2;
-            const MAT_FRAME_BTM = 3;
+            const MAT_GLASS = 0; // glass.png
+            const MAT_FRAME = 2; // glass_pane_top.png
 
-            const addCustomPart = (x, y, z, w_size, h_size, d_size, isGlassBody, axis) => {
+            /**
+             * 一定の厚みでパーツを生成し、UVを投影する
+             */
+            const addFlatPart = (x, y, z, w_size, h_size, d_size, axis) => {
                 const g = new THREE.BoxGeometry(w_size, h_size, d_size);
                 g.translate(x + w_size / 2, y + h_size / 2, z + d_size / 2);
                 g.clearGroups();
 
-                // BoxGeometryの面: 0:右(+X), 1:左(-X), 2:上(+Y), 3:下(-Y), 4:前(+Z), 5:後(-Z)
+                const pos = g.getAttribute('position');
+                const uv = g.getAttribute('uv');
+
+                // 1. マテリアル割り当て
                 for (let i = 0; i < 6; i++) {
-                    let idx = MAT_FRAME_TOP; // 基本は枠
-
-                    if (isGlassBody) {
-                        if (axis === 'z') {
-                            // 南北に伸びる板：左右面(0, 1)がメインのガラス面
-                            if (i === 0 || i === 1) idx = MAT_GLASS;
-                        } else {
-                            // 東西に伸びる板：前後面(4, 5)がメインのガラス面
-                            if (i === 4 || i === 5) idx = MAT_GLASS;
-                        }
-                    }
-
-                    // 上下面(2, 3)は常に枠用のインデックスを割り当て
-                    if (i === 2) idx = MAT_FRAME_TOP;
-                    if (i === 3) idx = MAT_FRAME_BTM;
-
+                    let idx = MAT_FRAME;
+                    if (axis === 'z' && (i === 0 || i === 1)) idx = MAT_GLASS; // E/W面
+                    if (axis === 'x' && (i === 4 || i === 5)) idx = MAT_GLASS; // N/S面
                     g.addGroup(i * 6, 6, idx);
                 }
+
+                // 2. UVの再計算：ワールド座標投影で繋ぎ目を消す
+                for (let i = 0; i < pos.count; i++) {
+                    const worldX = pos.getX(i);
+                    const worldY = pos.getY(i);
+                    const worldZ = pos.getZ(i);
+
+                    let u = (axis === 'x') ? worldX : worldZ;
+                    let v = worldY;
+
+                    uv.setXY(i, u, v);
+                }
+                uv.needsUpdate = true;
                 geometries.push(g);
             };
 
-            const hasAnyConnection = (n || s || e || w);
+            const hasAnyConn = (n || s || e || w);
 
-            // 1. 南北(Z)方向
-            if (n || s || !hasAnyConnection) {
+            // 南北方向：中心からの厚みを増やしてフラットに生成[cite: 1]
+            if (n || s || !hasAnyConn) {
                 const zStart = n ? 0 : 0.5 - halfThick;
                 const zEnd = s ? 1 : 0.5 + halfThick;
                 const depth = zEnd - zStart;
 
-                // 枠パーツ（上・下）
-                addCustomPart(0.5 - halfThick, 1 - edgeH, zStart, thick, edgeH, depth, false, 'z');
-                addCustomPart(0.5 - halfThick, 0, zStart, thick, edgeH, depth, false, 'z');
-                // ガラス本体パーツ
-                addCustomPart(0.5 - glassThin / 2, edgeH, zStart, glassThin, 1 - edgeH * 2, depth, true, 'z');
+                addFlatPart(0.5 - halfThick, 0, zStart, thick, 1, depth, 'z');
             }
 
-            // 2. 東西(X)方向
+            // 東西方向：南北パーツと同じ厚みで交差させる[cite: 1]
             if (e || w) {
                 const xStart = w ? 0 : 0.5 - halfThick;
                 const xEnd = e ? 1 : 0.5 + halfThick;
                 const width = xEnd - xStart;
 
-                // 枠パーツ（上・下）
-                addCustomPart(xStart, 1 - edgeH, 0.5 - halfThick, width, edgeH, thick, false, 'x');
-                addCustomPart(xStart, 0, 0.5 - halfThick, width, edgeH, thick, false, 'x');
-                // ガラス本体パーツ
-                addCustomPart(xStart, edgeH, 0.5 - glassThin / 2, width, 1 - edgeH * 2, glassThin, true, 'x');
+                addFlatPart(xStart, 0, 0.5 - halfThick, width, 1, thick, 'x');
             }
 
             geom = BufferGeometryUtils.mergeBufferGeometries(geometries, true);
-
-            // 3. UVの再投影（引き伸ばし防止）
-            const pos = geom.getAttribute('position');
-            const norm = geom.getAttribute('normal');
-            const uv = geom.getAttribute('uv');
-
-            for (let i = 0; i < pos.count; i++) {
-                const nx = Math.abs(norm.getX(i));
-                const ny = Math.abs(norm.getY(i));
-                const nz = Math.abs(norm.getZ(i));
-
-                let u, v;
-                // 法線方向に基づいてUVをワールド座標から投影
-                if (ny > 0.5) {      // 上下面
-                    u = pos.getX(i); v = pos.getZ(i);
-                } else if (nx > 0.5) { // 側面(X向き)
-                    u = pos.getZ(i); v = pos.getY(i);
-                } else {             // 側面(Z向き)
-                    u = pos.getX(i); v = pos.getY(i);
-                }
-                uv.setXY(i, u, v);
-            }
-            uv.needsUpdate = true;
             break;
         }
 
