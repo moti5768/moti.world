@@ -2,58 +2,53 @@ import { BIOME_TYPES } from './biomes/biomes.js';
 
 /**
  * 最適化ポイント:
- * 1. isStructure フラグの導入: 
- *    木のようにチャンク境界を超えるものだけを true に。
- *    草花などは自身のチャンク内でのみ計算させることで、負荷を 1/9 に軽減します。
- * 2. attempts (試行回数) のバイオーム別定義:
- *    砂漠や雪原など、装飾が少ない場所でのループ回数を減らし、CPUコストを最適化。
+ * 1. オブジェクトのフラット化と形状の統一: 
+ *    各バイオームのプロパティ順序を統一し、隠れクラスの最適化を促します。
+ * 2. 不要なルールの削除: 
+ *    chance が 0 のルールを排除し、生成ループ内の無駄な if 判定を削減します。
  */
 export const FeatureRules = {
 
-    // 川 (River)
+    // 川 (River): attempts 0 なのでルール自体を空にしてループコストを排除
     [BIOME_TYPES.RIVER]: {
         attempts: 0,
-        rules: [
-            { feature: 'GRASS', chance: 0 },
-        ]
+        rules: []
     },
 
-    // 森林 (Forest): 木が多く、装飾密度が高い
+    // 森林 (Forest)
     [BIOME_TYPES.FOREST]: {
-        attempts: 200, // 森は密度を上げる
+        attempts: 200,
         rules: [
-            { feature: 'OAK_TREE', chance: 0.035, isStructure: true }, // 木は構造物
-            { feature: 'GRASS', chance: 0.12 },
-            { feature: 'FLOWER', chance: 0.01 },
-            { feature: 'FLOWER_ROSE', chance: 0.01 }
+            { feature: 'OAK_TREE', chance: 0.035, isStructure: true },
+            { feature: 'GRASS', chance: 0.12, isStructure: false },
+            { feature: 'FLOWER', chance: 0.01, isStructure: false },
+            { feature: 'FLOWER_ROSE', chance: 0.01, isStructure: false }
         ]
     },
 
-    // 平原 (Plains): 草原がメイン
+    // 平原 (Plains)
     [BIOME_TYPES.PLAINS]: {
         attempts: 120,
         rules: [
             { feature: 'OAK_TREE', chance: 0.001, isStructure: true },
-            { feature: 'GRASS', chance: 0.15 },
-            { feature: 'FLOWER', chance: 0.04 },
-            { feature: 'FLOWER_ROSE', chance: 0.01 }
+            { feature: 'GRASS', chance: 0.15, isStructure: false },
+            { feature: 'FLOWER', chance: 0.04, isStructure: false },
+            { feature: 'FLOWER_ROSE', chance: 0.01, isStructure: false }
         ]
     },
 
-    // 雪原 (Snowy Tundra): ほぼ何もないので試行回数を最小に
+    // 雪原 (Snowy Tundra)
     [BIOME_TYPES.SNOWY_TUNDRA]: {
         attempts: 5,
-        rules: [
-            { feature: 'GRASS', chance: 0 },
-        ]
+        rules: [] // chance 0 のものは事前に除外
     },
 
     // 山岳 (Mountains)
     [BIOME_TYPES.MOUNTAINS]: {
         attempts: 50,
         rules: [
-            { feature: 'GRASS', chance: 0.05 },
-            { feature: 'DEADBUSH', chance: 0.001 }
+            { feature: 'GRASS', chance: 0.05, isStructure: false },
+            { feature: 'DEADBUSH', chance: 0.001, isStructure: false }
         ]
     },
 
@@ -61,7 +56,7 @@ export const FeatureRules = {
     [BIOME_TYPES.DESERT]: {
         attempts: 20,
         rules: [
-            { feature: 'DEADBUSH', chance: 0.02 }
+            { feature: 'DEADBUSH', chance: 0.02, isStructure: false }
         ]
     },
 
@@ -69,8 +64,8 @@ export const FeatureRules = {
     Default: {
         attempts: 50,
         rules: [
-            { feature: 'GRASS', chance: 0.05 },
-            { feature: 'FLOWER', chance: 0.01 }
+            { feature: 'GRASS', chance: 0.05, isStructure: false },
+            { feature: 'FLOWER', chance: 0.01, isStructure: false }
         ]
     }
 };
