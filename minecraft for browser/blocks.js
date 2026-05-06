@@ -829,7 +829,6 @@ function cachedLoadTexture(path, fallback = null) {
     }
 
     if (textureCache.has(path)) return textureCache.get(path);
-    if (loadingPromises.has(path)) return textureCache.get(path);
 
     const placeholder = new THREE.Texture();
     // 初期状態（ロード中・失敗時）をピンク黒にしておく

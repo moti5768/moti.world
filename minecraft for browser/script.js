@@ -72,7 +72,10 @@ function applySeed(seedInput) {
 
 /* --- パーリンノイズ計算用ヘルパー --- */
 
-const fade = t => t * t * t * (t * (t * (t * 6 - 15) + 10));
+const fade = t => {
+    const t3 = t * t * t;
+    return t3 * (t * (t * 6 - 15) + 10);
+};
 const lerp = (a, b, t) => a + t * (b - a);
 
 // 2D勾配：ビット演算を整理して方向の偏りを防ぐ
@@ -620,60 +623,17 @@ export const ChunkSaveManager = {
         }
 
         // ------------------------------------------------------
-        // 4. 地形（高さマップ）生成 - ノイズ計算を完全除去
+        // 4&5&6. 地形・洞窟・表土の一括生成 (極限最適化版)
         // ------------------------------------------------------
-        for (let x = 0; x < 16; x = (x + 1) | 0) {
-            const xOff = (x << 12) | 0;
-            const xMapIdx = (x << 4) | 0;
+        // 🌟 3回に分かれていたループと「石を土で上書きする」処理を1回に統合しました。
+        const surfaceHeights = this._sharedSurfaceHeights;
+        surfaceHeights.fill(0);
 
-            for (let z = 0; z < 16; z = (z + 1) | 0) {
-                const xzOff = (xOff | (z << 8)) | 0;
-                const mapIdx = (xMapIdx | z) | 0;
-
-                const currentBiomeId = paddedBiomeMap[(x + blendRadius) * paddedSize + (z + blendRadius)];
-                biomeMap[mapIdx] = currentBiomeId; // IDをそのまま保存
-
-                let totalHeight = 0.0;
-                let totalWeight = 0.0;
-
-                // 49マスのブレンディングループ
-                let weightIdx = 0;
-                for (let dx = -blendRadius; dx <= blendRadius; dx = (dx + 1) | 0) {
-                    const xShift = ((x + dx + blendRadius) * paddedSize) | 0;
-                    for (let dz = -blendRadius; dz <= blendRadius; dz = (dz + 1) | 0) {
-                        const nz = (z + dz + blendRadius) | 0;
-
-                        // ステップ3で計算済みの高さを呼び出すだけ (超高速)
-                        const h = paddedHMap[xShift + nz];
-                        const weight = BLEND_WEIGHTS[weightIdx++];
-
-                        totalHeight += h * weight;
-                        totalWeight += weight;
-                    }
-                }
-
-                const sHeight = (totalHeight / totalWeight) | 0;
-                heightMap[mapIdx] = sHeight;
-
-                // ブロック配置
-                data[xzOff] = BEDROCK;
-                let idx = (xzOff + 1) | 0;
-                for (let y = 1; y < sHeight; y = (y + 1) | 0) {
-                    data[idx++] = STONE;
-                }
-                for (let y = sHeight; y <= seaLevel; y = (y + 1) | 0) {
-                    data[xzOff + y] = WATER;
-                }
-            }
-        }
-
-        // ------------------------------------------------------
-        // 5. カーバー処理 (洞窟) - 変更なし
-        // ------------------------------------------------------
         const scaleXZ = CAVE_SCALE_XZ;
         const scaleY = CAVE_SCALE_Y;
         const LAVA_ID = BLOCK_TYPES.LAVA | 0;
         const SKY_ID = BLOCK_TYPES.SKY | 0;
+        const STONE_ID = BLOCK_TYPES.STONE | 0;
 
         for (let x = 0; x < 16; x = (x + 1) | 0) {
             const worldX = (baseX + x) | 0;
@@ -685,49 +645,70 @@ export const ChunkSaveManager = {
                 const worldZ = (baseZ + z) | 0;
                 const nz = worldZ * scaleXZ;
                 const xzOff = (xOff | (z << 8)) | 0;
-                const sHeight = heightMap[xMapIdx | z] | 0;
+                const mapIdx = (xMapIdx | z) | 0;
 
-                for (let y = 5; y < sHeight; y = (y + 1) | 0) {
-                    if (isCave(worldX, y, worldZ, sHeight, nx, y * scaleY, nz)) {
-                        data[xzOff + y] = (y <= 11) ? LAVA_ID : SKY_ID;
+                const currentBiomeId = paddedBiomeMap[(x + blendRadius) * paddedSize + (z + blendRadius)];
+                biomeMap[mapIdx] = currentBiomeId;
+                const biome = BIOME_CONFIG[currentBiomeId];
+
+                // ブレンディングによる高さ計算
+                let totalHeight = 0.0;
+                let totalWeight = 0.0;
+                let weightIdx = 0;
+                for (let dx = -blendRadius; dx <= blendRadius; dx = (dx + 1) | 0) {
+                    const xShift = ((x + dx + blendRadius) * paddedSize) | 0;
+                    for (let dz = -blendRadius; dz <= blendRadius; dz = (dz + 1) | 0) {
+                        const h = paddedHMap[xShift + (z + dz + blendRadius) | 0];
+                        const weight = BLEND_WEIGHTS[weightIdx++];
+                        totalHeight += h * weight;
+                        totalWeight += weight;
                     }
                 }
-            }
-        }
 
-        // ------------------------------------------------------
-        // 6. 表面ビルダー (表土配置) - 変更なし
-        // ------------------------------------------------------
-        const surfaceHeights = this._sharedSurfaceHeights;
-        surfaceHeights.fill(0);
-        const STONE_ID = BLOCK_TYPES.STONE | 0;
-
-        for (let x = 0; x < 16; x = (x + 1) | 0) {
-            const xOff = (x << 12) | 0;
-            const xMapIdx = (x << 4) | 0;
-
-            for (let z = 0; z < 16; z = (z + 1) | 0) {
-                const xzOff = (xOff | (z << 8)) | 0;
-                const mapIdx = (xMapIdx | z) | 0;
-                const sHeight = heightMap[mapIdx] | 0;
-                const biomeId = biomeMap[mapIdx];
-                const biome = BIOME_CONFIG[biomeId]; // マスターデータから設定を引く
-
+                const sHeight = (totalHeight / totalWeight) | 0;
+                heightMap[mapIdx] = sHeight;
                 surfaceHeights[mapIdx] = sHeight;
-                if (sHeight <= 1) continue;
 
+                // 表土レイヤーの計算
                 const filler = biome.fillerBlock | 0;
                 const top = biome.topBlock | 0;
                 const dirtEnd = (sHeight - 1) | 0;
                 let stoneEnd = (sHeight - 4) | 0;
                 if (stoneEnd < 1) stoneEnd = 1;
 
-                for (let y = stoneEnd; y < dirtEnd; y = (y + 1) | 0) {
-                    if (data[xzOff + y] === STONE_ID) data[xzOff + y] = filler;
-                }
-                const topIdx = (xzOff + dirtEnd) | 0;
-                if (data[topIdx] === STONE_ID) {
-                    data[topIdx] = (dirtEnd < seaLevel) ? filler : top;
+                // Y=0 は岩盤
+                data[xzOff] = BEDROCK;
+
+                // Y=1 から Y=seaLevel または sHeight の高い方まで一気に積み上げる
+                const maxY = sHeight > seaLevel ? sHeight : seaLevel;
+
+                for (let y = 1; y <= maxY; y = (y + 1) | 0) {
+                    const idx = (xzOff + y) | 0;
+
+                    if (y < sHeight) {
+                        // 地形内部の処理（石・土・洞窟）
+                        let blockToPlace = STONE_ID;
+
+                        // 洞窟判定 (Y=5以上)
+                        if (y >= 5 && isCave(worldX, y, worldZ, sHeight, nx, y * scaleY, nz)) {
+                            data[idx] = (y <= 11) ? LAVA_ID : SKY_ID;
+                            continue; // 洞窟なら表土化の処理をスキップ
+                        }
+
+                        // 表土判定 (洞窟で空気にされなかった部分のみ)
+                        if (y >= stoneEnd) {
+                            if (y === dirtEnd) {
+                                blockToPlace = (dirtEnd < seaLevel) ? filler : top;
+                            } else {
+                                blockToPlace = filler;
+                            }
+                        }
+                        data[idx] = blockToPlace;
+
+                    } else if (y >= sHeight && y <= seaLevel) {
+                        // 地形より上で、海面以下の場合は海
+                        data[idx] = WATER;
+                    }
                 }
             }
         }
@@ -905,9 +886,9 @@ function calculateSurfaceHeight(worldX, worldZ) {
 //ブロックの状態
 
 /**
- * 💡 ここに挿入: フェンスの接続マスクを取得
+ * パネル系・フェンス系ブロックの接続マスクを取得する共通関数
  */
-function getFenceConnectionMask(x, y, z) {
+function getConnectionMask(x, y, z, targetGeometryType) {
     let mask = 0;
     const neighbors = [
         { dx: 0, dz: -1, bit: 3 }, // 北
@@ -918,18 +899,15 @@ function getFenceConnectionMask(x, y, z) {
 
     for (let i = 0; i < neighbors.length; i++) {
         const { dx, dz, bit } = neighbors[i];
-        // 第4引数に true を渡してメタデータ（isRaw）込みで取得
         const neighborRaw = getVoxelAtWorld(x + dx, y, z + dz, true);
         const neighborId = neighborRaw & 0xFFF;
 
         const cfg = getBlockConfiguration(neighborId);
         if (cfg) {
-            // 1. 相手がフェンスである
-            const isFence = cfg.geometryType === "fence";
-            // 2. 相手が「不透明なフルブロック」である
+            const isTarget = cfg.geometryType === targetGeometryType;
             const isOpaque = _isOpaqueBlock[neighborId] === 1;
 
-            if (isFence || isOpaque) {
+            if (isTarget || isOpaque) {
                 mask |= (1 << bit);
             }
         }
@@ -937,35 +915,13 @@ function getFenceConnectionMask(x, y, z) {
     return mask;
 }
 
+// 呼び出し用関数をスッキリさせる
+function getFenceConnectionMask(x, y, z) {
+    return getConnectionMask(x, y, z, "fence");
+}
 
 function getPaneConnectionMask(x, y, z) {
-    let mask = 0;
-    const neighbors = [
-        { dx: 0, dz: -1, bit: 3 }, // 北
-        { dx: 0, dz: 1, bit: 2 }, // 南
-        { dx: 1, dz: 0, bit: 1 }, // 東
-        { dx: -1, dz: 0, bit: 0 }  // 西
-    ];
-
-    for (let i = 0; i < neighbors.length; i++) {
-        const { dx, dz, bit } = neighbors[i];
-        // 第4引数に true を渡してメタデータ（isRaw）込みで取得
-        const neighborRaw = getVoxelAtWorld(x + dx, y, z + dz, true);
-        const neighborId = neighborRaw & 0xFFF;
-
-        const cfg = getBlockConfiguration(neighborId);
-        if (cfg) {
-            // 1. 相手がフェンスである
-            const isFence = cfg.geometryType === "pane";
-            // 2. 相手が「不透明なフルブロック」である
-            const isOpaque = _isOpaqueBlock[neighborId] === 1;
-
-            if (isFence || isOpaque) {
-                mask |= (1 << bit);
-            }
-        }
-    }
-    return mask;
+    return getConnectionMask(x, y, z, "pane");
 }
 
 
@@ -1176,31 +1132,33 @@ const _SHARED_AABB_RESULT = {
     normal: new THREE.Vector3()
 };
 
-/**
- * プレイヤーの衝突判定用AABBを取得する
- * @param {THREE.Vector3} pos - 計算基準となる座標（省略時は現在のプレイヤー位置）
- * @param {Object|null} size - {h, r} 形式のサイズ指定（ループ最適化用）
- * @returns {THREE.Box3} 計算済みのAABB（※内部で再利用されるため、保持する場合は .clone() 推奨）
- */
 function getPlayerAABB(pos = player.position, size = null) {
-    // 💡 改善：sizeが渡されていれば再計算しない
-    const h = size ? size.h : getCurrentPlayerHeight();
-    const r = size ? size.r : (PLAYER_RADIUS - COLLISION_MARGIN);
+    // 1. nullとの厳密比較（JIT最適化ヒント）
+    const h = (size !== null) ? size.h : (sneakActive ? SNEAK_HEIGHT : PLAYER_HEIGHT);
+    const r = (size !== null) ? size.r : (PLAYER_RADIUS - COLLISION_MARGIN);
 
-    // 💡 改善：足元のY座標計算を共通化
-    const feetY = player.positionIsCenter ? pos.y - (h * 0.5) : pos.y;
+    let feetY = pos.y;
+    // 2. Booleanの厳密比較（分岐予測の助け）
+    if (player.positionIsCenter === true) {
+        feetY -= (h * 0.5);
+    }
 
-    // 💡 改善：Box3のプロパティを直接セット（中間変数を経由しない）
-    _tempAABB.min.set(pos.x - r, feetY, pos.z - r);
-    _tempAABB.max.set(pos.x + r, feetY + h, pos.z + r);
+    // 3. プロパティキャッシュと直接代入（これは修正版でも完璧にできています！）
+    const min = _tempAABB.min;
+    const max = _tempAABB.max;
+
+    min.x = pos.x - r;
+    min.y = feetY;
+    min.z = pos.z - r;
+
+    max.x = pos.x + r;
+    max.y = feetY + h;
+    max.z = pos.z + r;
 
     return _tempAABB;
 }
 
-function getPlayerAABBAt(pos) {
-    return getPlayerAABB(pos);
-}
-
+const getPlayerAABBAt = getPlayerAABB;
 /* ======================================================
    【衝突判定キャッシュ＆プールシステム】
    ====================================================== */
@@ -1468,9 +1426,8 @@ export function getVoxelAtWorld(x, y, z, isRaw = false) {
     }
 
     // 4. インデックス計算の最適化
-    // 変数への代入を減らし、ブラケット内で直接ビット演算を行う
-    const val = data[fy + ((fz & 15) << 8) + ((fx & 15) << 12)] ?? 0;
-
+    const idx = (fy | ((fz & 0xF) << 8) | ((fx & 0xF) << 12)) | 0;
+    const val = data[idx] | 0;
     return isRaw ? val : (val & 0xFFF);
 }
 
@@ -1561,46 +1518,57 @@ function getPreciseHeadBlockType(headPos) {
     return chosenID;
 }
 
+// 関数の外で一度だけ取得（キャッシュ）
 const _sharedHeadPos = new THREE.Vector3();
+const _screenOverlayEl = document.getElementById("screenOverlayHtml");
+
 function updateScreenOverlay() {
     const headY = player.position.y + getCurrentPlayerHeight() * 0.85;
     _sharedHeadPos.set(player.position.x, headY, player.position.z);
 
     const voxelID = getPreciseHeadBlockType(_sharedHeadPos);
     const config = getBlockConfiguration(voxelID);
-    const el = document.getElementById("screenOverlayHtml");
+    const el = _screenOverlayEl; // キャッシュを使用
 
-    // --- 🟢 判定ロジックの修正 ---
-    // screenFill が無効、または設定されていない場合は表示しない
+    // --- 🟢 判定ロジック ---
     const sf = config?.screenFill;
     const isEnabled = typeof sf === 'object' ? sf.enabled !== false : !!sf;
+    const texturePath = config?.textures ? (config.textures.top || config.textures.all || config.textures.side) : null;
 
-    if (!isEnabled) {
-        el.style.display = "none";
+    if (!isEnabled || !texturePath) {
+        if (el.style.display !== "none") {
+            el.style.display = "none";
+        }
         return;
     }
 
-    // テクスチャパスの取得
-    const texturePath = config.textures.top || config.textures.all || config.textures.side;
-    if (!texturePath) {
-        el.style.display = "none";
-        return;
-    }
-
-    // --- 🟢 透明度の決定ロジック ---
+    // --- 🟢 透明度の決定 ---
     let finalOpacity = "1.0";
     if (typeof sf === 'object' && sf.opacity !== undefined) {
-        // config で設定した opacity (0.1 など) を優先
         finalOpacity = sf.opacity.toString();
     } else if (voxelID === BLOCK_TYPES.WATER) {
-        // 古い設定形式用のフォールバック（以前の 0.8 だと濃すぎるので 0.5 等を推奨）
         finalOpacity = "0.5";
     }
 
-    el.style.opacity = finalOpacity;
-    el.style.backgroundImage = `url(${texturePath})`;
-    el.style.display = "block";
+    // --- 🟢 反映（Dirty Checking） ---
+    // 1. 透明度
+    if (el._lastOpacity !== finalOpacity) {
+        el.style.opacity = finalOpacity;
+        el._lastOpacity = finalOpacity;
+    }
+
+    // 2. 背景画像（パスが変わったときだけ結合してセット）
+    if (el._lastPath !== texturePath) {
+        el.style.backgroundImage = `url(${texturePath})`;
+        el._lastPath = texturePath;
+    }
+
+    // 3. 表示状態
+    if (el.style.display !== "block") {
+        el.style.display = "block";
+    }
 }
+
 /* ======================================================
    【Swept AABB 衝突検出】
    ====================================================== */
@@ -1690,7 +1658,6 @@ function sweptAABB(movingBox, velocity, dt, staticBox) {
 ※ Y 軸の衝突解決部分をバイナリサーチで補正するよう変更
 ====================================================== */
 
-// 新しい垂直方向の衝突解決関数（バイナリサーチによる安全位置算出）
 function resolveVerticalCollision(origY, candidateY, newX, newZ) {
     let safeY = origY;
     const testPos = allocVec(); // ← Vector3 をプールから取得
