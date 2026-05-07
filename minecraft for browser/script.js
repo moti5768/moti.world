@@ -806,7 +806,6 @@ export const ChunkSaveManager = {
 
                     if (surfaceY <= seaLevel) continue;
 
-                    // 🌟 修正：Feature判定ループ
                     for (let j = 0; j < rules.length; j = (j + 1) | 0) {
                         const rule = rules[j];
 
