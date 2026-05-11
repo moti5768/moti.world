@@ -507,6 +507,22 @@ const _internalSetLocal = (data, lx, ly, lz, blockId, allowOverwrite, skyId, lea
     }
 };
 
+/**
+ * 統一されたバイオーム・高さ計算ロジック
+ */
+const _getBiomeAt = (wx, wz) => {
+    const temp = fractalNoise2D(wx * 0.0005, wz * 0.0005, 3) + 0.5;
+    const humidity = fractalNoise2D(wx * 0.0005 + 500, wz * 0.0005 + 500, 3) + 0.5;
+    const river = fractalNoise2D(wx * 0.005, wz * 0.005, 2) + 0.5;
+    return determineBiome(temp, humidity, 64, river);
+};
+
+const _getRawHeightAt = (wx, wz) => {
+    const b = _getBiomeAt(wx, wz);
+    const nNoise = fractalNoise2D(wx * b.noiseScale, wz * b.noiseScale, 5);
+    return b.baseHeight + (nNoise * b.heightVariation);
+};
+
 export const ChunkSaveManager = {
     modifiedChunks: new Map(),
     chunkUpdateInfo: new Map(),
@@ -606,11 +622,8 @@ export const ChunkSaveManager = {
                 const worldZ = (baseZ + z) | 0;
                 const localIdx = (xOffset + (z + blendRadius)) | 0;
 
-                const temp = fractalNoise2D(worldX * 0.0005, worldZ * 0.0005, 3) + 0.5;
-                const humidity = fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5;
-                const riverValue = fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5;
+                const b = _getBiomeAt(worldX, worldZ);
 
-                const b = determineBiome(temp, humidity, 64, riverValue);
                 // オブジェクトのプロパティをローカルにキャッシュ
                 const nScale = b.noiseScale;
                 const bHeight = b.baseHeight;
@@ -741,10 +754,13 @@ export const ChunkSaveManager = {
                 const sampleWorldZ = (targetBaseZ + 8) | 0;
 
                 // サンプル地点のバイオームIDを取得（高速化のため簡易判定）
-                const sTemp = fractalNoise2D(sampleWorldX * 0.0005, sampleWorldZ * 0.0005, 3) + 0.5;
-                const sHum = fractalNoise2D(sampleWorldX * 0.0005 + 500, sampleWorldZ * 0.0005 + 500, 3) + 0.5;
-                const sRiv = fractalNoise2D(sampleWorldX * 0.005, sampleWorldZ * 0.005, 2) + 0.5;
-                const sampleBiome = determineBiome(sTemp, sHum, 64, sRiv);
+                let sampleBiome;
+                if (dcx === 0 && dcz === 0) {
+                    // チャンク中央(8,8)の計算済みバイオームを参照
+                    sampleBiome = BIOME_CONFIG[biomeMap[(8 << 4) | 8]];
+                } else {
+                    sampleBiome = _getBiomeAt(sampleWorldX, sampleWorldZ);
+                }
 
                 const biomeRuleConfig = FeatureRules[sampleBiome.id] || FeatureRules['Default'];
                 const attemptsPerChunk = biomeRuleConfig.attempts;
@@ -787,12 +803,7 @@ export const ChunkSaveManager = {
                             if (y <= seaLevel) {
                                 cv = -1;
                             } else {
-                                const b = determineBiome(
-                                    fractalNoise2D(worldX * 0.0005, worldZ * 0.0005, 3) + 0.5,
-                                    fractalNoise2D(worldX * 0.0005 + 500, worldZ * 0.0005 + 500, 3) + 0.5,
-                                    64,
-                                    fractalNoise2D(worldX * 0.005, worldZ * 0.005, 2) + 0.5
-                                );
+                                const b = _getBiomeAt(worldX, worldZ);
                                 cv = { y: y, id: b.id };
                             }
                             _externalCache.set(cacheKey, cv);
@@ -842,8 +853,7 @@ export const ChunkSaveManager = {
 };
 
 /**
- * 特定のワールド座標(x, z)における地形の最終的な高さを計算する
- * (デコレーションの境界判定用)
+ * 特定の座標における地形の最終的な高さを計算 (ブレンディング込)
  */
 function calculateSurfaceHeight(worldX, worldZ) {
     const blendRadius = BLEND_RADIUS | 0;
@@ -851,35 +861,18 @@ function calculateSurfaceHeight(worldX, worldZ) {
     let totalWeight = 0.0;
     let weightIdx = 0;
 
-    // ブレンディング計算
-    for (let dx = -blendRadius; dx <= blendRadius; dx++) {
-        for (let dz = -blendRadius; dz <= blendRadius; dz++) {
-            const bX = (worldX + dx) | 0;
+    for (let dx = -blendRadius; dx <= blendRadius; dx = (dx + 1) | 0) {
+        const bX = (worldX + dx) | 0;
+        for (let dz = -blendRadius; dz <= blendRadius; dz = (dz + 1) | 0) {
             const bZ = (worldZ + dz) | 0;
-
-            // バイオーム判定
-            const bTemp = fractalNoise2D(bX * 0.0005, bZ * 0.0005, 3) + 0.5;
-            const bHum = fractalNoise2D(bX * 0.0005 + 500, bZ * 0.0005 + 500, 3) + 0.5;
-            const bRiv = fractalNoise2D(bX * 0.005, bZ * 0.005, 2) + 0.5;
-            const b = determineBiome(bTemp, bHum, 64, bRiv);
-
-            // その地点のベースノイズ
-            const nNoise = fractalNoise2D(bX * b.noiseScale, bZ * b.noiseScale, 5);
-            const hVal = b.baseHeight + (nNoise * b.heightVariation);
-
+            const hVal = _getRawHeightAt(bX, bZ);
             const weight = BLEND_WEIGHTS[weightIdx++];
             totalHeight += hVal * weight;
             totalWeight += weight;
         }
     }
-
     return (totalHeight / totalWeight) | 0;
 }
-
-
-
-
-
 
 
 //ブロックの状態
@@ -1315,47 +1308,23 @@ function getTerrainHeight(worldX, worldZ) {
     const zInt = worldZ | 0;
 
     // --- 1. 高速キャッシュルックアップ ---
-    // 文字列連結を避け、32bit整数にパッキングしてメモリと速度を最適化
+    // 0xFFFFパッキングは±32767の範囲で有効。広大な世界なら `${xInt},${zInt}` 等を検討。
     const key = ((xInt & 0xFFFF) << 16) | (zInt & 0xFFFF);
     const cached = terrainHeightCache.get(key);
     if (cached !== undefined) return cached;
 
-    // --- 2. バイオーム決定 ---
-    // 地形高さを決める前にバイオームが必要だが、バイオーム決定に高さが必要な矛盾を 
-    // 第3引数に SEA_LEVEL (通常64) を渡すことで解決
-    const temp = fractalNoise2D(xInt * 0.0005, zInt * 0.0005, 3) + 0.5;
-    const humidity = fractalNoise2D(xInt * 0.0005 + 500, zInt * 0.0005 + 500, 3) + 0.5;
-    const riverValue = fractalNoise2D(xInt * 0.005, zInt * 0.005, 2) + 0.5;
+    // --- 2. 統一ロジックによる計算 (重要) ---
+    // ここで ChunkSaveManager 内でも使っている共通関数を呼び出す
+    // ブレンディングが必要な場合は calculateSurfaceHeight(xInt, zInt) を呼ぶ
+    const result = _getRawHeightAt(xInt, zInt) | 0;
 
-    // 暫定の高さ(64)を基準にバイオームを決定
-    const biome = determineBiome(temp, humidity, 64, riverValue);
-
-    // --- 3. 地形高さ計算 ---
-    // バイオーム固有のノイズスケールと変動幅を適用
-    const hNoise = fractalNoise2D(
-        xInt * biome.noiseScale,
-        zInt * biome.noiseScale,
-        5
-    );
-
-    let result = (biome.baseHeight + hNoise * biome.heightVariation) | 0;
-
-    // --- 4. 特殊バイオーム補正 ---
-    // 川バイオームの場合は水面下になるよう調整
-    if (biome.name === 'River') {
-        // 元の地形が SEA_LEVEL-2 より高い場合のみ強制的に下げる
-        const riverBed = (SEA_LEVEL - 2) | 0;
-        if (result > riverBed) result = riverBed;
-    }
-
-    // --- 5. キャッシュ管理とGCスパイク対策 ---
+    // --- 3. キャッシュ管理 (GCスパイク対策維持) ---
     if (terrainHeightCache.size >= MAX_CACHE_SIZE) {
-        // 一気に全部消すと処理が止まる（スパイク）ため、一部(500件)のみを削除
         const iter = terrainHeightCache.keys();
         for (let i = 0; i < 500; i = (i + 1) | 0) {
-            const firstKey = iter.next().value;
-            if (firstKey !== undefined) terrainHeightCache.delete(firstKey);
-            else break;
+            const k = iter.next().value;
+            if (k === undefined) break;
+            terrainHeightCache.delete(k);
         }
     }
 
@@ -5482,20 +5451,14 @@ function animate() {
         const targetText = (typeof currentTargetBlockText !== 'undefined') ? currentTargetBlockText : "None";
         const moveMode = flightMode ? "Flight" : (wasUnderwater ? "Swimming" : "Walking");
 
-        // --- バイオーム判定ロジック（地形生成同期版） ---
-        // 1. まず座標を取得して整数化する（ここで pxInt, pzInt を定義）
+        // --- 統一されたバイオーム判定ロジックの呼び出し ---
         const pxInt = Math.floor(player.position.x);
-        const pzInt = Math.floor(player.position.z);
         const py = player.position.y;
+        const pzInt = Math.floor(player.position.z);
 
-        // 2. 定義した pxInt, pzInt を使ってノイズを計算
-        const tVal = fractalNoise2D(pxInt * 0.0005, pzInt * 0.0005, 3) + 0.5;
-        const hVal = fractalNoise2D(pxInt * 0.0005 + 500, pzInt * 0.0005 + 500, 3) + 0.5;
-        const rVal = fractalNoise2D(pxInt * 0.005, pzInt * 0.005, 2) + 0.5;
-
-        // 3. バイオームを決定
-        const biomeConfig = determineBiome(tVal, hVal, 64, rVal);
-        const biomeName = (biomeConfig && biomeConfig.name) ? biomeConfig.name : "Unknown";
+        // 🌟 _getBiomeAt を使って一元化！
+        const biome = _getBiomeAt(pxInt, pzInt);
+        const biomeName = biome ? biome.name : "Unknown";
 
         // HTMLを更新
         fpsCounter.innerHTML = `
@@ -5508,9 +5471,9 @@ function animate() {
         C: ${loadedChunks.size} loaded. (Quality: ${CHUNK_VISIBLE_DISTANCE})<br>
         Dimension: Overworld<br>
         <b>Biome: ${biomeName}</b><br>
-        x: ${Math.round(pxInt)} (C: ${pCx})<br>
+        x: ${pxInt} (C: ${pCx})<br>
         y: ${Math.round(py)} (feet)<br>
-        z: ${Math.round(pzInt)} (C: ${pCz})<br>
+        z: ${pzInt} (C: ${pCz})<br>
         Mode: ${moveMode} / Dash: ${dashActive ? "ON" : "OFF"}<br>
         --------------------------<br>
         TargetBlock: ${targetText}
