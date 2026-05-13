@@ -523,6 +523,9 @@ const _getRawHeightAt = (wx, wz) => {
     return b.baseHeight + (nNoise * b.heightVariation);
 };
 
+const TOTAL_WEIGHT = BLEND_WEIGHTS.reduce((a, b) => a + b, 0);
+const INV_TOTAL_WEIGHT = 1.0 / TOTAL_WEIGHT;
+
 export const ChunkSaveManager = {
     modifiedChunks: new Map(),
     chunkUpdateInfo: new Map(),
@@ -533,37 +536,47 @@ export const ChunkSaveManager = {
     _sharedBiomeMap: new Uint8Array(256), // オブジェクトではなくIDを格納
     _sharedPaddedBiomeMap: new Uint8Array(484),      // バイオームオブジェクト用
     _sharedPaddedHeightNoiseMap: new Float32Array(484), // 事前計算済み高さノイズ用
+    _sharedDataBuffer: new Uint16Array(65536),
 
     getBlockIndex: function (lx, ly, lz) {
         return ((ly | 0) + ((lz | 0) << 8) + ((lx | 0) << 12)) >>> 0;
     },
 
     setBlock: function (cx, cz, lx, ly, lz, blockType) {
-        if (ly < 0 || ly >= CHUNK_HEIGHT) return;
+        // 1. 垂直方向の境界チェック
+        if ((ly | 0) < 0 || (ly | 0) >= CHUNK_HEIGHT) return;
 
-        const key = encodeChunkKey(cx, cz);
+        // 2. キーの生成とデータ取得（一度だけ行う）
+        const key = encodeChunkKey(cx | 0, cz | 0);
         let dataArray = this.modifiedChunks.get(key);
 
-        if (!dataArray) {
-            dataArray = this.captureBaseChunkData(cx, cz);
+        // 3. データの初期化（必要な場合のみ）
+        if (dataArray === undefined) {
+            dataArray = this.captureBaseChunkData(cx | 0, cz | 0);
             this.modifiedChunks.set(key, dataArray);
         }
 
-        const idx = ((ly | 0) + ((lz | 0) << 8) + ((lx | 0) << 12)) >>> 0;
-        dataArray[idx] = blockType;
+        // 4. ブロック配置（インデックス計算をインライン化するか検討）
+        dataArray[this.getBlockIndex(lx | 0, ly | 0, lz | 0)] = blockType | 0;
 
-        this._markByKey(key, ly);
+        // 5. 更新フラグを立てる（自チャンク）
+        this._markByKey(key, ly | 0);
 
-        if (lx === 0) {
-            this._markByKey(((cx - 1) & 0xFFFF) << 16 | (cz & 0xFFFF), ly);
-        } else if (lx === 15) {
-            this._markByKey(((cx + 1) & 0xFFFF) << 16 | (cz & 0xFFFF), ly);
+        // 6. チャンク境界の隣接更新（メソッドを統一してJITを助ける）
+        // lx/lz が 0 または 15 の時だけ隣接チャンクのリビルドが必要
+        const lxInt = lx | 0;
+        const lzInt = lz | 0;
+
+        if (lxInt === 0) {
+            this._markByKey(encodeChunkKey((cx - 1) | 0, cz | 0), ly | 0);
+        } else if (lxInt === 15) {
+            this._markByKey(encodeChunkKey((cx + 1) | 0, cz | 0), ly | 0);
         }
 
-        if (lz === 0) {
-            this._markByKey((cx & 0xFFFF) << 16 | ((cz - 1) & 0xFFFF), ly);
-        } else if (lz === 15) {
-            this._markByKey((cx & 0xFFFF) << 16 | ((cz + 1) & 0xFFFF), ly);
+        if (lzInt === 0) {
+            this._markByKey(encodeChunkKey(cx | 0, (cz - 1) | 0), ly | 0);
+        } else if (lzInt === 15) {
+            this._markByKey(encodeChunkKey(cx | 0, (cz + 1) | 0), ly | 0);
         }
     },
 
@@ -596,7 +609,8 @@ export const ChunkSaveManager = {
     },
 
     captureBaseChunkData: function (cx, cz) {
-        const data = new Uint16Array(65536);
+        const data = this._sharedDataBuffer;
+        data.fill(0);
         const baseX = (cx << 4) | 0;
         const baseZ = (cz << 4) | 0;
 
@@ -666,19 +680,15 @@ export const ChunkSaveManager = {
 
                 // ブレンディングによる高さ計算
                 let totalHeight = 0.0;
-                let totalWeight = 0.0;
                 let weightIdx = 0;
                 for (let dx = -blendRadius; dx <= blendRadius; dx = (dx + 1) | 0) {
                     const xShift = ((x + dx + blendRadius) * paddedSize) | 0;
                     for (let dz = -blendRadius; dz <= blendRadius; dz = (dz + 1) | 0) {
-                        const h = paddedHMap[xShift + (z + dz + blendRadius) | 0];
-                        const weight = BLEND_WEIGHTS[weightIdx++];
-                        totalHeight += h * weight;
-                        totalWeight += weight;
+                        // 重みの累積(totalWeight)を削除
+                        totalHeight += paddedHMap[xShift + (z + dz + blendRadius) | 0] * BLEND_WEIGHTS[weightIdx++];
                     }
                 }
-
-                const sHeight = (totalHeight / totalWeight) | 0;
+                const sHeight = (totalHeight * INV_TOTAL_WEIGHT) | 0; // 逆数の掛け算で高速化
                 heightMap[mapIdx] = sHeight;
                 surfaceHeights[mapIdx] = sHeight;
 
@@ -816,33 +826,29 @@ export const ChunkSaveManager = {
                     }
 
                     if (surfaceY <= seaLevel) continue;
-
+                    const isNeighborChunk = (dcx !== 0 || dcz !== 0);
                     for (let j = 0; j < rules.length; j = (j + 1) | 0) {
                         const rule = rules[j];
+                        const chance = rule.chance;
 
-                        // 🌟 劇的最適化：
-                        // 自チャンク以外（dcx/dcz != 0）の計算時は、
-                        // 「構造物（木など）」以外のルール（草・花）を完全にスキップする。
-                        if ((dcx !== 0 || dcz !== 0) && !rule.isStructure) {
-                            rnd -= rule.chance;
-                            continue;
-                        }
+                        // 隣接チャンクかつ草花なら、rndの減算すら行わずに即スキップ
+                        if (isNeighborChunk && !rule.isStructure) continue;
 
-                        if (rnd < rule.chance) {
+                        if (rnd < chance) {
                             const featureFunc = Features[rule.feature];
                             if (featureFunc) {
-                                featureFunc(lx, surfaceY, lz, setBlockBound, rnd / rule.chance, getBlockBound, worldX, worldZ);
+                                featureFunc(lx, surfaceY, lz, setBlockBound, rnd / chance, getBlockBound, worldX, worldZ);
                             }
                             break;
                         }
-                        rnd -= rule.chance;
+                        rnd -= chance;
                         if (rnd < 0) break;
                     }
                 }
             }
         }
 
-        return data;
+        return new Uint16Array(data);
     },
 
     clearUpdateFlag: function (cx, cz) {
@@ -1333,10 +1339,9 @@ function getTerrainHeight(worldX, worldZ) {
 }
 
 function getVoxelHash(x, y, z) {
-    const ox = (Math.floor(x) + 512) & 0x3FF; // 10ビット (0~1023)
-    const oz = (Math.floor(z) + 512) & 0x3FF; // 10ビット (0~1023)
-    const oy = Math.floor(y) & 0xFFF;          // 12ビット (0~4095)
-
+    const ox = (x + 512 | 0) & 0x3FF;
+    const oz = (z + 512 | 0) & 0x3FF;
+    const oy = (y | 0) & 0xFFF;
     return (ox << 21) | (oz << 11) | oy;
 }
 
@@ -1360,8 +1365,7 @@ export function getVoxelAtWorld(x, y, z, isRaw = false) {
     const fz = z | 0;
 
     // 2. チャンクキーの生成 (ビット演算を最小化)
-    // cx, cz を経由せず直接計算
-    const chunkKey = ((fx >> 4) << 16) | ((fz >> 4) & 0xFFFF);
+    const chunkKey = encodeChunkKey(fx >> 4, fz >> 4);
 
     let data = null;
 
@@ -2167,8 +2171,8 @@ function refreshChunkAt(cx, cz) {
     const oldChunk = loadedChunks.get(key);
 
     // 1. プレイヤーからの距離チェック
-    const pCx = Math.floor(player.position.x / CHUNK_SIZE);
-    const pCz = Math.floor(player.position.z / CHUNK_SIZE);
+    const pCx = getChunkCoord(player.position.x);
+    const pCz = getChunkCoord(player.position.z);
     const isOutOfRange = Math.abs(cx - pCx) > CHUNK_VISIBLE_DISTANCE ||
         Math.abs(cz - pCz) > CHUNK_VISIBLE_DISTANCE;
 
@@ -2301,8 +2305,8 @@ function processChunkQueue(deadline) {
     const startTime = performance.now();
     let tasksProcessed = 0;
 
-    const pCx = Math.floor(player.position.x / CHUNK_SIZE);
-    const pCz = Math.floor(player.position.z / CHUNK_SIZE);
+    const pCx = getChunkCoord(player.position.x);
+    const pCz = getChunkCoord(player.position.z);
 
     // 💡 判定をループ外へ
     const isNoFade = (typeof CHUNK_VISIBLE_DISTANCE !== "undefined" && CHUNK_VISIBLE_DISTANCE === 0);
@@ -2369,7 +2373,7 @@ function processChunkQueue(deadline) {
     }
 }
 function checkNeighborUpdate(ncx, ncz) {
-    const nKey = ((ncx & 0xFFFF) << 16) | (ncz & 0xFFFF);
+    const nKey = encodeChunkKey(ncx, ncz);
     if (loadedChunks.has(nKey)) {
         requestChunkUpdate(ncx, ncz);
     }
@@ -3933,8 +3937,8 @@ const precomputeOffsets = () => {
 const _chunkKeysInQueue = new Set();
 
 function updateChunks() {
-    const pCx = Math.floor(player.position.x / CHUNK_SIZE);
-    const pCz = Math.floor(player.position.z / CHUNK_SIZE);
+    const pCx = getChunkCoord(player.position.x);
+    const pCz = getChunkCoord(player.position.z);
 
     if (lastChunk.x === pCx && lastChunk.z === pCz && offsets) return;
 
@@ -3957,7 +3961,7 @@ function updateChunks() {
         const offset = cands[i];
         const cx = pCx + offset.dx;
         const cz = pCz + offset.dz;
-        const hashKey = ((cx & 0xFFFF) << 16) | (cz & 0xFFFF); // 直接エンコード（高速）
+        const hashKey = encodeChunkKey(cx, cz);
 
         if (!loadedChunks.has(hashKey) && !_chunkKeysInQueue.has(hashKey)) {
             chunkQueue.push(hashKey); // 🌟 オブジェクトではなく整数をPush！
@@ -4004,8 +4008,9 @@ function updateChunks() {
 
     // 5. 範囲外のチャンクをアンロード
     for (const [hashKey, mesh] of loadedChunks.entries()) {
-        const cCx = hashKey >> 16;
-        const cCz = (hashKey << 16) >> 16;
+        decodeChunkKey(hashKey, _sharedChunkCoord); // 共有オブジェクトに結果を入れる（GC発生ゼロ）
+        const cCx = _sharedChunkCoord.cx;
+        const cCz = _sharedChunkCoord.cz;
         const dx = Math.abs(cCx - pCx);
         const dz = Math.abs(cCz - pCz);
 
@@ -4035,7 +4040,8 @@ const BLOCK_INTERACT_RANGE = 9;
  * 非負の場合はビット演算で高速に、負の場合は Math.floor を利用
  */
 function getChunkCoord(val) {
-    return Math.floor(val / CHUNK_SIZE);  // 負の値も正しく処理
+    // 16マスのチャンクサイズ固定前提。負の座標も自動で正しく処理されます。
+    return Math.floor(val) >> 4;
 }
 
 // --- ループの外側で定義（使い回すためのメモリ空間を固定） ---
@@ -4121,17 +4127,14 @@ function updateAffectedChunks(blockPos, forceImmediate = false) {
  * @param {number} tolerance 余裕の値（デフォルト 0.001）
  * @returns {boolean} 交差している場合 true、そうでなければ false
  */
-function blockIntersectsPlayer(blockPos, playerAABB, tolerance = 0.01) { // 余裕を少し広げる
-    const bMin = blockPos;
-    const bMax = { x: blockPos.x + 1, y: blockPos.y + 1, z: blockPos.z + 1 };
-
+function blockIntersectsPlayer(blockPos, playerAABB, tolerance = 0.01) {
     return (
-        playerAABB.min.x < bMax.x - tolerance &&
-        playerAABB.max.x > bMin.x + tolerance &&
-        playerAABB.min.y < bMax.y - tolerance &&
-        playerAABB.max.y > bMin.y + tolerance &&
-        playerAABB.min.z < bMax.z - tolerance &&
-        playerAABB.max.z > bMin.z + tolerance
+        playerAABB.min.x < blockPos.x + 1 - tolerance &&
+        playerAABB.max.x > blockPos.x + tolerance &&
+        playerAABB.min.y < blockPos.y + 1 - tolerance &&
+        playerAABB.max.y > blockPos.y + tolerance &&
+        playerAABB.min.z < blockPos.z + 1 - tolerance &&
+        playerAABB.max.z > blockPos.z + tolerance
     );
 }
 
@@ -4169,14 +4172,18 @@ function computeHitBlockAndTarget(hit, action) {
     const baseY = Math.floor(hit.point.y - n.y * EPS);
     const baseZ = Math.floor(hit.point.z - n.z * EPS);
 
-    const base = new THREE.Vector3(baseX, baseY, baseZ);
+    const base = allocVec().set(baseX, baseY, baseZ);
+    const dir = axisSnapDir(n);
 
-    const dir = axisSnapDir(n); // now an object {x,y,z}, no new Vector3 allocation
+    let target;
+    if (action === "destroy") {
+        target = base; // 同じ参照を持たせる（あるいは allocVec() で別々に確保する）
+    } else {
+        target = allocVec().set(base.x + dir.x, base.y + dir.y, base.z + dir.z);
+    }
 
-    const target = (action === "destroy")
-        ? base
-        : new THREE.Vector3(base.x + dir.x, base.y + dir.y, base.z + dir.z);
-
+    // ⚠️ 注意: この関数を呼び出した側（interactWithBlock内）で、
+    // 処理が終わったら必ず freeVec(base); と freeVec(target); を呼ぶように追加してください。
     return { base, dir, target, rawNormal: n };
 }
 
@@ -4195,7 +4202,6 @@ function freeIntersects(arr) {
     if (_intersectPool.length < 32) _intersectPool.push(arr);
 }
 
-// pickFirstValidHit（挙動そのまま軽量化）
 function pickFirstValidHit(raycaster, objects, action) {
     const EPS = 1e-6;
     const intersects = allocIntersects();
@@ -4255,69 +4261,72 @@ function pickFirstValidHit(raycaster, objects, action) {
         freeVec(tempNormal);
     }
 }
+// 関数外で一度だけ定義（再利用用）
+const _workVec2 = new THREE.Vector2();
+const _workVec3_CamDir = new THREE.Vector3();
+const _workVec3_Center = new THREE.Vector3();
+const _workBox3 = new THREE.Box3();
+const _workIntersectTargets = []; // Arrayの再利用
 /**
- * 破壊/設置メインシステム（ChunkSaveManager v2 準拠版）
+ * 破壊/設置メインシステム（最適化・安定性向上 完全版）
  */
 function interactWithBlock(action) {
-    if (action !== "place" && action !== "destroy") {
-        console.warn("未知のアクション:", action);
-        return;
-    }
+    if (action !== "place" && action !== "destroy") return;
 
     const EPS = 1e-6;
     const TOP_FACE_THRESHOLD = 0.9;
 
-    // レイキャスターの設定
+    // --- 1. レイキャスターの設定（既存オブジェクトの再利用） ---
+    _workVec2.set(0, 0);
     raycaster.near = 0.01;
     raycaster.far = BLOCK_INTERACT_RANGE;
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    raycaster.setFromCamera(_workVec2, camera);
 
-    // 1. 周辺チャンクの収集（Math.floorによる負の座標対応）
-    const pCx = Math.floor(player.position.x / CHUNK_SIZE);
-    const pCz = Math.floor(player.position.z / CHUNK_SIZE);
+    // --- 2. 判定対象リストの構築（GCを抑えるための再利用） ---
+    const pCx = getChunkCoord(player.position.x);
+    const pCz = getChunkCoord(player.position.z);
 
-    const objects = [];
+    _workIntersectTargets.length = 0; // 配列を空にする
     for (let x = -1; x <= 1; x++) {
         for (let z = -1; z <= 1; z++) {
             const chunkKey = encodeChunkKey(pCx + x, pCz + z);
             const chunkMesh = loadedChunks.get(chunkKey);
-            if (chunkMesh) objects.push(chunkMesh);
+            if (chunkMesh) _workIntersectTargets.push(chunkMesh);
         }
     }
-    objects.push(...Object.values(placedCustomBlocks));
+    // スプレッド演算子 ... は重いため forEach で追加
+    placedCustomBlocks.forEach(mesh => _workIntersectTargets.push(mesh));
 
-    const intersect = pickFirstValidHit(raycaster, objects, action);
+    const intersect = pickFirstValidHit(raycaster, _workIntersectTargets, action);
     if (!intersect) return;
 
+    // --- 3. ヒット座標の計算と固定 ---
+    // ※computeHitBlockAndTarget内でも Vector3 の new を避けるのが理想的です
     const { base, dir, target, rawNormal } = computeHitBlockAndTarget(intersect, action);
 
-    // 2. 座標の固定
     const rawPos = (action === "place") ? target : base;
-    const b = {
-        x: Math.floor(rawPos.x),
-        y: Math.floor(rawPos.y),
-        z: Math.floor(rawPos.z)
-    };
+    const bx = Math.floor(rawPos.x);
+    const by = Math.floor(rawPos.y);
+    const bz = Math.floor(rawPos.z);
 
-    // 3. チャンク座標とローカル座標の計算（ビット演算による高速化）
-    const candCx = b.x >> 4;
-    const candCz = b.z >> 4;
-    const candLx = b.x & 15;
-    const candLz = b.z & 15;
+    // ビット演算による高速化と統一
+    const candCx = bx >> 4;
+    const candCz = bz >> 4;
+    const candLx = bx & 15;
+    const candLz = bz & 15;
+    const candidateHash = getVoxelHash(bx, by, bz);
 
-    const candidateHash = getVoxelHash(b.x, b.y, b.z);
+    // --- 4. 距離チェック（平方根を避けて高速化） ---
+    _workVec3_Center.set(bx + 0.5, by + 0.5, bz + 0.5);
+    const distSq = camera.position.distanceToSquared(_workVec3_Center);
+    if (distSq > Math.pow(BLOCK_INTERACT_RANGE + 0.6, 2)) return;
 
     // ブロックデータの取得
-    let voxel = ChunkSaveManager.getBlock(candCx, candCz, candLx, b.y, candLz)
-        ?? getVoxelAtWorld(b.x, b.y, b.z, true);
+    let voxel = ChunkSaveManager.getBlock(candCx, candCz, candLx, by, candLz)
+        ?? getVoxelAtWorld(bx, by, bz, true);
 
     const voxelIdOnly = voxel & 0xFFF;
-    let cfg = getBlockConfiguration(voxelIdOnly);
-
-    // 距離チェック
-    const candidateCenter = new THREE.Vector3(b.x + 0.5, b.y + 0.5, b.z + 0.5);
-    const cameraPos = camera.position;
-    if (cameraPos.distanceTo(candidateCenter) > BLOCK_INTERACT_RANGE + 0.6) return;
+    const cfg = getBlockConfiguration(voxelIdOnly);
 
     let playerBox = null;
     try { playerBox = getPlayerAABB(); } catch (e) { }
@@ -4326,42 +4335,33 @@ function interactWithBlock(action) {
     // 破壊セクション
     // ====================
     if (action === "destroy") {
-        if (voxelIdOnly === BLOCK_TYPES.SKY) return;
-        if (cfg?.targetblock === false) return;
+        if (voxelIdOnly === BLOCK_TYPES.SKY || cfg?.targetblock === false) return;
 
-        createMinecraftBreakParticles(candidateCenter, voxelIdOnly, 1.0);
+        createMinecraftBreakParticles(_workVec3_Center, voxelIdOnly, 1.0);
 
         if (placedCustomBlocks.has(candidateHash)) {
             scene.remove(placedCustomBlocks.get(candidateHash));
             placedCustomBlocks.delete(candidateHash);
         }
 
-        // ✅ ChunkSaveManager 内で更新フラグと Y 範囲の記録が自動で行われるため
-        // markColumnModified(b.x, b.z, b.y) は削除しました。
-        ChunkSaveManager.setBlock(candCx, candCz, candLx, b.y, candLz, BLOCK_TYPES.SKY);
-
-        updateAffectedChunks(b, false);
-        updateBlockSelection();
-        updateBlockInfo();
-        return;
+        ChunkSaveManager.setBlock(candCx, candCz, candLx, by, candLz, BLOCK_TYPES.SKY);
     }
 
     // ====================
     // 設置セクション
     // ====================
-    if (action === "place") {
+    else if (action === "place") {
         if (activeBlockType === BLOCK_TYPES.SKY) return;
 
         // 高度制限
-        if (b.y <= -1 || b.y >= 256) {
+        if (by < 0 || by >= 256) {
             if (typeof addChatMessage === 'function') addChatMessage("設置制限高度外です。", "#ff5555");
             return;
         }
 
         // 上書き可能判定
         if (voxelIdOnly !== BLOCK_TYPES.SKY) {
-            const currentCfg = getBlockConfiguration(voxelIdOnly);
-            if (currentCfg?.geometryType === "water" || currentCfg?.overwrite === true) {
+            if (cfg?.geometryType === "water" || cfg?.overwrite === true) {
                 if (placedCustomBlocks.has(candidateHash)) {
                     scene.remove(placedCustomBlocks.get(candidateHash));
                     placedCustomBlocks.delete(candidateHash);
@@ -4374,34 +4374,33 @@ function interactWithBlock(action) {
         // 衝突判定
         const newBlockCfg = getBlockConfiguration(activeBlockType);
         if (newBlockCfg?.collision !== false && playerBox) {
-            if (blockIntersectsPlayer(b, playerBox, 0.0)) return;
+            // オブジェクトを作らずに判定（bを直接渡す）
+            if (blockIntersectsPlayer({ x: bx, y: by, z: bz }, playerBox, 0.0)) return;
         }
 
-        // 特殊設置制限（スニーク等）
+        // スニーク等の特殊制限（Box3生成を排除）
         if (playerBox) {
             const isActuallyTopAttempt = (rawNormal.y > TOP_FACE_THRESHOLD) || (dir.y > 0);
-            const overlapsBelow = playerBox.intersectsBox(new THREE.Box3(
-                new THREE.Vector3(b.x + EPS, b.y - 1 + EPS, b.z + EPS),
-                new THREE.Vector3(b.x + 1 - EPS, b.y - EPS, b.z + 1 - EPS)
-            ));
-            if (sneakActive && overlapsBelow && isActuallyTopAttempt) return;
+            _workBox3.min.set(bx + EPS, by - 1 + EPS, bz + EPS);
+            _workBox3.max.set(bx + 1 - EPS, by - EPS, bz + 1 - EPS);
+            if (sneakActive && isActuallyTopAttempt && playerBox.intersectsBox(_workBox3)) return;
         }
 
-        // メタデータの計算
-        const camDir = new THREE.Vector3();
-        camera.getWorldDirection(camDir);
-        const metaData = calculatePlacementMeta(activeBlockType, camDir, rawNormal, intersect.point);
+        // メタデータの計算（CamDirの再利用）
+        camera.getWorldDirection(_workVec3_CamDir);
+        const metaData = calculatePlacementMeta(activeBlockType, _workVec3_CamDir, rawNormal, intersect.point);
         const blockDataToSave = (activeBlockType & 0xFFF) | (metaData << 12);
 
-        // ✅ 設置実行：メタ情報（更新フラグ）も内部で一括処理
-        ChunkSaveManager.setBlock(candCx, candCz, candLx, b.y, candLz, blockDataToSave);
+        ChunkSaveManager.setBlock(candCx, candCz, candLx, by, candLz, blockDataToSave);
         lastPlacedKey = candidateHash;
-
-        updateAffectedChunks(b, false);
-        updateBlockSelection();
-        updateBlockInfo();
-        return;
     }
+
+    // --- 5. 共通更新処理の集約 ---
+    // {x,y,z} オブジェクトを新しく作らず、既存の b 形式か直接数値を渡す
+    const posObj = { x: bx, y: by, z: bz };
+    updateAffectedChunks(posObj, false);
+    updateBlockSelection();
+    updateBlockInfo();
 }
 // ----------------------------------------
 // 地面に着いたら連続設置ガードをリセット
@@ -5000,8 +4999,8 @@ function getTargetBlockByDDA(maxDistance) {
             if (y >= 0 && y < CHUNK_HEIGHT) {
                 const cx = getChunkCoord(x);
                 const cz = getChunkCoord(z);
-                let lx = x % CHUNK_SIZE; if (lx < 0) lx += CHUNK_SIZE;
-                let lz = z % CHUNK_SIZE; if (lz < 0) lz += CHUNK_SIZE;
+                const lx = Math.floor(x) & 15;
+                const lz = Math.floor(z) & 15;
 
                 const voxel = ChunkSaveManager.getBlock(cx, cz, lx, y, lz)
                     ?? getVoxelAtWorld(x, y, z, true);
@@ -5075,11 +5074,8 @@ function updateBlockSelection() {
     const { x, y, z } = hit;
     const cx = getChunkCoord(x);
     const cz = getChunkCoord(z);
-
-    let lx = x % CHUNK_SIZE;
-    if (lx < 0) lx += CHUNK_SIZE;
-    let lz = z % CHUNK_SIZE;
-    if (lz < 0) lz += CHUNK_SIZE;
+    const lx = Math.floor(x) & 15;
+    const lz = Math.floor(z) & 15;
 
     const rawVoxel = ChunkSaveManager.getBlock(cx, cz, lx, y, lz)
         ?? getVoxelAtWorld(x, y, z, true);
@@ -5190,11 +5186,8 @@ function updateBlockInfo() {
     const { x, y, z } = hit;
     const cx = getChunkCoord(x);
     const cz = getChunkCoord(z);
-
-    let lx = x % CHUNK_SIZE;
-    if (lx < 0) lx += CHUNK_SIZE;
-    let lz = z % CHUNK_SIZE;
-    if (lz < 0) lz += CHUNK_SIZE;
+    const lx = Math.floor(x) & 15;
+    const lz = Math.floor(z) & 15;
 
     const rawVoxel = ChunkSaveManager.getBlock(cx, cz, lx, y, lz)
         ?? getVoxelAtWorld(x, y, z, true);
@@ -5231,10 +5224,8 @@ function updateHeadBlockInfo() {
     const cx = getChunkCoord(hX);
     const cz = getChunkCoord(hZ);
 
-    let hLx = hX % CHUNK_SIZE;
-    if (hLx < 0) hLx += CHUNK_SIZE;
-    let hLz = hZ % CHUNK_SIZE;
-    if (hLz < 0) hLz += CHUNK_SIZE;
+    const hLx = hX & 15;
+    const hLz = hZ & 15;
 
     const rawValue = ChunkSaveManager.getBlock(cx, cz, hLx, hY, hLz)
         ?? getVoxelAtWorld(hX, hY, hZ, true);
@@ -5406,9 +5397,8 @@ function animate() {
     if (delta > 0.1) delta = 0.1; // スパイク対策
     const now = performance.now();
 
-    // プレイヤーの現在チャンク座標を計算（共通利用）
-    const pCx = Math.floor(player.position.x / CHUNK_SIZE);
-    const pCz = Math.floor(player.position.z / CHUNK_SIZE);
+    const pCx = getChunkCoord(player.position.x);
+    const pCz = getChunkCoord(player.position.z);
 
     // 0. -------- ロード・スポーン待機ガード --------
     if (!player.spawnFixed) {
