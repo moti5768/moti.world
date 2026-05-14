@@ -53,6 +53,12 @@ function getCustomCollision(type) {
     return result;
 }
 
+const getSideConnections = (meta) => ({
+    n: (meta >> 3) & 1,
+    s: (meta >> 2) & 1,
+    e: (meta >> 1) & 1,
+    w: meta & 1
+});
 
 /**
  * フェンスの接続状態(meta)に基づいた動的な当たり判定ボックスを生成する
@@ -65,11 +71,7 @@ function getFenceCollisionBoxes(meta) {
     // 0.25 から 0.75 まで広げることで、中心付近の判定が安定します
     boxes.push(createBox(0.25, 0, 0.25, 0.75, 1.5, 0.75));
 
-    // metaから各方向への接続を確認
-    const n = (meta >> 3) & 1;
-    const s = (meta >> 2) & 1;
-    const e = (meta >> 1) & 1;
-    const w = meta & 1;
+    const { n, s, e, w } = getSideConnections(meta);
 
     // 2. 接続棒の判定も太くする (幅 0.125 -> 0.25)
     // 北 (N)
@@ -112,10 +114,7 @@ function getPaneCollisionBoxes(meta) {
     // 中央の芯
     boxes.push(createBox(center - half, 0, center - half, center + half, 1, center + half));
 
-    const n = (meta >> 3) & 1;
-    const s = (meta >> 2) & 1;
-    const e = (meta >> 1) & 1;
-    const w = meta & 1;
+    const { n, s, e, w } = getSideConnections(meta);
 
     if (n) boxes.push(createBox(center - half, 0, 0, center + half, 1, center - half));
     if (s) boxes.push(createBox(center - half, 0, center + half, center + half, 1, 1));
@@ -915,116 +914,63 @@ function onBeforeCompileBlock(shader, mat) {
 // 2. メイン関数 (最適化済み完全版)
 // ========================================================
 
-const materialCache = new Map(); // ブロック構成ごとのキャッシュ
-// 静的データを外に出すことで、関数呼び出しごとの配列生成を回避
+const BLOCK_MATERIALS_CACHE = new Map();
 const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
 
-/**
- * ブロックの設定からマテリアル配列を生成・取得する
- */
-export function createMaterialsFromBlockConfig(blockConfig) {
-    const cacheKey = blockConfig.id;
+// 1. マテリアル生成の核となる部分を独立（高速化）
+function _buildMaterial(texPath, config, props) {
+    const mat = new THREE.MeshBasicMaterial({
+        color: config.defaultColor ?? 0xffffff,
+        transparent: props.isBlendTransparent,
+        opacity: config.opacity ?? 1.0,
+        vertexColors: props.useVertexColors,
+        side: props.side,
+        depthWrite: props.isGlass ? true : !props.isBlendTransparent,
+        alphaTest: props.isAlphaCutout ? 0.5 : 0,
+        map: (texPath && texPath !== "none") ? cachedLoadTexture(texPath, config.fallbackTexture) : null
+    });
 
-    // 1. キャッシュヒット時は即座にリターン
-    const cached = materialCache.get(cacheKey);
-    if (cached) return cached;
-
-    const {
-        geometryType,
-        transparent,
-        textures = {},
-        lightLevel,
-        opacity = 1.0,
-        fallbackTexture: fb,
-        defaultColor = 0xffffff
-    } = blockConfig;
-
-    // --- 🟢 アルゴリズム維持: screenFill の解析のみ追加 ---
-    let sfEnabled = false;
-    let sfOpacity = 1.0;
-    if (typeof blockConfig.screenFill === 'object' && blockConfig.screenFill !== null) {
-        sfEnabled = blockConfig.screenFill.enabled !== false;
-        sfOpacity = blockConfig.screenFill.opacity ?? 1.0;
-    } else {
-        sfEnabled = !!blockConfig.screenFill;
-    }
-
-    // 判定ロジックを一度だけ計算 (元コードのまま)
-    const isWater = (blockConfig.isWater === true);
-    const isGlass = (transparent === true && geometryType !== "cross" && geometryType !== "leaves" && geometryType !== "ladder" && !isWater);
-    const isLightSource = (lightLevel > 0);
-    const isBlendTransparent = isWater;
-    const isAlphaCutout = (transparent === true && !isBlendTransparent);
-    const isDoubleSideGeom = (geometryType === "cross" || geometryType === "leaves" || geometryType === "ladder");
-    const side = (isDoubleSideGeom || isWater) ? THREE.DoubleSide : THREE.FrontSide;
-    const isStairsOrSlab = (geometryType === "stairs" || geometryType === "slab");
-    const useVertexColors = (!isStairsOrSlab && !isDoubleSideGeom && !isWater);
-
-    // 同一ブロック内でのテクスチャ重複用キャッシュ
-    const localMatCache = new Map();
-
-    // マテリアル配列の構築
-    const resultMaterials = new Array(6);
-
-    // textures.all がある場合は最短ルートを通る
-    if (textures.all) {
-        const texPath = textures.all;
-        const mat = _generateMaterial(texPath);
-        resultMaterials.fill(mat);
-    } else {
-        for (let i = 0; i < 6; i++) {
-            const face = FACE_ORDER[i];
-            const texPath = textures[face] ||
-                ((face !== "top" && face !== "bottom") ? textures.side : null) ||
-                textures.top || textures.bottom || fb;
-
-            let mat = localMatCache.get(texPath);
-            if (!mat) {
-                mat = _generateMaterial(texPath);
-                localMatCache.set(texPath, mat);
-            }
-            resultMaterials[i] = mat;
-        }
-    }
-
-    // 内部的なマテリアル生成ロジック
-    function _generateMaterial(path) {
-        const options = {
-            color: defaultColor,
-            transparent: isBlendTransparent,
-            opacity: opacity, // ブロック自体の見た目は維持
-            vertexColors: useVertexColors,
-            side: side,
-            depthWrite: isGlass ? true : !isBlendTransparent,
-            alphaTest: isAlphaCutout ? 0.5 : 0,
-        };
-
-        if (path && path !== "none") {
-            options.map = cachedLoadTexture(path, fb);
-        }
-
-        const mat = new THREE.MeshBasicMaterial(options);
-
-        // 🟢 ここで screenFill の設定値を保持しておく (重要)
-        mat.userData.screenFill = {
-            enabled: sfEnabled,
-            opacity: sfOpacity
-        };
-
-        mat.userData.shaderUniforms = {
-            u_skyFactor: { value: 1.0 },
-            u_isLightSource: { value: isLightSource ? 1.0 : 0.0 }
-        };
-        mat.onBeforeCompile = (shader) => onBeforeCompileBlock(shader, mat);
-        return mat;
-    }
-
-    materialCache.set(cacheKey, resultMaterials);
-    return resultMaterials;
+    mat.userData.screenFill = props.sf;
+    mat.userData.shaderUniforms = {
+        u_skyFactor: { value: 1.0 },
+        u_isLightSource: { value: config.lightLevel > 0 ? 1.0 : 0.0 }
+    };
+    mat.onBeforeCompile = (shader) => onBeforeCompileBlock(shader, mat);
+    return mat;
 }
 
-// マテリアルのキャッシュ（ブロックIDごと）
-const BLOCK_MATERIALS_CACHE = new Map();
+export function createMaterialsFromBlockConfig(config) {
+    // 共通プロパティの計算（1回だけ実行）
+    const isWater = !!config.isWater;
+    const isDoubleSide = ["cross", "leaves", "ladder"].includes(config.geometryType);
+    const props = {
+        isBlendTransparent: isWater,
+        isAlphaCutout: !!config.transparent && !isWater,
+        isGlass: !!config.transparent && !isWater && !isDoubleSide,
+        side: (isDoubleSide || isWater) ? THREE.DoubleSide : THREE.FrontSide,
+        useVertexColors: !["stairs", "slab"].includes(config.geometryType) && !isDoubleSide && !isWater,
+        sf: {
+            enabled: config.screenFill?.enabled ?? !!config.screenFill,
+            opacity: config.screenFill?.opacity ?? 1.0
+        }
+    };
+
+    const result = new Array(6);
+    const localCache = new Map();
+
+    for (let i = 0; i < 6; i++) {
+        const face = FACE_ORDER[i];
+        const texPath = config.textures?.all || config.textures?.[face] ||
+            ((face !== "top" && face !== "bottom") ? config.textures?.side : null) ||
+            config.textures?.top || config.textures?.bottom || config.fallbackTexture;
+
+        if (!localCache.has(texPath)) {
+            localCache.set(texPath, _buildMaterial(texPath, config, props));
+        }
+        result[i] = localCache.get(texPath);
+    }
+    return result;
+}
 
 // BLOCK_CONFIG から各ブロック設定を高速に取得するためのルックアップテーブル
 // （初期化時に一度だけ実行されるため、このままで問題ありません）
@@ -1033,46 +979,18 @@ for (const cfg of Object.values(BLOCK_CONFIG)) {
     blockConfigLookup[cfg.id] = cfg;
 }
 
-/**
- * 指定ブロックタイプのマテリアル配列を返す。  
- * 回転データ（メタデータ）が含まれている場合でも、純粋なIDを抽出して設定を参照します。
- * キャッシュがあれば再利用し、無駄な再生成を防ぎます。
- * * @param {number|string} blockType - ブロック種識別子（回転データを含む場合がある）
- * @returns {THREE.Material[] | null} - マテリアルの配列
- */
 export function getBlockMaterials(blockType) {
-    let bId;
+    const bId = (typeof blockType === "string") ? keyToId(blockType) : (Number(blockType) & 0xFFF);
 
-    // --- 🟢 追加：文字列キーへの対応 ---
-    if (typeof blockType === "string") {
-        // 文字列（例: "GRASS"）なら、今の実行環境での数値IDを取得する
-        bId = keyToId(blockType);
-    } else {
-        // 数値なら従来通りメタデータをマスクしてIDを抽出
-        bId = Number(blockType) & 0xFFF;
-    }
+    // 1. ここでチェックするだけで完結
+    if (BLOCK_MATERIALS_CACHE.has(bId)) return BLOCK_MATERIALS_CACHE.get(bId);
 
-    // --- 🔵 以降は共通処理 ---
-    // 2. キャッシュ確認
-    if (BLOCK_MATERIALS_CACHE.has(bId)) {
-        return BLOCK_MATERIALS_CACHE.get(bId);
-    }
-
-    // 3. ルックアップテーブルから設定を取得
     const config = blockConfigLookup[bId];
-    if (!config) {
-        if (bId !== 0) {
-            console.warn(`Unknown block type: ${blockType} (resolved ID: ${bId})`);
-        }
-        return null;
-    }
+    if (!config) return null;
 
-    // 4. マテリアル生成
+    // 2. なければ生成して保存
     const materials = createMaterialsFromBlockConfig(config);
-
-    // 5. キャッシュに保存
     BLOCK_MATERIALS_CACHE.set(bId, materials);
-
     return materials;
 }
 
@@ -1267,11 +1185,7 @@ export function getBlockGeometry(type, config, meta = 0) {
         }
 
         case "fence": {
-            // metaから接続状態を判定（12ビットシフト済みの生IDから渡される想定）
-            const n = (meta >> 3) & 1;
-            const s = (meta >> 2) & 1;
-            const e = (meta >> 1) & 1;
-            const w = meta & 1;
+            const { n, s, e, w } = getSideConnections(meta);
 
             const geometries = [];
             const applyGroup = (g) => {
@@ -1344,10 +1258,7 @@ export function getBlockGeometry(type, config, meta = 0) {
         }
 
         case "pane": {
-            const n = (meta >> 3) & 1;
-            const s = (meta >> 2) & 1;
-            const e = (meta >> 1) & 1;
-            const w = meta & 1;
+            const { n, s, e, w } = getSideConnections(meta);
 
             const geometries = [];
             // 厚みを 0.0625 (1/16) から 0.125 (2/16) に変更

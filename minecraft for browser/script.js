@@ -4117,16 +4117,7 @@ function updateAffectedChunks(blockPos, forceImmediate = false) {
 
     if (!forceImmediate) scheduleChunkUpdate();
 }
-/**
- * ブロックの AABB とプレイヤーの AABB が交差しているかを判定する
- * ※ tolerance は数値の余裕（例えば 0.001 や 0.05 など）を与え、
- *    境界だけの接触を「交差」と判定しないようにするためのものです。
- *
- * @param {THREE.Vector3} blockPos ブロックの左下前（最低座標）
- * @param {Object} playerAABB プレイヤーの AABB。 { min: THREE.Vector3, max: THREE.Vector3 }
- * @param {number} tolerance 余裕の値（デフォルト 0.001）
- * @returns {boolean} 交差している場合 true、そうでなければ false
- */
+
 function blockIntersectsPlayer(blockPos, playerAABB, tolerance = 0.01) {
     return (
         playerAABB.min.x < blockPos.x + 1 - tolerance &&
@@ -4138,17 +4129,25 @@ function blockIntersectsPlayer(blockPos, playerAABB, tolerance = 0.01) {
     );
 }
 
-// --- interactWithBlock 関数 ---
 // ブロックの設置／破壊操作を行い voxelModifications を更新し、必要なチャンク（領域）再生成を指示する
 const placedCustomBlocks = new Map();
 const raycaster = new THREE.Raycaster();
-
-// ============================================================
-// クリック→6方向スナップで隣接セル一意決定版（フル書き直し）
-// ============================================================
-
-// ジャンプ中の縦連続設置防止用
 let lastPlacedKey = null;
+const _workVec2 = new THREE.Vector2();
+const _workVec3_CamDir = new THREE.Vector3();
+const _workVec3_Center = new THREE.Vector3();
+const _workBox3 = new THREE.Box3();
+const _workIntersectTargets = [];
+const _intersectPool = [];
+
+// 判定・計算用ワーク変数
+const _hitBase = new THREE.Vector3();
+const _hitTarget = new THREE.Vector3();
+const _hitDir = new THREE.Vector3();
+const _tempNormal = new THREE.Vector3();
+
+// 頻出定数の事前計算
+const INTERACT_DIST_SQ = Math.pow(BLOCK_INTERACT_RANGE + 0.6, 2);
 
 // ----------------------------------------
 // 6方向へ量子化
@@ -4187,17 +4186,8 @@ function computeHitBlockAndTarget(hit, action) {
     return { base, dir, target, rawNormal: n };
 }
 
-// ----------------------------------------
-// 最初の有効ヒットを取得（距離順）
-// - 水は破壊かつアクティブが水のときのみ許可（元の仕様踏襲）
-// ----------------------------------------
-// グローバルに追加（ファイル先頭など）
-const _intersectPool = [];
-function allocIntersects() {
-    return _intersectPool.pop() || [];
-}
+function allocIntersects() { return _intersectPool.pop() || []; }
 function freeIntersects(arr) {
-    if (!arr) return;
     arr.length = 0;
     if (_intersectPool.length < 32) _intersectPool.push(arr);
 }
@@ -4205,19 +4195,14 @@ function freeIntersects(arr) {
 function pickFirstValidHit(raycaster, objects, action) {
     const EPS = 1e-6;
     const intersects = allocIntersects();
-    const tempNormal = allocVec();
 
     try {
         for (const obj of objects) {
             if (!obj) continue;
-            try {
-                if (obj.isInstancedMesh && typeof obj.raycast === "function") {
-                    obj.raycast(raycaster, intersects);
-                } else {
-                    raycaster.intersectObject(obj, true, intersects);
-                }
-            } catch (e) {
-                console.warn("raycast error:", e);
+            if (obj.isInstancedMesh) {
+                obj.raycast(raycaster, intersects);
+            } else {
+                raycaster.intersectObject(obj, true, intersects);
             }
         }
 
@@ -4227,104 +4212,99 @@ function pickFirstValidHit(raycaster, objects, action) {
         for (const hit of intersects) {
             if (hit.distance > BLOCK_INTERACT_RANGE + EPS) continue;
 
-            if (hit.face?.normal) {
-                tempNormal.copy(hit.face.normal);
-            } else {
-                tempNormal.set(0, 1, 0);
-            }
+            _tempNormal.copy(hit.face?.normal || { x: 0, y: 1, z: 0 });
 
-            const bx = Math.floor(hit.point.x - tempNormal.x * EPS);
-            const by = Math.floor(hit.point.y - tempNormal.y * EPS);
-            const bz = Math.floor(hit.point.z - tempNormal.z * EPS);
-            const cx = getChunkCoord(bx);
-            const cz = getChunkCoord(bz);
-            // 💡 【修正】 32bit/53bit の数値ハッシュキーを使って Map から取得する
-            const hashKey = getVoxelHash(bx, by, bz);
-            const voxelId = ChunkSaveManager.getBlock(cx, cz, bx & 15, by, bz & 15)
+            const bx = Math.floor(hit.point.x - _tempNormal.x * EPS);
+            const by = Math.floor(hit.point.y - _tempNormal.y * EPS);
+            const bz = Math.floor(hit.point.z - _tempNormal.z * EPS);
+
+            const voxel = ChunkSaveManager.getBlock(bx >> 4, bz >> 4, bx & 15, by, bz & 15)
                 ?? getVoxelAtWorld(bx, by, bz, true);
 
-            const cfg = getBlockConfiguration(voxelId);
+            const cfg = getBlockConfiguration(voxel & 0xFFF);
 
+            // 水ブロックの特殊挙動：水の設置中/破壊中以外は透過（クリックを貫通）させる
             if (cfg?.geometryType === "water") {
-                if (action === "destroy" && activeBlockType === BLOCK_TYPES.WATER) {
-                    return hit;
-                }
+                if (action === "destroy" && activeBlockType === BLOCK_TYPES.WATER) return hit;
                 continue;
             }
-
             return hit;
         }
-
         return null;
     } finally {
         freeIntersects(intersects);
-        freeVec(tempNormal);
     }
 }
-// 関数外で一度だけ定義（再利用用）
-const _workVec2 = new THREE.Vector2();
-const _workVec3_CamDir = new THREE.Vector3();
-const _workVec3_Center = new THREE.Vector3();
-const _workBox3 = new THREE.Box3();
-const _workIntersectTargets = []; // Arrayの再利用
-/**
- * 破壊/設置メインシステム（最適化・安定性向上 完全版）
- */
+
+function axisSnapDirToVec(n, outVec) {
+    const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+    if (ax >= ay && ax >= az) { outVec.set(Math.sign(n.x) || 1, 0, 0); return; }
+    if (ay >= ax && ay >= az) { outVec.set(0, Math.sign(n.y) || 1, 0); return; }
+    outVec.set(0, 0, Math.sign(n.z) || 1);
+}
+
+function computeHitBlockAndTargetSafe(hit, action) {
+    const EPS = 1e-5;
+    const n = (hit.face && hit.face.normal) ? hit.face.normal : _tempNormal.set(0, 1, 0);
+
+    const baseX = Math.floor(hit.point.x - n.x * EPS);
+    const baseY = Math.floor(hit.point.y - n.y * EPS);
+    const baseZ = Math.floor(hit.point.z - n.z * EPS);
+
+    _hitBase.set(baseX, baseY, baseZ);
+    axisSnapDirToVec(n, _hitDir);
+
+    if (action === "destroy") {
+        _hitTarget.copy(_hitBase);
+    } else {
+        _hitTarget.set(baseX + _hitDir.x, baseY + _hitDir.y, baseZ + _hitDir.z);
+    }
+    return { base: _hitBase, dir: _hitDir, target: _hitTarget, rawNormal: n };
+}
+
 function interactWithBlock(action) {
     if (action !== "place" && action !== "destroy") return;
 
     const EPS = 1e-6;
     const TOP_FACE_THRESHOLD = 0.9;
 
-    // --- 1. レイキャスターの設定（既存オブジェクトの再利用） ---
+    // --- 1. レイキャスターの準備 ---
     _workVec2.set(0, 0);
     raycaster.near = 0.01;
     raycaster.far = BLOCK_INTERACT_RANGE;
     raycaster.setFromCamera(_workVec2, camera);
 
-    // --- 2. 判定対象リストの構築（GCを抑えるための再利用） ---
+    // --- 2. 判定対象チャンクの収集 ---
     const pCx = getChunkCoord(player.position.x);
     const pCz = getChunkCoord(player.position.z);
-
-    _workIntersectTargets.length = 0; // 配列を空にする
+    _workIntersectTargets.length = 0;
     for (let x = -1; x <= 1; x++) {
         for (let z = -1; z <= 1; z++) {
-            const chunkKey = encodeChunkKey(pCx + x, pCz + z);
-            const chunkMesh = loadedChunks.get(chunkKey);
-            if (chunkMesh) _workIntersectTargets.push(chunkMesh);
+            const chunk = loadedChunks.get(encodeChunkKey(pCx + x, pCz + z));
+            if (chunk) _workIntersectTargets.push(chunk);
         }
     }
-    // スプレッド演算子 ... は重いため forEach で追加
     placedCustomBlocks.forEach(mesh => _workIntersectTargets.push(mesh));
 
     const intersect = pickFirstValidHit(raycaster, _workIntersectTargets, action);
     if (!intersect) return;
 
-    // --- 3. ヒット座標の計算と固定 ---
-    // ※computeHitBlockAndTarget内でも Vector3 の new を避けるのが理想的です
-    const { base, dir, target, rawNormal } = computeHitBlockAndTarget(intersect, action);
-
+    // --- 3. ヒット座標の計算 ---
+    const { base, dir, target, rawNormal } = computeHitBlockAndTargetSafe(intersect, action);
     const rawPos = (action === "place") ? target : base;
     const bx = Math.floor(rawPos.x);
     const by = Math.floor(rawPos.y);
     const bz = Math.floor(rawPos.z);
 
-    // ビット演算による高速化と統一
-    const candCx = bx >> 4;
-    const candCz = bz >> 4;
-    const candLx = bx & 15;
-    const candLz = bz & 15;
     const candidateHash = getVoxelHash(bx, by, bz);
 
-    // --- 4. 距離チェック（平方根を避けて高速化） ---
+    // --- 4. 距離チェック（高速） ---
     _workVec3_Center.set(bx + 0.5, by + 0.5, bz + 0.5);
-    const distSq = camera.position.distanceToSquared(_workVec3_Center);
-    if (distSq > Math.pow(BLOCK_INTERACT_RANGE + 0.6, 2)) return;
+    if (camera.position.distanceToSquared(_workVec3_Center) > INTERACT_DIST_SQ) return;
 
-    // ブロックデータの取得
-    let voxel = ChunkSaveManager.getBlock(candCx, candCz, candLx, by, candLz)
-        ?? getVoxelAtWorld(bx, by, bz, true);
-
+    // ブロックデータ取得
+    const cx = bx >> 4, cz = bz >> 4, lx = bx & 15, lz = bz & 15;
+    let voxel = ChunkSaveManager.getBlock(cx, cz, lx, by, lz) ?? getVoxelAtWorld(bx, by, bz, true);
     const voxelIdOnly = voxel & 0xFFF;
     const cfg = getBlockConfiguration(voxelIdOnly);
 
@@ -4332,76 +4312,69 @@ function interactWithBlock(action) {
     try { playerBox = getPlayerAABB(); } catch (e) { }
 
     // ====================
-    // 破壊セクション
+    // 破壊ロジック
     // ====================
     if (action === "destroy") {
         if (voxelIdOnly === BLOCK_TYPES.SKY || cfg?.targetblock === false) return;
 
         createMinecraftBreakParticles(_workVec3_Center, voxelIdOnly, 1.0);
 
+        // カスタムメッシュ（看板やドアなど）の除去
         if (placedCustomBlocks.has(candidateHash)) {
             scene.remove(placedCustomBlocks.get(candidateHash));
             placedCustomBlocks.delete(candidateHash);
         }
 
-        ChunkSaveManager.setBlock(candCx, candCz, candLx, by, candLz, BLOCK_TYPES.SKY);
+        ChunkSaveManager.setBlock(cx, cz, lx, by, lz, BLOCK_TYPES.SKY);
     }
-
     // ====================
-    // 設置セクション
+    // 設置ロジック
     // ====================
     else if (action === "place") {
-        if (activeBlockType === BLOCK_TYPES.SKY) return;
+        if (activeBlockType === BLOCK_TYPES.SKY || by < 0 || by >= 256) return;
 
-        // 高度制限
-        if (by < 0 || by >= 256) {
-            if (typeof addChatMessage === 'function') addChatMessage("設置制限高度外です。", "#ff5555");
-            return;
-        }
-
-        // 上書き可能判定
+        // 上書き判定（水や草などはそのまま置ける）
         if (voxelIdOnly !== BLOCK_TYPES.SKY) {
-            if (cfg?.geometryType === "water" || cfg?.overwrite === true) {
-                if (placedCustomBlocks.has(candidateHash)) {
-                    scene.remove(placedCustomBlocks.get(candidateHash));
-                    placedCustomBlocks.delete(candidateHash);
-                }
-            } else {
-                return;
+            if (!(cfg?.geometryType === "water" || cfg?.overwrite === true)) return;
+
+            // 上書きされる側の古いカスタムメッシュを消去
+            if (placedCustomBlocks.has(candidateHash)) {
+                scene.remove(placedCustomBlocks.get(candidateHash));
+                placedCustomBlocks.delete(candidateHash);
             }
         }
 
-        // 衝突判定
+        // プレイヤーとの衝突判定（設置先に自分がいないか）
         const newBlockCfg = getBlockConfiguration(activeBlockType);
         if (newBlockCfg?.collision !== false && playerBox) {
-            // オブジェクトを作らずに判定（bを直接渡す）
             if (blockIntersectsPlayer({ x: bx, y: by, z: bz }, playerBox, 0.0)) return;
         }
 
-        // スニーク等の特殊制限（Box3生成を排除）
-        if (playerBox) {
-            const isActuallyTopAttempt = (rawNormal.y > TOP_FACE_THRESHOLD) || (dir.y > 0);
-            _workBox3.min.set(bx + EPS, by - 1 + EPS, bz + EPS);
-            _workBox3.max.set(bx + 1 - EPS, by - EPS, bz + 1 - EPS);
-            if (sneakActive && isActuallyTopAttempt && playerBox.intersectsBox(_workBox3)) return;
+        // スニーク時の足元設置制限（Box3生成を抑止）
+        if (playerBox && sneakActive) {
+            const isTopAttempt = (rawNormal.y > TOP_FACE_THRESHOLD) || (dir.y > 0);
+            if (isTopAttempt) {
+                _workBox3.min.set(bx + EPS, by - 1 + EPS, bz + EPS);
+                _workBox3.max.set(bx + 1 - EPS, by - EPS, bz + 1 - EPS);
+                if (playerBox.intersectsBox(_workBox3)) return;
+            }
         }
 
-        // メタデータの計算（CamDirの再利用）
+        // メタデータ（設置時の向き）を計算して保存
         camera.getWorldDirection(_workVec3_CamDir);
-        const metaData = calculatePlacementMeta(activeBlockType, _workVec3_CamDir, rawNormal, intersect.point);
-        const blockDataToSave = (activeBlockType & 0xFFF) | (metaData << 12);
+        const meta = calculatePlacementMeta(activeBlockType, _workVec3_CamDir, rawNormal, intersect.point);
+        const blockDataToSave = (activeBlockType & 0xFFF) | (meta << 12);
 
-        ChunkSaveManager.setBlock(candCx, candCz, candLx, by, candLz, blockDataToSave);
+        ChunkSaveManager.setBlock(cx, cz, lx, by, lz, blockDataToSave);
         lastPlacedKey = candidateHash;
     }
 
-    // --- 5. 共通更新処理の集約 ---
-    // {x,y,z} オブジェクトを新しく作らず、既存の b 形式か直接数値を渡す
-    const posObj = { x: bx, y: by, z: bz };
-    updateAffectedChunks(posObj, false);
+    // --- 5. 共通更新処理 ---
+    updateAffectedChunks({ x: bx, y: by, z: bz }, false);
     updateBlockSelection();
     updateBlockInfo();
 }
+
 // ----------------------------------------
 // 地面に着いたら連続設置ガードをリセット
 // ----------------------------------------
