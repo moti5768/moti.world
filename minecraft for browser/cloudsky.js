@@ -200,13 +200,17 @@ export function updateCloudOpacity(playerPos, currentSkyFactor = 1.0) {
             baseOpacity = 1 - (dist2 - nearD2) / (farD2 - nearD2);
         }
 
-        // 💡 変更があった時のみ setScalar を呼ぶことで CPU-GPU 間の通信を削減
         if (skyChanged) {
             tile.material.color.setScalar(currentSkyFactor);
         }
 
         tile.userData.fadeFactor = Math.min((tile.userData.fadeFactor ?? 0) + 0.05, 1);
-        tile.material.opacity = baseOpacity * tile.userData.fadeFactor;
+        const targetOpacity = baseOpacity * tile.userData.fadeFactor;
+
+        // 💡 値が変動したときのみマテリアルを書き換えることで、不要なアクセス・通知をカット
+        if (tile.material.opacity !== targetOpacity) {
+            tile.material.opacity = targetOpacity;
+        }
     });
 
     lastSkyFactor = currentSkyFactor;

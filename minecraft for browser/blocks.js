@@ -38,19 +38,18 @@ const CUSTOM_COLLISION_CACHE = {
 // デフォルトボックスを定数化して再利用
 const DEFAULT_BOX_ARRAY = Object.freeze([createBox(0, 0, 0, 1, 1, 1)]);
 
-function getCustomCollision(type) {
-    const boxes = CUSTOM_COLLISION_CACHE[type] || DEFAULT_BOX_ARRAY;
-    const len = boxes.length;
+function cloneCollisionArray(baseBoxes) {
+    const len = baseBoxes.length;
     const result = new Array(len);
     for (let i = 0; i < len; i++) {
-        // clone() のプロトタイプチェーンを避け、直接 Box3 をインスタンス化して値をコピー (軽量化)
-        const src = boxes[i];
-        result[i] = new THREE.Box3(
-            new THREE.Vector3(src.min.x, src.min.y, src.min.z),
-            new THREE.Vector3(src.max.x, src.max.y, src.max.z)
-        );
+        result[i] = new THREE.Box3().copy(baseBoxes[i]);
     }
     return result;
+}
+
+function getCustomCollision(type) {
+    const boxes = CUSTOM_COLLISION_CACHE[type] || DEFAULT_BOX_ARRAY;
+    return cloneCollisionArray(boxes);
 }
 
 const getSideConnections = (meta) => ({
@@ -60,35 +59,30 @@ const getSideConnections = (meta) => ({
     w: meta & 1
 });
 
-/**
- * フェンスの接続状態(meta)に基づいた動的な当たり判定ボックスを生成する
- * プレイヤーがすり抜けないよう、判定を肉付けしたバージョン
- */
-function getFenceCollisionBoxes(meta) {
+const FENCE_BOXES_PRECOMPUTED = Array.from({ length: 16 }, (_, meta) => {
     const boxes = [];
-
-    // 1. 中央の柱を太くする (幅 0.25 -> 0.5)
-    // 0.25 から 0.75 まで広げることで、中心付近の判定が安定します
     boxes.push(createBox(0.25, 0, 0.25, 0.75, 1.5, 0.75));
-
-    const { n, s, e, w } = getSideConnections(meta);
-
-    // 2. 接続棒の判定も太くする (幅 0.125 -> 0.25)
-    // 北 (N)
+    const n = (meta >> 3) & 1, s = (meta >> 2) & 1, e = (meta >> 1) & 1, w = meta & 1;
     if (n) boxes.push(createBox(0.375, 0, 0, 0.625, 1.5, 0.375));
-    // 南 (S)
     if (s) boxes.push(createBox(0.375, 0, 0.625, 0.625, 1.5, 1.0));
-    // 東 (E)
     if (e) boxes.push(createBox(0.625, 0, 0.375, 1.0, 1.5, 0.625));
-    // 西 (W)
     if (w) boxes.push(createBox(0, 0, 0.375, 0.375, 1.5, 0.625));
+    return Object.freeze(boxes); // 誤変形防止のためにフリーズ
+});
 
-    return boxes;
+function getFenceCollisionBoxes(meta) {
+    // 事前生成された配列から引く (インデックスを0〜15の範囲に安全に限定)
+    const baseBoxes = FENCE_BOXES_PRECOMPUTED[meta & 15];
+    const len = baseBoxes.length;
+    const result = new Array(len);
+
+    // 既存のBox3コピーのみを行う（条件分岐やMath.min/max計算のコストを完全排除）
+    for (let i = 0; i < len; i++) {
+        result[i] = new THREE.Box3().copy(baseBoxes[i]);
+    }
+    return result;
 }
 
-/**
- * 拡張されたカスタム衝突判定取得関数
- */
 export function getCollisionBoxes(type, meta = 0) {
     // 1. フェンスは meta に基づいて動的に生成
     if (type === "fence") {
@@ -205,9 +199,13 @@ const LOG_MATRICES = [
         .premultiply(new THREE.Matrix4().makeTranslation(0.5, 0.5, 0.5)), // Axis 2: Z
 ];
 export function getLogRotationMatrix(metadata) {
-    const axis = (metadata & 3) % 3; // 0, 1, 2に限定
-    // 🟢 既存の行列をコピーして返すだけ（計算なし、newは1回のみ）
-    return LOG_MATRICES[axis].clone();
+    let axis = (metadata & 3) % 3;
+
+    // 💡 万が一の範囲外や不正値をクランプ、および配列要素の存在チェックを追加
+    if (axis < 0 || axis > 2) axis = 0;
+    const targetMatrix = LOG_MATRICES[axis] || LOG_MATRICES[0];
+
+    return targetMatrix.clone();
 }
 
 /**
@@ -261,8 +259,12 @@ export function calculatePlacementMeta(blockId, camDir, rawNormal, intersectPoin
         if (rawNormal.y < -0.5) {
             isUpsideDown = 1;
         } else if (Math.abs(rawNormal.y) < 0.5) {
-            const hitY = intersectPoint.y - Math.floor(intersectPoint.y + 0.00001);
-            if (hitY > 0.5) isUpsideDown = 1;
+            // 💡 座標からピュアな小数部分のみを抽出し、負の座標でも確実に 0 〜 1 に収まるように補正
+            let fractionY = intersectPoint.y - Math.floor(intersectPoint.y);
+            if (fractionY < 0) fractionY += 1;
+
+            // 境界（0.5）付近の微小誤差を考慮して 0.49999 で判定（ハックを安全化）
+            if (fractionY > 0.49999) isUpsideDown = 1;
         }
     }
     return direction | (isUpsideDown << 2);
@@ -508,6 +510,21 @@ export const BLOCK_CONFIG = {
             bottom: "textures/blocks/stone_slab_top.png",
             side: "textures/blocks/stone_slab_side.png",
         },
+        geometryType: "slab",
+        transparent: true,
+        lightOpacity: 0,
+        isSlab: true,
+        customCollision: () => getCustomCollision("slab"),
+        cullAdjacentFaces: false,
+        screenFill: false,
+        hardness: 1.5,
+        selectionSize: { x: 1, y: 0.5, z: 1 },
+        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 },
+    }),
+
+    BRICK_SLAB: registerBlock({
+        name: "brick_slab",
+        textures: { all: "textures/blocks/brick.png" },
         geometryType: "slab",
         transparent: true,
         lightOpacity: 0,
