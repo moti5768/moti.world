@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JISIN REALTIME MONITOR</title>
+    <!-- Leaflet.js (地図ライブラリ) の読み込み -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="jisin.css">
+</head>
+
+<body>
+    <div class="container">
+        <div id="alert-banner" class="alert-banner hidden">
+            <div id="alert-title" class="alert-title">緊急警報</div>
+            <div id="alert-message" class="alert-message">情報を取得中...</div>
+        </div>
+        <header>
+            <div class="logo">
+                <span class="pulse"></span>
+                <h1>地震情報ダッシュボード</h1>
+            </div>
+            <div id="clock" class="clock">----/--/-- --:--:--</div>
+        </header>
+
+        <div class="main-grid">
+            <!-- 最新の地震情報 -->
+            <section class="panel latest-panel">
+                <div class="panel-header">詳細情報</div>
+                <div class="latest-content">
+                    <div class="scale-display" id="latest-scale-box">
+                        <span class="scale-label">最大震度</span>
+                        <div class="scale-value" id="latest-scale">-</div>
+                    </div>
+                    <div class="info-list">
+                        <div class="info-item">
+                            <span class="label">発生時刻</span>
+                            <span class="value" id="latest-time">----/--/-- --:--</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">震央地名</span>
+                            <span class="value" id="latest-name">調査中</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">深さ</span>
+                            <span class="value" id="latest-depth">---</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">マグニチュード</span>
+                            <span class="value">M <span id="latest-mag">-.--</span></span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">津波の影響</span>
+                            <span class="value" id="latest-tsunami">調査中</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 震源地マップ -->
+            <section class="panel map-panel">
+                <div class="panel-header">震央マップ</div>
+                <div id="map"></div>
+            </section>
+
+            <!-- リアルタイム波形モニター -->
+            <section class="panel waveform-panel">
+                <div class="panel-header">
+                    リアルタイム地震計（シミュレーション）
+                    <button id="test-btn">テスト発報</button>
+                </div>
+                <div class="canvas-container">
+                    <canvas id="seismograph"></canvas>
+                </div>
+            </section>
+
+            <!-- 過去の履歴リスト -->
+            <section class="panel history-panel">
+                <div class="panel-header">地震履歴 (直近15件・クリックで詳細表示)</div>
+                <ul class="history-list" id="history-list">
+                    <!-- JavaScriptで自動生成 -->
+                </ul>
+            </section>
+        </div>
+    </div>
+    <script src="jisin.js"></script>
+</body>
+
+</html>
