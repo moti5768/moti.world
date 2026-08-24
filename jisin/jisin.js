@@ -297,12 +297,29 @@ function handleEEWAlert(data) {
     );
 }
 
+// 画面のどこかをタップしたとき、警告が出ている場合のみ音声を初期化・再生し、1回きりで終了する
+const handleDocumentClick = () => {
+    const banner = document.getElementById('alert-banner');
+
+    // 'hidden' クラスを持っていない（＝警告が出ている）場合のみ実行
+    if (banner && !banner.classList.contains('hidden')) {
+        initAudio();
+        playAlertSound();
+
+        // 1回きりにするため、イベントリスナーを削除
+        document.removeEventListener('click', handleDocumentClick);
+    }
+};
+
+document.addEventListener('click', handleDocumentClick);
+
+
 // テスト用にダミーデータを渡して実行する
-setTimeout(() => {
-    handleEEWAlert({
-        earthquake: {
-            hypocenter: { name: "テスト震源", magnitude: 5.5 }
-        },
-        cancelled: false
-    });
-}, 1000);
+// setTimeout(() => {
+//     handleEEWAlert({
+//         earthquake: {
+//             hypocenter: { name: "テスト震源", magnitude: 5.5 }
+//         },
+//         cancelled: false
+//     });
+// }, 0);
