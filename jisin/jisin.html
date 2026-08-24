@@ -16,6 +16,7 @@
         <div id="alert-banner" class="alert-banner hidden">
             <div id="alert-title" class="alert-title">緊急警報</div>
             <div id="alert-message" class="alert-message">情報を取得中...</div>
+            <div style="font-size: 11px; margin-top: 4px; opacity: 0.8;">※音が出ない場合はこのバナーをタップしてください</div>
         </div>
         <header>
             <div class="logo">
@@ -63,17 +64,6 @@
             <section class="panel map-panel">
                 <div class="panel-header">震央マップ</div>
                 <div id="map"></div>
-            </section>
-
-            <!-- リアルタイム波形モニター -->
-            <section class="panel waveform-panel">
-                <div class="panel-header">
-                    リアルタイム地震計（シミュレーション）
-                    <button id="test-btn">テスト発報</button>
-                </div>
-                <div class="canvas-container">
-                    <canvas id="seismograph"></canvas>
-                </div>
             </section>
 
             <!-- 過去の履歴リスト -->
