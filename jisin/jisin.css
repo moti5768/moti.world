@@ -131,12 +131,22 @@ header h1 {
 .scale-label {
     font-size: 11px;
     opacity: 0.9;
+    text-shadow:
+        0.5px 0.5px 0px #000, -0.5px -0.5px 0px #000,
+        -0.5px 0.5px 0px #000, 0.5px -0.5px 0px #000,
+        0.5px 0px 0px #000, -0.5px 0px 0px #000,
+        0px 0.5px 0px #000, 0px -0.5px 0px #000;
 }
 
 .scale-value {
     font-size: 40px;
     font-weight: bold;
     line-height: 1.1;
+    text-shadow:
+        0.5px 0.5px 0px #000, -0.5px -0.5px 0px #000,
+        -0.5px 0.5px 0px #000, 0.5px -0.5px 0px #000,
+        0.5px 0px 0px #000, -0.5px 0px 0px #000,
+        0px 0.5px 0px #000, 0px -0.5px 0px #000;
 }
 
 .info-list {
@@ -284,17 +294,42 @@ header h1 {
 
 /* アラートバナー */
 .alert-banner {
-    background-color: #ff4d4d;
-    color: #fff;
     padding: 15px 20px;
     border-radius: 8px;
     margin-bottom: 20px;
-    box-shadow: 0 0 20px rgba(255, 77, 77, 0.6);
     display: flex;
     flex-direction: column;
     gap: 5px;
-    animation: emergency-flash 1s infinite;
     cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.alert-banner.hidden {
+    display: none;
+}
+
+/* 情報お知らせ (震度1〜2など) */
+.alert-banner.alert-info {
+    background-color: #1f6feb;
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(31, 111, 235, 0.4);
+    border: 1px solid #388bfd;
+}
+
+/* 注意報レベル (震度3など) */
+.alert-banner.alert-warning {
+    background-color: #d29922;
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(210, 153, 34, 0.5);
+    border: 1px solid #f1e05a;
+}
+
+/* 緊急レベル (震度4以上 / EEW / 津波) */
+.alert-banner.alert-emergency {
+    background-color: #ff4d4d;
+    color: #ffffff;
+    box-shadow: 0 0 20px rgba(255, 77, 77, 0.6);
+    animation: emergency-flash 1s infinite;
 }
 
 .alert-banner.hidden {
@@ -308,4 +343,37 @@ header h1 {
 
 .alert-message {
     font-size: 14px;
+}
+
+/* 震源地の✕マーク */
+.epicenter-icon {
+    color: #ff0000;
+    font-size: 30px;
+    /* 24pxから32pxへ拡大 */
+    font-weight: 900;
+    line-height: 1;
+    text-align: center;
+    /* くっきりした白枠の周りに黒影を落とし、ダークモード・明色部両方で浮き立たせる */
+    text-shadow:
+        -2px -2px 0 #ffffff,
+        2px -2px 0 #ffffff,
+        -2px 2px 0 #ffffff,
+        2px 2px 0 #ffffff,
+        0 0 8px #000000,
+        0 0 4px #000000;
+    pointer-events: none;
+}
+
+/* 観測点の震度アイコン */
+.station-scale-icon div {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    border-radius: 3px;
+    border: 1px solid #111;
+    box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.6);
 }
