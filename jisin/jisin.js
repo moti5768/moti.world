@@ -109,12 +109,12 @@ function updateMap(lat, lng, scaleInfo, originTimeStr, isRealtime = false) {
     const pos = [lat, lng];
     const epicenterIcon = L.divIcon({
         className: 'epicenter-icon',
-        html: '✕',
+        html: '<div>✕</div>', // 【改善】divで囲んで中央配置を安定させる
         iconSize: [30, 30],
         iconAnchor: [15, 15]
     });
 
-    currentMarker = L.marker(pos, { icon: epicenterIcon }).addTo(map);
+    currentMarker = L.marker(pos, { icon: epicenterIcon, zIndexOffset: 1000 }).addTo(map);
     currentMarker.bindTooltip(`震源地 (最大震度${scaleInfo.text})`);
 
     // 【修正】リアルタイムの時だけP波・S波を描画する
@@ -405,8 +405,8 @@ function connectWebSocket() {
     ws.onopen = () => {
         console.log("リアルタイム接続を開始しました。");
         wsReconnectDelay = 15000;
-        // 接続成功時は緑色＆「リアルタイム接続中」に変更
         updateConnectionStatus("リアルタイム接続中", "connected");
+        fetchHistory();
     };
 
     ws.onmessage = (e) => {
@@ -460,9 +460,7 @@ window.addEventListener('offline', () => {
     if (reconnectTimer) clearTimeout(reconnectTimer);
 });
 
-// 【新機能】stations.jsonをロードしてから履歴・WebSocketの取得を開始する
 Promise.all([loadStations(), loadPrefectures()]).then(() => {
-    fetchHistory();
     connectWebSocket();
 });
 

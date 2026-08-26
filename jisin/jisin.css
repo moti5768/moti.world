@@ -241,12 +241,16 @@ header h1 {
     grid-column: 2 / 3;
     grid-row: 1 / 3;
     max-height: 800px;
+    min-height: 0;
+    /* 【改善】グリッド内でフレックスが潰れるのを防ぐ */
 }
 
 .history-list {
     list-style: none;
     overflow-y: auto;
     flex-grow: 1;
+    min-height: 0;
+    /* 【改善】リスト領域の高さを正しく確保しスクロール可能にする */
 }
 
 .history-item {
@@ -397,21 +401,31 @@ header h1 {
 
 /* 震源地の✕マーク */
 .epicenter-icon {
+    position: relative;
     color: #ff0000;
-    font-size: 30px;
-    /* 24pxから32pxへ拡大 */
+    font-size: 26px;
     font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     line-height: 1;
-    text-align: center;
-    /* くっきりした白枠の周りに黒影を落とし、ダークモード・明色部両方で浮き立たせる */
-    text-shadow:
-        -2px -2px 0 #ffffff,
-        2px -2px 0 #ffffff,
-        -2px 2px 0 #ffffff,
-        2px 2px 0 #ffffff,
-        0 0 8px #000000,
-        0 0 4px #000000;
+    text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
     pointer-events: none;
+}
+
+.epicenter-icon::after {
+    content: "✕";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    z-index: -1;
+    -webkit-text-stroke: 4px #ffffff;
 }
 
 /* 観測点の震度アイコン */
