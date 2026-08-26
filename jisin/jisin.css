@@ -35,6 +35,47 @@ header {
     gap: 12px;
 }
 
+header h1 {
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.clock {
+    font-family: monospace;
+    font-size: 20px;
+    color: #8b949e;
+}
+
+/* ================================
+   【追加・修正】スマホ向けヘッダーの縦並び対応
+================---------------- */
+@media (max-width: 768px) {
+    header {
+        flex-direction: column;
+        /* 縦方向（上下）に並べる */
+        align-items: flex-start;
+        /* 左寄せにする（中央にしたい場合は center） */
+        gap: 10px;
+        /* タイトル行と時計の間の隙間 */
+    }
+
+    .logo {
+        flex-wrap: wrap;
+        /* ロゴ内の要素（パルス・文字など）が入り切らない場合に折り返す */
+        gap: 8px;
+    }
+
+    header h1 {
+        font-size: 20px;
+        /* スマホ画面に合わせてタイトルを少し小さく */
+    }
+
+    .clock {
+        font-size: 16px;
+        /* 時計の文字サイズもスマホ向けに調整 */
+    }
+}
+
 .pulse {
     width: 12px;
     height: 12px;
@@ -79,17 +120,6 @@ header {
         transform: scale(0.95);
         box-shadow: 0 0 0 0 rgba(var(--pulse-rgb), 0);
     }
-}
-
-header h1 {
-    font-size: 24px;
-    font-weight: 600;
-}
-
-.clock {
-    font-family: monospace;
-    font-size: 20px;
-    color: #8b949e;
 }
 
 .main-grid {
