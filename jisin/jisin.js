@@ -98,7 +98,7 @@ let pWaveCircle = null;
 let sWaveCircle = null;
 let waveAnimationId = null;
 
-function updateMap(lat, lng, scaleInfo, originTimeStr) {
+function updateMap(lat, lng, scaleInfo, originTimeStr, isRealtime = false) {
     if (!lat || !lng || lat === -200 || lng === -200) return;
 
     if (currentMarker) map.removeLayer(currentMarker);
@@ -117,72 +117,67 @@ function updateMap(lat, lng, scaleInfo, originTimeStr) {
     currentMarker = L.marker(pos, { icon: epicenterIcon }).addTo(map);
     currentMarker.bindTooltip(`震源地 (最大震度${scaleInfo.text})`);
 
-    // P波・S波の円を初期化
-    pWaveCircle = L.circle(pos, { color: '#00bfff', weight: 1.5, fillOpacity: 0.1, radius: 0 }).addTo(map);
-    sWaveCircle = L.circle(pos, { color: '#ff4d4d', weight: 2, fillOpacity: 0.2, radius: 0 }).addTo(map);
+    // 【修正】リアルタイムの時だけP波・S波を描画する
+    if (isRealtime) {
+        pWaveCircle = L.circle(pos, { color: '#00bfff', weight: 1.5, fillOpacity: 0.1, radius: 0 }).addTo(map);
+        sWaveCircle = L.circle(pos, { color: '#ff4d4d', weight: 2, fillOpacity: 0.2, radius: 0 }).addTo(map);
 
-    const originTime = originTimeStr ? new Date(originTimeStr).getTime() : Date.now();
+        const originTime = originTimeStr ? new Date(originTimeStr).getTime() : Date.now();
 
-    function animateWaves() {
-        const elapsedSec = (Date.now() - originTime) / 1000;
-        if (elapsedSec > 0 && elapsedSec < 180) { // 発生後3分間アニメーション
-            const pRadius = elapsedSec * 6500; // P波: 約6.5km/s
-            const sRadius = elapsedSec * 3500; // S波: 約3.5km/s
+        function animateWaves() {
+            const elapsedSec = (Date.now() - originTime) / 1000;
+            if (elapsedSec > 0 && elapsedSec < 180) {
+                const pRadius = elapsedSec * 6500;
+                const sRadius = elapsedSec * 3500;
 
-            pWaveCircle.setRadius(pRadius);
-            sWaveCircle.setRadius(sRadius);
-            waveAnimationId = requestAnimationFrame(animateWaves);
+                pWaveCircle.setRadius(pRadius);
+                sWaveCircle.setRadius(sRadius);
+                waveAnimationId = requestAnimationFrame(animateWaves);
+            } else if (elapsedSec >= 180) {
+                cancelAnimationFrame(waveAnimationId);
+                if (pWaveCircle) map.removeLayer(pWaveCircle);
+                if (sWaveCircle) map.removeLayer(sWaveCircle);
+            }
         }
+        animateWaves();
     }
-    animateWaves();
 }
 
 // ======== 画面更新ロジック ========
-function updateLatest(data) {
+function updateLatest(data, isRealtime = false) {
     const eq = data.earthquake;
     if (!eq) return;
 
-    // 情報種別の判定とパネルヘッダーへの反映
     const issueMap = {
-        "ScalePrompt": "震度速報",
-        "Destination": "震源に関する情報",
-        "ScaleAndDestination": "震源・震度情報",
-        "DetailScale": "各地の震度に関する情報",
-        "Foreign": "遠地地震に関する情報",
-        "Other": "地震情報"
+        "ScalePrompt": "震度速報", "Destination": "震源に関する情報",
+        "ScaleAndDestination": "震源・震度情報", "DetailScale": "各地の震度に関する情報",
+        "Foreign": "遠地地震に関する情報", "Other": "地震情報"
     };
     const issueType = data.issue ? issueMap[data.issue.type] || "地震情報" : "地震情報";
 
-    // HTML内の <div class="panel-header">詳細情報</div> を書き換える
     const headerEl = document.querySelector('.latest-panel .panel-header');
     if (headerEl) headerEl.textContent = `詳細情報 (${issueType})`;
 
     const scaleInfo = getScaleInfo(eq.maxScale);
-
     document.getElementById('latest-scale').textContent = scaleInfo.text;
     document.getElementById('latest-scale-box').style.backgroundColor = scaleInfo.color;
-
     document.getElementById('latest-time').textContent = eq.time || "不明";
     document.getElementById('latest-name').textContent = eq.hypocenter?.name || "調査中";
 
     const depth = eq.hypocenter?.depth;
     let depthText = "不明";
-
-    if (depth === 0) {
-        depthText = "ごく浅い";
-    } else if (typeof depth === 'number' && depth > 0) {
-        depthText = `${depth} km`;
-    }
-
+    if (depth === 0) depthText = "ごく浅い";
+    else if (typeof depth === 'number' && depth > 0) depthText = `${depth} km`;
     document.getElementById('latest-depth').textContent = depthText;
 
     const mag = eq.hypocenter?.magnitude;
     document.getElementById('latest-mag').textContent = mag === -1 ? "-" : (mag ? mag.toFixed(1) : "-");
 
-    // 震源地のプロット
-    // 震源地のプロット
-    updateMap(eq.hypocenter?.latitude, eq.hypocenter?.longitude, scaleInfo, eq.time);
-    checkAndNotifyScale(eq);
+    // 【修正】フラグを updateMap に渡し、アラートも条件付きにする
+    updateMap(eq.hypocenter?.latitude, eq.hypocenter?.longitude, scaleInfo, eq.time, isRealtime);
+    if (isRealtime) {
+        checkAndNotifyScale(eq);
+    }
 
     // 描画範囲を収めるための座標保持配列
     const boundsPoints = [];
@@ -295,12 +290,10 @@ function updateLatest(data) {
 
 function createHistoryElement(data) {
     const eq = data.earthquake;
-    // maxScaleが未定義、または 0 未満（震度情報なし: -1 など）の場合は履歴に表示しない
     if (!eq || eq.maxScale === undefined || eq.maxScale < 10) return null;
     const scaleInfo = getScaleInfo(eq.maxScale);
     const magText = (eq.hypocenter?.magnitude && eq.hypocenter.magnitude !== -1)
-        ? eq.hypocenter.magnitude.toFixed(1)
-        : "-";
+        ? eq.hypocenter.magnitude.toFixed(1) : "-";
 
     const li = document.createElement('li');
     li.className = 'history-item';
@@ -329,7 +322,13 @@ function createHistoryElement(data) {
     magDiv.textContent = `M ${magText}`;
 
     li.append(scaleDiv, detailsDiv, magDiv);
-    li.addEventListener('click', () => updateLatest(data));
+
+    // 【修正】クリック時にハイライト処理を追加（isRealtimeはデフォルトのfalseが適用されます）
+    li.addEventListener('click', (e) => {
+        document.querySelectorAll('.history-item').forEach(item => item.classList.remove('active'));
+        e.currentTarget.classList.add('active');
+        updateLatest(data);
+    });
 
     return li;
 }
@@ -360,30 +359,61 @@ async function fetchHistory() {
     }
 }
 
+
+
+// ======== 改善後のコード ========
 let wsReconnectDelay = 15000; // 初期リトライを15秒
 const maxReconnectDelay = 300000; // 最大5分に延長
 let ws = null; // 現在の接続インスタンスを保持
+let reconnectTimer = null; // 再接続用のタイマーを保持
+
+// 【追加】接続状態をUI（文字とパルス色）に反映する関数
+function updateConnectionStatus(statusText, pulseClass) {
+    const pulse = document.getElementById('connection-pulse');
+    const textEl = document.getElementById('connection-status');
+
+    if (pulse) {
+        pulse.className = `pulse ${pulseClass}`;
+    }
+    if (textEl) {
+        textEl.textContent = statusText;
+        if (pulseClass === 'connected') {
+            textEl.style.color = '#3fb950';
+        } else if (pulseClass === 'reconnecting') {
+            textEl.style.color = '#d29922';
+        } else {
+            textEl.style.color = '#ff4d4d';
+        }
+    }
+}
 
 function connectWebSocket() {
-    // 既に接続がある場合は一度閉じて整理する（多重接続防止）
     if (ws) {
-        ws.onclose = null; // 切断時の二重ループを防ぐ
+        ws.onclose = null;
         ws.close();
     }
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+
+    // 接続試行中のステータスを表示
+    updateConnectionStatus("接続中...", "reconnecting");
 
     ws = new WebSocket('wss://api.p2pquake.net/v2/ws');
 
     ws.onopen = () => {
         console.log("リアルタイム接続を開始しました。");
-        wsReconnectDelay = 15000; // 接続成功時は初期値（15秒）にリセット
+        wsReconnectDelay = 15000;
+        // 接続成功時は緑色＆「リアルタイム接続中」に変更
+        updateConnectionStatus("リアルタイム接続中", "connected");
     };
 
     ws.onmessage = (e) => {
         const data = JSON.parse(e.data);
-
+        if (!data.code) return;
         if (data.code === 551) {
-            updateLatest(data);
-
+            updateLatest(data, true);
             const list = document.getElementById('history-list');
             const el = createHistoryElement(data);
             if (el) {
@@ -391,23 +421,44 @@ function connectWebSocket() {
                 if (list.children.length > 15) list.removeChild(list.lastChild);
             }
         }
-
-        if (data.code === 552) {
-            handleTsunamiAlert(data);
-        }
-
-        if (data.code === 556) {
-            handleEEWAlert(data);
-        }
+        if (data.code === 552) handleTsunamiAlert(data);
+        if (data.code === 556) handleEEWAlert(data);
     };
 
-    ws.onclose = () => {
-        console.log(`切断されました。${wsReconnectDelay / 1000}秒後に再接続します...`);
-        setTimeout(connectWebSocket, wsReconnectDelay);
-        // 次回の再接続間隔を倍増（最大5分）
+    ws.onclose = (e) => {
+        const waitSec = Math.round(wsReconnectDelay / 1000);
+        console.log(`切断されました。(コード: ${e.code}) ${waitSec}秒後に再接続します...`);
+        // 切断時はオレンジ色＆カウントダウン表示
+        updateConnectionStatus(`切断 (${waitSec}秒後に再接続)`, "reconnecting");
+
+        reconnectTimer = setTimeout(connectWebSocket, wsReconnectDelay);
         wsReconnectDelay = Math.min(wsReconnectDelay * 2, maxReconnectDelay);
     };
+
+    ws.onerror = (err) => {
+        console.error("WebSocketエラーが発生しました。");
+        // エラー時は赤色表示
+        updateConnectionStatus("接続エラー", "disconnected");
+    };
 }
+
+window.addEventListener('online', () => {
+    console.log("ネットワーク接続が復旧しました。直ちにWebSocketを再接続します。");
+    updateConnectionStatus("ネットワーク復旧・再接続中", "reconnecting");
+    wsReconnectDelay = 15000;
+    connectWebSocket();
+});
+
+window.addEventListener('offline', () => {
+    console.log("ネットワーク接続が切れました。WebSocketを待機状態にします。");
+    // オフライン時は赤色＆オフライン表示
+    updateConnectionStatus("オフライン（切断中）", "disconnected");
+    if (ws) {
+        ws.onclose = null;
+        ws.close();
+    }
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+});
 
 // 【新機能】stations.jsonをロードしてから履歴・WebSocketの取得を開始する
 Promise.all([loadStations(), loadPrefectures()]).then(() => {
@@ -472,8 +523,15 @@ function hideAlertBanner() {
 }
 
 // レベル別アラート表示 (level: 'info' | 'warning' | 'emergency')
+let alertTimeoutId = null;
+
 function showAlertBanner(title, message, level = 'info') {
     hideAlertBanner(); // 状態リセット
+    // 既存のタイマーがあればリセット
+    if (alertTimeoutId) {
+        clearTimeout(alertTimeoutId);
+        alertTimeoutId = null;
+    }
 
     const banner = document.getElementById('alert-banner');
     document.getElementById('alert-title').textContent = title;
@@ -485,8 +543,14 @@ function showAlertBanner(title, message, level = 'info') {
     if (level === 'emergency') {
         document.querySelectorAll('.panel').forEach(panel => panel.classList.add('emergency-active'));
         playAlertSound();
+        // 緊急時は30秒後に自動消去
+        alertTimeoutId = setTimeout(hideAlertBanner, 30000);
     } else if (level === 'warning') {
-        // 必要に応じて控えめな通知音を追加可能
+        // 注意報は15秒後に自動消去
+        alertTimeoutId = setTimeout(hideAlertBanner, 15000);
+    } else {
+        // 情報は10秒後に自動消去
+        alertTimeoutId = setTimeout(hideAlertBanner, 10000);
     }
 }
 
@@ -540,16 +604,18 @@ function handleEEWAlert(data) {
         `震源: ${hypocenter} (M${mag}) 強い揺れに警戒してください！`,
         'emergency'
     );
+
+    // 【追加】EEW受信時にも予測震源地があれば波及アニメーションを描画する
+    if (eq.hypocenter && eq.hypocenter.latitude && eq.hypocenter.longitude) {
+        // 暫定的な表示として震度不明でマップを更新し、対象エリアにズーム
+        updateMap(eq.hypocenter.latitude, eq.hypocenter.longitude, { text: "?", color: "#ff4d4d" }, eq.originTime || new Date().toISOString());
+        map.setView([eq.hypocenter.latitude, eq.hypocenter.longitude], 7, { animate: true });
+    }
 }
 
 
 
-
-
-
-
-
-// ======== デモ実行用関数 ========
+// // ======== デモ実行用関数 ========
 // function runEarthquakeDemo(level = 'emergency') {
 //     // P/S波のアニメーションを動かすため発生時間を「現在時刻」に設定
 //     const nowISO = new Date().toISOString();
@@ -581,7 +647,7 @@ function handleEEWAlert(data) {
 //                 { addr: "横浜市", scale: 45 },
 //                 { addr: "東京都", scale: 40 }
 //             ]
-//         });
+//         }, true);
 //     } else if (level === 'info') {
 //         // 小規模な地震のお知らせ通知デモ
 //         updateLatest({
@@ -599,7 +665,7 @@ function handleEEWAlert(data) {
 //                 domesticTsunami: "None"
 //             },
 //             points: []
-//         });
+//         }, true);
 //     }
 // }
 

@@ -38,26 +38,46 @@ header {
 .pulse {
     width: 12px;
     height: 12px;
-    background-color: #2ea043;
+    --pulse-color: #2ea043;
+    --pulse-rgb: 46, 160, 67;
+    background-color: var(--pulse-color);
     border-radius: 50%;
-    box-shadow: 0 0 10px #2ea043;
-    animation: pulse-animation 2s infinite;
+    box-shadow: 0 0 10px var(--pulse-color);
+    animation: pulse-animation 3s infinite;
+}
+
+.pulse.connected {
+    --pulse-color: #2ea043;
+    --pulse-rgb: 46, 160, 67;
+    /* 緑（正常） */
+}
+
+.pulse.reconnecting {
+    --pulse-color: #d29922;
+    --pulse-rgb: 210, 153, 34;
+    /* 黄・オレンジ（再接続待機中） */
+}
+
+.pulse.disconnected {
+    --pulse-color: #ff4d4d;
+    --pulse-rgb: 255, 77, 77;
+    /* 赤（切断・エラー） */
 }
 
 @keyframes pulse-animation {
     0% {
         transform: scale(0.95);
-        box-shadow: 0 0 0 0 rgba(46, 160, 67, 0.7);
+        box-shadow: 0 0 0 0 rgba(var(--pulse-rgb), 0.7);
     }
 
     70% {
         transform: scale(1);
-        box-shadow: 0 0 0 10px rgba(46, 160, 67, 0);
+        box-shadow: 0 0 0 10px rgba(var(--pulse-rgb), 0);
     }
 
     100% {
         transform: scale(0.95);
-        box-shadow: 0 0 0 0 rgba(46, 160, 67, 0);
+        box-shadow: 0 0 0 0 rgba(var(--pulse-rgb), 0);
     }
 }
 
@@ -376,4 +396,9 @@ header h1 {
     border-radius: 3px;
     border: 1px solid #111;
     box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+.history-item.active {
+    background-color: #2e3641;
+    border-left: 4px solid #2ea043;
 }
