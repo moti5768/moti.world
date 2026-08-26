@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JISIN REALTIME MONITOR</title>
-    <!-- Leaflet.js (地図ライブラリ) の読み込み -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="jisin.css">
@@ -19,17 +18,14 @@
         </div>
         <header>
             <div class="logo">
-                <!-- パルス要素にIDを付与 -->
                 <span id="connection-pulse" class="pulse"></span>
                 <h1>地震情報ダッシュボード</h1>
-                <!-- 【追加】接続状態のテキスト表示 -->
                 <span id="connection-status" style="font-size: 12px; color: #8b949e; margin-left: 10px;">接続中</span>
             </div>
             <div id="clock" class="clock">----/--/-- --:--:--</div>
         </header>
 
         <div class="main-grid">
-            <!-- 最新の地震情報 -->
             <section class="panel latest-panel">
                 <div class="panel-header">詳細情報</div>
                 <div class="latest-content">
@@ -62,17 +58,14 @@
                 </div>
             </section>
 
-            <!-- 震源地マップ -->
             <section class="panel map-panel">
                 <div class="panel-header">震央マップ</div>
                 <div id="map"></div>
             </section>
 
-            <!-- 過去の履歴リスト -->
             <section class="panel history-panel">
                 <div class="panel-header">地震履歴 (直近15件・クリックで詳細表示)</div>
                 <ul class="history-list" id="history-list">
-                    <!-- JavaScriptで自動生成 -->
                 </ul>
             </section>
         </div>

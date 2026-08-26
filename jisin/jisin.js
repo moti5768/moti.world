@@ -340,18 +340,24 @@ async function fetchHistory() {
         const json = await res.json();
 
         if (json.length > 0) {
-            // 【修正】履歴の中から、遠地地震（Foreign）ではない「国内の最新の地震」を自動で探す
-            // 見つからない場合は、念のため json[0] を使う
             const domesticLatest = json.find(data => data.issue?.type !== "Foreign") || json[0];
 
-            // 見つかった国内の最新情報を初期表示に設定
             updateLatest(domesticLatest);
 
             const list = document.getElementById('history-list');
             list.innerHTML = '';
+
+            let isFirst = true;
             json.forEach(data => {
                 const el = createHistoryElement(data);
-                if (el) list.appendChild(el);
+                if (el) {
+                    // 【改善】ページロード時は最新（先頭）の履歴を active 状態にする
+                    if (isFirst) {
+                        el.classList.add('active');
+                        isFirst = false;
+                    }
+                    list.appendChild(el);
+                }
             });
         }
     } catch (e) {
@@ -417,6 +423,10 @@ function connectWebSocket() {
             const list = document.getElementById('history-list');
             const el = createHistoryElement(data);
             if (el) {
+                // 【改善】地震発生時は既存の active を解除し、新しい先頭（最新）を active に切り替える
+                document.querySelectorAll('.history-item').forEach(item => item.classList.remove('active'));
+                el.classList.add('active');
+
                 list.insertBefore(el, list.firstChild);
                 if (list.children.length > 15) list.removeChild(list.lastChild);
             }
