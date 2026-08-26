@@ -28,10 +28,9 @@ function getScaleInfo(scale) {
 // ======== マップ初期化 (Leaflet.js) ========
 const map = L.map('map').setView([36.2048, 138.2529], 5);
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 19
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+    maxZoom: 16
 }).addTo(map);
 
 // 【改善】ウィンドウサイズ変更時にマップの描画サイズを再計算させる
@@ -238,17 +237,17 @@ function updateLatest(data, isRealtime = false) {
                 const scaleInfo = getScaleInfo(scale);
                 // 【改善】地震が発生し揺れが観測された都道府県に「強めのハイライト」をかける
                 layer.setStyle({
-                    fillColor: '#161b22',
-                    fillOpacity: 0.0,       // 不透明度を高くして色をハッキリさせる
+                    fillColor: '#000000',
+                    fillOpacity: 0.5,
                     color: '#ffffff',       // 境界線を真っ白にする
                     weight: 2.0             // 境界線を太くして目立たせる
                 });
             } else {
                 // 【改善】揺れが観測されなかった都道府県はハイライトを消す（目立たなくする）
                 layer.setStyle({
-                    fillColor: '#161b22',
-                    fillOpacity: 0.0,       // 塗りつぶしをなくす
-                    color: '#21262d',       // 境界線も暗くする
+                    fillColor: '#000000',
+                    fillOpacity: 0.5,
+                    color: 'dimgray',       // 境界線も暗くする
                     weight: 0.5
                 });
             }
