@@ -38,12 +38,43 @@ window.addEventListener('resize', () => {
     map.invalidateSize();
 });
 
-let currentMarker = null;
-const stationMarkers = L.layerGroup().addTo(map);
-let stationMap = new Map();
-
-let prefGeoJsonLayer = null; // 都道府県境界レイヤー
 let prefData = null;        // 読み込んだGeoJSONデータ
+let currentMarker = null;
+
+// 【変更】すべての震度アイコンを入れるレイヤー（デフォルトは非表示）
+const stationMarkers = L.layerGroup();
+// 【新規追加】ズームアウト時にも常に表示させておきたい重要なマーカー用のレイヤー
+const importantMarkers = L.layerGroup().addTo(map);
+
+let stationMap = new Map();
+let prefGeoJsonLayer = null; // 都道府県境界レイヤー
+
+// ==========================================
+// ズームレベルによる表示の自動切り替え
+// ==========================================
+const VISIBLE_ZOOM_LEVEL = 7; // 詳細マーカーを表示し始めるズームレベル
+
+map.on('zoomend', () => {
+    const currentZoom = map.getZoom();
+
+    if (currentZoom >= VISIBLE_ZOOM_LEVEL) {
+        // 拡大時：すべてのマーカーを表示
+        if (!map.hasLayer(stationMarkers)) {
+            map.addLayer(stationMarkers);
+        }
+        // 重複を防ぐため、広域用マーカーは隠しても良いし、そのまま重ねても良い（ここではそのまま）
+    } else {
+        // 縮小時（ズームアウト）：詳細マーカーを隠す
+        if (map.hasLayer(stationMarkers)) {
+            map.removeLayer(stationMarkers);
+        }
+        // 縮小時は importantMarkers のみが残る
+    }
+});
+
+map.fire('zoomend');
+// ==========================================
+
 
 // 都道府県のGeoJSONを読み込む関数
 async function loadPrefectures() {
@@ -76,13 +107,16 @@ async function loadStations() {
                 // 【修正】st.pref がオブジェクトの場合に備えて .name から文字列を取り出す
                 const pref = (typeof st.pref === 'object' && st.pref !== null) ? st.pref.name : st.pref;
 
+                // 【追加】市区町村名（または地域名）を取得
+                const cityName = (st.city && st.city.name) ? st.city.name : st.name;
+
                 // 観測点名（詳細な地域名）でマッピング
                 if (!stationMap.has(st.name)) {
-                    stationMap.set(st.name, { lat, lon, pref }); // pref を含めて保存
+                    stationMap.set(st.name, { lat, lon, pref, cityName }); // 【改善】cityName を含めて保存
                 }
                 // 市町村名でもマッピング
                 if (st.city && st.city.name && !stationMap.has(st.city.name)) {
-                    stationMap.set(st.city.name, { lat, lon, pref }); // pref を含めて保存
+                    stationMap.set(st.city.name, { lat, lon, pref, cityName }); // 【改善】cityName を含めて保存
                 }
             }
         });
@@ -188,53 +222,94 @@ function updateLatest(data, isRealtime = false) {
 
     // 各地の震度プロットと座標集計 ＋ 都道府県の最大震度を集計
     stationMarkers.clearLayers();
+    importantMarkers.clearLayers(); // 【追加】広域用レイヤーもクリア
 
-    // ① 都道府県ごとの最大震度を保持するマップ
+    // ① 都道府県ごとの最大震度と、その代表座標を保持するマップ
     const prefMaxScaleMap = new Map();
+    // 市区町村ごとの最大震度と代表座標を保持するマップ
+    const cityMaxScaleMap = new Map();
 
     if (data.points && Array.isArray(data.points)) {
+        // 1. 各地の震度データをループし、都道府県および市区町村単位で「最大の震度」を集計する
         data.points.forEach(point => {
             const st = stationMap.get(point.addr);
             if (st) {
-                // ② 観測点データから都道府県名を取得して最大震度を算出
-                // ※stに都道府県名が入っているプロパティ名（例: st.pref）に合わせて変更してください
+                // 【変更】都道府県の最大震度と、その最大震度を記録した地点の座標を保持
                 const prefName = st.pref;
                 if (prefName) {
-                    const currentMax = prefMaxScaleMap.get(prefName) || -1;
-                    if (point.scale > currentMax) {
-                        prefMaxScaleMap.set(prefName, point.scale);
+                    const currentPrefData = prefMaxScaleMap.get(prefName);
+                    if (!currentPrefData || point.scale > currentPrefData.scale) {
+                        prefMaxScaleMap.set(prefName, {
+                            scale: point.scale,
+                            lat: st.lat,
+                            lon: st.lon,
+                            cityName: st.cityName // ツールチップ表示用
+                        });
                     }
                 }
 
-                // 従来通りのマーカー生成処理
-                const pScaleInfo = getScaleInfo(point.scale);
-                const textColor = pScaleInfo.textColor || "#fff";
-
-                const scaleIcon = L.divIcon({
-                    className: 'station-scale-icon',
-                    html: `<div style="background-color: ${pScaleInfo.color}; color: ${textColor};">${pScaleInfo.text}</div>`,
-                    iconSize: [20, 20],
-                    iconAnchor: [10, 10]
-                });
-
-                const marker = L.marker([st.lat, st.lon], { icon: scaleIcon });
-                marker.bindTooltip(`${point.addr} (震度${pScaleInfo.text})`);
-                stationMarkers.addLayer(marker);
-
-                // 観測点の座標をバウンディングボックス用に追加
-                boundsPoints.push([st.lat, st.lon]);
+                // 市区町村ごとに集約して最大震度を更新
+                const cityName = st.cityName;
+                const currentCityData = cityMaxScaleMap.get(cityName);
+                if (!currentCityData || point.scale > currentCityData.scale) {
+                    cityMaxScaleMap.set(cityName, {
+                        scale: point.scale,
+                        lat: st.lat,
+                        lon: st.lon
+                    });
+                }
             }
+        });
+
+        // 2-a. 【追加】都道府県ごとの最大震度マーカーを広域用レイヤー (importantMarkers) に追加
+        prefMaxScaleMap.forEach((prefData, prefName) => {
+            const pScaleInfo = getScaleInfo(prefData.scale);
+            const textColor = pScaleInfo.textColor || "#fff";
+
+            // 広域用は少し大きめのアイコンにしても良いかもしれません（ここでは同じサイズ）
+            const scaleIcon = L.divIcon({
+                className: 'station-scale-icon important-scale-icon',
+                html: `<div style="background-color: ${pScaleInfo.color}; color: ${textColor}; box-shadow: 0 0 5px rgba(0,0,0,0.8);">${pScaleInfo.text}</div>`,
+                iconSize: [24, 24], // 少し大きめ
+                iconAnchor: [12, 12]
+            });
+
+            const marker = L.marker([prefData.lat, prefData.lon], { icon: scaleIcon, zIndexOffset: 500 });
+            marker.bindTooltip(`${prefName} 最大震度観測地: ${prefData.cityName} (震度${pScaleInfo.text})`);
+            importantMarkers.addLayer(marker);
+        });
+
+        // 2-b. 集計が終わった市区町村ごとのデータを使って代表マーカーを描画する (詳細用レイヤー)
+        cityMaxScaleMap.forEach((cityData, cityName) => {
+            const pScaleInfo = getScaleInfo(cityData.scale);
+            const textColor = pScaleInfo.textColor || "#fff";
+
+            const scaleIcon = L.divIcon({
+                className: 'station-scale-icon',
+                html: `<div style="background-color: ${pScaleInfo.color}; color: ${textColor};">${pScaleInfo.text}</div>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            });
+
+            const marker = L.marker([cityData.lat, cityData.lon], { icon: scaleIcon });
+            marker.bindTooltip(`${cityName} (最大震度${pScaleInfo.text})`);
+            stationMarkers.addLayer(marker);
+
+            // バウンディングボックス用（表示範囲調整）に座標を追加
+            boundsPoints.push([cityData.lat, cityData.lon]);
         });
     }
     console.log("prefMaxScaleMapの中身:", prefMaxScaleMap);
-    // ③ 都道府県の境界線（GeoJSON）の色を震度に合わせて変更
+
+    // ③ 都道府県の境界線（GeoJSON）の色を震度に合わせて変更 (以下の部分は元のコードと同じですが、prefMaxScaleMapの構造が変わったため少し修正が必要)
     if (typeof prefGeoJsonLayer !== 'undefined' && prefGeoJsonLayer) {
         prefGeoJsonLayer.eachLayer(layer => {
             const prefName = layer.feature.properties.name;
-            const scale = prefMaxScaleMap.get(prefName);
+            const prefData = prefMaxScaleMap.get(prefName); // 【修正】数値ではなくオブジェクトが返る
 
-            if (scale !== undefined) {
-                const scaleInfo = getScaleInfo(scale);
+            if (prefData !== undefined) {
+                // 【修正】prefData.scale から震度を取得
+                const scaleInfo = getScaleInfo(prefData.scale);
                 // 【改善】地震が発生し揺れが観測された都道府県に「強めのハイライト」をかける
                 layer.setStyle({
                     fillColor: '#000000',
@@ -411,6 +486,7 @@ function connectWebSocket() {
         console.log("リアルタイム接続を開始しました。");
         wsReconnectDelay = 15000;
         updateConnectionStatus("リアルタイム接続中", "connected");
+        // 接続時・再接続時に最新履歴を同期
         fetchHistory();
     };
 
@@ -469,9 +545,18 @@ window.addEventListener('offline', () => {
     if (reconnectTimer) clearTimeout(reconnectTimer);
 });
 
-Promise.all([loadStations(), loadPrefectures()]).then(() => {
-    connectWebSocket();
-});
+// 画面読み込み時に即座に履歴を取得（描画を最優先）
+fetchHistory();
+
+// マップ用素材の読込後にWebSocketへ接続（失敗時も接続処理へ進む）
+Promise.all([loadStations(), loadPrefectures()])
+    .then(() => {
+        connectWebSocket();
+    })
+    .catch((err) => {
+        console.error("マップデータ読込エラー:", err);
+        connectWebSocket();
+    });
 
 // ======== 音声（警告音）を生成する関数 (Web Audio API) ========
 let audioCtx = null;
