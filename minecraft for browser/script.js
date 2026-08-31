@@ -482,7 +482,6 @@ function updateSkyAndFogColor(time, sunY, sunDir) {
    ====================================================== */
 
 // --- クラス外定数・キャッシュの事前定義 (GC対策) ---
-const _heightCache = new Map();
 const _externalCache = new Map();
 
 // バイオームブレンディング用の重み係数を事前に計算 (1.0 / (1.0 + 距離の2乗))
@@ -523,8 +522,28 @@ const _getRawHeightAt = (wx, wz) => {
     return b.baseHeight + (nNoise * b.heightVariation);
 };
 
+
+const _getBlockBound = (data, lx, ly, lz) => {
+    lx = lx | 0; ly = ly | 0; lz = lz | 0;
+    if (((lx | lz) & ~15) !== 0 || (ly >>> 8) !== 0) return null;
+    return data[(ly | (lz << 8) | (lx << 12)) | 0] & 0xFFF;
+};
+
+const _setBlockDirect = (data, lx, ly, lz, bid, allowOverwrite, skyId, leavesId) => {
+    lx = lx | 0; ly = ly | 0; lz = lz | 0;
+    if (((lx | lz) & ~15) !== 0 || (ly >>> 8) !== 0) return;
+    const idx = (ly | (lz << 8) | (lx << 12)) | 0;
+    const currentId = data[idx] & 0xFFF;
+    if (currentId === skyId || currentId === leavesId || allowOverwrite) {
+        data[idx] = bid;
+    }
+};
+
 const TOTAL_WEIGHT = BLEND_WEIGHTS.reduce((a, b) => a + b, 0);
 const INV_TOTAL_WEIGHT = 1.0 / TOTAL_WEIGHT;
+const MAX_EXTERNAL_CACHE = 2000;
+const _externalCacheKeys = new Float64Array(MAX_EXTERNAL_CACHE);
+let _externalCacheIndex = 0;
 
 export const ChunkSaveManager = {
     modifiedChunks: new Map(),
@@ -539,7 +558,7 @@ export const ChunkSaveManager = {
     _sharedDataBuffer: new Uint16Array(65536),
 
     getBlockIndex: function (lx, ly, lz) {
-        return ((ly | 0) + ((lz | 0) << 8) + ((lx | 0) << 12)) >>> 0;
+        return (ly | (lz << 8) | (lx << 12)) >>> 0;
     },
 
     setBlock: function (cx, cz, lx, ly, lz, blockType) {
@@ -563,20 +582,19 @@ export const ChunkSaveManager = {
         this._markByKey(key, ly | 0);
 
         // 6. チャンク境界の隣接更新（メソッドを統一してJITを助ける）
-        // lx/lz が 0 または 15 の時だけ隣接チャンクのリビルドが必要
         const lxInt = lx | 0;
         const lzInt = lz | 0;
 
         if (lxInt === 0) {
-            this._markByKey(encodeChunkKey((cx - 1) | 0, cz | 0), ly | 0);
+            this._markByKey(encodeChunkKey(cx - 1, cz), ly | 0);
         } else if (lxInt === 15) {
-            this._markByKey(encodeChunkKey((cx + 1) | 0, cz | 0), ly | 0);
+            this._markByKey(encodeChunkKey(cx + 1, cz), ly | 0);
         }
 
         if (lzInt === 0) {
-            this._markByKey(encodeChunkKey(cx | 0, (cz - 1) | 0), ly | 0);
+            this._markByKey(encodeChunkKey(cx, cz - 1), ly | 0);
         } else if (lzInt === 15) {
-            this._markByKey(encodeChunkKey(cx | 0, (cz + 1) | 0), ly | 0);
+            this._markByKey(encodeChunkKey(cx, cz + 1), ly | 0);
         }
     },
 
@@ -626,19 +644,21 @@ export const ChunkSaveManager = {
         const paddedSize = 22 | 0;
 
         // ------------------------------------------------------
-        // 3. バイオーム割当 & 高さ事前計算 (ここが最大の最適化ポイント)
+        // 3. バイオーム割当 & 高さ事前計算 (最適化版)
         // ------------------------------------------------------
-        for (let x = -blendRadius; x < 16 + blendRadius; x++) {
-            const worldX = (baseX + x) | 0;
-            const xOffset = ((x + blendRadius) * paddedSize) | 0;
+        const start = -blendRadius;
+        const end = 16 + blendRadius;
+        const zBaseOffset = blendRadius;
 
-            for (let z = -blendRadius; z < 16 + blendRadius; z++) {
+        for (let x = start, xOff = 0; x < end; x++, xOff += paddedSize) {
+            const worldX = (baseX + x) | 0;
+
+            for (let z = start; z < end; z++) {
                 const worldZ = (baseZ + z) | 0;
-                const localIdx = (xOffset + (z + blendRadius)) | 0;
+                const localIdx = (xOff + (z + zBaseOffset)) | 0;
 
                 const b = _getBiomeAt(worldX, worldZ);
 
-                // オブジェクトのプロパティをローカルにキャッシュ
                 const nScale = b.noiseScale;
                 const bHeight = b.baseHeight;
                 const hVar = b.heightVariation;
@@ -743,14 +763,9 @@ export const ChunkSaveManager = {
         const LEAVES_ID = BLOCK_TYPES.LEAVES_OAK | 0;
         const SKY_ID_VAL = BLOCK_TYPES.SKY | 0;
 
-        const getBlockBound = (lx, ly, lz) => {
-            lx = lx | 0; ly = ly | 0; lz = lz | 0;
-            if (((lx | lz) & ~15) !== 0 || (ly >>> 8) !== 0) return null;
-            return data[(ly | (lz << 8) | (lx << 12)) | 0] & 0xFFF;
-        };
-
-        const setBlockBound = (lx, ly, lz, bid, ow) =>
-            _internalSetLocal(data, lx, ly, lz, bid, ow, SKY_ID_VAL, LEAVES_ID);
+        const getBlockBound = (lx, ly, lz) => _getBlockBound(data, lx, ly, lz);
+        const setBlockBound = (lx, ly, lz, bid, ow) => _internalSetLocal(data, lx, ly, lz, bid, ow, SKY_ID_VAL, LEAVES_ID);
+        const setBlockDirect = (lx, ly, lz, bid, ow) => _setBlockDirect(data, lx, ly, lz, bid, ow, SKY_ID_VAL, LEAVES_ID);
 
         // 3x3のチャンク範囲を走査（自チャンクに影響を与える可能性のある範囲）
         for (let dcx = -1; dcx <= 1; dcx = (dcx + 1) | 0) {
@@ -758,21 +773,17 @@ export const ChunkSaveManager = {
                 const targetBaseX = (baseX + (dcx << 4)) | 0;
                 const targetBaseZ = (baseZ + (dcz << 4)) | 0;
 
-                // 🌟 最適化: ループの最初にバイオームを判定し、そのバイオームの試行回数を取得
-                // 300固定からバイオーム可変（砂漠なら20回など）にするだけで劇的に速くなります
                 const sampleWorldX = (targetBaseX + 8) | 0;
                 const sampleWorldZ = (targetBaseZ + 8) | 0;
 
-                // サンプル地点のバイオームIDを取得（高速化のため簡易判定）
                 let sampleBiome;
                 if (dcx === 0 && dcz === 0) {
-                    // チャンク中央(8,8)の計算済みバイオームを参照
                     sampleBiome = BIOME_CONFIG[biomeMap[(8 << 4) | 8]];
                 } else {
                     sampleBiome = _getBiomeAt(sampleWorldX, sampleWorldZ);
                 }
 
-                const biomeRuleConfig = FeatureRules[sampleBiome.id] || FeatureRules['Default'];
+                const biomeRuleConfig = FeatureRules[sampleBiome.id] ?? FeatureRules[sampleBiome.name] ?? FeatureRules['Default'];
                 const attemptsPerChunk = biomeRuleConfig.attempts;
                 const rules = biomeRuleConfig.rules;
 
@@ -781,48 +792,46 @@ export const ChunkSaveManager = {
                     h = Math.imul(h ^ (currentSeed + i), 16777619);
                     h = (h ^ (h >>> 16)) >>> 0;
 
-                    const relLx = ((h & 0xFFFF) / 65536) * 16;
-                    const relLz = (((h >>> 16) & 0xFFFF) / 65536) * 16;
-                    const lx = (relLx + (dcx << 4));
-                    const lz = (relLz + (dcz << 4));
+                    const relLx = ((h & 0xFFFF) * 16) >> 16;
+                    const relLz = (((h >>> 16) & 0xFFFF) * 16) >> 16;
 
-                    // チャンク範囲外すぎる場合はスキップ
+                    const lx = relLx + (dcx << 4);
+                    const lz = relLz + (dcz << 4);
+
                     if (lx < -decorationMargin || lx > 15 + decorationMargin ||
                         lz < -decorationMargin || lz > 15 + decorationMargin) continue;
 
-                    const worldX = (targetBaseX + relLx) | 0;
-                    const worldZ = (targetBaseZ + relLz) | 0;
+                    const worldX = targetBaseX + relLx;
+                    const worldZ = targetBaseZ + relLz;
                     let rnd = ((Math.imul(h, 31) >>> 0) / 4294967296);
 
                     let surfaceY = 0;
                     let bId = -1;
 
-                    // 自チャンク内なら事前計算済みのマップを使用 (超高速)
                     if (dcx === 0 && dcz === 0) {
-                        const mapIdx = (relLx | 0) << 4 | (relLz | 0);
+                        const mapIdx = relLx << 4 | relLz;
                         surfaceY = surfaceHeights[mapIdx] | 0;
                         bId = biomeMap[mapIdx];
                     } else {
-                        // 他チャンクの場合はキャッシュを参照
-                        const cacheKey = (worldX * 4294967296) + (worldZ >>> 0);
+                        const cacheKey = Math.imul(worldX, 73856093) ^ Math.imul(worldZ, 19349663);
                         let cv = _externalCache.get(cacheKey);
 
                         if (cv === undefined) {
-                            // キャッシュがない場合のみ重い計算を実行
-                            const y = calculateSurfaceHeight(worldX, worldZ); // 高さを計算する関数を外部定義推奨
-                            if (y <= seaLevel) {
-                                cv = -1;
-                            } else {
-                                const b = _getBiomeAt(worldX, worldZ);
-                                cv = { y: y, id: b.id };
+                            const y = _getRawHeightAt(worldX, worldZ) | 0;
+                            cv = (y <= seaLevel) ? -1 : y;
+
+                            if (_externalCache.size >= MAX_EXTERNAL_CACHE) {
+                                const oldKey = _externalCacheKeys[_externalCacheIndex];
+                                _externalCache.delete(oldKey);
                             }
+
                             _externalCache.set(cacheKey, cv);
-                            if (_externalCache.size > 2000) _externalCache.delete(_externalCache.keys().next().value);
+                            _externalCacheKeys[_externalCacheIndex] = cacheKey;
+                            _externalCacheIndex = (_externalCacheIndex + 1) % MAX_EXTERNAL_CACHE;
                         }
 
-                        if (cv === -1 || !cv) continue;
-                        surfaceY = cv.y;
-                        bId = cv.id;
+                        if (cv === -1) continue;
+                        surfaceY = cv;
                     }
 
                     if (surfaceY <= seaLevel) continue;
@@ -831,13 +840,23 @@ export const ChunkSaveManager = {
                         const rule = rules[j];
                         const chance = rule.chance;
 
-                        // 隣接チャンクかつ草花なら、rndの減算すら行わずに即スキップ
                         if (isNeighborChunk && !rule.isStructure) continue;
 
                         if (rnd < chance) {
                             const featureFunc = Features[rule.feature];
                             if (featureFunc) {
-                                featureFunc(lx, surfaceY, lz, setBlockBound, rnd / chance, getBlockBound, worldX, worldZ);
+                                // 🌟 修正2: 自チャンク内なら高速な setBlockDirect を、隣接なら setBlockBound を渡す
+                                if (!isNeighborChunk) {
+                                    featureFunc(
+                                        lx, surfaceY, lz,
+                                        setBlockDirect,
+                                        rnd / chance,
+                                        getBlockBound,
+                                        worldX, worldZ
+                                    );
+                                } else {
+                                    featureFunc(lx, surfaceY, lz, setBlockBound, rnd / chance, getBlockBound, worldX, worldZ);
+                                }
                             }
                             break;
                         }
@@ -857,29 +876,6 @@ export const ChunkSaveManager = {
         if (info) info.needsRebuild = false;
     }
 };
-
-/**
- * 特定の座標における地形の最終的な高さを計算 (ブレンディング込)
- */
-function calculateSurfaceHeight(worldX, worldZ) {
-    const blendRadius = BLEND_RADIUS | 0;
-    let totalHeight = 0.0;
-    let totalWeight = 0.0;
-    let weightIdx = 0;
-
-    for (let dx = -blendRadius; dx <= blendRadius; dx = (dx + 1) | 0) {
-        const bX = (worldX + dx) | 0;
-        for (let dz = -blendRadius; dz <= blendRadius; dz = (dz + 1) | 0) {
-            const bZ = (worldZ + dz) | 0;
-            const hVal = _getRawHeightAt(bX, bZ);
-            const weight = BLEND_WEIGHTS[weightIdx++];
-            totalHeight += hVal * weight;
-            totalWeight += weight;
-        }
-    }
-    return (totalHeight / totalWeight) | 0;
-}
-
 
 //ブロックの状態
 
@@ -1320,8 +1316,6 @@ function getTerrainHeight(worldX, worldZ) {
     if (cached !== undefined) return cached;
 
     // --- 2. 統一ロジックによる計算 (重要) ---
-    // ここで ChunkSaveManager 内でも使っている共通関数を呼び出す
-    // ブレンディングが必要な場合は calculateSurfaceHeight(xInt, zInt) を呼ぶ
     const result = _getRawHeightAt(xInt, zInt) | 0;
 
     // --- 3. キャッシュ管理 (GCスパイク対策維持) ---
@@ -1417,28 +1411,22 @@ const OFF_Z = 9101 * CAVE_SCALE_XZ;
  * 最適化された洞窟判定
  */
 function isCave(x, y, z, surfaceHeight, nx, ny, nz) {
-    // 1. 最速の足切り：地表以上なら即終了 (|0 は整数化による高速化)
     const depth = (surfaceHeight - y) | 0;
     if (depth <= 0) return false;
 
-    // 2. 閾値計算の分岐最適化
-    // 深さ5以上（大半のケース）では計算をスキップして定数を使用
+    // 深度に応じた閾値を先に算出（depth = 3, 4 で CAVE_THRESHOLD を超えるケースに対応）
     let currentThreshold = CAVE_THRESHOLD;
     if (depth < 5) {
-        // 深さ 0〜4 の場合のみ計算を行う
         currentThreshold *= (depth * 0.16 + 0.6);
     }
 
-    // 3. 1つ目のノイズ計算
     const n1 = perlinNoise3D(nx, ny, nz);
-
-    // Math.abs を使うより、範囲比較の方がJIT最適化で有利な場合がある
-    // abs(n1) < currentThreshold と同義
+    // 正しい currentThreshold をベースに先行して高速に弾く
     if (n1 >= currentThreshold || n1 <= -currentThreshold) {
         return false;
     }
 
-    // 4. 2つ目のノイズ計算
+    // 2つ目のノイズ計算
     // abs(n1) を再利用して、n2が満たすべき「残り余力」を算出
     const absN1 = n1 < 0 ? -n1 : n1;
     const remaining = currentThreshold - absN1;
@@ -2717,13 +2705,10 @@ function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
             const n = attr['normal'];
             if (n && n.array) {
                 normArray.set(n.array, normOff);
-                normOff += n.array.length;
-            } else {
-                const len = count * 3;
-                // JSのループを使わず、C++レベルで高速にゼロ埋め
-                normArray.fill(0, normOff, normOff + len);
-                normOff += len;
             }
+            // Float32Arrayは初期生成時にゼロで初期化されるため、
+            // データが無い場合は単にオフセットを進めるだけで完璧なゼロ埋めになります。
+            normOff += count * 3;
         }
 
         // --- UV 補完コピー ---
@@ -2731,12 +2716,9 @@ function mergeBufferGeometries(geometries, { computeNormals = true } = {}) {
             const uv = attr['uv'];
             if (uv && uv.array) {
                 uvArray.set(uv.array, uvOff);
-                uvOff += uv.array.length;
-            } else {
-                const len = count * 2;
-                uvArray.fill(0, uvOff, uvOff + len);
-                uvOff += len;
             }
+            // 同様にUVの fill(0) も削除
+            uvOff += count * 2;
         }
 
         // --- Color 補完コピー ---

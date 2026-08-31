@@ -27,8 +27,9 @@ export const Features = {
         const baseZ = lz | 0;
 
         // 木全体のベースとなるハッシュ（この木専用の乱数シード）
-        let treeHash = Math.imul(worldX ^ (worldZ << 16), 16777619);
-        treeHash = (treeHash ^ (treeHash >>> 16)) >>> 0;
+        // Z座標のビット欠損を防ぐため、単純な乗算とXORでハッシュを合成
+        let treeHash = (Math.imul(worldX, 31) ^ Math.imul(worldZ, 16777619)) | 0;
+        treeHash = (Math.imul(treeHash ^ (treeHash >>> 16), 2246822507)) >>> 0;
         const treeRnd = treeHash * INV_2_32;
 
         // --- 1. 周辺チェック ---
@@ -50,30 +51,29 @@ export const Features = {
             }
         }
 
-        const height = (4 + (treeRnd * 3)) | 0;
-
-        // 🌟 最適化: 葉の角を削る判定用に、treeHashのビット列をフラグとして使い回す
-        // これにより、ブロックごとのハッシュ計算が不要になります
+        const height = 4 + (treeRnd * 3 | 0);
         let cornerIdx = 0;
 
-        // --- 3. 葉っぱの配置 ---
-        for (let y = height - 2; y <= height + 1; y++) {
-            const isUpper = y >= height;
-            const radius = isUpper ? 1 : 2;
+        // --- 3. 葉っぱの配置 (本家Java版の配置パターン) ---
+        // 幹の最上部とその上の2段(半径1)、その下の2段(半径2)
+        for (let y = height - 3; y <= height; y++) {
+            const dy = y - (height - 1); // 頂点からの相対高さ
+            // 上2段(dy=0, 1)は半径1、下2段(dy=-1, -2)は半径2
+            const radius = (dy >= 0) ? 1 : 2;
 
             for (let x = -radius; x <= radius; x++) {
-                const absX = x < 0 ? -x : x;
                 for (let z = -radius; z <= radius; z++) {
-                    const absZ = z < 0 ? -z : z;
+                    const absX = Math.abs(x);
+                    const absZ = Math.abs(z);
 
-                    // 角のブロックの処理
+                    // 本家特有の角の欠けロジック
                     if (absX === radius && absZ === radius) {
-                        if (isUpper) continue; // 上部は必ず削る
+                        // 最上段の角は必ず削る
+                        if (dy === 1) continue;
 
-                        // 🌟 最適化: treeHashの特定のビットをチェックして確率50%を高速に判定
+                        // 下段の角はランダム(約50%)で削る
                         const skipCorner = (treeHash & (1 << cornerIdx)) !== 0;
-                        cornerIdx = (cornerIdx + 1) & 31; // 次のビットへ進める (最大32ビット)
-
+                        cornerIdx = (cornerIdx + 1) & 31;
                         if (skipCorner) continue;
                     }
 
@@ -83,29 +83,20 @@ export const Features = {
         }
 
         // --- 4. 幹の配置 ---
+        // 本家は幹が最上部の葉の1段下まで伸びる
         for (let y = 0; y < height; y++) {
             setBlock(baseX, baseY + y, baseZ, ID_LOG, true);
         }
+
     },
 
     // 🌿 背の高い草
-    GRASS: (lx, ly, lz, setBlock) => {
-        setBlock(lx, ly | 0, lz, ID_TALLGRASS, false);
-    },
+    GRASS: (lx, ly, lz, setBlock) => setBlock(lx, ly | 0, lz, ID_TALLGRASS, false),
 
     // 🌟 花
-    FLOWER: (lx, ly, lz, setBlock, rnd, getBlock, worldX = 0, worldZ = 0) => {
-        // 花の種類も簡単なハッシュで決定（ここは1回なのでそのままで問題ありません）
-        const flowerHash = Math.imul(worldX ^ (worldZ << 16), 16777619);
-        const flowerRnd = (flowerHash >>> 0) * INV_2_32;
-        setBlock(lx, ly | 0, lz, (flowerRnd > 0.5) ? ID_FLOWER : ID_ROSE, false);
-    },
+    FLOWER: (lx, ly, lz, setBlock) => setBlock(lx, ly | 0, lz, ID_FLOWER, false),
 
-    FLOWER_ROSE: (lx, ly, lz, setBlock) => {
-        setBlock(lx, ly | 0, lz, ID_ROSE, false);
-    },
+    FLOWER_ROSE: (lx, ly, lz, setBlock) => setBlock(lx, ly | 0, lz, ID_ROSE, false),
 
-    DEADBUSH: (lx, ly, lz, setBlock) => {
-        setBlock(lx, ly | 0, lz, ID_DEADBUSH, false);
-    }
+    DEADBUSH: (lx, ly, lz, setBlock) => setBlock(lx, ly | 0, lz, ID_DEADBUSH, false)
 };

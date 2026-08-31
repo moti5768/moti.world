@@ -272,6 +272,7 @@ export function calculatePlacementMeta(blockId, camDir, rawNormal, intersectPoin
 
 // ── 共通のデフォルト設定 ──
 const defaultBlockConfig = {
+    isOpaqueCube: true,
     itemdisplay: true,
     collision: true,
     geometryType: "cube",
@@ -314,12 +315,17 @@ let nextId = 0;
 
 // 定義用ヘルパー：IDを自動付与して config を作成する
 function registerBlock(config) {
-    // もし config 内に id が明示されていればそれを使い、なければ自動採番
     const id = (config.id !== undefined) ? config.id : nextId++;
-    // 自動採番が手動IDを追い越さないように調整
     if (id >= nextId) nextId = id + 1;
 
-    return createBlockConfig({ ...config, id });
+    // 「不透明な立方体か」を自動判定して保持
+    const isTransparent = config.transparent === true;
+    const isFullCube = (config.geometryType === undefined || config.geometryType === "cube") || config.isLog === true;
+    const isSky = config.name === "SKY"; // SKY判定
+
+    const isOpaqueCube = (!isSky && !isTransparent && isFullCube);
+
+    return createBlockConfig({ ...config, id, isOpaqueCube });
 }
 
 // ── 個別ブロック設定 ──

@@ -1,15 +1,12 @@
 import { BIOME_TYPES } from './biomes/biomes.js';
 
 /**
- * 最適化ポイント:
- * 1. オブジェクトのフラット化と形状の統一: 
- *    各バイオームのプロパティ順序を統一し、隠れクラスの最適化を促します。
- * 2. 不要なルールの削除: 
- *    chance が 0 のルールを排除し、生成ループ内の無駄な if 判定を削減します。
+ * バイオームごとの生成ルール定義
  */
+
 export const FeatureRules = {
 
-    // 川 (River): attempts 0 なのでルール自体を空にしてループコストを排除
+    // 川 (River): attempts 0 により生成ループを完全にバイパス
     [BIOME_TYPES.RIVER]: {
         attempts: 0,
         rules: []
@@ -40,7 +37,7 @@ export const FeatureRules = {
     // 雪原 (Snowy Tundra)
     [BIOME_TYPES.SNOWY_TUNDRA]: {
         attempts: 5,
-        rules: [] // chance 0 のものは事前に除外
+        rules: []
     },
 
     // 山岳 (Mountains)

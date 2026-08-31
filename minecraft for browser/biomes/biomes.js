@@ -102,11 +102,8 @@ export const BIOME_ID_TO_NAME = {
  */
 export function determineBiome(temp, humidity, height = 64, riverValue = 0.5) {
 
-    // 1. 特殊地形：川の判定
-    const riverDiff = riverValue - 0.5;
-    const absRiverDiff = riverDiff < 0 ? -riverDiff : riverDiff;
-
-    if (absRiverDiff < 0.05) {
+    // 1. 特殊地形：川の判定（減算や絶対値計算を省き、直接範囲比較で高速化）
+    if (riverValue > 0.45 && riverValue < 0.55) {
         return BIOME_CONFIG[BIOME_TYPES.RIVER];
     }
 
