@@ -1,6 +1,6 @@
 "use strict";
 import * as THREE from './build/three.module.js';
-import { BLOCK_CONFIG, BLOCK_TYPES, SHARED_SKY_UNIFORM, createBlockMesh, getBlockMaterials, getBlockConfiguration, getBlockGeometry, getCollisionBoxes, getCollisionBoxesReadOnly, getSelectionBoxesReadOnly, usesConnectionMeta, calculatePlacementMeta, canPlaceBlockAt, isSupportDependentBlock, applyMetadataTransform, getLogRotationMatrix, getLogRotationMatrixReadOnly, applyRotationToCollisionBox, getCustomGeometryMatrix, idToKey, keyToId } from './blocks.js';
+import { BLOCK_CONFIG, BLOCK_TYPES, SHARED_SKY_UNIFORM, SHARED_BRIGHTNESS_UNIFORM, createBlockMesh, getBlockMaterials, getBlockConfiguration, getBlockGeometry, getCollisionBoxes, getCollisionBoxesReadOnly, getSelectionBoxesReadOnly, usesConnectionMeta, calculatePlacementMeta, canPlaceBlockAt, isSupportDependentBlock, applyMetadataTransform, getLogRotationMatrix, getLogRotationMatrixReadOnly, applyRotationToCollisionBox, getCustomGeometryMatrix, idToKey, keyToId } from './blocks.js';
 import { createMinecraftBreakParticles, updateBlockParticles } from './particles.js';
 import { setMinecraftSky, loadCloudTexture, updateCloudGrid, updateCloudTiles, updateCloudOpacity, adjustCloudLayerDepth } from './cloudsky.js';
 import { determineBiome, BIOME_CONFIG, BIOME_ID_TO_NAME } from './biomes/biomes.js';
@@ -1181,12 +1181,14 @@ let renderer;
 const MAX_RENDER_PIXEL_RATIO = 2;
 
 function initCanvas() {
-    // 1. レンダラーの生成（logarithmicDepthBuffer を廃止し GPU Early-Z を完全有効化）
+    // 1. レンダラーの生成（logarithmicDepthBuffer 廃止で GPU Early-Z 有効化 ＋ r128 シェーダー同期検査オフ）
     renderer = new THREE.WebGLRenderer({
         antialias: true,
         powerPreference: "high-performance",
         stencil: false
     });
+    // three.js r128 最適化: 初回シェーダーコンパイル時の同期 gl.getProgramParameter ストールを回避
+    renderer.debug.checkShaderErrors = false;
     renderer.setClearColor(fogColor);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_RENDER_PIXEL_RATIO));
@@ -3681,6 +3683,7 @@ const _meshBatchPool = [];
 const _opaqueBatchMap = new Map();
 const _waterBatchMap = new Map();
 
+// MeshBasicMaterial は normal 属性を参照しないため撤去し、color は 8bit 正規化(Uint8Array)で 44B -> 23B/頂点へ圧縮
 function acquireMeshBatch() {
     if (_meshBatchPool.length > 0) {
         const b = _meshBatchPool.pop();
@@ -3692,8 +3695,7 @@ function acquireMeshBatch() {
     const initI = 384;
     return {
         pos: new Float32Array(initV * 3),
-        norm: new Float32Array(initV * 3),
-        col: new Float32Array(initV * 3),
+        col: new Uint8Array(initV * 3),
         uv: new Float32Array(initV * 2),
         idx: new Uint32Array(initI),
         vCap: initV,
@@ -3709,19 +3711,16 @@ function ensureBatchCapacity(batch, addVerts, addIndices) {
         let nextV = batch.vCap;
         while (nextV < needV) nextV <<= 1;
         const nPos = new Float32Array(nextV * 3);
-        const nNorm = new Float32Array(nextV * 3);
-        const nCol = new Float32Array(nextV * 3);
+        const nCol = new Uint8Array(nextV * 3);
         const nUv = new Float32Array(nextV * 2);
         const curV3 = batch.vCount * 3;
         const curV2 = batch.vCount * 2;
         if (curV3 > 0) {
             nPos.set(batch.pos.subarray(0, curV3));
-            nNorm.set(batch.norm.subarray(0, curV3));
             nCol.set(batch.col.subarray(0, curV3));
             nUv.set(batch.uv.subarray(0, curV2));
         }
         batch.pos = nPos;
-        batch.norm = nNorm;
         batch.col = nCol;
         batch.uv = nUv;
         batch.vCap = nextV;
@@ -3756,7 +3755,6 @@ function releaseBatchMap(batchMap) {
     for (const batch of batchMap.values()) {
         batch.vCount = 0;
         batch.iCount = 0;
-        // 一時的に巨大拡張されたバッファはプールへ常駐させずGCへ返却し定常RAMを低く保つ
         if (_meshBatchPool.length < MAX_MESH_BATCH_POOL && batch.vCap <= MAX_POOLED_BATCH_VERTS) {
             _meshBatchPool.push(batch);
         }
@@ -3784,6 +3782,11 @@ function getGreedyMatId(mat) {
 // --- カスタム形状テンプレート事前ベイクキャッシュ（ブロックごとの BufferGeometry / applyMatrix4 を完全撲滅） ---
 const _bakedCustomTemplateCache = new Map();
 
+// three.js r128 公式最適化: WebGL バッファ転送完了直後に JS 側 TypedArray を解放し二重メモリ常駐をゼロ化
+function releaseUploadedTypedArray() {
+    this.array = null;
+}
+
 function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
     const key = (type << 8) | ((shapeMeta & 0xF) << 4) | (transformMeta & 0xF);
     const cached = _bakedCustomTemplateCache.get(key);
@@ -3804,7 +3807,6 @@ function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
         ? srcGeom.groups
         : [{ start: 0, count: totalIdxCount, materialIndex: 0 }];
 
-    // 変換行列: T(0.5) * R(transformMeta) * T(-0.5) を事前ベイク（ブロック生成時は +wx/+wy/+wz のみで完結）
     getCustomGeometryMatrix(transformMeta, _m1, _r1, _mTemp);
     _mTemp.makeTranslation(0.5, 0.5, 0.5);
     _m1.premultiply(_mTemp);
@@ -3821,7 +3823,6 @@ function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
         const idxCount = end - start;
         if (idxCount <= 0) continue;
 
-        // グループ内で参照されるユニーク頂点のみを詰めて抽出
         const vertRemap = new Map();
         const localIndices = new Uint16Array(idxCount);
         const origVertIndices = [];
@@ -3839,10 +3840,8 @@ function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
 
         const vertCount = origVertIndices.length;
         const bPos = new Float32Array(vertCount * 3);
-        const bNorm = new Float32Array(vertCount * 3);
         const bUv = new Float32Array(vertCount * 2);
 
-        // 未回転法線から元の面方向(0..5)を算出
         const firstOld = origVertIndices[0] * 3;
         const fnx = normAttr ? normAttr.array[firstOld] : 0;
         const fny = normAttr ? normAttr.array[firstOld + 1] : 1;
@@ -3853,7 +3852,6 @@ function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
         else if (ay >= ax && ay >= az) dir = fny > 0 ? 2 : 3;
         else dir = fnz > 0 ? 4 : 5;
 
-        // 回転後の法線方向と面シェード係数を事前算出
         _v1.copy(_dirVectors[dir]).applyMatrix4(_r1);
         const wdx = Math.round(_v1.x);
         const wdy = Math.round(_v1.y);
@@ -3874,22 +3872,12 @@ function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
             const d3 = vi * 3;
             const d2 = vi * 2;
 
-            // 位置の事前回転変換
             _v1.set(posAttr.array[o3], posAttr.array[o3 + 1], posAttr.array[o3 + 2]).applyMatrix4(_m1);
             bPos[d3] = _v1.x;
             bPos[d3 + 1] = _v1.y;
             bPos[d3 + 2] = _v1.z;
 
-            // 法線の事前回転変換
-            const onx = normAttr ? normAttr.array[o3] : 0;
             const ony = normAttr ? normAttr.array[o3 + 1] : 1;
-            const onz = normAttr ? normAttr.array[o3 + 2] : 0;
-            _n1.set(onx, ony, onz).applyMatrix4(_r1);
-            bNorm[d3] = _n1.x;
-            bNorm[d3 + 1] = _n1.y;
-            bNorm[d3 + 2] = _n1.z;
-
-            // UV（上下反転時の側面テクスチャ反転補正を事前適用）
             let u = uvAttr ? uvAttr.array[o2] : 0;
             let v = uvAttr ? uvAttr.array[o2 + 1] : 0;
             if (isUpsideDown && Math.abs(ony) < 0.1) {
@@ -3902,7 +3890,6 @@ function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
 
         bakedGroups.push({
             pos: bPos,
-            norm: bNorm,
             uv: bUv,
             idx: localIndices,
             vertCount,
@@ -3912,7 +3899,7 @@ function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
             wdx,
             wdy,
             wdz,
-            fw,
+            fw255: fw * 255.0,
             useSelfLight
         });
     }
@@ -3960,7 +3947,7 @@ function createFadeCloneMaterial(originMat) {
 }
 
 /**
- * スクラッチバッチ群から単一統合 BufferGeometry（groups付き・Uint16/32自動選択・解析的BoundingSphere）を構築
+ * スクラッチバッチ群から単一統合 BufferGeometry を構築（23B/頂点・Uint8正規化カラー・onUpload即解放）
  */
 function buildCombinedMeshFromBatches(batchMap, renderOrder, useFadeIn, baseX, baseZ, maxY) {
     let totalVerts = 0;
@@ -3976,10 +3963,8 @@ function buildCombinedMeshFromBatches(batchMap, renderOrder, useFadeIn, baseX, b
     if (totalVerts === 0 || totalIndices === 0) return null;
 
     const finalPos = new Float32Array(totalVerts * 3);
-    const finalNorm = new Float32Array(totalVerts * 3);
-    const finalCol = new Float32Array(totalVerts * 3);
+    const finalCol = new Uint8Array(totalVerts * 3);
     const finalUv = new Float32Array(totalVerts * 2);
-    // 頂点数65535以下なら16bitインデックスを選択しVRAM使用量・帯域を50%削減
     const finalIdx = (totalVerts <= 65535)
         ? new Uint16Array(totalIndices)
         : new Uint32Array(totalIndices);
@@ -3998,7 +3983,6 @@ function buildCombinedMeshFromBatches(batchMap, renderOrder, useFadeIn, baseX, b
         const v3 = vc * 3;
         const v2 = vc * 2;
         finalPos.set(batch.pos.subarray(0, v3), vOffset * 3);
-        finalNorm.set(batch.norm.subarray(0, v3), vOffset * 3);
         finalCol.set(batch.col.subarray(0, v3), vOffset * 3);
         finalUv.set(batch.uv.subarray(0, v2), vOffset * 2);
 
@@ -4015,13 +3999,12 @@ function buildCombinedMeshFromBatches(batchMap, renderOrder, useFadeIn, baseX, b
         iOffset += ic;
     }
 
-    geom.setAttribute('position', new THREE.BufferAttribute(finalPos, 3));
-    geom.setAttribute('normal', new THREE.BufferAttribute(finalNorm, 3));
-    geom.setAttribute('color', new THREE.BufferAttribute(finalCol, 3));
-    geom.setAttribute('uv', new THREE.BufferAttribute(finalUv, 2));
-    geom.setIndex(new THREE.BufferAttribute(finalIdx, 1));
+    // GPU アップロード完了直後に JS 側配列参照を解放（boundingBox/Sphere 事前確定済みのため安全）
+    geom.setAttribute('position', new THREE.BufferAttribute(finalPos, 3).onUpload(releaseUploadedTypedArray));
+    geom.setAttribute('color', new THREE.BufferAttribute(finalCol, 3, true).onUpload(releaseUploadedTypedArray));
+    geom.setAttribute('uv', new THREE.BufferAttribute(finalUv, 2).onUpload(releaseUploadedTypedArray));
+    geom.setIndex(new THREE.BufferAttribute(finalIdx, 1).onUpload(releaseUploadedTypedArray));
 
-    // 解析的バウンディング設定（初回描画時の全頂点走査 computeBoundingSphere を完全排除）
     const boxMaxY = (maxY + 1) < CH_H ? (maxY + 1) : CH_H;
     const cxS = baseX + 8.0;
     const cyS = boxMaxY * 0.5;
@@ -4036,9 +4019,7 @@ function buildCombinedMeshFromBatches(batchMap, renderOrder, useFadeIn, baseX, b
     const meshMat = (materials.length === 1) ? materials[0] : materials;
     const mesh = new THREE.Mesh(geom, meshMat);
     mesh.renderOrder = renderOrder;
-    // 親コンテナ単位で精密 AABB フラスタムカリングを実施するため、子メッシュの冗長な球判定をオフ
     mesh.frustumCulled = false;
-    // チャンク頂点はワールド座標直書きで移動しないため毎フレーム行列再計算を無効化
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
     if (useFadeIn) {
@@ -4208,9 +4189,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
     _greedyMatToId.clear();
     _greedyIdToMat.length = 1;
 
-    const brightMult = globalBrightnessMultiplier;
-
-    // 2D Greedy Meshing で統合された1枚の極大クワッドをスクラッチバッチへ直書き
+    // 2D Greedy Meshing で統合された1枚の極大クワッドをスクラッチバッチへ直書き（norm撤去・8bitカラー）
     function emitGreedyQuad(faceIdx, key, x0, y0, z0, w, h) {
         const mat = _greedyIdToMat[key >>> 8];
         if (!mat) return;
@@ -4219,75 +4198,61 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
         ensureBatchCapacity(batch, 4, 6);
 
         const light = key & 0xFF;
-        const bFactor = FACE_FW[faceIdx] * brightMult;
-        let sS = LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * bFactor;
-        let bS = LIGHT_LEVEL_FACTORS[light & 15] * bFactor;
-        if (sS < 0.04) sS = 0.04;
-        if (bS < 0.04) bS = 0.04;
+        const fw255 = FACE_FW[faceIdx] * 255.0;
+        let sByte = (LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * fw255 + 0.5) | 0;
+        let bByte = (LIGHT_LEVEL_FACTORS[light & 15] * fw255 + 0.5) | 0;
+        if (sByte > 255) sByte = 255;
+        if (bByte > 255) bByte = 255;
 
         const vBase = batch.vCount;
         const p0 = vBase * 3;
         const u0 = vBase * 2;
         const i0 = batch.iCount;
         const pos = batch.pos;
-        const norm = batch.norm;
         const col = batch.col;
         const uv = batch.uv;
         const idx = batch.idx;
 
-        let nx = 0, ny = 0, nz = 0;
-
         if (faceIdx === 2) { // +Y: u=x(w), v=z(h)
-            ny = 1;
             const yTop = y0 + 1;
             pos[p0] = x0; pos[p0 + 1] = yTop; pos[p0 + 2] = z0 + h;
             pos[p0 + 3] = x0 + w; pos[p0 + 4] = yTop; pos[p0 + 5] = z0 + h;
             pos[p0 + 6] = x0 + w; pos[p0 + 7] = yTop; pos[p0 + 8] = z0;
             pos[p0 + 9] = x0; pos[p0 + 10] = yTop; pos[p0 + 11] = z0;
         } else if (faceIdx === 3) { // -Y: u=x(w), v=z(h)
-            ny = -1;
             pos[p0] = x0; pos[p0 + 1] = y0; pos[p0 + 2] = z0;
             pos[p0 + 3] = x0 + w; pos[p0 + 4] = y0; pos[p0 + 5] = z0;
             pos[p0 + 6] = x0 + w; pos[p0 + 7] = y0; pos[p0 + 8] = z0 + h;
             pos[p0 + 9] = x0; pos[p0 + 10] = y0; pos[p0 + 11] = z0 + h;
         } else if (faceIdx === 0) { // +X: u=z(w), v=y(h)
-            nx = 1;
             const xRight = x0 + 1;
             pos[p0] = xRight; pos[p0 + 1] = y0; pos[p0 + 2] = z0 + w;
             pos[p0 + 3] = xRight; pos[p0 + 4] = y0; pos[p0 + 5] = z0;
             pos[p0 + 6] = xRight; pos[p0 + 7] = y0 + h; pos[p0 + 8] = z0;
             pos[p0 + 9] = xRight; pos[p0 + 10] = y0 + h; pos[p0 + 11] = z0 + w;
         } else if (faceIdx === 1) { // -X: u=z(w), v=y(h)
-            nx = -1;
             pos[p0] = x0; pos[p0 + 1] = y0; pos[p0 + 2] = z0;
             pos[p0 + 3] = x0; pos[p0 + 4] = y0; pos[p0 + 5] = z0 + w;
             pos[p0 + 6] = x0; pos[p0 + 7] = y0 + h; pos[p0 + 8] = z0 + w;
             pos[p0 + 9] = x0; pos[p0 + 10] = y0 + h; pos[p0 + 11] = z0;
         } else if (faceIdx === 4) { // +Z: u=x(w), v=y(h)
-            nz = 1;
             const zFront = z0 + 1;
             pos[p0] = x0; pos[p0 + 1] = y0; pos[p0 + 2] = zFront;
             pos[p0 + 3] = x0 + w; pos[p0 + 4] = y0; pos[p0 + 5] = zFront;
             pos[p0 + 6] = x0 + w; pos[p0 + 7] = y0 + h; pos[p0 + 8] = zFront;
             pos[p0 + 9] = x0; pos[p0 + 10] = y0 + h; pos[p0 + 11] = zFront;
         } else { // 5: -Z: u=x(w), v=y(h)
-            nz = -1;
             pos[p0] = x0 + w; pos[p0 + 1] = y0; pos[p0 + 2] = z0;
             pos[p0 + 3] = x0; pos[p0 + 4] = y0; pos[p0 + 5] = z0;
             pos[p0 + 6] = x0; pos[p0 + 7] = y0 + h; pos[p0 + 8] = z0;
             pos[p0 + 9] = x0 + w; pos[p0 + 10] = y0 + h; pos[p0 + 11] = z0;
         }
 
-        // 法線・カラー（4頂点分を一括書き込み）
-        norm[p0] = nx; norm[p0 + 1] = ny; norm[p0 + 2] = nz;
-        norm[p0 + 3] = nx; norm[p0 + 4] = ny; norm[p0 + 5] = nz;
-        norm[p0 + 6] = nx; norm[p0 + 7] = ny; norm[p0 + 8] = nz;
-        norm[p0 + 9] = nx; norm[p0 + 10] = ny; norm[p0 + 11] = nz;
-
-        col[p0] = sS; col[p0 + 1] = bS; col[p0 + 2] = 0;
-        col[p0 + 3] = sS; col[p0 + 4] = bS; col[p0 + 5] = 0;
-        col[p0 + 6] = sS; col[p0 + 7] = bS; col[p0 + 8] = 0;
-        col[p0 + 9] = sS; col[p0 + 10] = bS; col[p0 + 11] = 0;
+        // 8bit 正規化カラー（明るさはシェーダーの u_brightness Uniform で O(1) 乗算）
+        col[p0] = sByte; col[p0 + 1] = bByte; col[p0 + 2] = 0;
+        col[p0 + 3] = sByte; col[p0 + 4] = bByte; col[p0 + 5] = 0;
+        col[p0 + 6] = sByte; col[p0 + 7] = bByte; col[p0 + 8] = 0;
+        col[p0 + 9] = sByte; col[p0 + 10] = bByte; col[p0 + 11] = 0;
 
         // RepeatWrapping により (w, h) 倍タイル描画（テクスチャアトラス不使用）
         uv[u0] = 0; uv[u0 + 1] = 0;
@@ -4603,31 +4568,26 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                         const light = grp.useSelfLight
                             ? getLightLevel(x, y, z)
                             : getLightLevel(x + grp.wdx, y + grp.wdy, z + grp.wdz);
-                        const bFactor = grp.fw * brightMult;
-                        let sS = LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * bFactor;
-                        let bS = LIGHT_LEVEL_FACTORS[light & 15] * bFactor;
-                        if (sS < 0.04) sS = 0.04;
-                        if (bS < 0.04) bS = 0.04;
+                        const fw255 = grp.fw255;
+                        let sByte = (LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * fw255 + 0.5) | 0;
+                        let bByte = (LIGHT_LEVEL_FACTORS[light & 15] * fw255 + 0.5) | 0;
+                        if (sByte > 255) sByte = 255;
+                        if (bByte > 255) bByte = 255;
 
                         const vBase = batch.vCount;
                         const bPos = batch.pos;
-                        const bNorm = batch.norm;
                         const bCol = batch.col;
                         const bUv = batch.uv;
                         const bIdx = batch.idx;
                         const gPos = grp.pos;
-                        const gNorm = grp.norm;
 
                         let p = vBase * 3;
                         for (let o = 0, len3 = vc * 3; o < len3; o += 3) {
                             bPos[p] = gPos[o] + wx;
                             bPos[p + 1] = gPos[o + 1] + wy;
                             bPos[p + 2] = gPos[o + 2] + wz;
-                            bNorm[p] = gNorm[o];
-                            bNorm[p + 1] = gNorm[o + 1];
-                            bNorm[p + 2] = gNorm[o + 2];
-                            bCol[p] = sS;
-                            bCol[p + 1] = bS;
+                            bCol[p] = sByte;
+                            bCol[p + 1] = bByte;
                             bCol[p + 2] = 0;
                             p += 3;
                         }
@@ -4680,16 +4640,15 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
 
                         const fw = (wNY > 0) ? 1.0 : (wNY < 0) ? 0.5 : (Math.abs(wNX) > 0) ? 0.8 : 0.65;
                         const light = getLightLevel(x + wNX, y + wNY, z + wNZ);
-                        const bFactor = fw * brightMult;
-                        let sS = LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * bFactor;
-                        let bS = LIGHT_LEVEL_FACTORS[light & 15] * bFactor;
-                        if (sS < 0.04) sS = 0.04;
-                        if (bS < 0.04) bS = 0.04;
+                        const fw255 = fw * 255.0;
+                        let sByte = (LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * fw255 + 0.5) | 0;
+                        let bByte = (LIGHT_LEVEL_FACTORS[light & 15] * fw255 + 0.5) | 0;
+                        if (sByte > 255) sByte = 255;
+                        if (bByte > 255) bByte = 255;
 
                         const vBase = batch.vCount;
                         let p = vBase * 3;
                         const bPos = batch.pos;
-                        const bNorm = batch.norm;
                         const bCol = batch.col;
 
                         for (let j = 0; j < 12; j += 3) {
@@ -4698,11 +4657,8 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                             bPos[p] = _v1.x + wx;
                             bPos[p + 1] = _v1.y + wy;
                             bPos[p + 2] = _v1.z + wz;
-                            bNorm[p] = wNX;
-                            bNorm[p + 1] = wNY;
-                            bNorm[p + 2] = wNZ;
-                            bCol[p] = sS;
-                            bCol[p + 1] = bS;
+                            bCol[p] = sByte;
+                            bCol[p + 1] = bByte;
                             bCol[p + 2] = 0;
                             p += 3;
                         }
@@ -5374,7 +5330,14 @@ const shared3DCanvas = createCanvas(64);
 shared3DCanvas.style.display = "none";
 document.body.appendChild(shared3DCanvas);
 
-const sharedRenderer = new THREE.WebGLRenderer({ canvas: shared3DCanvas, alpha: true, antialias: true });
+const sharedRenderer = new THREE.WebGLRenderer({
+    canvas: shared3DCanvas,
+    alpha: true,
+    antialias: false,
+    stencil: false,
+    powerPreference: "low-power"
+});
+sharedRenderer.debug.checkShaderErrors = false;
 sharedRenderer.setSize(64, 64);
 sharedRenderer.setClearColor(0x000000, 0);
 
@@ -8139,44 +8102,19 @@ function applyRenderDistance(val) {
 /* ======================================================
    【4. コアロジック：明るさ (Brightness) の更新】
    ====================================================== */
+function applyBrightnessSetting(val) {
+    const clamped = Math.max(0, Math.min(100, Number.isFinite(val) ? val : 50));
+    if (brightnessValLabel) brightnessValLabel.innerText = clamped;
+    globalBrightnessMultiplier = clamped / 50;
+    // O(1) 単一 Uniform 更新により、チャンク再構築ゼロで全ブロックへ即座に反映
+    SHARED_BRIGHTNESS_UNIFORM.value = globalBrightnessMultiplier;
+}
+
 window.updateGlobalBrightnessFromUI = function () {
     const slider = document.getElementById("brightnessSlider");
     if (!slider) return;
-
-    const val = parseInt(slider.value, 10);
-    if (brightnessValLabel) brightnessValLabel.innerText = val;
-
-    globalBrightnessMultiplier = val / 50;
-
-    // 1. ライトの強度を更新
-    if (window.sceneObjects && window.sceneObjects.ambientLight) {
-        window.sceneObjects.ambientLight.intensity = globalBrightnessMultiplier;
-    }
-
-    // 2. 全チャンクの「マテリアル」だけを更新 (ジオメトリ再生成はしない)
-    if (typeof loadedChunks !== 'undefined') {
-        for (const [key, mesh] of loadedChunks.entries()) {
-            // もしカスタムシェーダーを使用しているなら、uniformを更新するだけで済む
-            if (mesh.material && mesh.material.uniforms && mesh.material.uniforms.uBrightness) {
-                mesh.material.uniforms.uBrightness.value = globalBrightnessMultiplier;
-            } else {
-                // 標準マテリアルの場合：再生成せずに色味だけ変えるのは難しいため、
-                // 負荷が高い場合は「スライダーを離した時だけ」再生成するように制限する
-                // ここではパフォーマンスを優先し、動かしている間はライト変更のみとする
-            }
-        }
-    }
+    applyBrightnessSetting(parseInt(slider.value, 10));
 };
-
-// 明るさ：スライダーを「離した時」だけ重いリフレッシュを行う
-function refreshAllChunks() {
-    if (typeof loadedChunks !== 'undefined' && typeof refreshChunkAt === 'function') {
-        for (const [key, mesh] of loadedChunks.entries()) {
-            const coord = decodeChunkKey(key);
-            refreshChunkAt(coord.cx, coord.cz);
-        }
-    }
-}
 
 /* ======================================================
    【5. UIイベントリスナーの設定（最適化版）】
@@ -8188,7 +8126,6 @@ if (rangeRenderDist) {
         const val = parseInt(e.target.value, 10);
         if (renderDistValLabel) renderDistValLabel.innerText = val;
 
-        // 前の予約をキャンセルして、止まってから300ms後に実行
         clearTimeout(renderDistanceTimeout);
         renderDistanceTimeout = setTimeout(() => {
             applyRenderDistance(val);
@@ -8196,51 +8133,30 @@ if (rangeRenderDist) {
     });
 }
 
-// 明るさスライダー
+// 明るさスライダー（ドラッグ中にリアルタイム O(1) 反映、重い全チャンクリビルド不要）
 if (brightnessSlider) {
-    // 動かしている間はライトの強度（軽い処理）だけ変える
     brightnessSlider.addEventListener('input', () => {
-        const val = parseInt(brightnessSlider.value, 10);
-        if (brightnessValLabel) brightnessValLabel.innerText = val;
-        globalBrightnessMultiplier = val / 50;
-        if (window.sceneObjects && window.sceneObjects.ambientLight) {
-            window.sceneObjects.ambientLight.intensity = globalBrightnessMultiplier;
-        }
+        applyBrightnessSetting(parseInt(brightnessSlider.value, 10));
     });
-
-    // 指を離した時だけ、全体をリフレッシュする（重い処理を1回だけ）
-    brightnessSlider.addEventListener('change', refreshAllChunks);
 }
 
 /* ======================================================
    【6. 設定のリセット機能】
    ====================================================== */
 const resetSettings = () => {
-    // デフォルト値の定義
     const DEFAULTS = {
         renderDist: 6,
         brightness: 50
     };
 
-    // 1. 描画距離のリセット
     if (rangeRenderDist) {
         rangeRenderDist.value = DEFAULTS.renderDist;
-        // 即時反映関数を呼び出す
         applyRenderDistance(DEFAULTS.renderDist);
     }
 
-    // 2. 明るさのリセット
     if (brightnessSlider) {
         brightnessSlider.value = DEFAULTS.brightness;
-        if (brightnessValLabel) brightnessValLabel.innerText = DEFAULTS.brightness;
-
-        // 変数更新とライト強度反映
-        globalBrightnessMultiplier = DEFAULTS.brightness / 50;
-        if (window.sceneObjects && window.sceneObjects.ambientLight) {
-            window.sceneObjects.ambientLight.intensity = globalBrightnessMultiplier;
-        }
-        // 重いチャンクリフレッシュを実行
-        refreshAllChunks();
+        applyBrightnessSetting(DEFAULTS.brightness);
     }
 
     console.log("Settings have been reset to default.");

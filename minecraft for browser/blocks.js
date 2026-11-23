@@ -1063,87 +1063,107 @@ function cachedLoadTexture(path, fallback = null) {
 // ========================================================
 // 1. シェーダー書き換えロジックの共通化 (メモリ・コンパイル最適化)
 // ========================================================
-// 全ブロックマテリアルで共有する単一スカイライトUniform（O(1)で全チャンクへ昼夜反映）
+// 全ブロックマテリアルで共有する単一 Uniform（昼夜・明るさ変更を O(1) で全チャンクへ即時反映）
 export const SHARED_SKY_UNIFORM = { value: 1.0 };
+export const SHARED_BRIGHTNESS_UNIFORM = { value: 1.0 };
 
 function onBeforeCompileBlock(shader, mat) {
     const u = mat.userData && mat.userData.shaderUniforms;
     shader.uniforms.u_skyFactor = SHARED_SKY_UNIFORM;
+    shader.uniforms.u_brightness = SHARED_BRIGHTNESS_UNIFORM;
     shader.uniforms.u_isLightSource = (u && u.u_isLightSource) ? u.u_isLightSource : { value: 0.0 };
 
     const vertexInjection = `
         #include <color_vertex>
-        // vColor.r に空の明るさ、vColor.g にブロックの明るさが格納されている前提
-        float skyLight = vColor.r; 
-        float blockLight = vColor.g; 
-        
+        // vColor.r に空の明るさ(0..1)、vColor.g にブロックの明るさ(0..1)が Uint8 正規化で格納されている
+        float skyLight = vColor.r;
+        float blockLight = vColor.g;
+
         if (u_isLightSource > 0.5) {
             vColor.rgb = vec3(1.0);
         } else {
-            // 明るい方の光を採用し、空の光には時間帯係数をかける
-            vColor.rgb = vec3(max(skyLight * u_skyFactor, blockLight));
+            // 明るい方の光を採用し、明るさ設定を O(1) Uniform で適用
+            float lit = max(skyLight * u_skyFactor, blockLight) * u_brightness;
+            vColor.rgb = vec3(clamp(lit, 0.04, 1.0));
         }
     `;
 
     shader.vertexShader = `
         uniform float u_skyFactor;
+        uniform float u_brightness;
         uniform float u_isLightSource;
         ${shader.vertexShader}
     `.replace('#include <color_vertex>', vertexInjection);
 }
 
 // ========================================================
-// 2. メイン関数 (最適化済み完全版)
+// 2. メイン関数 (跨ブロック共有マテリアルプール・非アトラス最適化版)
 // ========================================================
 
 const BLOCK_MATERIALS_CACHE = new Map();
+// 同一テクスチャ・同一描画ステートのマテリアルをブロック間で共有（DIRTとGRASS底面、STONEと階段/スラブ等）
+const GLOBAL_BLOCK_MATERIAL_POOL = new Map();
 const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
-const _blockShaderCacheKey = () => 'mc_block_light_v1';
+const _blockShaderCacheKey = () => 'mc_block_light_v2';
 
-// 1. マテリアル生成の核となる部分を独立（高速化）
-function _buildMaterial(texPath, config, props) {
+function _getOrCreateSharedBlockMaterial(texPath, config, props) {
+    const opacity = config.opacity ?? 1.0;
+    const defaultColor = config.defaultColor ?? 0xffffff;
+    const alphaTest = props.isAlphaCutout ? 0.5 : 0;
+    const depthWrite = props.isBlendTransparent ? false : true;
+    const isLightSource = config.lightLevel > 0 ? 1 : 0;
+    const keyPath = (texPath && texPath !== "none") ? texPath : "__none__";
+
+    const poolKey = `${keyPath}|${props.isBlendTransparent ? 1 : 0}|${opacity}|${alphaTest}|${props.side}|${depthWrite ? 1 : 0}|${isLightSource}|${defaultColor}`;
+    const existing = GLOBAL_BLOCK_MATERIAL_POOL.get(poolKey);
+    if (existing !== undefined) return existing;
+
     const mat = new THREE.MeshBasicMaterial({
-        color: config.defaultColor ?? 0xffffff,
+        color: defaultColor,
         transparent: props.isBlendTransparent,
-        opacity: config.opacity ?? 1.0,
-        vertexColors: props.useVertexColors,
+        opacity,
+        vertexColors: true,
         side: props.side,
-        depthWrite: props.isGlass ? true : !props.isBlendTransparent,
-        alphaTest: props.isAlphaCutout ? 0.5 : 0,
+        depthWrite,
+        alphaTest,
         map: (texPath && texPath !== "none") ? cachedLoadTexture(texPath, config.fallbackTexture) : null
     });
 
-    mat.userData.screenFill = props.sf;
     mat.userData.shaderUniforms = {
         u_skyFactor: SHARED_SKY_UNIFORM,
-        u_isLightSource: { value: config.lightLevel > 0 ? 1.0 : 0.0 }
+        u_brightness: SHARED_BRIGHTNESS_UNIFORM,
+        u_isLightSource: { value: isLightSource ? 1.0 : 0.0 }
     };
     mat.userData.isShared = true;
     mat.customProgramCacheKey = _blockShaderCacheKey;
     mat.onBeforeCompile = (shader) => onBeforeCompileBlock(shader, mat);
+
+    GLOBAL_BLOCK_MATERIAL_POOL.set(poolKey, mat);
     return mat;
 }
 
 export function createMaterialsFromBlockConfig(config) {
-    // 共通プロパティの計算（1回だけ実行）
-    const isWater = (config.geometryType === "water") || !!config.isWater;
+    const gType = config.geometryType;
+    const isWater = (gType === "water") || !!config.isWater;
     const isBlendTransparent = isWater && ((config.opacity ?? 1.0) < 1.0);
-    const isDoubleSide = ["cross", "leaves", "ladder"].includes(config.geometryType);
+    const isDoubleSide = (gType === "cross" || gType === "leaves" || gType === "ladder");
+
+    // 実際に透過ピクセルを持つ形状のみ alphaTest: 0.5 を付与（階段・スラブ・フェンス・カーペットの Early-Z 阻害を排除）
+    const isAlphaCutout = !isWater && (
+        gType === "cross" ||
+        gType === "leaves" ||
+        gType === "ladder" ||
+        gType === "pane" ||
+        (gType === "cube" && config.transparent === true)
+    );
+
     const props = {
         isBlendTransparent,
-        isAlphaCutout: !!config.transparent && !isWater,
-        isGlass: !!config.transparent && !isWater && !isDoubleSide,
-        side: (isDoubleSide || isWater) ? THREE.DoubleSide : THREE.FrontSide,
-        // 全チャンクジオメトリが vertexColor(Sky/BlockLight) を持つため true に統一し vColor 未定義エラーを防止
-        useVertexColors: true,
-        sf: {
-            enabled: config.screenFill?.enabled ?? !!config.screenFill,
-            opacity: config.screenFill?.opacity ?? 1.0
-        }
+        isAlphaCutout,
+        side: (isDoubleSide || isWater) ? THREE.DoubleSide : THREE.FrontSide
     };
 
     const result = new Array(6);
-    const localCache = new Map();
 
     for (let i = 0; i < 6; i++) {
         const face = FACE_ORDER[i];
@@ -1151,10 +1171,7 @@ export function createMaterialsFromBlockConfig(config) {
             ((face !== "top" && face !== "bottom") ? config.textures?.side : null) ||
             config.textures?.top || config.textures?.bottom || config.fallbackTexture;
 
-        if (!localCache.has(texPath)) {
-            localCache.set(texPath, _buildMaterial(texPath, config, props));
-        }
-        result[i] = localCache.get(texPath);
+        result[i] = _getOrCreateSharedBlockMaterial(texPath, config, props);
     }
     return result;
 }
