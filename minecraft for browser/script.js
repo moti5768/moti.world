@@ -1,17 +1,23 @@
 "use strict";
 import * as THREE from './build/three.module.js';
 import {
+    STATE_SCHEMAS,
+    registerStateSchema, getBlockStateProp, getBlockStateRawProp, setBlockStateProp,
+    cycleBlockStateProp, hasBlockStateProp, packBlockState, unpackBlockState,
+    formatBlockStateString, getTransformMeta, getBlockLightEmissionForState
+} from './blockstate.js';
+import {
     BLOCK_CONFIG, BLOCK_TYPES, SHARED_SKY_UNIFORM, SHARED_BRIGHTNESS_UNIFORM,
-    STATE_SCHEMAS, MOUNT_SUPPORT_DX, MOUNT_SUPPORT_DY, MOUNT_SUPPORT_DZ,
     onBlockRegistered, registerCustomBlock, registerGeometryBuilder, registerPlacementRule, registerSupportRule,
-    getBlockStateProp, getBlockStateRawProp, setBlockStateProp, formatBlockStateString,
     getBlockMaterials, getBlockMaterialsForState, getBlockConfiguration, getBlockGeometry,
     getCollisionBoxes, getCollisionBoxesReadOnly, getSelectionBoxesReadOnly,
-    getTransformMeta, isRedstoneComponent, getBlockLightEmissionForState,
+    isRedstoneComponent,
     calculatePlacementMeta, canPlaceBlockAt, isSupportDependentBlock,
     getLogRotationMatrixReadOnly, applyRotationToCollisionBox, getCustomGeometryMatrix,
     idToKey, keyToId
 } from './blocks.js';
+import { createRedstoneEngine } from './redstone_engine.js';
+import { createFluidEngine } from './fluid_engine.js';
 import { createMinecraftBreakParticles, updateBlockParticles } from './particles.js';
 import { setMinecraftSky, loadCloudTexture, updateCloudGrid, updateCloudTiles, updateCloudOpacity, adjustCloudLayerDepth } from './cloudsky.js';
 import { determineBiome, BIOME_CONFIG } from './biomes/biomes.js';
@@ -2430,6 +2436,11 @@ function processChunkQueue(isInitialBoost = false) {
         scene.add(mesh);
         loadedChunks.set(key, mesh);
 
+        // 保留されていた予約Tickと自然生成された露出流体を起動
+        TickScheduler.onChunkLoaded(cx, cz);
+        const loadedVoxels = ChunkSaveManager.modifiedChunks.get(key);
+        if (loadedVoxels) FluidEngine.onChunkLoaded(cx, cz, loadedVoxels);
+
         // 対向する欠損ビットを持つ隣接チャンクのみライト＋メッシュ再構築キューへ登録
         checkNeighborUpdate(cx + 1, cz, NEIGHBOR_BIT_NX);
         checkNeighborUpdate(cx - 1, cz, NEIGHBOR_BIT_PX);
@@ -3627,8 +3638,8 @@ function resolveDynamicShapeMeta(type, cfg, meta, x, y, z, aboveType, getFn, get
     if (mode === "raw") return meta;
     if (mode === "connect_fence") return getConnectionMaskLocal(x, y, z, "fence", getFn);
     if (mode === "connect_pane") return getConnectionMaskLocal(x, y, z, "pane", getFn);
-    if (mode === "connect_wire") return getRedstoneWireConnectionMaskLocal(x, y, z, getRawFn);
-    if (mode === "liquid") return (aboveType === type) ? 1 : 0;
+    if (mode === "connect_wire") return RedstoneEngine.getWireConnectionMask(x, y, z, getRawFn);
+    if (mode === "liquid") return (aboveType === type) ? 8 : (meta & 0xF);
     if (mode.startsWith("propRaw:")) {
         return getBlockStateRawProp(type, meta, mode.slice(8));
     }
@@ -3646,64 +3657,6 @@ function getBlockMaterialsFast(type, meta = 0) {
         _blockMaterialsFastArray[type] = mats;
     }
     return mats;
-}
-
-/**
- * ワイヤーから方向 (dx, dz) にある隣接ブロックへ接続すべきか判定する（リピーターは入出力2方向のみ接続）
- */
-function canWireConnectToBlock(nRaw, dx, dz) {
-    const nId = nRaw & 0xFFF;
-    const nCfg = _blockConfigFastArray[nId];
-    const mode = nCfg && nCfg.redstoneConnectsWire;
-    if (!mode) return false;
-    if (mode === "axis") {
-        const rot = (nRaw >> 12) & 3;
-        const rdx = REPEATER_OUT_DX[rot];
-        const rdz = REPEATER_OUT_DZ[rot];
-        // 前後(入出力)2方向のみ接続し、側面には接続しない
-        return (dx === rdx && dz === rdz) || (dx === -rdx && dz === -rdz);
-    }
-    return true;
-}
-
-/**
- * 8bit ワイヤー接続マスクを返す（下位4bit=水平NSEW、上位4bit=1段上へ壁を登るNSEW）
- */
-function getRedstoneWireConnectionMaskLocal(lx, ly, lz, getRawFn) {
-    let mask = 0;
-    const aboveId = (ly < CH_H - 1) ? (getRawFn(lx, ly + 1, lz) & 0xFFF) : 0;
-    const canClimbUp = (_isOpaqueBlock[aboveId] === 0);
-
-    for (let i = 0; i < 4; i++) {
-        const dx = _CONN_OFFSETS_DX[i];
-        const dz = _CONN_OFFSETS_DZ[i];
-        const nx = lx + dx;
-        const nz = lz + dz;
-        const bit = _CONN_BITS[i];
-
-        const sameRaw = getRawFn(nx, ly, nz);
-        const sameId = sameRaw & 0xFFF;
-
-        if (canWireConnectToBlock(sameRaw, dx, dz)) {
-            mask |= (1 << bit);
-            continue;
-        }
-
-        // 1ブロック上へ登るワイヤー（自直上が不透明でなく、隣が壁/段差）
-        if (canClimbUp && ly < CH_H - 1 && (getRawFn(nx, ly + 1, nz) & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE) {
-            mask |= (1 << bit);
-            if (_isOpaqueBlock[sameId] === 1) {
-                mask |= (1 << (bit + 4)); // 壁を垂直に登る立ち上がり面を有効化
-            }
-            continue;
-        }
-
-        // 1ブロック下へ降りるワイヤー（隣の同高度が不透明でなければ接続）
-        if (ly > 0 && _isOpaqueBlock[sameId] === 0 && (getRawFn(nx, ly - 1, nz) & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE) {
-            mask |= (1 << bit);
-        }
-    }
-    return mask;
 }
 
 // --- [最適化用] 関数の外で再利用する一時オブジェクト ---
@@ -3984,7 +3937,7 @@ function createFadeCloneMaterial(originMat) {
     fadeMat.transparent = true;
     fadeMat.opacity = 0;
     fadeMat.depthWrite = false;
-    if (fadeMat.color) fadeMat.color.set(0xffffff);
+    if (fadeMat.color && originMat.color) fadeMat.color.copy(originMat.color);
     fadeMat.userData = {
         originMat,
         realOpacity: originMat.opacity !== undefined ? originMat.opacity : 1.0,
@@ -4553,37 +4506,52 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                     const aboveType = (y < 255) ? (voxelData[vIdx + 1] & 0xFFF) : 0;
                     let visMask = 63;
 
-                    // 水・溶岩など隣接カリング対象のみ6近傍チェックし、完全埋没ブロックおよび未ロード境界水壁をスキップ
+                    // 水・溶岩など隣接カリング対象のみ6近傍チェックし、段差側面ギャップと未ロード境界壁を正しく制御
                     if (cullAdj) {
                         const myOp = _isOpaqueBlock[type];
                         const myCs = _cullSameBlock[type];
+                        const myLiquidRank = isLiquid
+                            ? ((aboveType === type || ((meta >> 3) & 1) !== 0) ? 9 : (8 - (meta & 7)))
+                            : 0;
+
+                        const showHorizFace = (nx, nz, nRaw) => {
+                            const nType = nRaw & 0xFFF;
+                            if (isLiquid && nType === type) {
+                                const nMeta = (nRaw >> 12) & 0xF;
+                                const nAboveType = (y < 255) ? get(nx, y + 1, nz) : 0;
+                                const nRank = (nAboveType === type || ((nMeta >> 3) & 1) !== 0) ? 9 : (8 - (nMeta & 7));
+                                return myLiquidRank > nRank;
+                            }
+                            return shouldShowFace(type, myOp, myCs, nType);
+                        };
+
                         visMask = 0;
 
                         if (x < 15) {
-                            if (shouldShowFace(type, myOp, myCs, voxelData[vIdx + STRIDE_X] & 0xFFF)) visMask |= 1;
+                            if (showHorizFace(x + 1, z, voxelData[vIdx + STRIDE_X])) visMask |= 1;
                         } else if (!isLiquid || _boundaryVoxelGrid[7] !== null) {
-                            if (shouldShowFace(type, myOp, myCs, get(16, y, z))) visMask |= 1;
+                            if (showHorizFace(16, z, getRawLocal(16, y, z))) visMask |= 1;
                         }
 
                         if (x > 0) {
-                            if (shouldShowFace(type, myOp, myCs, voxelData[vIdx - STRIDE_X] & 0xFFF)) visMask |= 2;
+                            if (showHorizFace(x - 1, z, voxelData[vIdx - STRIDE_X])) visMask |= 2;
                         } else if (!isLiquid || _boundaryVoxelGrid[1] !== null) {
-                            if (shouldShowFace(type, myOp, myCs, get(-1, y, z))) visMask |= 2;
+                            if (showHorizFace(-1, z, getRawLocal(-1, y, z))) visMask |= 2;
                         }
 
                         if (shouldShowFace(type, myOp, myCs, aboveType)) visMask |= 4;
                         if (shouldShowFace(type, myOp, myCs, (y > 0) ? (voxelData[vIdx - 1] & 0xFFF) : 0)) visMask |= 8;
 
                         if (z < 15) {
-                            if (shouldShowFace(type, myOp, myCs, voxelData[vIdx + STRIDE_Z] & 0xFFF)) visMask |= 16;
+                            if (showHorizFace(x, z + 1, voxelData[vIdx + STRIDE_Z])) visMask |= 16;
                         } else if (!isLiquid || _boundaryVoxelGrid[5] !== null) {
-                            if (shouldShowFace(type, myOp, myCs, get(x, y, 16))) visMask |= 16;
+                            if (showHorizFace(x, 16, getRawLocal(x, y, 16))) visMask |= 16;
                         }
 
                         if (z > 0) {
-                            if (shouldShowFace(type, myOp, myCs, voxelData[vIdx - STRIDE_Z] & 0xFFF)) visMask |= 32;
+                            if (showHorizFace(x, z - 1, voxelData[vIdx - STRIDE_Z])) visMask |= 32;
                         } else if (!isLiquid || _boundaryVoxelGrid[3] !== null) {
-                            if (shouldShowFace(type, myOp, myCs, get(x, y, -1))) visMask |= 32;
+                            if (showHorizFace(x, -1, getRawLocal(x, y, -1))) visMask |= 32;
                         }
 
                         if (visMask === 0) continue;
@@ -4975,6 +4943,22 @@ function _getBlockIdForPlacement(wx, wy, wz) {
     return getVoxelAtWorld(wx, wy, wz, false);
 }
 
+function _getRawForPlacement(wx, wy, wz) {
+    return getVoxelAtWorld(wx, wy, wz, true);
+}
+
+// ブロック挙動フック用再利用コンテキスト（ゼロGC）
+const _neighborHookCtx = {
+    x: 0,
+    y: 0,
+    z: 0,
+    blockId: 0,
+    state: 0,
+    getBlockId: _getBlockIdForPlacement,
+    getRaw: _getRawForPlacement,
+    getLightOpacity: getBlockLightOpacity
+};
+
 /**
  * クリック対象(base)が置換可能(overwrite: true)なら同座標へ、そうでなければ隣接座標(target)へ配置先を解決する
  */
@@ -5006,7 +4990,7 @@ function resolvePlacementTarget(base, target, rawNormal) {
 }
 
 /**
- * ブロック設置・破壊後に自身および周囲6近傍の接続メタデータ同期と支持喪失ブロックの連鎖処理を行う
+ * ブロック設置・破壊後に自身および周囲6近傍の接続同期・支持チェック・宣言的 onNeighborChange を一括処理する
  * @returns {Array<{x: number, y: number, z: number}>} 追加でチャンク更新が必要になった座標リスト
  */
 function updateNeighborBlockStates(originX, originY, originZ) {
@@ -5076,6 +5060,41 @@ function updateNeighborBlockStates(originX, originY, originZ) {
 
             for (let i = 0; i < 6; i++) {
                 enqueue(wx + _NEIGHBOR_6_DX[i], wy + _NEIGHBOR_6_DY[i], wz + _NEIGHBOR_6_DZ[i]);
+            }
+            continue;
+        }
+
+        // 3. 宣言的 onNeighborChange フック（例：草ブロックの snowy 切替、将来ブロックの状態変化など）
+        if (typeof cfg.onNeighborChange === "function") {
+            _neighborHookCtx.x = wx;
+            _neighborHookCtx.y = wy;
+            _neighborHookCtx.z = wz;
+            _neighborHookCtx.blockId = id;
+            _neighborHookCtx.state = meta;
+
+            const result = cfg.onNeighborChange(_neighborHookCtx);
+            let nextRaw = raw;
+
+            if (typeof result === "number" && result >= 0) {
+                nextRaw = (id & 0xFFF) | ((result & 0xF) << 12);
+            } else if (result && typeof result === "object" && typeof result.id === "number") {
+                const nextState = (result.state !== undefined) ? (result.state & 0xF) : 0;
+                nextRaw = (result.id & 0xFFF) | (nextState << 12);
+            }
+
+            if (nextRaw !== raw) {
+                const cx = wx >> 4;
+                const cz = wz >> 4;
+                ChunkSaveManager.setBlock(cx, cz, wx & 15, wy, wz & 15, nextRaw);
+                updateLightAtBlockChange(wx, wy, wz, raw, nextRaw, _lightDirtySet);
+
+                if (wx !== originX || wy !== originY || wz !== originZ) {
+                    _extraUpdateCoords.push({ x: wx, y: wy, z: wz });
+                }
+
+                for (let i = 0; i < 6; i++) {
+                    enqueue(wx + _NEIGHBOR_6_DX[i], wy + _NEIGHBOR_6_DY[i], wz + _NEIGHBOR_6_DZ[i]);
+                }
             }
         }
     }
@@ -5199,12 +5218,24 @@ function interactWithBlock(action) {
             if (!(cfg?.geometryType === "water" || cfg?.overwrite === true)) return;
         }
 
-        // 1) 配置メタデータ（向き・反転・接続マスク）を事前確定（hit.point で正確な上下判定）
+        // 1) 配置メタデータ（向き・反転・接続マスク・onPlace 初期ステート）を事前確定
         let meta = calculatePlacementMeta(activeBlockType, _workVec3_CamDir, effectiveNormal, hit.point);
         if (meta < 0) return;
 
         if (newBlockCfg.autoSyncConnection) {
             meta = getConnectionMask(bx, by, bz, newBlockCfg.geometryType);
+        }
+
+        if (typeof newBlockCfg.onPlace === "function") {
+            _neighborHookCtx.x = bx;
+            _neighborHookCtx.y = by;
+            _neighborHookCtx.z = bz;
+            _neighborHookCtx.blockId = activeBlockType;
+            _neighborHookCtx.state = meta;
+            const placedMeta = newBlockCfg.onPlace(_neighborHookCtx);
+            if (typeof placedMeta === "number" && placedMeta >= 0) {
+                meta = placedMeta & 0xF;
+            }
         }
 
         // 2) 支持条件（壁面・土壌・下面）チェック
@@ -5233,10 +5264,11 @@ function interactWithBlock(action) {
         lastPlacedKey = candidateHash;
     }
 
-    // --- 5. 予約Tickキャンセル ＆ 隣接ブロック状態同期 ＆ レッドストーン信号ネットワーク更新 ---
+    // --- 5. 予約Tickキャンセル ＆ 隣接ブロック状態同期 ＆ レッドストーン・流体更新 ---
     TickScheduler.cancelAt(bx, by, bz);
     const extraCoords = updateNeighborBlockStates(bx, by, bz);
     RedstoneEngine.onBlockChanged(bx, by, bz);
+    FluidEngine.onBlockChanged(bx, by, bz);
 
     // --- 6. チャンク・UI更新（光が変わった全チャンクを含め重複なしで再構築） ---
     _updatedChunkSetTmp.clear();
@@ -5247,6 +5279,7 @@ function interactWithBlock(action) {
         const pos = extraCoords[i];
         TickScheduler.cancelAt(pos.x, pos.y, pos.z);
         RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z);
+        FluidEngine.onBlockChanged(pos.x, pos.y, pos.z);
         const eKey = encodeChunkKey(pos.x >> 4, pos.z >> 4);
         if (!_updatedChunkSetTmp.has(eKey)) {
             _updatedChunkSetTmp.add(eKey);
@@ -6436,9 +6469,10 @@ function encodeWorldBlockKey(wx, wy, wz) {
  */
 const TickScheduler = (() => {
     const MAX_TICKS_PER_STEP = 1024;
-    const buckets = new Map();     // Map<targetTick, Array<Task>>
-    const activeByCoord = new Map(); // Map<coordKey, Array<Task>>（高速キャンセル＆重複抑制用）
-    const handlers = new Map();    // Map<type, Function(task, currentTick)>
+    const buckets = new Map();        // Map<targetTick, Array<Task>>
+    const activeByCoord = new Map();  // Map<coordKey, Array<Task>>（高速キャンセル＆重複抑制用）
+    const deferredByChunk = new Map();// Map<chunkKey, Array<SerializedTask>>（未ロードチャンクの保留Tick）
+    const handlers = new Map();       // Map<type, Function(task, currentTick)>
     const taskPool = [];
     let pendingCount = 0;
 
@@ -6463,13 +6497,42 @@ const TickScheduler = (() => {
         if (taskPool.length < 2048) taskPool.push(t);
     }
 
-    return {
+    function deferTaskForChunk(chunkKey, x, y, z, delay, type, priority, payload) {
+        let list = deferredByChunk.get(chunkKey);
+        if (!list) {
+            list = [];
+            deferredByChunk.set(chunkKey, list);
+        }
+        // 未ロード保留キュー側も同一座標・同一種別の二重登録を抑止
+        for (let i = 0; i < list.length; i++) {
+            const item = list[i];
+            if (item.x === x && item.y === y && item.z === z && item.type === type) {
+                return;
+            }
+        }
+        list.push({ x, y, z, delay: delay > 1 ? (delay | 0) : 1, type, priority: priority | 0, payload: payload | 0 });
+    }
+
+    const scheduler = {
         get pendingCount() {
             return pendingCount;
         },
 
         registerHandler(type, fn) {
             handlers.set(type, fn);
+        },
+
+        hasScheduled(wx, wy, wz, type = null) {
+            const coordKey = encodeWorldBlockKey(wx | 0, wy | 0, wz | 0);
+            const coordList = activeByCoord.get(coordKey);
+            if (!coordList) return false;
+            for (let i = 0; i < coordList.length; i++) {
+                const existing = coordList[i];
+                if (!existing.cancelled && (type === null || existing.type === type)) {
+                    return true;
+                }
+            }
+            return false;
         },
 
         schedule(wx, wy, wz, delayTicks, type, priority = 0, payload = 0) {
@@ -6480,12 +6543,13 @@ const TickScheduler = (() => {
             const targetTick = worldTickCount + delay;
             const coordKey = encodeWorldBlockKey(x, y, z);
 
-            // 同一座標・同一種別・同一実行Tickの重複スケジュールを抑止
+            // Minecraft Java Edition LevelTicks.hasScheduledTick 準拠:
+            // 同一座標・同一種別の未消化Tickが既に存在する場合は重複登録しない（クロック倍速防止）
             let coordList = activeByCoord.get(coordKey);
             if (coordList) {
                 for (let i = 0; i < coordList.length; i++) {
                     const existing = coordList[i];
-                    if (!existing.cancelled && existing.type === type && existing.targetTick === targetTick) {
+                    if (!existing.cancelled && existing.type === type) {
                         return;
                     }
                 }
@@ -6524,6 +6588,70 @@ const TickScheduler = (() => {
             if (coordList.length === 0) activeByCoord.delete(coordKey);
         },
 
+        onChunkLoaded(cx, cz) {
+            const chunkKey = encodeChunkKey(cx, cz);
+            const list = deferredByChunk.get(chunkKey);
+            if (!list) return;
+            deferredByChunk.delete(chunkKey);
+
+            for (let i = 0; i < list.length; i++) {
+                const item = list[i];
+                scheduler.schedule(item.x, item.y, item.z, item.delay, item.type, item.priority, item.payload);
+            }
+        },
+
+        exportState() {
+            const out = [];
+            for (const bucket of buckets.values()) {
+                for (let i = 0; i < bucket.length; i++) {
+                    const t = bucket[i];
+                    if (t.cancelled || !t.type) continue;
+                    const delay = t.targetTick - worldTickCount;
+                    out.push({
+                        x: t.x,
+                        y: t.y,
+                        z: t.z,
+                        delay: delay > 1 ? delay : 1,
+                        type: t.type,
+                        priority: t.priority,
+                        payload: t.payload
+                    });
+                }
+            }
+            for (const list of deferredByChunk.values()) {
+                for (let i = 0; i < list.length; i++) {
+                    const d = list[i];
+                    out.push({
+                        x: d.x,
+                        y: d.y,
+                        z: d.z,
+                        delay: d.delay,
+                        type: d.type,
+                        priority: d.priority,
+                        payload: d.payload
+                    });
+                }
+            }
+            return out;
+        },
+
+        importState(savedTicks) {
+            if (!Array.isArray(savedTicks)) return;
+            for (let i = 0; i < savedTicks.length; i++) {
+                const item = savedTicks[i];
+                if (!item || typeof item.type !== "string") continue;
+                const x = item.x | 0, y = item.y | 0, z = item.z | 0;
+                const delay = item.delay > 1 ? (item.delay | 0) : 1;
+                const chunkKey = encodeChunkKey(x >> 4, z >> 4);
+
+                if (ChunkSaveManager.modifiedChunks.has(chunkKey)) {
+                    scheduler.schedule(x, y, z, delay, item.type, item.priority | 0, item.payload | 0);
+                } else {
+                    deferTaskForChunk(chunkKey, x, y, z, delay, item.type, item.priority | 0, item.payload | 0);
+                }
+            }
+        },
+
         processTick(currentTick) {
             const bucket = buckets.get(currentTick);
             if (!bucket) return;
@@ -6545,8 +6673,15 @@ const TickScheduler = (() => {
                         if (idx !== -1) coordList.splice(idx, 1);
                         if (coordList.length === 0) activeByCoord.delete(task.coordKey);
                     }
-                    const handler = handlers.get(task.type);
-                    if (handler) handler(task, currentTick);
+
+                    const chunkKey = encodeChunkKey(task.x >> 4, task.z >> 4);
+                    if (!ChunkSaveManager.modifiedChunks.has(chunkKey)) {
+                        // チャンクが未ロードなら捨てずに保留し、再訪問時に再開
+                        deferTaskForChunk(chunkKey, task.x, task.y, task.z, 1, task.type, task.priority, task.payload);
+                    } else {
+                        const handler = handlers.get(task.type);
+                        if (handler) handler(task, currentTick);
+                    }
                 }
                 releaseTask(task);
             }
@@ -6577,476 +6712,50 @@ const TickScheduler = (() => {
             }
             buckets.clear();
             activeByCoord.clear();
+            deferredByChunk.clear();
             pendingCount = 0;
         }
     };
+
+    return scheduler;
 })();
-
-
-
-
-
-
 
 /* ======================================================
-   【レッドストーン信号伝播エンジン】(Minecraft Java Edition 強/弱動力モデル準拠)
-   - 2フェーズ ワイヤーネットワーク再解決によりリング配線のゴースト電力を完全防止
-   - トーチ(NOTゲート: 2ticks) / リピーター(ダイオード増幅: 2 or 4ticks) を TickScheduler で遅延駆動
+   【レッドストーン信号伝播エンジン】(redstone_engine.js へ分離済)
    ====================================================== */
-const REPEATER_OUT_DX = new Int8Array([1, 0, -1, 0]);
-const REPEATER_OUT_DZ = new Int8Array([0, -1, 0, 1]);
-const RS_HORIZ_DX = new Int8Array([1, -1, 0, 0]);
-const RS_HORIZ_DZ = new Int8Array([0, 0, 1, -1]);
-
-const RedstoneEngine = (() => {
-    const MAX_WIRE_NODES = 1024;
-    const _wireX = new Int32Array(MAX_WIRE_NODES);
-    const _wireY = new Int32Array(MAX_WIRE_NODES);
-    const _wireZ = new Int32Array(MAX_WIRE_NODES);
-    const _wireOldPower = new Uint8Array(MAX_WIRE_NODES);
-    const _wireNewPower = new Uint8Array(MAX_WIRE_NODES);
-    const _wireVisited = new Map();
-
-    const _bfsQueue = new Int32Array(MAX_WIRE_NODES * 4);
-    const _deviceCoordsX = new Int32Array(512);
-    const _deviceCoordsY = new Int32Array(512);
-    const _deviceCoordsZ = new Int32Array(512);
-    const _deviceVisited = new Set();
-
-    function getRaw(wx, wy, wz) {
-        if (wy < 0 || wy >= CHUNK_HEIGHT) return 0;
-        const r = _getWorldRawLoaded(wx, wy, wz);
-        return r < 0 ? 0 : r;
+const _burnoutParticleVec = new THREE.Vector3();
+const RedstoneEngine = createRedstoneEngine({
+    chunkHeight: CHUNK_HEIGHT,
+    isOpaqueBlock: _isOpaqueBlock,
+    isRedstoneConductive: _isRedstoneConductive,
+    blockConfigFastArray: _blockConfigFastArray,
+    getWorldRawLoaded: _getWorldRawLoaded,
+    setBlockFromWorldTick,
+    tickScheduler: TickScheduler,
+    getCurrentTick: () => worldTickCount,
+    onTorchBurnout: (wx, wy, wz) => {
+        _burnoutParticleVec.set(wx + 0.5, wy + 0.65, wz + 0.5);
+        createMinecraftBreakParticles(_burnoutParticleVec, BLOCK_TYPES.REDSTONE_TORCH, 0.6);
     }
+});
 
-    // ブロック定義の redstoneConductive に基づく「通電する / しない」統一判定
-    function isRedstoneConductor(wx, wy, wz) {
-        return _isRedstoneConductive[getRaw(wx, wy, wz) & 0xFFF] === 1;
+/* ======================================================
+   【流体シミュレーションエンジン】(fluid_engine.js へ分離済)
+   ====================================================== */
+const _fluidParticleVec = new THREE.Vector3();
+const FluidEngine = createFluidEngine({
+    chunkHeight: CHUNK_HEIGHT,
+    isOpaqueBlock: _isOpaqueBlock,
+    blockConfigFastArray: _blockConfigFastArray,
+    getWorldRawLoaded: _getWorldRawLoaded,
+    setBlockFromWorldTick,
+    tickScheduler: TickScheduler,
+    onFluidReplacedBlock: (wx, wy, wz, oldRaw) => {
+        const oldId = oldRaw & 0xFFF;
+        _fluidParticleVec.set(wx + 0.5, wy + 0.5, wz + 0.5);
+        createMinecraftBreakParticles(_fluidParticleVec, oldId, 0.7);
+        RedstoneEngine.onBlockChanged(wx, wy, wz);
     }
-
-    // 段差ワイヤーの物理遮断用（不透明ブロック全般）
-    function isWireBlockingOpaque(wx, wy, wz) {
-        return _isOpaqueBlock[getRaw(wx, wy, wz) & 0xFFF] === 1;
-    }
-
-    /**
-     * ワイヤー (wx, wy, wz) の現在の接続形状に基づき、水平隣接 (tx, wy, tz) 方向へ出力が向いているか判定
-     */
-    function doesWirePointTowards(wx, wy, wz, tx, tz) {
-        const mask = getRedstoneWireConnectionMaskLocal(wx, wy, wz, getRaw) & 0xF;
-        if (mask === 0) return true;
-
-        const dx = tx - wx;
-        const dz = tz - wz;
-        let dirBit = 0;
-        if (dz === -1) dirBit = 8;
-        else if (dz === 1) dirBit = 4;
-        else if (dx === 1) dirBit = 2;
-        else if (dx === -1) dirBit = 1;
-        else return false;
-
-        if ((mask & dirBit) !== 0) return true;
-        const oppositeBit = (dirBit === 8) ? 4 : (dirBit === 4) ? 8 : (dirBit === 2) ? 1 : 2;
-        return mask === oppositeBit;
-    }
-
-    /**
-     * (sx, sy, sz) が (tx, ty, tz) へ直接出力する強動力 (0..15)
-     */
-    function getDirectStrongPowerTo(sx, sy, sz, tx, ty, tz, targetIsConductor = false) {
-        const raw = getRaw(sx, sy, sz);
-        const id = raw & 0xFFF;
-        const meta = (raw >> 12) & 0xF;
-        const cfg = _blockConfigFastArray[id];
-        if (!cfg) return 0;
-
-        // 常時電源ブロック（REDSTONE_BLOCK等）: 隣接ワイヤー・デバイスは直接駆動するが、導体ブロックは強励起しない
-        if (cfg.redstonePowerOutput > 0) {
-            return targetIsConductor ? 0 : cfg.redstonePowerOutput;
-        }
-
-        const role = cfg.redstoneRole;
-        if (role === "lever") {
-            if (!getBlockStateProp(id, meta, "powered")) return 0;
-            const mount = Math.min(getBlockStateRawProp(id, meta, "mount"), 4);
-            if (targetIsConductor) {
-                return (
-                    tx === sx + MOUNT_SUPPORT_DX[mount] &&
-                    ty === sy + MOUNT_SUPPORT_DY[mount] &&
-                    tz === sz + MOUNT_SUPPORT_DZ[mount]
-                ) ? 15 : 0;
-            }
-            return 15;
-        }
-
-        if (role === "torch") {
-            if (!getBlockStateProp(id, meta, "lit")) return 0;
-            const mount = Math.min(getBlockStateRawProp(id, meta, "mount"), 4);
-            if (
-                tx === sx + MOUNT_SUPPORT_DX[mount] &&
-                ty === sy + MOUNT_SUPPORT_DY[mount] &&
-                tz === sz + MOUNT_SUPPORT_DZ[mount]
-            ) {
-                return 0;
-            }
-            if (targetIsConductor) {
-                return (tx === sx && ty === sy + 1 && tz === sz) ? 15 : 0;
-            }
-            return 15;
-        }
-
-        if (role === "repeater" && cfg.repeaterPowered) {
-            const rot = getBlockStateRawProp(id, meta, "facing");
-            if (tx === sx + REPEATER_OUT_DX[rot] && ty === sy && tz === sz + REPEATER_OUT_DZ[rot]) {
-                return 15;
-            }
-            return 0;
-        }
-
-        return 0;
-    }
-
-    /**
-     * 通電する導体ブロック (cx, cy, cz) が受けている「強動力」(0..15)
-     */
-    function getConductorStrongPower(cx, cy, cz) {
-        if (!isRedstoneConductor(cx, cy, cz)) return 0;
-        let maxP = 0;
-        for (let i = 0; i < 6; i++) {
-            const p = getDirectStrongPowerTo(
-                cx + LIGHT_DIR_DX[i], cy + LIGHT_DIR_DY[i], cz + LIGHT_DIR_DZ[i],
-                cx, cy, cz, true
-            );
-            if (p > maxP) maxP = p;
-            if (maxP === 15) return 15;
-        }
-        return maxP;
-    }
-
-    /**
-     * 通電する導体ブロック (cx, cy, cz) が受けている「弱動力＋強動力」(0..15)
-     */
-    function getConductorAnyPower(cx, cy, cz, excludeX = 0x7FFFFFFF, excludeY = 0x7FFFFFFF, excludeZ = 0x7FFFFFFF) {
-        if (!isRedstoneConductor(cx, cy, cz)) return 0;
-
-        let maxP = getConductorStrongPower(cx, cy, cz);
-        if (maxP === 15) return 15;
-
-        const upRaw = getRaw(cx, cy + 1, cz);
-        if ((upRaw & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE && !(cx === excludeX && (cy + 1) === excludeY && cz === excludeZ)) {
-            const wp = (upRaw >> 12) & 0xF;
-            if (wp > maxP) maxP = wp;
-        }
-
-        for (let d = 0; d < 4; d++) {
-            const nx = cx + RS_HORIZ_DX[d];
-            const nz = cz + RS_HORIZ_DZ[d];
-            if (nx === excludeX && cy === excludeY && nz === excludeZ) continue;
-            const nRaw = getRaw(nx, cy, nz);
-            if ((nRaw & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE) {
-                const wp = (nRaw >> 12) & 0xF;
-                if (wp > maxP && doesWirePointTowards(nx, cy, nz, cx, cz)) {
-                    maxP = wp;
-                }
-            }
-        }
-
-        return maxP;
-    }
-
-    /**
-     * レッドストーントーチの支持ブロック (sx, sy, sz) が通電状態か統一判定
-     * - 支持ブロック自身が電源ブロック（REDSTONE_BLOCK等）の場合も true を返し、確実にトーチを消灯させる
-     */
-    function isSupportBlockPowered(sx, sy, sz, torchX, torchY, torchZ) {
-        const sId = getRaw(sx, sy, sz) & 0xFFF;
-        const sCfg = _blockConfigFastArray[sId];
-        if (sCfg && sCfg.redstonePowerOutput > 0) return true;
-        return getConductorAnyPower(sx, sy, sz, torchX, torchY, torchZ) > 0;
-    }
-
-    /**
-     * ランプ等の対象ブロック (wx, wy, wz) が周囲から受けている総信号強度 (弱＋強)
-     */
-    function getTotalPowerAt(wx, wy, wz) {
-        let maxP = isRedstoneConductor(wx, wy, wz) ? getConductorAnyPower(wx, wy, wz) : 0;
-        if (maxP === 15) return 15;
-
-        for (let i = 0; i < 6; i++) {
-            const nx = wx + LIGHT_DIR_DX[i], ny = wy + LIGHT_DIR_DY[i], nz = wz + LIGHT_DIR_DZ[i];
-            const direct = getDirectStrongPowerTo(nx, ny, nz, wx, wy, wz, false);
-            if (direct > maxP) maxP = direct;
-
-            const nRaw = getRaw(nx, ny, nz);
-            const nId = nRaw & 0xFFF;
-            if (nId === BLOCK_TYPES.REDSTONE_WIRE) {
-                const wp = (nRaw >> 12) & 0xF;
-                if (wp > maxP && (ny !== wy || doesWirePointTowards(nx, ny, nz, wx, wz))) {
-                    maxP = wp;
-                }
-            } else if (_isRedstoneConductive[nId] === 1) {
-                const cp = getConductorAnyPower(nx, ny, nz, wx, wy, wz);
-                if (cp > maxP) maxP = cp;
-            }
-            if (maxP === 15) return 15;
-        }
-        return maxP;
-    }
-
-    /**
-     * ワイヤーセル (wx, wy, wz) が外部電源（直接電源＋強励起済み通電導体）から受け取る初期電力 (0..15)
-     */
-    function getExternalWireInputPower(wx, wy, wz) {
-        let maxP = 0;
-        for (let i = 0; i < 6; i++) {
-            const nx = wx + LIGHT_DIR_DX[i], ny = wy + LIGHT_DIR_DY[i], nz = wz + LIGHT_DIR_DZ[i];
-
-            const direct = getDirectStrongPowerTo(nx, ny, nz, wx, wy, wz, false);
-            if (direct > maxP) maxP = direct;
-
-            if (isRedstoneConductor(nx, ny, nz)) {
-                const cp = getConductorStrongPower(nx, ny, nz);
-                if (cp > maxP) maxP = cp;
-            }
-            if (maxP === 15) return 15;
-        }
-        return maxP;
-    }
-
-    /**
-     * リピーター (rx, ry, rz) の背面入力側が信号を受けているか判定
-     */
-    function isRepeaterReceivingInput(rx, ry, rz, rot) {
-        const ix = rx - REPEATER_OUT_DX[rot];
-        const iz = rz - REPEATER_OUT_DZ[rot];
-        const iRaw = getRaw(ix, ry, iz);
-        const iId = iRaw & 0xFFF;
-
-        if (iId === BLOCK_TYPES.REDSTONE_WIRE) {
-            return ((iRaw >> 12) & 0xF) > 0 && doesWirePointTowards(ix, ry, iz, rx, rz);
-        }
-        if (getDirectStrongPowerTo(ix, ry, iz, rx, ry, rz, false) > 0) {
-            return true;
-        }
-        if (_isRedstoneConductive[iId] === 1) {
-            return getConductorAnyPower(ix, ry, iz, rx, ry, rz) > 0;
-        }
-        return false;
-    }
-
-    function evaluateDevice(wx, wy, wz) {
-        const raw = getRaw(wx, wy, wz);
-        const id = raw & 0xFFF;
-        const meta = (raw >> 12) & 0xF;
-        const cfg = _blockConfigFastArray[id];
-        if (!cfg || !cfg.redstoneDevice) return;
-
-        const role = cfg.redstoneRole;
-        if (role === "lamp") {
-            const powered = getTotalPowerAt(wx, wy, wz) > 0;
-            if (getBlockStateProp(id, meta, "lit") !== powered) {
-                const nextMeta = setBlockStateProp(id, meta, "lit", powered);
-                setBlockFromWorldTick(wx, wy, wz, (id & 0xFFF) | (nextMeta << 12));
-            }
-            return;
-        }
-
-        if (role === "torch") {
-            const mount = Math.min(getBlockStateRawProp(id, meta, "mount"), 4);
-            const sx = wx + MOUNT_SUPPORT_DX[mount];
-            const sy = wy + MOUNT_SUPPORT_DY[mount];
-            const sz = wz + MOUNT_SUPPORT_DZ[mount];
-            const targetLit = !isSupportBlockPowered(sx, sy, sz, wx, wy, wz);
-
-            if (getBlockStateProp(id, meta, "lit") !== targetLit) {
-                TickScheduler.schedule(wx, wy, wz, 2, "redstone_device", -1, targetLit ? 1 : 0);
-            }
-            return;
-        }
-
-        if (role === "repeater") {
-            const rot = getBlockStateRawProp(id, meta, "facing");
-            const delayTicks = getBlockStateProp(id, meta, "delay");
-            const currentPowered = !!cfg.repeaterPowered;
-            const targetPowered = isRepeaterReceivingInput(wx, wy, wz, rot);
-
-            if (currentPowered !== targetPowered) {
-                TickScheduler.schedule(wx, wy, wz, delayTicks, "redstone_device", -2, targetPowered ? 1 : 0);
-            }
-        }
-    }
-
-    function resolveFromOrigin(originX, originY, originZ) {
-        _wireVisited.clear();
-        _deviceVisited.clear();
-        let wireCount = 0;
-        let devCount = 0;
-
-        const addDevice = (x, y, z) => {
-            if (y < 0 || y >= CHUNK_HEIGHT || devCount >= 512) return;
-            const id = getRaw(x, y, z) & 0xFFF;
-            const cfg = _blockConfigFastArray[id];
-            if (!cfg || !cfg.redstoneDevice) return;
-
-            const k = encodeWorldBlockKey(x, y, z);
-            if (_deviceVisited.has(k)) return;
-            _deviceVisited.add(k);
-            _deviceCoordsX[devCount] = x;
-            _deviceCoordsY[devCount] = y;
-            _deviceCoordsZ[devCount] = z;
-            devCount++;
-        };
-
-        const addWire = (x, y, z) => {
-            if (y < 0 || y >= CHUNK_HEIGHT || wireCount >= MAX_WIRE_NODES) return -1;
-            const raw = getRaw(x, y, z);
-            if ((raw & 0xFFF) !== BLOCK_TYPES.REDSTONE_WIRE) return -1;
-            const k = encodeWorldBlockKey(x, y, z);
-            const existing = _wireVisited.get(k);
-            if (existing !== undefined) return existing;
-
-            const idx = wireCount++;
-            _wireVisited.set(k, idx);
-            _wireX[idx] = x;
-            _wireY[idx] = y;
-            _wireZ[idx] = z;
-            _wireOldPower[idx] = (raw >> 12) & 0xF;
-            _wireNewPower[idx] = 0;
-            return idx;
-        };
-
-        for (let dx = -2; dx <= 2; dx++) {
-            for (let dy = -2; dy <= 2; dy++) {
-                for (let dz = -2; dz <= 2; dz++) {
-                    if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > 3) continue;
-                    const x = originX + dx, y = originY + dy, z = originZ + dz;
-                    addWire(x, y, z);
-                    addDevice(x, y, z);
-                }
-            }
-        }
-
-        for (let idx = 0; idx < wireCount; idx++) {
-            const wx = _wireX[idx], wy = _wireY[idx], wz = _wireZ[idx];
-            const aboveOpaque = isWireBlockingOpaque(wx, wy + 1, wz);
-
-            for (let d = 0; d < 4; d++) {
-                const nx = wx + RS_HORIZ_DX[d];
-                const nz = wz + RS_HORIZ_DZ[d];
-                addWire(nx, wy, nz);
-                if (!aboveOpaque) addWire(nx, wy + 1, nz);
-                if (!isWireBlockingOpaque(nx, wy, nz)) addWire(nx, wy - 1, nz);
-            }
-        }
-
-        let qHead = 0, qTail = 0;
-        for (let idx = 0; idx < wireCount; idx++) {
-            const extP = getExternalWireInputPower(_wireX[idx], _wireY[idx], _wireZ[idx]);
-            if (extP > 0) {
-                _wireNewPower[idx] = extP;
-                _bfsQueue[qTail++] = idx;
-            }
-        }
-
-        while (qHead < qTail) {
-            const idx = _bfsQueue[qHead++];
-            const curP = _wireNewPower[idx];
-            if (curP <= 1) continue;
-            const nextP = curP - 1;
-
-            const wx = _wireX[idx], wy = _wireY[idx], wz = _wireZ[idx];
-            const aboveOpaque = isWireBlockingOpaque(wx, wy + 1, wz);
-
-            const relax = (nx, ny, nz) => {
-                const nIdx = _wireVisited.get(encodeWorldBlockKey(nx, ny, nz));
-                if (nIdx !== undefined && nextP > _wireNewPower[nIdx]) {
-                    _wireNewPower[nIdx] = nextP;
-                    if (qTail < _bfsQueue.length) _bfsQueue[qTail++] = nIdx;
-                }
-            };
-
-            for (let d = 0; d < 4; d++) {
-                const nx = wx + RS_HORIZ_DX[d];
-                const nz = wz + RS_HORIZ_DZ[d];
-                relax(nx, wy, nz);
-                if (!aboveOpaque) relax(nx, wy + 1, nz);
-                if (!isWireBlockingOpaque(nx, wy, nz)) relax(nx, wy - 1, nz);
-            }
-        }
-
-        for (let idx = 0; idx < wireCount; idx++) {
-            const newP = _wireNewPower[idx];
-            const wx = _wireX[idx], wy = _wireY[idx], wz = _wireZ[idx];
-            const powerChanged = (newP !== _wireOldPower[idx]);
-
-            if (powerChanged) {
-                const packed = (BLOCK_TYPES.REDSTONE_WIRE & 0xFFF) | ((newP & 0xF) << 12);
-                setBlockFromWorldTick(wx, wy, wz, packed);
-            }
-
-            const nearOrigin = (Math.abs(wx - originX) + Math.abs(wy - originY) + Math.abs(wz - originZ)) <= 2;
-            if (powerChanged || nearOrigin) {
-                for (let dx = -2; dx <= 2; dx++) {
-                    for (let dy = -2; dy <= 2; dy++) {
-                        for (let dz = -2; dz <= 2; dz++) {
-                            if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) <= 2) {
-                                addDevice(wx + dx, wy + dy, wz + dz);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        for (let i = 0; i < devCount; i++) {
-            evaluateDevice(_deviceCoordsX[i], _deviceCoordsY[i], _deviceCoordsZ[i]);
-        }
-    }
-
-    return {
-        onBlockChanged(wx, wy, wz) {
-            resolveFromOrigin(wx | 0, wy | 0, wz | 0);
-        },
-        handleScheduledDeviceTick(task) {
-            const { x, y, z, payload } = task;
-            const raw = getRaw(x, y, z);
-            const id = raw & 0xFFF;
-            const meta = (raw >> 12) & 0xF;
-            const cfg = _blockConfigFastArray[id];
-            if (!cfg || !cfg.redstoneDevice) return;
-
-            if (cfg.redstoneRole === "torch") {
-                const mount = Math.min(getBlockStateRawProp(id, meta, "mount"), 4);
-                const sx = x + MOUNT_SUPPORT_DX[mount];
-                const sy = y + MOUNT_SUPPORT_DY[mount];
-                const sz = z + MOUNT_SUPPORT_DZ[mount];
-                const nextLit = !isSupportBlockPowered(sx, sy, sz, x, y, z);
-
-                if (getBlockStateProp(id, meta, "lit") !== nextLit) {
-                    const nextMeta = setBlockStateProp(id, meta, "lit", nextLit);
-                    setBlockFromWorldTick(x, y, z, (id & 0xFFF) | (nextMeta << 12));
-                    resolveFromOrigin(x, y, z);
-                }
-            } else if (cfg.redstoneRole === "repeater") {
-                const rot = getBlockStateRawProp(id, meta, "facing");
-                const curPowered = !!cfg.repeaterPowered;
-                const desiredPowered = isRepeaterReceivingInput(x, y, z, rot);
-                const fallbackPowered = (payload & 1) !== 0;
-
-                const nextPowered = (curPowered !== desiredPowered) ? desiredPowered : fallbackPowered;
-                if (curPowered !== nextPowered) {
-                    const nextId = nextPowered ? BLOCK_TYPES.REDSTONE_REPEATER_ON : BLOCK_TYPES.REDSTONE_REPEATER;
-                    setBlockFromWorldTick(x, y, z, (nextId & 0xFFF) | (meta << 12));
-                    resolveFromOrigin(x, y, z);
-                }
-            }
-        }
-    };
-})();
-
-// Step14 の TickScheduler へレッドストーン遅延デバイスハンドラを登録
-TickScheduler.registerHandler("redstone_device", (task) => {
-    RedstoneEngine.handleScheduledDeviceTick(task);
 });
 
 function setBlockFromWorldTick(wx, wy, wz, newRaw) {
@@ -7108,43 +6817,21 @@ export function registerRandomTickHandler(blockId, fn) {
     }
 }
 
-// Minecraft Java Edition 準拠: 草ブロックの枯死（上を不透明ブロックで塞いだ場合）と隣接土への自然伝播
-RANDOM_TICK_HANDLERS[BLOCK_TYPES.GRASS] = (wx, wy, wz) => {
-    const aboveId = _getWorldBlockIdLoaded(wx, wy + 1, wz);
-    if (aboveId < 0) return;
-
-    // 1. 不透明ブロックが真上にあると草は土へ戻る
-    if (getBlockLightOpacity(aboveId) >= 15) {
-        setBlockFromWorldTick(wx, wy, wz, BLOCK_TYPES.DIRT);
-        return;
-    }
-
-    // 2. 光量 >= 9 の草ブロックは周囲 3x3（高さ -1..+2）の露出した土へ伝播
-    const aboveLight = _getWorldLightCell(wx, wy + 1, wz);
-    if (aboveLight < 0) return;
-    const sky = (aboveLight >> 4) & 15;
-    const blk = aboveLight & 15;
-    if ((sky > blk ? sky : blk) < 9) return;
-
-    const r = nextTickRng();
-    const tx = wx + ((r % 3) - 1);
-    const tz = wz + ((((r >>> 4) | 0) % 3) - 1);
-    const ty = wy + ((((r >>> 8) | 0) % 4) - 1);
-    if (ty <= 0 || ty >= CHUNK_HEIGHT - 1) return;
-
-    const targetId = _getWorldBlockIdLoaded(tx, ty, tz);
-    if (targetId !== BLOCK_TYPES.DIRT) return;
-
-    const targetAboveId = _getWorldBlockIdLoaded(tx, ty + 1, tz);
-    if (targetAboveId < 0 || getBlockLightOpacity(targetAboveId) >= 2) return;
-
-    const targetAboveLight = _getWorldLightCell(tx, ty + 1, tz);
-    if (targetAboveLight < 0) return;
-    const tSky = (targetAboveLight >> 4) & 15;
-    const tBlk = targetAboveLight & 15;
-    if ((tSky > tBlk ? tSky : tBlk) < 4) return;
-
-    setBlockFromWorldTick(tx, ty, tz, BLOCK_TYPES.GRASS);
+// ランダムTickフック用再利用コンテキスト（ゼロGC）
+const _randomTickCtx = {
+    x: 0,
+    y: 0,
+    z: 0,
+    blockId: 0,
+    state: 0,
+    raw: 0,
+    chunkHeight: CHUNK_HEIGHT,
+    getBlockId: _getWorldBlockIdLoaded,
+    getRaw: _getWorldRawLoaded,
+    getLightOpacity: getBlockLightOpacity,
+    getLightLevel: _getWorldLightCell,
+    setBlock: setBlockFromWorldTick,
+    nextRng: nextTickRng
 };
 
 const RANDOM_TICKS_PER_CHUNK = 12;
@@ -7177,7 +6864,20 @@ function processRandomTicks(pCx, pCz) {
             const raw = vData[ly | (lz << 8) | (lx << 12)];
             if (raw === 0) continue;
 
-            const handler = RANDOM_TICK_HANDLERS[raw & 0xFFF];
+            const blockId = raw & 0xFFF;
+            const cfg = _blockConfigFastArray[blockId];
+            if (cfg && typeof cfg.onRandomTick === "function") {
+                _randomTickCtx.x = baseX + lx;
+                _randomTickCtx.y = ly;
+                _randomTickCtx.z = baseZ + lz;
+                _randomTickCtx.blockId = blockId;
+                _randomTickCtx.state = (raw >> 12) & 0xF;
+                _randomTickCtx.raw = raw;
+                cfg.onRandomTick(_randomTickCtx);
+                continue;
+            }
+
+            const handler = RANDOM_TICK_HANDLERS[blockId];
             if (handler) {
                 handler(baseX + lx, ly, baseZ + lz, raw);
             }
@@ -7589,6 +7289,10 @@ async function prewarmSpawnChunks(updateProgressFn, startPct, endPct) {
                 scene.add(mesh);
                 loadedChunks.set(key, mesh);
 
+                TickScheduler.onChunkLoaded(cx, cz);
+                const prewarmedVoxels = ChunkSaveManager.modifiedChunks.get(key);
+                if (prewarmedVoxels) FluidEngine.onChunkLoaded(cx, cz, prewarmedVoxels);
+
                 checkNeighborUpdate(cx + 1, cz, NEIGHBOR_BIT_NX);
                 checkNeighborUpdate(cx - 1, cz, NEIGHBOR_BIT_PX);
                 checkNeighborUpdate(cx, cz + 1, NEIGHBOR_BIT_NZ);
@@ -7682,7 +7386,8 @@ document.getElementById('btn-load-saved').onclick = async () => {
                 saveData.chunks,
                 restoredTime,
                 saveData.worldUid || null,
-                saveData.playerState || null
+                saveData.playerState || null,
+                saveData.simulationState || null
             );
         } else {
             ui.loading.style.display = 'none';
@@ -7707,7 +7412,7 @@ function generateWorldUid() {
     return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0, savedWorldUid = null, savedPlayerState = null) {
+async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0, savedWorldUid = null, savedPlayerState = null, savedSimulationState = null) {
     const fill = document.getElementById('loading-fill');
 
     const updateProgress = async (percent) => {
@@ -7759,6 +7464,8 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
 
     // --- 2. プレイヤー位置・視点・Tick状態の初期化 ---
     TickScheduler.clear();
+    RedstoneEngine.clearAllBurnouts();
+    FluidEngine.resetActivatedChunks();
     worldTickCount = 0;
     worldTickAccumulator = 0;
     physicsAccumulator = 0;
@@ -7787,7 +7494,17 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     // 70%：UI・ホットバー復元完了
     await updateProgress(70);
 
-    // --- 4. スポーン周囲チャンク事前生成（開始直後の空中浮遊・地面ポップイン防止） ---
+    // --- 4. 保存されていた予約Tick（クロック・リピーター・流体）＆焼き切れ状態を先に復元 ---
+    if (savedSimulationState) {
+        if (savedSimulationState.redstoneBurnouts) {
+            RedstoneEngine.importBurnoutState(savedSimulationState.redstoneBurnouts);
+        }
+        if (Array.isArray(savedSimulationState.scheduledTicks)) {
+            TickScheduler.importState(savedSimulationState.scheduledTicks);
+        }
+    }
+
+    // --- 4.5. スポーン周囲チャンク事前生成（開始直後の空中浮遊・地面ポップイン防止） ---
     await prewarmSpawnChunks(updateProgress, 70, 95);
 
     // --- 5. 天体・カメラ初期同期 ---
@@ -7898,7 +7615,11 @@ async function saveCurrentWorld() {
             : { x: 0, y: 64, z: 0, yaw: 0, pitch: 0 };
 
         const playerState = collectPlayerSaveState();
-        const result = await saveWorldData(s, pPos, ChunkSaveManager, gameTime, currentWorldUid, playerState);
+        const simulationState = {
+            scheduledTicks: TickScheduler.exportState(),
+            redstoneBurnouts: RedstoneEngine.exportBurnoutState()
+        };
+        const result = await saveWorldData(s, pPos, ChunkSaveManager, gameTime, currentWorldUid, playerState, simulationState);
 
         console.log(
             `[Save] 完了 (${result.mode}): ${result.savedChunks} チャンク / ` +
@@ -8815,7 +8536,7 @@ async function readStoredWorldUid(db) {
 /**
  * ワールドデータの保存（パレット＋RLEバイナリ圧縮・編集チャンク限定・差分セーブ・アトミック置換）
  */
-async function saveWorldData(seed, playerPos, chunkManager, gameTime, worldUid = null, playerState = null) {
+async function saveWorldData(seed, playerPos, chunkManager, gameTime, worldUid = null, playerState = null, simulationState = null) {
     const startTime = performance.now();
     const db = await getDB();
     const activeWorldUid = worldUid || generateWorldUid();
@@ -8863,6 +8584,9 @@ async function saveWorldData(seed, playerPos, chunkManager, gameTime, worldUid =
         if (playerState) {
             metaStore.put(playerState, "player_state");
         }
+        if (simulationState) {
+            metaStore.put(simulationState, "simulation_state");
+        }
 
         for (let i = 0; i < encodedEntries.length; i++) {
             const entry = encodedEntries[i];
@@ -8906,6 +8630,7 @@ async function loadFullSaveData() {
         const reqTime = metaStore.get("game_time");
         const reqWorldUid = metaStore.get("world_uid");
         const reqPlayerState = metaStore.get("player_state");
+        const reqSimState = metaStore.get("simulation_state");
         const reqKeys = chunkStore.getAllKeys();
         const reqValues = chunkStore.getAll();
 
@@ -9010,6 +8735,7 @@ async function loadFullSaveData() {
                 gameTime: reqTime.result ?? 6000,
                 worldUid: reqWorldUid.result ?? null,
                 playerState: reqPlayerState.result ?? null,
+                simulationState: reqSimState.result ?? null,
                 chunks: chunks
             });
         };
@@ -9026,6 +8752,15 @@ window.MinecraftEngine = Object.freeze({
     BLOCK_CONFIG,
     BLOCK_TYPES,
     STATE_SCHEMAS,
+    registerStateSchema,
+    getBlockStateProp,
+    getBlockStateRawProp,
+    setBlockStateProp,
+    cycleBlockStateProp,
+    hasBlockStateProp,
+    packBlockState,
+    unpackBlockState,
+    formatBlockStateString,
     registerCustomBlock,
     registerGeometryBuilder,
     registerPlacementRule,
@@ -9033,6 +8768,7 @@ window.MinecraftEngine = Object.freeze({
     registerRandomTickHandler,
     TickScheduler,
     RedstoneEngine,
+    FluidEngine,
     ChunkSaveManager,
     saveCurrentWorld,
     getStats: () => ({

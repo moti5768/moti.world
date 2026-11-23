@@ -1,6 +1,22 @@
 "use strict";
 import * as THREE from "./build/three.module.js";
 import { BufferGeometryUtils } from './jsm/utils/BufferGeometryUtils.js';
+import {
+    MOUNT_SUPPORT_DX, MOUNT_SUPPORT_DY, MOUNT_SUPPORT_DZ,
+    STATE_SCHEMAS, registerStateSchema, buildStateSchemaFromProperties, getSchemaDefaultState,
+    resolveStateSchema, computeTransformMask, normalizeStateValue, compileAndRegisterBlockState,
+    getBlockStateRawProp, getBlockStateProp, setBlockStateProp, cycleBlockStateProp,
+    hasBlockStateProp, packBlockState, unpackBlockState, formatBlockStateString,
+    getTransformMeta, getBlockLightEmissionForState, getCompiledStateVariant
+} from './blockstate.js';
+
+export {
+    MOUNT_SUPPORT_DX, MOUNT_SUPPORT_DY, MOUNT_SUPPORT_DZ,
+    STATE_SCHEMAS, registerStateSchema, buildStateSchemaFromProperties, getSchemaDefaultState,
+    getBlockStateRawProp, getBlockStateProp, setBlockStateProp, cycleBlockStateProp,
+    hasBlockStateProp, packBlockState, unpackBlockState, formatBlockStateString,
+    getTransformMeta, getBlockLightEmissionForState, getCompiledStateVariant
+};
 
 const ERROR_TEXTURE = (() => {
     const data = new Uint8Array([
@@ -126,147 +142,15 @@ function getPaneCollisionBoxes(meta) {
 }
 
 /* ================================================
-   ① 宣言的 BlockState スキーマ＆汎用ステート操作 API
-   （Minecraft Java Edition StateDefinition / blockstates 準拠・4bit O(1)パック）
+   ① ブロック登録ルックアップ＆基本属性照会 API
+   （BlockState スキーマ・操作ロジック本体は blockstate.js へ一元化）
    ================================================ */
-// 床(0)＋壁4方向(1:east/+X向き, 2:west/-X向き, 3:south/+Z向き, 4:north/-Z向き)に対応する支持ブロック相対オフセット
-export const MOUNT_SUPPORT_DX = Object.freeze([0, -1, 1, 0, 0]);
-export const MOUNT_SUPPORT_DY = Object.freeze([-1, 0, 0, 0, 0]);
-export const MOUNT_SUPPORT_DZ = Object.freeze([0, 0, 0, -1, 1]);
-
-export const STATE_SCHEMAS = Object.freeze({
-    NONE: Object.freeze({}),
-    AXIS: Object.freeze({
-        axis: Object.freeze({ shift: 0, mask: 3, values: ['y', 'x', 'z'] })
-    }),
-    FACING_4: Object.freeze({
-        facing: Object.freeze({ shift: 0, mask: 3, values: ['south', 'east', 'north', 'west'] })
-    }),
-    SLAB: Object.freeze({
-        half: Object.freeze({ shift: 2, mask: 1, values: ['bottom', 'top'] })
-    }),
-    STAIRS: Object.freeze({
-        facing: Object.freeze({ shift: 0, mask: 3, values: ['north', 'east', 'south', 'west'] }),
-        half: Object.freeze({ shift: 2, mask: 1, values: ['bottom', 'top'] })
-    }),
-    CONNECTIONS_4: Object.freeze({
-        north: Object.freeze({ shift: 3, mask: 1, bool: true }),
-        south: Object.freeze({ shift: 2, mask: 1, bool: true }),
-        east: Object.freeze({ shift: 1, mask: 1, bool: true }),
-        west: Object.freeze({ shift: 0, mask: 1, bool: true })
-    }),
-    POWER_16: Object.freeze({
-        power: Object.freeze({ shift: 0, mask: 15 })
-    }),
-    LIT: Object.freeze({
-        lit: Object.freeze({ shift: 0, mask: 1, bool: true })
-    }),
-    MOUNT_5: Object.freeze({
-        mount: Object.freeze({ shift: 0, mask: 7, values: ['floor', 'east', 'west', 'south', 'north'] })
-    }),
-    TORCH: Object.freeze({
-        mount: Object.freeze({ shift: 0, mask: 7, values: ['floor', 'east', 'west', 'south', 'north'] }),
-        lit: Object.freeze({ shift: 3, mask: 1, bool: true })
-    }),
-    LEVER: Object.freeze({
-        mount: Object.freeze({ shift: 0, mask: 7, values: ['floor', 'east', 'west', 'south', 'north'] }),
-        powered: Object.freeze({ shift: 3, mask: 1, bool: true })
-    }),
-    REPEATER_4: Object.freeze({
-        facing: Object.freeze({ shift: 0, mask: 3, values: ['east', 'north', 'west', 'south'] }),
-        delay: Object.freeze({ shift: 2, mask: 3, values: [2, 4, 6, 8] })
-    })
-});
-
 // 登録済みブロックの高速ルックアップテーブル（動的追加 registerCustomBlock にも対応）
 const blockConfigLookup = {};
 const _blockRegisterListeners = [];
 
 export function onBlockRegistered(listener) {
     if (typeof listener === "function") _blockRegisterListeners.push(listener);
-}
-
-/**
- * ブロックの 4bit BlockState から指定プロパティの生数値 (0..mask) を O(1) で取得する
- */
-export function getBlockStateRawProp(blockId, meta, propName) {
-    const cfg = blockConfigLookup[blockId & 0xFFF];
-    const def = cfg && cfg.stateSchema && cfg.stateSchema[propName];
-    if (!def) return 0;
-    return (meta >> def.shift) & def.mask;
-}
-
-/**
- * ブロックの 4bit BlockState から指定プロパティの論理値（boolean / enum文字列 / 数値）を取得する
- */
-export function getBlockStateProp(blockId, meta, propName) {
-    const cfg = blockConfigLookup[blockId & 0xFFF];
-    const def = cfg && cfg.stateSchema && cfg.stateSchema[propName];
-    if (!def) return undefined;
-    const raw = (meta >> def.shift) & def.mask;
-    if (def.bool) return raw !== 0;
-    if (def.values) return def.values[raw] !== undefined ? def.values[raw] : def.values[0];
-    return raw;
-}
-
-/**
- * ブロックの 4bit BlockState の指定プロパティを書き換えた新しい 4bit 状態値を返す
- */
-export function setBlockStateProp(blockId, meta, propName, value) {
-    const cfg = blockConfigLookup[blockId & 0xFFF];
-    const def = cfg && cfg.stateSchema && cfg.stateSchema[propName];
-    if (!def) return meta & 0xF;
-
-    let raw = 0;
-    if (def.bool) {
-        raw = value ? 1 : 0;
-    } else if (def.values) {
-        if (typeof value === "number" && !def.values.includes(value)) {
-            raw = value & def.mask;
-        } else {
-            const idx = def.values.indexOf(value);
-            raw = idx >= 0 ? idx : 0;
-        }
-    } else {
-        raw = (Number(value) | 0) & def.mask;
-    }
-
-    const clearMask = ~(def.mask << def.shift);
-    return ((meta & clearMask) | ((raw & def.mask) << def.shift)) & 0xF;
-}
-
-/**
- * 指定プロパティを次の値へ巡回（トグル・段階切替）した新しい 4bit 状態値を返す
- */
-export function cycleBlockStateProp(blockId, meta, propName) {
-    const cfg = blockConfigLookup[blockId & 0xFFF];
-    const def = cfg && cfg.stateSchema && cfg.stateSchema[propName];
-    if (!def) return meta & 0xF;
-
-    const raw = (meta >> def.shift) & def.mask;
-    const count = def.bool ? 2 : (def.values ? def.values.length : (def.mask + 1));
-    const nextRaw = (raw + 1) % count;
-    const clearMask = ~(def.mask << def.shift);
-    return ((meta & clearMask) | ((nextRaw & def.mask) << def.shift)) & 0xF;
-}
-
-/**
- * F3 HUD やデバッグログ向けに Minecraft Java Edition 準拠の BlockState 文字列を生成する
- * 例: "[facing=east,delay=4,powered=true]" / 状態なしは ""
- */
-export function formatBlockStateString(blockId, meta) {
-    const cfg = blockConfigLookup[blockId & 0xFFF];
-    const schema = cfg && cfg.stateSchema;
-    if (!schema) return "";
-    const keys = Object.keys(schema);
-    if (keys.length === 0) return "";
-
-    const parts = [];
-    for (let i = 0; i < keys.length; i++) {
-        const k = keys[i];
-        parts.push(`${k}=${getBlockStateProp(blockId, meta, k)}`);
-    }
-    return `[${parts.join(",")}]`;
 }
 
 /**
@@ -278,29 +162,11 @@ export function usesConnectionMeta(blockId) {
 }
 
 /**
- * 4bit BlockState から「3D回転・上下反転に使うビット」を事前コンパイル済み transformMask で O(1) 抽出する
- */
-export function getTransformMeta(blockId, rawMeta) {
-    if (!rawMeta) return 0;
-    const cfg = blockConfigLookup[blockId & 0xFFF];
-    return cfg ? (rawMeta & cfg.transformMask) : 0;
-}
-
-/**
  * レッドストーン関連ブロックかどうかを返す
  */
 export function isRedstoneComponent(blockId) {
     const cfg = blockConfigLookup[blockId & 0xFFF];
     return !!(cfg && cfg.redstoneConnectsWire !== false);
-}
-
-/**
- * BlockState(meta) に応じた動的発光量 (0..15) を事前ベイク済みテーブルから O(1) 返却する
- */
-export function getBlockLightEmissionForState(blockId, meta = 0) {
-    const cfg = blockConfigLookup[blockId & 0xFFF];
-    if (!cfg) return 0;
-    return cfg._stateLightLevels ? cfg._stateLightLevels[meta & 15] : (cfg.lightLevel & 15);
 }
 
 // フェンスの選択・視線判定用ボックス（物理衝突用の高さ1.5と分離し、見た目の高さ1.0に一致させる）
@@ -315,7 +181,13 @@ const FENCE_SELECTION_BOXES_PRECOMPUTED = Array.from({ length: 16 }, (_, meta) =
     return Object.freeze(boxes);
 });
 
-const WATER_SELECTION_BOX_ARRAY = Object.freeze([createBox(0, 0, 0, 1, 0.88, 1)]);
+const WATER_SELECTION_BOXES_BY_LEVEL = Object.freeze(
+    Array.from({ length: 16 }, (_, meta) => {
+        const isFalling = ((meta >> 3) & 1) !== 0;
+        const h = isFalling ? 1.0 : Math.max(0.12, ((8 - (meta & 7)) / 8) * 0.88);
+        return Object.freeze([createBox(0, 0, 0, 1, h, 1)]);
+    })
+);
 
 /**
  * 読み取り専用の衝突判定ボックス配列を返す（配列・Box3の新規生成なし・ゼロGC）
@@ -358,7 +230,7 @@ export function getSelectionBoxesReadOnly(blockId, meta = 0) {
     if (preset === "torch" || preset === "redstone_torch") return TORCH_SELECTION_BOXES[Math.min(meta & 7, 4)];
     if (preset === "lever") return LEVER_SELECTION_BOXES[Math.min(meta & 7, 4)];
     if (preset === "stairs") return CUSTOM_COLLISION_CACHE.stairs;
-    if (preset === "water") return WATER_SELECTION_BOX_ARRAY;
+    if (preset === "water") return WATER_SELECTION_BOXES_BY_LEVEL[meta & 15];
     if (cfg._selectionBoxes) return cfg._selectionBoxes;
 
     return DEFAULT_BOX_ARRAY;
@@ -667,9 +539,11 @@ const defaultBlockConfig = {
     selectionSize: { x: 1, y: 1, z: 1 },
     selectionOffset: { x: 0.5, y: 0.5, z: 0.5 },
 
-    // 宣言的 BlockState・描画管理フィールド（未指定時は registerBlock が自動補完）
+    // 宣言的 BlockState・描画管理フィールド（properties を書くだけで自動コンパイル）
+    properties: null,
+    interactCycle: null,
     stateSchema: STATE_SCHEMAS.NONE,
-    defaultState: 0,
+    defaultState: null,
     previewState: null,
     previewTexture: null,
     selectionPreset: null,
@@ -688,43 +562,24 @@ const defaultBlockConfig = {
     redstoneConnectsWire: false, // "all": 全4方向接続 / "axis": 前後2方向のみ / false: 非接続
     redstonePowerOutput: 0,      // ブロック自身の常時強出力 (0..15, REDSTONE_BLOCK = 15)
     redstoneDevice: false,       // 信号変化で再評価するデバイスか (LAMP, REDSTONE_TORCH, REPEATER)
-    redstoneRole: "none"         // "none" | "wire" | "block" | "lever" | "torch" | "repeater" | "lamp"
+    redstoneRole: "none",        // "none" | "wire" | "block" | "lever" | "torch" | "repeater" | "lamp"
+
+    // ブロック共通ライフサイクルフック（ブロック追加時にここへ書くだけでエンジンが自動実行）
+    onPlace: null,               // ({ x, y, z, blockId, state, getBlockId, getRaw }) => nextState | null
+    onNeighborChange: null,      // ({ x, y, z, blockId, state, getBlockId, getRaw, getLightOpacity }) => nextState | { id, state } | null
+    onRandomTick: null,          // ({ x, y, z, blockId, state, getBlockId, getRaw, getLightOpacity, getLightLevel, setBlock, nextRng, chunkHeight }) => void
+    onRedstoneUpdate: null       // ({ x, y, z, id, meta, cfg, power, setBlock, scheduleTick, engine }) => void
 };
 
 function createBlockConfig(customConfig) {
     return { ...defaultBlockConfig, ...customConfig };
 }
 
-/**
- * バリアント条件文字列（例: "lit=true" や "powered=true,delay=4"）が指定 state(0..15) に一致するか判定
- */
-function _matchesVariantCondition(schema, meta, condStr) {
-    if (!schema || !condStr) return false;
-    const clauses = condStr.split(",");
-    for (let i = 0; i < clauses.length; i++) {
-        const eqIdx = clauses[i].indexOf("=");
-        if (eqIdx < 0) return false;
-        const propName = clauses[i].slice(0, eqIdx).trim();
-        const expected = clauses[i].slice(eqIdx + 1).trim();
-        const def = schema[propName];
-        if (!def) return false;
-
-        const raw = (meta >> def.shift) & def.mask;
-        let actualStr;
-        if (def.bool) actualStr = raw !== 0 ? "true" : "false";
-        else if (def.values) actualStr = String(def.values[raw]);
-        else actualStr = String(raw);
-
-        if (actualStr !== expected) return false;
-    }
-    return true;
-}
-
 // 自動採番用のカウンタ
 let nextId = 0;
 
 /**
- * ブロック定義ヘルパー：ID採番＋BlockStateポリシー・16通り発光/バリアントテーブルを事前コンパイル
+ * ブロック定義ヘルパー：ID採番＋BlockStateポリシーを blockstate.js へ一元委譲して事前コンパイル
  */
 function registerBlock(config) {
     const id = (config.id !== undefined) ? config.id : nextId++;
@@ -736,27 +591,23 @@ function registerBlock(config) {
     const isSky = (id === 0 && config.geometryType === "none");
     const isOpaqueCube = (!isSky && !isTransparent && isFullCube);
 
-    // 1. stateSchema の自動推論（明示宣言があれば最優先）
-    let stateSchema = config.stateSchema;
-    if (!stateSchema) {
-        if (config.isLog) stateSchema = STATE_SCHEMAS.AXIS;
-        else if (config.isLadder) stateSchema = STATE_SCHEMAS.FACING_4;
-        else if (config.directional) stateSchema = STATE_SCHEMAS.STAIRS;
-        else if (config.isSlab) stateSchema = STATE_SCHEMAS.SLAB;
-        else if (gType === "fence" || gType === "pane") stateSchema = STATE_SCHEMAS.CONNECTIONS_4;
-        else stateSchema = STATE_SCHEMAS.NONE;
+    // 1. properties / stateSchema・transformMask・defaultState / previewState を blockstate.js で統一解決
+    const stateSchema = resolveStateSchema(config);
+    const transformMask = computeTransformMask(stateSchema, config.transformMask);
+    const schemaDefault = getSchemaDefaultState(stateSchema);
+    const defaultState = normalizeStateValue(stateSchema, config.defaultState, schemaDefault);
+    const previewState = (config.previewState !== undefined && config.previewState !== null)
+        ? normalizeStateValue(stateSchema, config.previewState, defaultState)
+        : null;
+
+    // interactCycle: "powered" のような1行宣言から onInteract を自動生成
+    let onInteract = config.onInteract ?? null;
+    if (!onInteract && typeof config.interactCycle === "string") {
+        const cycleProp = config.interactCycle;
+        onInteract = ({ blockId, state }) => cycleBlockStateProp(blockId, state, cycleProp);
     }
 
-    // 2. transformMask の自動導出（stateSchema の facing/axis/half のみ回転許可し、誤回転バグを構造的に根絶）
-    let transformMask = config.transformMask;
-    if (transformMask === undefined || transformMask === null) {
-        transformMask = 0;
-        if (stateSchema.facing) transformMask |= (stateSchema.facing.mask << stateSchema.facing.shift);
-        if (stateSchema.axis) transformMask |= (stateSchema.axis.mask << stateSchema.axis.shift);
-        if (stateSchema.half) transformMask |= (stateSchema.half.mask << stateSchema.half.shift);
-    }
-
-    // 3. placementRule / supportRule / shapeMode の自動推論
+    // 2. placementRule / supportRule / shapeMode の自動推論
     let placementRule = config.placementRule;
     if (!placementRule) {
         if (config.isLadder) placementRule = "wall_ladder";
@@ -801,6 +652,9 @@ function registerBlock(config) {
         isOpaqueCube,
         stateSchema,
         transformMask,
+        defaultState,
+        previewState,
+        onInteract,
         placementRule,
         supportRule,
         shapeMode,
@@ -809,39 +663,10 @@ function registerBlock(config) {
         redstoneConductive
     });
 
-    // 4. 16通りの BlockState (0..15) に対するバリアント設定＆発光量テーブルを事前コンパイル（ランタイムO(1)）
-    const stateLightLevels = new Uint8Array(16);
-    const compiledVariants = new Array(16).fill(null);
-    const variantEntries = cfg.stateVariants ? Object.entries(cfg.stateVariants) : null;
+    // 3. 16通りの BlockState (0..15) バリアント・発光量・F3文字列を blockstate.js で一括コンパイル＆登録
+    compileAndRegisterBlockState(cfg);
 
-    for (let m = 0; m < 16; m++) {
-        let merged = null;
-        if (variantEntries) {
-            for (let v = 0; v < variantEntries.length; v++) {
-                if (_matchesVariantCondition(stateSchema, m, variantEntries[v][0])) {
-                    merged = merged ? { ...merged, ...variantEntries[v][1] } : { ...variantEntries[v][1] };
-                }
-            }
-        }
-        if (typeof cfg.resolveStateVisual === "function") {
-            const dyn = cfg.resolveStateVisual(m, cfg);
-            if (dyn) merged = merged ? { ...merged, ...dyn } : dyn;
-        }
-        compiledVariants[m] = merged;
-
-        let light = cfg.lightLevel > 0 ? cfg.lightLevel : 0;
-        if (merged && typeof merged.lightLevel === "number") {
-            light = merged.lightLevel;
-        } else if (typeof cfg.getLightLevel === "function") {
-            light = cfg.getLightLevel(m);
-        }
-        stateLightLevels[m] = light & 15;
-    }
-
-    cfg._stateLightLevels = stateLightLevels;
-    cfg._compiledVariants = compiledVariants;
-
-    // 5. 選択ボックスの事前キャッシュ
+    // 4. 選択ボックスの事前キャッシュ
     if (cfg.selectionSize && gType !== "cube" && gType !== "stairs" && gType !== "fence" && gType !== "pane") {
         const s = cfg.selectionSize;
         const o = cfg.selectionOffset || { x: 0.5, y: 0.5, z: 0.5 };
@@ -872,11 +697,101 @@ export const BLOCK_CONFIG = {
 
     GRASS: registerBlock({
         name: "grass_block",
+        stateSchema: STATE_SCHEMAS.SNOWY,
+        defaultState: { snowy: false },
         textures: {
             top: "textures/blocks/grass_top.png",
             side: "textures/blocks/grass_side.png",
             bottom: "textures/blocks/dirt.png",
         },
+        stateVariants: {
+            "snowy=false": {
+                textures: {
+                    top: "textures/blocks/grass_top.png",
+                    side: "textures/blocks/grass_side.png",
+                    bottom: "textures/blocks/dirt.png",
+                }
+            },
+            "snowy=true": {
+                textures: {
+                    top: "textures/blocks/snow.png",
+                    side: "textures/blocks/grass_side_snowed.png",
+                    bottom: "textures/blocks/dirt.png",
+                }
+            }
+        },
+        onPlace: ({ x, y, z, blockId, state, getBlockId }) => {
+            const aboveId = getBlockId(x, y + 1, z);
+            const shouldBeSnowy = (aboveId === BLOCK_TYPES.SNOW);
+            return setBlockStateProp(blockId, state, "snowy", shouldBeSnowy);
+        },
+        onNeighborChange: ({ x, y, z, blockId, state, getBlockId }) => {
+            const aboveId = getBlockId(x, y + 1, z);
+            const shouldBeSnowy = (aboveId === BLOCK_TYPES.SNOW);
+            if (getBlockStateProp(blockId, state, "snowy") !== shouldBeSnowy) {
+                return setBlockStateProp(blockId, state, "snowy", shouldBeSnowy);
+            }
+            return null;
+        },
+        onRandomTick: ({ x, y, z, blockId, state, getBlockId, getLightOpacity, getLightLevel, setBlock, nextRng, chunkHeight }) => {
+            const aboveId = getBlockId(x, y + 1, z);
+            if (aboveId < 0) return;
+
+            // 1. 真上が雪ブロックなら snowy=true ステートを維持（土へ枯死させない）
+            if (aboveId === BLOCK_TYPES.SNOW) {
+                if (!getBlockStateProp(blockId, state, "snowy")) {
+                    const nextMeta = setBlockStateProp(blockId, state, "snowy", true);
+                    setBlock(x, y, z, (blockId & 0xFFF) | (nextMeta << 12));
+                }
+                return;
+            }
+
+            // 2. 雪以外の不透明ブロック・水・溶岩が真上にあると土(DIRT)へ変化
+            if (getLightOpacity(aboveId) >= 15 || aboveId === BLOCK_TYPES.WATER || aboveId === BLOCK_TYPES.LAVA) {
+                setBlock(x, y, z, BLOCK_TYPES.DIRT);
+                return;
+            }
+
+            // 3. 雪が無くなったのに snowy=true のままなら通常草へ戻す
+            if (getBlockStateProp(blockId, state, "snowy")) {
+                const nextMeta = setBlockStateProp(blockId, state, "snowy", false);
+                setBlock(x, y, z, (blockId & 0xFFF) | (nextMeta << 12));
+            }
+
+            // 4. 光量 >= 9 の草ブロックは周囲 3x3（高さ -1..+2）の露出した土へ伝播
+            const aboveLight = getLightLevel(x, y + 1, z);
+            if (aboveLight < 0) return;
+            const sky = (aboveLight >> 4) & 15;
+            const blk = aboveLight & 15;
+            if ((sky > blk ? sky : blk) < 9) return;
+
+            const r = nextRng();
+            const tx = x + ((r % 3) - 1);
+            const tz = z + ((((r >>> 4) | 0) % 3) - 1);
+            const ty = y + ((((r >>> 8) | 0) % 4) - 1);
+            if (ty <= 0 || ty >= chunkHeight - 1) return;
+
+            const targetId = getBlockId(tx, ty, tz);
+            if (targetId !== BLOCK_TYPES.DIRT) return;
+
+            const targetAboveId = getBlockId(tx, ty + 1, tz);
+            if (targetAboveId < 0) return;
+            if (targetAboveId !== BLOCK_TYPES.SNOW && getLightOpacity(targetAboveId) >= 2) return;
+
+            const targetAboveLight = getLightLevel(tx, ty + 1, tz);
+            if (targetAboveLight < 0) return;
+            const tSky = (targetAboveLight >> 4) & 15;
+            const tBlk = targetAboveLight & 15;
+            if ((tSky > tBlk ? tSky : tBlk) < 4) return;
+
+            const spreadMeta = setBlockStateProp(
+                BLOCK_TYPES.GRASS,
+                0,
+                "snowy",
+                targetAboveId === BLOCK_TYPES.SNOW
+            );
+            setBlock(tx, ty, tz, (BLOCK_TYPES.GRASS & 0xFFF) | (spreadMeta << 12));
+        }
     }),
 
     DIRT: registerBlock({
@@ -1205,6 +1120,8 @@ export const BLOCK_CONFIG = {
 
     WATER: registerBlock({
         name: "water",
+        stateSchema: STATE_SCHEMAS.LIQUID_LEVEL,
+        defaultState: 0,
         textures: { all: "textures/blocks/water.png" },
         collision: false,
         transparent: true,
@@ -1223,6 +1140,8 @@ export const BLOCK_CONFIG = {
 
     LAVA: registerBlock({
         name: "lava",
+        stateSchema: STATE_SCHEMAS.LIQUID_LEVEL,
+        defaultState: 0,
         textures: { all: "textures/blocks/lava.png" },
         collision: false,
         transparent: true,
@@ -1351,11 +1270,15 @@ export const BLOCK_CONFIG = {
         },
         resolveStateVisual: (meta) => {
             const p = meta & 15;
+            if (p === 0) {
+                return { defaultColor: 0x4d0000, isLightSource: false };
+            }
+            // 本家 Minecraft Java Edition RedStoneWireBlock.COLORS 準拠の緩やかな15段階減衰
             const f = p / 15;
-            const r = Math.round((p === 0 ? 0.30 : (0.40 + 0.60 * f)) * 255);
-            const g = Math.round((p === 0 ? 0.02 : Math.max(0, f * f * 0.32 - 0.05)) * 255);
-            const b = Math.round((p === 0 ? 0.02 : Math.max(0, f * f * 0.12 - 0.05)) * 255);
-            return { defaultColor: (r << 16) | (g << 8) | b, isLightSource: p > 0 };
+            const r = Math.round((0.40 + 0.60 * f) * 255);
+            const g = Math.round(Math.max(0, f * f * 0.70 - 0.50) * 255);
+            const b = Math.round(Math.max(0, f * f * 0.60 - 0.70) * 255);
+            return { defaultColor: (r << 16) | (g << 8) | b, isLightSource: false };
         },
         collision: false,
         transparent: true,
@@ -1385,8 +1308,7 @@ export const BLOCK_CONFIG = {
         redstoneConductive: true,     // 通電する不透明導体ブロックかつ点灯デバイス
         redstoneConnectsWire: false,
         redstoneDevice: true,
-        stateSchema: STATE_SCHEMAS.LIT,
-        defaultState: 0,
+        properties: { lit: false },
         geometryType: "cube",
         textures: { all: "textures/blocks/redstone_lamp_off.png" },
         stateVariants: {
@@ -1409,8 +1331,11 @@ export const BLOCK_CONFIG = {
         redstoneRole: "lever",
         redstoneConductive: false,
         redstoneConnectsWire: "all",
-        stateSchema: STATE_SCHEMAS.LEVER,
-        defaultState: 0,
+        properties: {
+            mount: ['floor', 'east', 'west', 'south', 'north'],
+            powered: false
+        },
+        interactCycle: "powered",
         placementRule: "mount_floor_or_wall",
         supportRule: "mount_opaque",
         shapeMode: "raw",
@@ -1428,8 +1353,7 @@ export const BLOCK_CONFIG = {
         screenFill: false,
         hardness: 0.5,
         selectionSize: { x: 0.5, y: 0.5, z: 0.5 },
-        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 },
-        onInteract: ({ blockId, state }) => cycleBlockStateProp(blockId, state, "powered")
+        selectionOffset: { x: 0.5, y: 0.25, z: 0.5 }
     }),
 
     REDSTONE_TORCH: registerBlock({
@@ -1438,14 +1362,16 @@ export const BLOCK_CONFIG = {
         redstoneConductive: false,
         redstoneConnectsWire: "all",
         redstoneDevice: true,
-        stateSchema: STATE_SCHEMAS.TORCH,
-        defaultState: 8, // mount=0(floor), lit=true(bit3)
-        previewState: 8,
+        properties: {
+            mount: ['floor', 'east', 'west', 'south', 'north'],
+            lit: true
+        },
+        previewState: { mount: 'floor', lit: true },
         placementRule: "mount_floor_or_wall",
         supportRule: "mount_opaque",
         shapeMode: "propRaw:mount",
         selectionPreset: "torch",
-        geometryType: "redstone_torch", // 独自のレッドストーントーチ専用ジオメトリ
+        geometryType: "redstone_torch",
         alphaCutout: true,
         textures: { all: "textures/blocks/redstone_torch_on.png" },
         stateVariants: {
@@ -1478,8 +1404,11 @@ export const BLOCK_CONFIG = {
         redstoneConnectsWire: "axis",
         redstoneDevice: true,
         repeaterPowered: false,
-        stateSchema: STATE_SCHEMAS.REPEATER_4,
-        defaultState: 0,
+        properties: {
+            facing: ['east', 'north', 'west', 'south'],
+            delay: [2, 4, 6, 8]
+        },
+        interactCycle: "delay",
         placementRule: "facing_horizontal",
         supportRule: "floor_opaque",
         shapeMode: "propRaw:delay",
@@ -1499,8 +1428,7 @@ export const BLOCK_CONFIG = {
         screenFill: false,
         hardness: 0.0,
         selectionSize: { x: 1, y: 0.125, z: 1 },
-        selectionOffset: { x: 0.5, y: 0.0625, z: 0.5 },
-        onInteract: ({ blockId, state }) => cycleBlockStateProp(blockId, state, "delay")
+        selectionOffset: { x: 0.5, y: 0.0625, z: 0.5 }
     }),
 
     // 通電中リピーター（4方向 x 4段階遅延 x ON/OFF の完全32状態、インベントリ非表示）
@@ -1512,8 +1440,11 @@ export const BLOCK_CONFIG = {
         redstoneConnectsWire: "axis",
         redstoneDevice: true,
         repeaterPowered: true,
-        stateSchema: STATE_SCHEMAS.REPEATER_4,
-        defaultState: 0,
+        properties: {
+            facing: ['east', 'north', 'west', 'south'],
+            delay: [2, 4, 6, 8]
+        },
+        interactCycle: "delay",
         placementRule: "facing_horizontal",
         supportRule: "floor_opaque",
         shapeMode: "propRaw:delay",
@@ -1534,8 +1465,7 @@ export const BLOCK_CONFIG = {
         screenFill: false,
         hardness: 0.0,
         selectionSize: { x: 1, y: 0.125, z: 1 },
-        selectionOffset: { x: 0.5, y: 0.0625, z: 0.5 },
-        onInteract: ({ blockId, state }) => cycleBlockStateProp(blockId, state, "delay")
+        selectionOffset: { x: 0.5, y: 0.0625, z: 0.5 }
     }),
 
     // 通常の松明（床/壁5方向対応・松明標準ジオメトリ geometryType: "torch" を使用・非レッドストーン）
@@ -2164,15 +2094,19 @@ const GEOMETRY_BUILDERS = {
         return mergeGeometriesPreservingGroups(geometries);
     },
     water: (config, meta = 0) => {
-        // meta === 1（上に同種液体がある水中ブロック）は高さ 1.0 にして段間の横縞隙間を完全防止
-        if (meta === 1) {
+        // bit3(8) = 落下中または上に同種液体があるフル高さブロック (1.0)
+        const isFalling = ((meta >> 3) & 1) !== 0;
+        if (isFalling) {
             const geom = new THREE.BoxGeometry(1, 1, 1);
             geom.translate(0.5, 0.5, 0.5);
             return geom;
         }
-        const geom = new THREE.BoxGeometry(1, 0.88, 1);
-        geom.translate(0.5, 0.44, 0.5);
-        adjustSideUVs(geom, 0.88);
+        // level 0..7 に応じて 0.88 から段階的に水面を下げる
+        const level = meta & 7;
+        const height = Math.max(0.12, ((8 - level) / 8) * 0.88);
+        const geom = new THREE.BoxGeometry(1, height, 1);
+        geom.translate(0.5, height * 0.5, 0.5);
+        adjustSideUVs(geom, height);
         return geom;
     },
     leaves: () => {
