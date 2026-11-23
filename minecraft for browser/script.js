@@ -1,30 +1,57 @@
 "use strict";
 import * as THREE from './build/three.module.js';
-import { BLOCK_CONFIG, BLOCK_TYPES, SHARED_SKY_UNIFORM, SHARED_BRIGHTNESS_UNIFORM, createBlockMesh, getBlockMaterials, getBlockConfiguration, getBlockGeometry, getCollisionBoxes, getCollisionBoxesReadOnly, getSelectionBoxesReadOnly, usesConnectionMeta, calculatePlacementMeta, canPlaceBlockAt, isSupportDependentBlock, applyMetadataTransform, getLogRotationMatrix, getLogRotationMatrixReadOnly, applyRotationToCollisionBox, getCustomGeometryMatrix, idToKey, keyToId } from './blocks.js';
+import {
+    BLOCK_CONFIG, BLOCK_TYPES, SHARED_SKY_UNIFORM, SHARED_BRIGHTNESS_UNIFORM,
+    STATE_SCHEMAS, MOUNT_SUPPORT_DX, MOUNT_SUPPORT_DY, MOUNT_SUPPORT_DZ,
+    onBlockRegistered, registerCustomBlock, registerGeometryBuilder, registerPlacementRule, registerSupportRule,
+    getBlockStateProp, getBlockStateRawProp, setBlockStateProp, formatBlockStateString,
+    getBlockMaterials, getBlockMaterialsForState, getBlockConfiguration, getBlockGeometry,
+    getCollisionBoxes, getCollisionBoxesReadOnly, getSelectionBoxesReadOnly,
+    getTransformMeta, isRedstoneComponent, getBlockLightEmissionForState,
+    calculatePlacementMeta, canPlaceBlockAt, isSupportDependentBlock,
+    getLogRotationMatrixReadOnly, applyRotationToCollisionBox, getCustomGeometryMatrix,
+    idToKey, keyToId
+} from './blocks.js';
 import { createMinecraftBreakParticles, updateBlockParticles } from './particles.js';
 import { setMinecraftSky, loadCloudTexture, updateCloudGrid, updateCloudTiles, updateCloudOpacity, adjustCloudLayerDepth } from './cloudsky.js';
-import { determineBiome, BIOME_CONFIG, BIOME_ID_TO_NAME } from './biomes/biomes.js';
+import { determineBiome, BIOME_CONFIG } from './biomes/biomes.js';
 import { Features } from './features.js';
 import { FeatureRules } from './feature_rules.js';
 
-// 各ブロックIDが「面を完全に隠す（不透明な立方体か）」を保持する高速参照用配列
-const _isOpaqueBlock = new Uint8Array(1024); // IDの最大数に合わせて調整
+// ======================================================
+// 【ブロック属性 高速ルックアップテーブル一元管理】(MAX_BLOCK_IDS = 1024)
+// ======================================================
+const MAX_BLOCK_IDS = 1024;
+const _isOpaqueBlock = new Uint8Array(MAX_BLOCK_IDS);
+const _isRedstoneConductive = new Uint8Array(MAX_BLOCK_IDS);
+const _blockConfigFastArray = new Array(MAX_BLOCK_IDS).fill(null);
+const _blockMaterialsFastArray = new Array(MAX_BLOCK_IDS).fill(null);
+const _isTransparentBlock = new Uint8Array(MAX_BLOCK_IDS);
+const _isCustomGeometryBlock = new Uint8Array(MAX_BLOCK_IDS);
+const _isGreedyCubeBlock = new Uint8Array(MAX_BLOCK_IDS);
+const _cullSameBlock = new Uint8Array(MAX_BLOCK_IDS);
+const _isLogBlock = new Uint8Array(MAX_BLOCK_IDS);
 
-Object.values(BLOCK_CONFIG).forEach(cfg => {
-    // 以下の条件のいずれかに当てはまるなら「透過（不透明ではない）」とみなす
-    // 1. 透明設定(transparent)が true
-    // 2. 形状が cube ではない（階段、ハーフブロック、草など）
-    // 3. 空(SKY)である
-    const isTransparent = cfg.transparent === true;
-    const isFullCube = cfg.geometryType === "cube" || cfg.isLog === true;
-    const isSky = cfg.id === BLOCK_CONFIG.SKY.id;
+function _syncBlockFastEntry(id, cfg) {
+    if (id < 0 || id >= MAX_BLOCK_IDS) return;
+    _blockConfigFastArray[id] = cfg;
+    _blockMaterialsFastArray[id] = null;
+    if (!cfg) return;
 
-    if (!isSky && !isTransparent && isFullCube) {
-        _isOpaqueBlock[cfg.id] = 1; // 石、土、原木などは 1
-    } else {
-        _isOpaqueBlock[cfg.id] = 0; // ガラス、階段、水などは 0
-    }
-});
+    _isOpaqueBlock[id] = cfg.isOpaqueCube ? 1 : 0;
+    _isRedstoneConductive[id] = cfg.redstoneConductive ? 1 : 0;
+    _isTransparentBlock[id] = cfg.transparent ? 1 : 0;
+    _cullSameBlock[id] = cfg.cullAdjacentFaces === true ? 1 : 0;
+    _isLogBlock[id] = cfg.isLog === true ? 1 : 0;
+    const isCubeLike = !cfg.customGeometry && (cfg.geometryType === 'cube' || cfg.geometryType === 'leaves');
+    _isGreedyCubeBlock[id] = (id !== BLOCK_TYPES.SKY && isCubeLike) ? 1 : 0;
+    _isCustomGeometryBlock[id] = (id !== BLOCK_TYPES.SKY && !isCubeLike && cfg.geometryType !== 'none') ? 1 : 0;
+}
+
+for (let id = 0; id < MAX_BLOCK_IDS; id++) {
+    const cfg = getBlockConfiguration(id);
+    if (cfg) _syncBlockFastEntry(id, cfg);
+}
 
 /* ======================================================
    【修正版・高精度ノイズ関数群】
@@ -1001,8 +1028,6 @@ export const ChunkSaveManager = {
     }
 };
 
-//ブロックの状態
-
 /**
  * パネル系・フェンス系ブロックの接続マスクを取得する共通関数
  */
@@ -1033,36 +1058,11 @@ function getConnectionMask(x, y, z, targetGeometryType) {
     return mask;
 }
 
-// 呼び出し用関数をスッキリさせる
-function getFenceConnectionMask(x, y, z) {
-    return getConnectionMask(x, y, z, "fence");
-}
-
-function getPaneConnectionMask(x, y, z) {
-    return getConnectionMask(x, y, z, "pane");
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 const MAX_CACHE_SIZE = 15000;
 const terrainHeightCache = new Map();
 
 const SEA_LEVEL = 62;             // 本家マイクラの海面(Y=62)
-const BASE_HEIGHT = 63;           // 標準的な地表のベース(Y=63)
-const NOISE_SCALE = 0.004;
 
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 256;
@@ -1118,12 +1118,6 @@ const BEDROCK_LEVEL = 0;
 const spawnX = 0;
 const spawnZ = 0;
 
-// 1. キャッシュを無視して、初期ノイズから直接高さを計算する
-const initialNoise = fractalNoise2D(spawnX * NOISE_SCALE, spawnZ * NOISE_SCALE, 5, 0.5);
-let heightModifier = initialNoise * 35;
-if (initialNoise > 0.2) {
-    heightModifier += Math.pow(initialNoise - 0.2, 2) * 60;
-}
 // 本来の地表の高さ + 余裕を持たせた2ブロック上
 const spawnY = Math.max(getTerrainHeight(spawnX, spawnZ), SEA_LEVEL + 5) + 2;
 
@@ -1336,15 +1330,14 @@ function collectCollisionBoxes(sMinX, sMinY, sMinZ, sMaxX, sMaxY, sMaxZ) {
                 }
 
                 const meta = (rawVoxel >> 12) & 0xF;
-                const isConn = (gType === "fence" || gType === "pane");
                 const relBoxes = getCollisionBoxesReadOnly(gType, meta);
-                const needsRot = (!isConn && meta !== 0);
+                const tMeta = getTransformMeta(id, meta);
 
                 for (let j = 0, len = relBoxes.length; j < len; j++) {
                     if (count >= MAX_COLL_BOXES) return count;
                     let src = relBoxes[j];
-                    if (needsRot) {
-                        applyRotationToCollisionBox(src, meta, _collRotBox);
+                    if (tMeta !== 0) {
+                        applyRotationToCollisionBox(src, tMeta, _collRotBox);
                         src = _collRotBox;
                     }
                     _collBoxes[ptr] = x + src.min.x;
@@ -1513,14 +1506,13 @@ function checkAABBCollision(aabb) {
                 }
 
                 const meta = (rawVoxel >> 12) & 0xF;
-                const isConn = (gType === "fence" || gType === "pane");
                 const relBoxes = getCollisionBoxesReadOnly(gType, meta);
-                const needsRot = (!isConn && meta !== 0);
+                const tMeta = getTransformMeta(id, meta);
 
                 for (let j = 0, len = relBoxes.length; j < len; j++) {
                     let src = relBoxes[j];
-                    if (needsRot) {
-                        applyRotationToCollisionBox(src, meta, _collRotBox);
+                    if (tMeta !== 0) {
+                        applyRotationToCollisionBox(src, tMeta, _collRotBox);
                         src = _collRotBox;
                     }
                     if (
@@ -2084,14 +2076,7 @@ function updateNormalPhysics() {
     player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * lerpFactor;
     player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * lerpFactor;
 
-    // 5. 停止・微小速度の処理
-    const isMovingInput = _tmpDesiredVel.lengthSq() > 0.00001;
-    if (!isMovingInput && player.onGround) {
-        // 入力がない時は地上で素早く停止させる（慣性の引きずりを防止）
-        player.velocity.x *= 1.0;
-        player.velocity.z *= 1.0;
-    }
-
+    // 5. 微小速度のゼロクランプ
     if (Math.abs(player.velocity.x) < 0.001) player.velocity.x = 0;
     if (Math.abs(player.velocity.z) < 0.001) player.velocity.z = 0;
 
@@ -2341,9 +2326,6 @@ let chunkUpdateRunning = false;
 
 // 静的定数・キャッシュ
 const CHUNK_MAX_FRAME_TIME = 8;
-const NEIGHBOR_OFFSETS = [
-    [1, 0], [-1, 0], [0, 1], [0, -1]
-];
 
 /**
  * チャンク更新要求
@@ -2487,8 +2469,8 @@ function syncSingleChunkSkyLight(mesh) {
     SHARED_SKY_UNIFORM.value = getSkyLightFactor(gameTime);
 }
 
-function updateGlobalSkyLight() {
-    SHARED_SKY_UNIFORM.value = getSkyLightFactor(gameTime);
+function updateGlobalSkyLight(time = gameTime) {
+    SHARED_SKY_UNIFORM.value = getSkyLightFactor(time);
 }
 
 /* ======================================================
@@ -2496,11 +2478,11 @@ function updateGlobalSkyLight() {
    ====================================================== */
 const _pendingCoordTmp = { cx: 0, cz: 0 };
 
-function processPendingChunkUpdates() {
+function processPendingChunkUpdates(budgetMs = 4.0) {
     if (pendingChunkUpdates.size === 0) return;
 
     const startTime = performance.now();
-    const FRAME_BUDGET = 4.0; // 予算 4.0ms
+    const FRAME_BUDGET = budgetMs;
 
     for (const key of pendingChunkUpdates) {
         pendingChunkUpdates.delete(key);
@@ -2786,10 +2768,9 @@ function getBlockLightOpacity(blockId) {
     return cfg.lightOpacity !== undefined ? cfg.lightOpacity : 1;
 }
 
-function getBlockLightEmission(blockId) {
+function getBlockLightEmission(blockId, meta = 0) {
     if (blockId === 0) return 0;
-    const cfg = _blockConfigFastArray[blockId];
-    return (cfg && cfg.lightLevel > 0) ? (cfg.lightLevel & 15) : 0;
+    return getBlockLightEmissionForState(blockId, meta);
 }
 
 // 読み込み済みチャンクからのみ参照（未ロードチャンクの同期生成を厳禁）
@@ -2806,11 +2787,16 @@ function _getWorldLightCell(wx, wy, wz) {
     return lMap[wy | ((wz & 15) << 8) | ((wx & 15) << 12)];
 }
 
-function _getWorldBlockIdLoaded(wx, wy, wz) {
+function _getWorldRawLoaded(wx, wy, wz) {
     if (wy < 0 || wy >= CH) return 0;
     const vData = _getLoadedVoxelData(wx >> 4, wz >> 4);
     if (!vData) return -1;
-    return vData[wy | ((wz & 15) << 8) | ((wx & 15) << 12)] & 0xFFF;
+    return vData[wy | ((wz & 15) << 8) | ((wx & 15) << 12)];
+}
+
+function _getWorldBlockIdLoaded(wx, wy, wz) {
+    const raw = _getWorldRawLoaded(wx, wy, wz);
+    return raw < 0 ? -1 : (raw & 0xFFF);
 }
 
 function _setWorldSkyLight(wx, wy, wz, val, outDirtyChunks) {
@@ -2951,8 +2937,8 @@ function updateLightAtBlockChange(wx, wy, wz, oldRaw, newRaw, outDirtyChunks) {
     const newId = newRaw & 0xFFF;
     const oldOpacity = getBlockLightOpacity(oldId);
     const newOpacity = getBlockLightOpacity(newId);
-    const oldEmit = getBlockLightEmission(oldId);
-    const newEmit = getBlockLightEmission(newId);
+    const oldEmit = getBlockLightEmission(oldId, (oldRaw >> 12) & 0xF);
+    const newEmit = getBlockLightEmission(newId, (newRaw >> 12) & 0xF);
 
     // 光学特性が完全に同一ならライト再計算不要（石->土、階段回転変更など）
     if (oldOpacity === newOpacity && oldEmit === newEmit) return;
@@ -3004,8 +2990,8 @@ function updateLightAtBlockChange(wx, wy, wz, oldRaw, newRaw, outDirtyChunks) {
                     const nVal = nCell & 15;
                     if (nVal === 0) continue;
 
-                    const nId = _getWorldBlockIdLoaded(nx, ny, nz);
-                    const nEmit = nId >= 0 ? getBlockLightEmission(nId) : 0;
+                    const nRaw = _getWorldRawLoaded(nx, ny, nz);
+                    const nEmit = nRaw >= 0 ? getBlockLightEmission(nRaw & 0xFFF, (nRaw >> 12) & 0xF) : 0;
 
                     if (nVal < oldVal) {
                         if (nEmit > 0) {
@@ -3330,10 +3316,10 @@ function generateChunkLightMap(chunkKey, voxelData) {
                 const type = voxelData[idx] & 0xFFF;
 
                 if (type !== 0) {
-                    const cfg = _blockConfigFastArray[type];
-                    if (cfg && cfg.lightLevel > 0 && bSeedCount < 4096) {
+                    const emit = getBlockLightEmission(type, (voxelData[idx] >> 12) & 0xF);
+                    if (emit > 0 && bSeedCount < 4096) {
                         _blockSeedIndices[bSeedCount] = idx;
-                        _blockSeedLevels[bSeedCount] = cfg.lightLevel & 15;
+                        _blockSeedLevels[bSeedCount] = emit;
                         bSeedCount++;
                     }
                 }
@@ -3626,36 +3612,98 @@ const CUBE_NORMALS = new Int8Array([
 
 const CUBE_UVS = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
 
-// blocks.js の lookup テーブルから、ID を添字とした平坦な高速配列を事前構築
-const _blockConfigFastArray = new Array(256).fill(null);
-const _blockMaterialsFastArray = new Array(256).fill(null);
-const _isTransparentBlock = new Uint8Array(256);
-const _isCustomGeometryBlock = new Uint8Array(256);
-const _isGreedyCubeBlock = new Uint8Array(256);
-const _cullSameBlock = new Uint8Array(256);
-const _isLogBlock = new Uint8Array(256);
+// 実行時に registerCustomBlock で追加された新ブロックを先頭定義の全高速配列＆名称表へ自動同期
+onBlockRegistered((key, cfg) => {
+    _syncBlockFastEntry(cfg.id, cfg);
+    BLOCK_NAMES[cfg.id] = key.charAt(0) + key.slice(1).toLowerCase();
+});
 
-for (let id = 0; id < 256; id++) {
-    const cfg = getBlockConfiguration(id);
-    _blockConfigFastArray[id] = cfg;
-    if (cfg) {
-        _isTransparentBlock[id] = cfg.transparent ? 1 : 0;
-        _cullSameBlock[id] = cfg.cullAdjacentFaces === true ? 1 : 0;
-        _isLogBlock[id] = cfg.isLog === true ? 1 : 0;
-        // cube および leaves(1x1x1立方体)は 2D Greedy Meshing 対象、それ以外はカスタム事前ベイク対象
-        const isCubeLike = !cfg.customGeometry && (cfg.geometryType === 'cube' || cfg.geometryType === 'leaves');
-        _isGreedyCubeBlock[id] = (id !== BLOCK_TYPES.SKY && isCubeLike) ? 1 : 0;
-        _isCustomGeometryBlock[id] = (id !== BLOCK_TYPES.SKY && !isCubeLike && cfg.geometryType !== 'none') ? 1 : 0;
+/**
+ * 宣言的 shapeMode からカスタムジオメトリ生成用 shapeMeta(0..15) を統一解決する（ハードコード分岐排除）
+ */
+function resolveDynamicShapeMeta(type, cfg, meta, x, y, z, aboveType, getFn, getRawFn) {
+    const mode = cfg.shapeMode;
+    if (!mode || mode === "static") return 0;
+    if (mode === "raw") return meta;
+    if (mode === "connect_fence") return getConnectionMaskLocal(x, y, z, "fence", getFn);
+    if (mode === "connect_pane") return getConnectionMaskLocal(x, y, z, "pane", getFn);
+    if (mode === "connect_wire") return getRedstoneWireConnectionMaskLocal(x, y, z, getRawFn);
+    if (mode === "liquid") return (aboveType === type) ? 1 : 0;
+    if (mode.startsWith("propRaw:")) {
+        return getBlockStateRawProp(type, meta, mode.slice(8));
     }
+    return meta;
 }
 
-function getBlockMaterialsFast(type) {
+function getBlockMaterialsFast(type, meta = 0) {
+    const cfg = _blockConfigFastArray[type];
+    if (cfg && cfg.hasStateMaterials) {
+        return getBlockMaterialsForState(type, meta);
+    }
     let mats = _blockMaterialsFastArray[type];
     if (mats === null) {
         mats = getBlockMaterials(type);
         _blockMaterialsFastArray[type] = mats;
     }
     return mats;
+}
+
+/**
+ * ワイヤーから方向 (dx, dz) にある隣接ブロックへ接続すべきか判定する（リピーターは入出力2方向のみ接続）
+ */
+function canWireConnectToBlock(nRaw, dx, dz) {
+    const nId = nRaw & 0xFFF;
+    const nCfg = _blockConfigFastArray[nId];
+    const mode = nCfg && nCfg.redstoneConnectsWire;
+    if (!mode) return false;
+    if (mode === "axis") {
+        const rot = (nRaw >> 12) & 3;
+        const rdx = REPEATER_OUT_DX[rot];
+        const rdz = REPEATER_OUT_DZ[rot];
+        // 前後(入出力)2方向のみ接続し、側面には接続しない
+        return (dx === rdx && dz === rdz) || (dx === -rdx && dz === -rdz);
+    }
+    return true;
+}
+
+/**
+ * 8bit ワイヤー接続マスクを返す（下位4bit=水平NSEW、上位4bit=1段上へ壁を登るNSEW）
+ */
+function getRedstoneWireConnectionMaskLocal(lx, ly, lz, getRawFn) {
+    let mask = 0;
+    const aboveId = (ly < CH_H - 1) ? (getRawFn(lx, ly + 1, lz) & 0xFFF) : 0;
+    const canClimbUp = (_isOpaqueBlock[aboveId] === 0);
+
+    for (let i = 0; i < 4; i++) {
+        const dx = _CONN_OFFSETS_DX[i];
+        const dz = _CONN_OFFSETS_DZ[i];
+        const nx = lx + dx;
+        const nz = lz + dz;
+        const bit = _CONN_BITS[i];
+
+        const sameRaw = getRawFn(nx, ly, nz);
+        const sameId = sameRaw & 0xFFF;
+
+        if (canWireConnectToBlock(sameRaw, dx, dz)) {
+            mask |= (1 << bit);
+            continue;
+        }
+
+        // 1ブロック上へ登るワイヤー（自直上が不透明でなく、隣が壁/段差）
+        if (canClimbUp && ly < CH_H - 1 && (getRawFn(nx, ly + 1, nz) & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE) {
+            mask |= (1 << bit);
+            if (_isOpaqueBlock[sameId] === 1) {
+                mask |= (1 << (bit + 4)); // 壁を垂直に登る立ち上がり面を有効化
+            }
+            continue;
+        }
+
+        // 1ブロック下へ降りるワイヤー（隣の同高度が不透明でなければ接続）
+        if (ly > 0 && _isOpaqueBlock[sameId] === 0 && (getRawFn(nx, ly - 1, nz) & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE) {
+            mask |= (1 << bit);
+        }
+    }
+    return mask;
 }
 
 // --- [最適化用] 関数の外で再利用する一時オブジェクト ---
@@ -3788,7 +3836,8 @@ function releaseUploadedTypedArray() {
 }
 
 function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
-    const key = (type << 8) | ((shapeMeta & 0xF) << 4) | (transformMeta & 0xF);
+    // 8bit shapeMeta(ワイヤー水平4bit+上り4bit等)を衝突なしでキャッシュ
+    const key = (type << 12) | ((shapeMeta & 0xFF) << 4) | (transformMeta & 0xF);
     const cached = _bakedCustomTemplateCache.get(key);
     if (cached !== undefined) return cached;
 
@@ -4133,12 +4182,12 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
     }
     if (chunkMaxY < 0) return container;
 
-    // 3x3 境界ビュー対応 O(1) ボクセル取得（角座標対応・同期連鎖生成ゼロ）
-    function get(x, y, z) {
+    // 3x3 境界ビュー対応 O(1) 生ボクセル取得（16bit: ID + 4bit BlockState）
+    function getRawLocal(x, y, z) {
         if (y < 0 || y >= CH_H) return 0;
 
         if (((x | z) & ~15) === 0) {
-            return voxelData[y | (z << 8) | (x << 12)] & 0xFFF;
+            return voxelData[y | (z << 8) | (x << 12)];
         }
 
         const dx = (x >> 4) + 1;
@@ -4148,7 +4197,11 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
         const nData = _boundaryVoxelGrid[dx * 3 + dz];
         if (!nData) return 0;
 
-        return nData[y | ((z & 15) << 8) | ((x & 15) << 12)] & 0xFFF;
+        return nData[y | ((z & 15) << 8) | ((x & 15) << 12)];
+    }
+
+    function get(x, y, z) {
+        return getRawLocal(x, y, z) & 0xFFF;
     }
 
     // 3x3 境界ビュー対応 O(1) ライト取得（角座標対応・未ロード境界の地下ライトリーク防止）
@@ -4342,7 +4395,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
 
                     const myOp = _isOpaqueBlock[type];
                     const myCs = _cullSameBlock[type];
-                    const mats = getBlockMaterialsFast(type);
+                    const mats = getBlockMaterialsFast(type, (raw >> 12) & 0xF);
 
                     const upType = (y < H_MAX) ? (voxelData[vIdx + 1] & 0xFFF) : 0;
                     if (shouldShowFace(type, myOp, myCs, upType) && mats) {
@@ -4391,7 +4444,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
 
                     const myOp = _isOpaqueBlock[type];
                     const myCs = _cullSameBlock[type];
-                    const mats = getBlockMaterialsFast(type);
+                    const mats = getBlockMaterialsFast(type, (raw >> 12) & 0xF);
 
                     const pxType = (x < 15) ? (voxelData[vIdx + STRIDE_X] & 0xFFF) : get(x + 1, y, z);
                     if (shouldShowFace(type, myOp, myCs, pxType) && mats) {
@@ -4439,7 +4492,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
 
                     const myOp = _isOpaqueBlock[type];
                     const myCs = _cullSameBlock[type];
-                    const mats = getBlockMaterialsFast(type);
+                    const mats = getBlockMaterialsFast(type, (raw >> 12) & 0xF);
 
                     const pzType = (z < 15) ? (voxelData[vIdx + STRIDE_Z] & 0xFFF) : get(x, y, z + 1);
                     if (shouldShowFace(type, myOp, myCs, pzType) && mats) {
@@ -4536,17 +4589,12 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                         if (visMask === 0) continue;
                     }
 
-                    const isConnBlock = (gType === "fence" || gType === "pane");
-                    let shapeMeta = meta;
-                    if (gType === "fence") shapeMeta = getConnectionMaskLocal(x, y, z, "fence", get);
-                    else if (gType === "pane") shapeMeta = getConnectionMaskLocal(x, y, z, "pane", get);
-                    else if (isLiquid) shapeMeta = (aboveType === type) ? 1 : 0;
-
-                    const transformMeta = (isConnBlock || isLiquid) ? 0 : meta;
+                    const shapeMeta = resolveDynamicShapeMeta(type, cfg, meta, x, y, z, aboveType, get, getRawLocal);
+                    const transformMeta = getTransformMeta(type, meta);
                     const bakedGroups = getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta);
                     if (!bakedGroups || bakedGroups.length === 0) continue;
 
-                    const allMats = getBlockMaterialsFast(type);
+                    const allMats = getBlockMaterialsFast(type, meta);
                     if (!allMats) continue;
 
                     const isWaterBlock = (type === BLOCK_TYPES.WATER || cfg.isWater === true);
@@ -4861,13 +4909,12 @@ function blockIntersectsPlayer(blockPos, playerAABB, tolerance = 0.01, blockId =
 
         const geomType = cfg.geometryType || "cube";
         const boxes = getCollisionBoxes(geomType, meta);
-        // fence / pane は meta が接続ビットマスクであり回転ではないため回転適用しない
-        const needsRotation = (geomType !== "fence" && geomType !== "pane" && geomType !== "cube");
+        const tMeta = getTransformMeta(blockId, meta);
 
         for (let i = 0; i < boxes.length; i++) {
             let box = boxes[i];
-            if (needsRotation) {
-                applyRotationToCollisionBox(box, meta, _placeRotatedBox);
+            if (tMeta !== 0) {
+                applyRotationToCollisionBox(box, tMeta, _placeRotatedBox);
                 box = _placeRotatedBox;
             }
 
@@ -4895,8 +4942,7 @@ function blockIntersectsPlayer(blockPos, playerAABB, tolerance = 0.01, blockId =
     );
 }
 
-// ブロックの設置／破壊操作を行い voxelModifications を更新し、必要なチャンク（領域）再生成を指示する
-const placedCustomBlocks = new Map();
+// ブロック設置・破壊操作用の再利用作業オブジェクト
 let lastPlacedKey = null;
 const _workVec3_CamDir = new THREE.Vector3();
 const _workVec3_Center = new THREE.Vector3();
@@ -5001,11 +5047,9 @@ function updateNeighborBlockStates(originX, originY, originZ) {
         const cfg = getBlockConfiguration(id);
         if (!cfg) continue;
 
-        // 1. フェンス・板ガラスの接続メタデータを保存データへ同期
-        if (cfg.geometryType === "fence" || cfg.geometryType === "pane") {
-            const newMask = (cfg.geometryType === "fence")
-                ? getFenceConnectionMask(wx, wy, wz)
-                : getPaneConnectionMask(wx, wy, wz);
+        // 1. 宣言的 autoSyncConnection 対象ブロックの接続メタデータを保存データへ自動同期
+        if (cfg.autoSyncConnection) {
+            const newMask = getConnectionMask(wx, wy, wz, cfg.geometryType);
             if (newMask !== meta) {
                 const cx = wx >> 4;
                 const cz = wz >> 4;
@@ -5025,12 +5069,6 @@ function updateNeighborBlockStates(originX, originY, originZ) {
             createMinecraftBreakParticles(_particleCenterTmp, id, 0.8);
             ChunkSaveManager.setBlock(cx, cz, wx & 15, wy, wz & 15, BLOCK_TYPES.SKY);
             updateLightAtBlockChange(wx, wy, wz, raw, BLOCK_TYPES.SKY, _lightDirtySet);
-
-            const hash = getVoxelHash(wx, wy, wz);
-            if (placedCustomBlocks.has(hash)) {
-                scene.remove(placedCustomBlocks.get(hash));
-                placedCustomBlocks.delete(hash);
-            }
 
             if (wx !== originX || wy !== originY || wz !== originZ) {
                 _extraUpdateCoords.push({ x: wx, y: wy, z: wz });
@@ -5103,28 +5141,29 @@ function interactWithBlock(action) {
 
         createMinecraftBreakParticles(_workVec3_Center, voxelIdOnly, 1.0);
 
-        if (placedCustomBlocks.has(candidateHash)) {
-            scene.remove(placedCustomBlocks.get(candidateHash));
-            placedCustomBlocks.delete(candidateHash);
-        }
-
         _lightDirtySet.clear();
         ChunkSaveManager.setBlock(cx, cz, lx, by, lz, BLOCK_TYPES.SKY);
         updateLightAtBlockChange(bx, by, bz, voxel, BLOCK_TYPES.SKY, _lightDirtySet);
         if (lastPlacedKey === candidateHash) lastPlacedKey = null;
     }
     // ====================
-    // 設置ロジック（ブロック固有 BlockState インタラクションを優先評価）
+    // 設置ロジック（クリックした対象ブロック hit 本体の onInteract を最優先評価）
     // ====================
     else if (action === "place") {
-        // スニーク中でなく、対象ブロックに onInteract（ドア開閉・レバー・ボタン・遅延切替等）が定義されていれば優先実行
-        if (!sneakActive && cfg && typeof cfg.onInteract === "function") {
-            const currentState = (voxel >> 12) & 0xF;
-            const nextState = cfg.onInteract({
+        // 隣の配置先マス(cfg)ではなく、実際に視線が当たっている hit.blockId 本体の onInteract を評価する
+        const hitCfg = getBlockConfiguration(hit.blockId);
+        if (!sneakActive && hitCfg && typeof hitCfg.onInteract === "function") {
+            const hCx = hit.x >> 4, hCz = hit.z >> 4;
+            const hitRaw = ChunkSaveManager.getBlock(hCx, hCz, hit.x & 15, hit.y, hit.z & 15)
+                ?? getVoxelAtWorld(hit.x, hit.y, hit.z, true);
+            const hitId = hitRaw & 0xFFF;
+            const currentState = (hitRaw >> 12) & 0xF;
+
+            const nextState = hitCfg.onInteract({
                 x: hit.x,
                 y: hit.y,
                 z: hit.z,
-                blockId: voxelIdOnly,
+                blockId: hitId,
                 state: currentState,
                 normal: rawNormal,
                 point: hit.point,
@@ -5134,14 +5173,17 @@ function interactWithBlock(action) {
             });
 
             if (typeof nextState === "number" && nextState >= 0) {
-                const hCx = hit.x >> 4, hCz = hit.z >> 4;
-                const updatedRaw = (voxelIdOnly & 0xFFF) | ((nextState & 0xF) << 12);
+                const updatedRaw = (hitId & 0xFFF) | ((nextState & 0xF) << 12);
                 _lightDirtySet.clear();
                 ChunkSaveManager.setBlock(hCx, hCz, hit.x & 15, hit.y, hit.z & 15, updatedRaw);
-                updateLightAtBlockChange(hit.x, hit.y, hit.z, voxel, updatedRaw, _lightDirtySet);
+                updateLightAtBlockChange(hit.x, hit.y, hit.z, hitRaw, updatedRaw, _lightDirtySet);
                 updateNeighborBlockStates(hit.x, hit.y, hit.z);
+                RedstoneEngine.onBlockChanged(hit.x, hit.y, hit.z);
                 updateAffectedChunks({ x: hit.x, y: hit.y, z: hit.z }, false, _lightDirtySet);
                 updateTargetBlockDisplay(true);
+                // 1クリックで綺麗に1段階だけ切り替わるよう長押し連打を停止
+                stopInteraction("right");
+                stopInteraction("touch");
                 return;
             }
         }
@@ -5161,10 +5203,8 @@ function interactWithBlock(action) {
         let meta = calculatePlacementMeta(activeBlockType, _workVec3_CamDir, effectiveNormal, hit.point);
         if (meta < 0) return;
 
-        if (newBlockCfg.geometryType === "fence") {
-            meta = getFenceConnectionMask(bx, by, bz);
-        } else if (newBlockCfg.geometryType === "pane") {
-            meta = getPaneConnectionMask(bx, by, bz);
+        if (newBlockCfg.autoSyncConnection) {
+            meta = getConnectionMask(bx, by, bz, newBlockCfg.geometryType);
         }
 
         // 2) 支持条件（壁面・土壌・下面）チェック
@@ -5185,12 +5225,6 @@ function interactWithBlock(action) {
             }
         }
 
-        // 上書きされる側の古いカスタムメッシュを消去
-        if (placedCustomBlocks.has(candidateHash)) {
-            scene.remove(placedCustomBlocks.get(candidateHash));
-            placedCustomBlocks.delete(candidateHash);
-        }
-
         // 5) ブロック確定書き込み ＋ 2フェーズ インクリメンタル光源更新
         const blockDataToSave = (activeBlockType & 0xFFF) | ((meta & 0xF) << 12);
         _lightDirtySet.clear();
@@ -5199,9 +5233,10 @@ function interactWithBlock(action) {
         lastPlacedKey = candidateHash;
     }
 
-    // --- 5. 予約Tickキャンセル ＆ 隣接ブロック状態同期（接続マスク更新・支持喪失ブロックの連鎖処理） ---
+    // --- 5. 予約Tickキャンセル ＆ 隣接ブロック状態同期 ＆ レッドストーン信号ネットワーク更新 ---
     TickScheduler.cancelAt(bx, by, bz);
     const extraCoords = updateNeighborBlockStates(bx, by, bz);
+    RedstoneEngine.onBlockChanged(bx, by, bz);
 
     // --- 6. チャンク・UI更新（光が変わった全チャンクを含め重複なしで再構築） ---
     _updatedChunkSetTmp.clear();
@@ -5211,6 +5246,7 @@ function interactWithBlock(action) {
     for (let i = 0; i < extraCoords.length; i++) {
         const pos = extraCoords[i];
         TickScheduler.cancelAt(pos.x, pos.y, pos.z);
+        RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z);
         const eKey = encodeChunkKey(pos.x >> 4, pos.z >> 4);
         if (!_updatedChunkSetTmp.has(eKey)) {
             _updatedChunkSetTmp.add(eKey);
@@ -5260,7 +5296,7 @@ function getPreviewHash(id, size, type) {
 }
 
 // --- 2Dプレビュー ---
-const create2DPreview = ({ id, textures = {}, previewOptions = {} }, size) => {
+const create2DPreview = ({ id, textures = {}, previewTexture = null, previewOptions = {} }, size) => {
     const hashKey = getPreviewHash(id, size, 0); // 0 = 2D
 
     if (previewCache.has(hashKey)) {
@@ -5286,7 +5322,7 @@ const create2DPreview = ({ id, textures = {}, previewOptions = {} }, size) => {
         context.fillRect(0, half, half, half);
     };
 
-    const src = textures.all || textures.side || textures.top;
+    const src = previewTexture || textures.all || textures.side || textures.top;
 
     // 1. テクスチャ指定自体がない場合
     if (!src) {
@@ -5299,11 +5335,31 @@ const create2DPreview = ({ id, textures = {}, previewOptions = {} }, size) => {
         return canvas;
     }
 
-    // 2. テクスチャがある場合（非同期読み込み）
+    // 2. テクスチャがある場合（非同期読み込み＋BlockStateティント色乗算対応）
     loadImage(src).then(img => {
         const { x = 0, y = 0 } = previewOptions.offset || {};
-        ctx.clearRect(0, 0, size, size); // 万が一の重なり防止
+        ctx.clearRect(0, 0, size, size);
         ctx.drawImage(img, x, y, size, size);
+
+        const cfg = getBlockConfiguration(id);
+        const pMeta = (cfg && cfg.previewState !== null && cfg.previewState !== undefined) ? cfg.previewState : (cfg?.defaultState ?? 0);
+        const variant = cfg && cfg._compiledVariants ? cfg._compiledVariants[pMeta & 15] : null;
+        const tintHex = (variant && variant.defaultColor !== undefined) ? variant.defaultColor : (cfg?.defaultColor ?? 0xffffff);
+
+        if (tintHex !== 0xffffff) {
+            const tr = (tintHex >> 16) & 255;
+            const tg = (tintHex >> 8) & 255;
+            const tb = tintHex & 255;
+            const imgData = ctx.getImageData(0, 0, size, size);
+            const d = imgData.data;
+            for (let p = 0; p < d.length; p += 4) {
+                if (d[p + 3] === 0) continue;
+                d[p] = (d[p] * tr) / 255;
+                d[p + 1] = (d[p + 1] * tg) / 255;
+                d[p + 2] = (d[p + 2] * tb) / 255;
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
 
         // キャッシュ保存
         const cacheCanvas = createCanvas(size);
@@ -5387,6 +5443,7 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
     const originalMaterials = Array.isArray(sharedMats) ? sharedMats : [sharedMats];
     const previewMaterials = originalMaterials.map(m => new THREE.MeshBasicMaterial({
         map: m.map || null,
+        color: m.color ? m.color.clone() : 0xffffff,
         side: THREE.FrontSide,
         transparent: m.transparent || false,
         opacity: m.opacity !== undefined ? m.opacity : 1,
@@ -5816,8 +5873,7 @@ function rayIntersectVoxelBoxes(ox, oy, oz, dx, dy, dz, bx, by, bz, blockId, met
     const len = boxes.length;
     const cfg = _blockConfigFastArray[blockId];
     const gType = cfg ? cfg.geometryType : "cube";
-    // フルキューブおよび接続マスク系（fence/pane）は回転・反転不要
-    const needsRotation = (metadata !== 0 && gType !== "cube" && gType !== "fence" && gType !== "pane" && gType !== "water" && gType !== "leaves");
+    const tMeta = getTransformMeta(blockId, metadata);
 
     const EPS_DIR = 1e-8;
     let bestT = maxDistance + 1.0;
@@ -5826,8 +5882,8 @@ function rayIntersectVoxelBoxes(ox, oy, oz, dx, dy, dz, bx, by, bz, blockId, met
 
     for (let i = 0; i < len; i++) {
         let box = boxes[i];
-        if (needsRotation) {
-            applyRotationToCollisionBox(box, metadata, _rayRotatedBoxTmp);
+        if (tMeta !== 0) {
+            applyRotationToCollisionBox(box, tMeta, _rayRotatedBoxTmp);
             box = _rayRotatedBoxTmp;
         }
 
@@ -6101,15 +6157,15 @@ function updateBlockSelection(precomputedHit = undefined, forceRebuild = false) 
     selectionGroup.clear();
 
     const rotatedBox = getPooledBox();
-    const isConnBlock = usesConnectionMeta(blockId);
+    const tMeta = getTransformMeta(blockId, metadata);
     const baseBoxes = getSelectionBoxesReadOnly(blockId, metadata);
 
     // 2. Raycastと100%同一のボックス群から枠線を生成
     for (let i = 0; i < baseBoxes.length; i++) {
-        if (isConnBlock) {
+        if (tMeta === 0) {
             rotatedBox.copy(baseBoxes[i]);
         } else {
-            applyRotationToCollisionBox(baseBoxes[i], metadata, rotatedBox);
+            applyRotationToCollisionBox(baseBoxes[i], tMeta, rotatedBox);
         }
         createSelectionLine(x, y, z, rotatedBox);
     }
@@ -6148,11 +6204,11 @@ function updateBlockInfo(precomputedHit = undefined) {
     }
 
     const blockId = hit.blockId;
-    const rotation = hit.metadata & 0x3;
     const blockName = BLOCK_NAMES[blockId] || "Unknown";
     const config = _blockConfigFastArray[blockId];
+    const stateStr = formatBlockStateString(blockId, hit.metadata);
 
-    currentTargetBlockText = `${blockName} (ID: ${blockId}, Rot: ${rotation}) [${hit.x}, ${hit.y}, ${hit.z}]` +
+    currentTargetBlockText = `${blockName}${stateStr} (ID: ${blockId}) [${hit.x}, ${hit.y}, ${hit.z}]` +
         (config ? `<br>Type: ${config.geometryType}` : "");
 }
 
@@ -6183,13 +6239,13 @@ function updateHeadBlockInfo() {
     const rawValue = ChunkSaveManager.getBlock(cx, cz, hLx, hY, hLz)
         ?? getVoxelAtWorld(hX, hY, hZ, true);
 
-    // ✅ IDと回転値を分離して表示
     const blockId = rawValue & 0xFFF;
-    const rotation = (rawValue >> 12) & 0x3;
+    const meta = (rawValue >> 12) & 0xF;
     const blockName = BLOCK_NAMES[blockId] || "Unknown";
+    const stateStr = formatBlockStateString(blockId, meta);
 
     if (elem) {
-        const newText = `Head Block: ${blockName} (ID: ${blockId}, Rot: ${rotation})`;
+        const newText = `Head Block: ${blockName}${stateStr} (ID: ${blockId})`;
         if (elem.textContent !== newText) {
             elem.textContent = newText;
         }
@@ -6526,10 +6582,473 @@ const TickScheduler = (() => {
     };
 })();
 
-/**
- * ワールドTick（ランダムTick・予約Tick）からの軽量ブロック書き換えヘルパー
- * 未編集の自然チャンクを playerModifiedKeys へ誤登録せず、既編集チャンクのみ差分セーブへ連携
- */
+
+
+
+
+
+
+/* ======================================================
+   【レッドストーン信号伝播エンジン】(Minecraft Java Edition 強/弱動力モデル準拠)
+   - 2フェーズ ワイヤーネットワーク再解決によりリング配線のゴースト電力を完全防止
+   - トーチ(NOTゲート: 2ticks) / リピーター(ダイオード増幅: 2 or 4ticks) を TickScheduler で遅延駆動
+   ====================================================== */
+const REPEATER_OUT_DX = new Int8Array([1, 0, -1, 0]);
+const REPEATER_OUT_DZ = new Int8Array([0, -1, 0, 1]);
+const RS_HORIZ_DX = new Int8Array([1, -1, 0, 0]);
+const RS_HORIZ_DZ = new Int8Array([0, 0, 1, -1]);
+
+const RedstoneEngine = (() => {
+    const MAX_WIRE_NODES = 1024;
+    const _wireX = new Int32Array(MAX_WIRE_NODES);
+    const _wireY = new Int32Array(MAX_WIRE_NODES);
+    const _wireZ = new Int32Array(MAX_WIRE_NODES);
+    const _wireOldPower = new Uint8Array(MAX_WIRE_NODES);
+    const _wireNewPower = new Uint8Array(MAX_WIRE_NODES);
+    const _wireVisited = new Map();
+
+    const _bfsQueue = new Int32Array(MAX_WIRE_NODES * 4);
+    const _deviceCoordsX = new Int32Array(512);
+    const _deviceCoordsY = new Int32Array(512);
+    const _deviceCoordsZ = new Int32Array(512);
+    const _deviceVisited = new Set();
+
+    function getRaw(wx, wy, wz) {
+        if (wy < 0 || wy >= CHUNK_HEIGHT) return 0;
+        const r = _getWorldRawLoaded(wx, wy, wz);
+        return r < 0 ? 0 : r;
+    }
+
+    // ブロック定義の redstoneConductive に基づく「通電する / しない」統一判定
+    function isRedstoneConductor(wx, wy, wz) {
+        return _isRedstoneConductive[getRaw(wx, wy, wz) & 0xFFF] === 1;
+    }
+
+    // 段差ワイヤーの物理遮断用（不透明ブロック全般）
+    function isWireBlockingOpaque(wx, wy, wz) {
+        return _isOpaqueBlock[getRaw(wx, wy, wz) & 0xFFF] === 1;
+    }
+
+    /**
+     * ワイヤー (wx, wy, wz) の現在の接続形状に基づき、水平隣接 (tx, wy, tz) 方向へ出力が向いているか判定
+     */
+    function doesWirePointTowards(wx, wy, wz, tx, tz) {
+        const mask = getRedstoneWireConnectionMaskLocal(wx, wy, wz, getRaw) & 0xF;
+        if (mask === 0) return true;
+
+        const dx = tx - wx;
+        const dz = tz - wz;
+        let dirBit = 0;
+        if (dz === -1) dirBit = 8;
+        else if (dz === 1) dirBit = 4;
+        else if (dx === 1) dirBit = 2;
+        else if (dx === -1) dirBit = 1;
+        else return false;
+
+        if ((mask & dirBit) !== 0) return true;
+        const oppositeBit = (dirBit === 8) ? 4 : (dirBit === 4) ? 8 : (dirBit === 2) ? 1 : 2;
+        return mask === oppositeBit;
+    }
+
+    /**
+     * (sx, sy, sz) が (tx, ty, tz) へ直接出力する強動力 (0..15)
+     */
+    function getDirectStrongPowerTo(sx, sy, sz, tx, ty, tz, targetIsConductor = false) {
+        const raw = getRaw(sx, sy, sz);
+        const id = raw & 0xFFF;
+        const meta = (raw >> 12) & 0xF;
+        const cfg = _blockConfigFastArray[id];
+        if (!cfg) return 0;
+
+        // 常時電源ブロック（REDSTONE_BLOCK等）: 隣接ワイヤー・デバイスは直接駆動するが、導体ブロックは強励起しない
+        if (cfg.redstonePowerOutput > 0) {
+            return targetIsConductor ? 0 : cfg.redstonePowerOutput;
+        }
+
+        const role = cfg.redstoneRole;
+        if (role === "lever") {
+            if (!getBlockStateProp(id, meta, "powered")) return 0;
+            const mount = Math.min(getBlockStateRawProp(id, meta, "mount"), 4);
+            if (targetIsConductor) {
+                return (
+                    tx === sx + MOUNT_SUPPORT_DX[mount] &&
+                    ty === sy + MOUNT_SUPPORT_DY[mount] &&
+                    tz === sz + MOUNT_SUPPORT_DZ[mount]
+                ) ? 15 : 0;
+            }
+            return 15;
+        }
+
+        if (role === "torch") {
+            if (!getBlockStateProp(id, meta, "lit")) return 0;
+            const mount = Math.min(getBlockStateRawProp(id, meta, "mount"), 4);
+            if (
+                tx === sx + MOUNT_SUPPORT_DX[mount] &&
+                ty === sy + MOUNT_SUPPORT_DY[mount] &&
+                tz === sz + MOUNT_SUPPORT_DZ[mount]
+            ) {
+                return 0;
+            }
+            if (targetIsConductor) {
+                return (tx === sx && ty === sy + 1 && tz === sz) ? 15 : 0;
+            }
+            return 15;
+        }
+
+        if (role === "repeater" && cfg.repeaterPowered) {
+            const rot = getBlockStateRawProp(id, meta, "facing");
+            if (tx === sx + REPEATER_OUT_DX[rot] && ty === sy && tz === sz + REPEATER_OUT_DZ[rot]) {
+                return 15;
+            }
+            return 0;
+        }
+
+        return 0;
+    }
+
+    /**
+     * 通電する導体ブロック (cx, cy, cz) が受けている「強動力」(0..15)
+     */
+    function getConductorStrongPower(cx, cy, cz) {
+        if (!isRedstoneConductor(cx, cy, cz)) return 0;
+        let maxP = 0;
+        for (let i = 0; i < 6; i++) {
+            const p = getDirectStrongPowerTo(
+                cx + LIGHT_DIR_DX[i], cy + LIGHT_DIR_DY[i], cz + LIGHT_DIR_DZ[i],
+                cx, cy, cz, true
+            );
+            if (p > maxP) maxP = p;
+            if (maxP === 15) return 15;
+        }
+        return maxP;
+    }
+
+    /**
+     * 通電する導体ブロック (cx, cy, cz) が受けている「弱動力＋強動力」(0..15)
+     */
+    function getConductorAnyPower(cx, cy, cz, excludeX = 0x7FFFFFFF, excludeY = 0x7FFFFFFF, excludeZ = 0x7FFFFFFF) {
+        if (!isRedstoneConductor(cx, cy, cz)) return 0;
+
+        let maxP = getConductorStrongPower(cx, cy, cz);
+        if (maxP === 15) return 15;
+
+        const upRaw = getRaw(cx, cy + 1, cz);
+        if ((upRaw & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE && !(cx === excludeX && (cy + 1) === excludeY && cz === excludeZ)) {
+            const wp = (upRaw >> 12) & 0xF;
+            if (wp > maxP) maxP = wp;
+        }
+
+        for (let d = 0; d < 4; d++) {
+            const nx = cx + RS_HORIZ_DX[d];
+            const nz = cz + RS_HORIZ_DZ[d];
+            if (nx === excludeX && cy === excludeY && nz === excludeZ) continue;
+            const nRaw = getRaw(nx, cy, nz);
+            if ((nRaw & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE) {
+                const wp = (nRaw >> 12) & 0xF;
+                if (wp > maxP && doesWirePointTowards(nx, cy, nz, cx, cz)) {
+                    maxP = wp;
+                }
+            }
+        }
+
+        return maxP;
+    }
+
+    /**
+     * レッドストーントーチの支持ブロック (sx, sy, sz) が通電状態か統一判定
+     * - 支持ブロック自身が電源ブロック（REDSTONE_BLOCK等）の場合も true を返し、確実にトーチを消灯させる
+     */
+    function isSupportBlockPowered(sx, sy, sz, torchX, torchY, torchZ) {
+        const sId = getRaw(sx, sy, sz) & 0xFFF;
+        const sCfg = _blockConfigFastArray[sId];
+        if (sCfg && sCfg.redstonePowerOutput > 0) return true;
+        return getConductorAnyPower(sx, sy, sz, torchX, torchY, torchZ) > 0;
+    }
+
+    /**
+     * ランプ等の対象ブロック (wx, wy, wz) が周囲から受けている総信号強度 (弱＋強)
+     */
+    function getTotalPowerAt(wx, wy, wz) {
+        let maxP = isRedstoneConductor(wx, wy, wz) ? getConductorAnyPower(wx, wy, wz) : 0;
+        if (maxP === 15) return 15;
+
+        for (let i = 0; i < 6; i++) {
+            const nx = wx + LIGHT_DIR_DX[i], ny = wy + LIGHT_DIR_DY[i], nz = wz + LIGHT_DIR_DZ[i];
+            const direct = getDirectStrongPowerTo(nx, ny, nz, wx, wy, wz, false);
+            if (direct > maxP) maxP = direct;
+
+            const nRaw = getRaw(nx, ny, nz);
+            const nId = nRaw & 0xFFF;
+            if (nId === BLOCK_TYPES.REDSTONE_WIRE) {
+                const wp = (nRaw >> 12) & 0xF;
+                if (wp > maxP && (ny !== wy || doesWirePointTowards(nx, ny, nz, wx, wz))) {
+                    maxP = wp;
+                }
+            } else if (_isRedstoneConductive[nId] === 1) {
+                const cp = getConductorAnyPower(nx, ny, nz, wx, wy, wz);
+                if (cp > maxP) maxP = cp;
+            }
+            if (maxP === 15) return 15;
+        }
+        return maxP;
+    }
+
+    /**
+     * ワイヤーセル (wx, wy, wz) が外部電源（直接電源＋強励起済み通電導体）から受け取る初期電力 (0..15)
+     */
+    function getExternalWireInputPower(wx, wy, wz) {
+        let maxP = 0;
+        for (let i = 0; i < 6; i++) {
+            const nx = wx + LIGHT_DIR_DX[i], ny = wy + LIGHT_DIR_DY[i], nz = wz + LIGHT_DIR_DZ[i];
+
+            const direct = getDirectStrongPowerTo(nx, ny, nz, wx, wy, wz, false);
+            if (direct > maxP) maxP = direct;
+
+            if (isRedstoneConductor(nx, ny, nz)) {
+                const cp = getConductorStrongPower(nx, ny, nz);
+                if (cp > maxP) maxP = cp;
+            }
+            if (maxP === 15) return 15;
+        }
+        return maxP;
+    }
+
+    /**
+     * リピーター (rx, ry, rz) の背面入力側が信号を受けているか判定
+     */
+    function isRepeaterReceivingInput(rx, ry, rz, rot) {
+        const ix = rx - REPEATER_OUT_DX[rot];
+        const iz = rz - REPEATER_OUT_DZ[rot];
+        const iRaw = getRaw(ix, ry, iz);
+        const iId = iRaw & 0xFFF;
+
+        if (iId === BLOCK_TYPES.REDSTONE_WIRE) {
+            return ((iRaw >> 12) & 0xF) > 0 && doesWirePointTowards(ix, ry, iz, rx, rz);
+        }
+        if (getDirectStrongPowerTo(ix, ry, iz, rx, ry, rz, false) > 0) {
+            return true;
+        }
+        if (_isRedstoneConductive[iId] === 1) {
+            return getConductorAnyPower(ix, ry, iz, rx, ry, rz) > 0;
+        }
+        return false;
+    }
+
+    function evaluateDevice(wx, wy, wz) {
+        const raw = getRaw(wx, wy, wz);
+        const id = raw & 0xFFF;
+        const meta = (raw >> 12) & 0xF;
+        const cfg = _blockConfigFastArray[id];
+        if (!cfg || !cfg.redstoneDevice) return;
+
+        const role = cfg.redstoneRole;
+        if (role === "lamp") {
+            const powered = getTotalPowerAt(wx, wy, wz) > 0;
+            if (getBlockStateProp(id, meta, "lit") !== powered) {
+                const nextMeta = setBlockStateProp(id, meta, "lit", powered);
+                setBlockFromWorldTick(wx, wy, wz, (id & 0xFFF) | (nextMeta << 12));
+            }
+            return;
+        }
+
+        if (role === "torch") {
+            const mount = Math.min(getBlockStateRawProp(id, meta, "mount"), 4);
+            const sx = wx + MOUNT_SUPPORT_DX[mount];
+            const sy = wy + MOUNT_SUPPORT_DY[mount];
+            const sz = wz + MOUNT_SUPPORT_DZ[mount];
+            const targetLit = !isSupportBlockPowered(sx, sy, sz, wx, wy, wz);
+
+            if (getBlockStateProp(id, meta, "lit") !== targetLit) {
+                TickScheduler.schedule(wx, wy, wz, 2, "redstone_device", -1, targetLit ? 1 : 0);
+            }
+            return;
+        }
+
+        if (role === "repeater") {
+            const rot = getBlockStateRawProp(id, meta, "facing");
+            const delayTicks = getBlockStateProp(id, meta, "delay");
+            const currentPowered = !!cfg.repeaterPowered;
+            const targetPowered = isRepeaterReceivingInput(wx, wy, wz, rot);
+
+            if (currentPowered !== targetPowered) {
+                TickScheduler.schedule(wx, wy, wz, delayTicks, "redstone_device", -2, targetPowered ? 1 : 0);
+            }
+        }
+    }
+
+    function resolveFromOrigin(originX, originY, originZ) {
+        _wireVisited.clear();
+        _deviceVisited.clear();
+        let wireCount = 0;
+        let devCount = 0;
+
+        const addDevice = (x, y, z) => {
+            if (y < 0 || y >= CHUNK_HEIGHT || devCount >= 512) return;
+            const id = getRaw(x, y, z) & 0xFFF;
+            const cfg = _blockConfigFastArray[id];
+            if (!cfg || !cfg.redstoneDevice) return;
+
+            const k = encodeWorldBlockKey(x, y, z);
+            if (_deviceVisited.has(k)) return;
+            _deviceVisited.add(k);
+            _deviceCoordsX[devCount] = x;
+            _deviceCoordsY[devCount] = y;
+            _deviceCoordsZ[devCount] = z;
+            devCount++;
+        };
+
+        const addWire = (x, y, z) => {
+            if (y < 0 || y >= CHUNK_HEIGHT || wireCount >= MAX_WIRE_NODES) return -1;
+            const raw = getRaw(x, y, z);
+            if ((raw & 0xFFF) !== BLOCK_TYPES.REDSTONE_WIRE) return -1;
+            const k = encodeWorldBlockKey(x, y, z);
+            const existing = _wireVisited.get(k);
+            if (existing !== undefined) return existing;
+
+            const idx = wireCount++;
+            _wireVisited.set(k, idx);
+            _wireX[idx] = x;
+            _wireY[idx] = y;
+            _wireZ[idx] = z;
+            _wireOldPower[idx] = (raw >> 12) & 0xF;
+            _wireNewPower[idx] = 0;
+            return idx;
+        };
+
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dy = -2; dy <= 2; dy++) {
+                for (let dz = -2; dz <= 2; dz++) {
+                    if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > 3) continue;
+                    const x = originX + dx, y = originY + dy, z = originZ + dz;
+                    addWire(x, y, z);
+                    addDevice(x, y, z);
+                }
+            }
+        }
+
+        for (let idx = 0; idx < wireCount; idx++) {
+            const wx = _wireX[idx], wy = _wireY[idx], wz = _wireZ[idx];
+            const aboveOpaque = isWireBlockingOpaque(wx, wy + 1, wz);
+
+            for (let d = 0; d < 4; d++) {
+                const nx = wx + RS_HORIZ_DX[d];
+                const nz = wz + RS_HORIZ_DZ[d];
+                addWire(nx, wy, nz);
+                if (!aboveOpaque) addWire(nx, wy + 1, nz);
+                if (!isWireBlockingOpaque(nx, wy, nz)) addWire(nx, wy - 1, nz);
+            }
+        }
+
+        let qHead = 0, qTail = 0;
+        for (let idx = 0; idx < wireCount; idx++) {
+            const extP = getExternalWireInputPower(_wireX[idx], _wireY[idx], _wireZ[idx]);
+            if (extP > 0) {
+                _wireNewPower[idx] = extP;
+                _bfsQueue[qTail++] = idx;
+            }
+        }
+
+        while (qHead < qTail) {
+            const idx = _bfsQueue[qHead++];
+            const curP = _wireNewPower[idx];
+            if (curP <= 1) continue;
+            const nextP = curP - 1;
+
+            const wx = _wireX[idx], wy = _wireY[idx], wz = _wireZ[idx];
+            const aboveOpaque = isWireBlockingOpaque(wx, wy + 1, wz);
+
+            const relax = (nx, ny, nz) => {
+                const nIdx = _wireVisited.get(encodeWorldBlockKey(nx, ny, nz));
+                if (nIdx !== undefined && nextP > _wireNewPower[nIdx]) {
+                    _wireNewPower[nIdx] = nextP;
+                    if (qTail < _bfsQueue.length) _bfsQueue[qTail++] = nIdx;
+                }
+            };
+
+            for (let d = 0; d < 4; d++) {
+                const nx = wx + RS_HORIZ_DX[d];
+                const nz = wz + RS_HORIZ_DZ[d];
+                relax(nx, wy, nz);
+                if (!aboveOpaque) relax(nx, wy + 1, nz);
+                if (!isWireBlockingOpaque(nx, wy, nz)) relax(nx, wy - 1, nz);
+            }
+        }
+
+        for (let idx = 0; idx < wireCount; idx++) {
+            const newP = _wireNewPower[idx];
+            const wx = _wireX[idx], wy = _wireY[idx], wz = _wireZ[idx];
+            const powerChanged = (newP !== _wireOldPower[idx]);
+
+            if (powerChanged) {
+                const packed = (BLOCK_TYPES.REDSTONE_WIRE & 0xFFF) | ((newP & 0xF) << 12);
+                setBlockFromWorldTick(wx, wy, wz, packed);
+            }
+
+            const nearOrigin = (Math.abs(wx - originX) + Math.abs(wy - originY) + Math.abs(wz - originZ)) <= 2;
+            if (powerChanged || nearOrigin) {
+                for (let dx = -2; dx <= 2; dx++) {
+                    for (let dy = -2; dy <= 2; dy++) {
+                        for (let dz = -2; dz <= 2; dz++) {
+                            if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) <= 2) {
+                                addDevice(wx + dx, wy + dy, wz + dz);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for (let i = 0; i < devCount; i++) {
+            evaluateDevice(_deviceCoordsX[i], _deviceCoordsY[i], _deviceCoordsZ[i]);
+        }
+    }
+
+    return {
+        onBlockChanged(wx, wy, wz) {
+            resolveFromOrigin(wx | 0, wy | 0, wz | 0);
+        },
+        handleScheduledDeviceTick(task) {
+            const { x, y, z, payload } = task;
+            const raw = getRaw(x, y, z);
+            const id = raw & 0xFFF;
+            const meta = (raw >> 12) & 0xF;
+            const cfg = _blockConfigFastArray[id];
+            if (!cfg || !cfg.redstoneDevice) return;
+
+            if (cfg.redstoneRole === "torch") {
+                const mount = Math.min(getBlockStateRawProp(id, meta, "mount"), 4);
+                const sx = x + MOUNT_SUPPORT_DX[mount];
+                const sy = y + MOUNT_SUPPORT_DY[mount];
+                const sz = z + MOUNT_SUPPORT_DZ[mount];
+                const nextLit = !isSupportBlockPowered(sx, sy, sz, x, y, z);
+
+                if (getBlockStateProp(id, meta, "lit") !== nextLit) {
+                    const nextMeta = setBlockStateProp(id, meta, "lit", nextLit);
+                    setBlockFromWorldTick(x, y, z, (id & 0xFFF) | (nextMeta << 12));
+                    resolveFromOrigin(x, y, z);
+                }
+            } else if (cfg.redstoneRole === "repeater") {
+                const rot = getBlockStateRawProp(id, meta, "facing");
+                const curPowered = !!cfg.repeaterPowered;
+                const desiredPowered = isRepeaterReceivingInput(x, y, z, rot);
+                const fallbackPowered = (payload & 1) !== 0;
+
+                const nextPowered = (curPowered !== desiredPowered) ? desiredPowered : fallbackPowered;
+                if (curPowered !== nextPowered) {
+                    const nextId = nextPowered ? BLOCK_TYPES.REDSTONE_REPEATER_ON : BLOCK_TYPES.REDSTONE_REPEATER;
+                    setBlockFromWorldTick(x, y, z, (nextId & 0xFFF) | (meta << 12));
+                    resolveFromOrigin(x, y, z);
+                }
+            }
+        }
+    };
+})();
+
+// Step14 の TickScheduler へレッドストーン遅延デバイスハンドラを登録
+TickScheduler.registerHandler("redstone_device", (task) => {
+    RedstoneEngine.handleScheduledDeviceTick(task);
+});
+
 function setBlockFromWorldTick(wx, wy, wz, newRaw) {
     if (wy < 0 || wy >= CHUNK_HEIGHT) return false;
     const cx = wx >> 4;
@@ -6580,7 +7099,14 @@ function nextTickRng() {
     return x >>> 0;
 }
 
-const RANDOM_TICK_HANDLERS = new Array(256).fill(null);
+const RANDOM_TICK_HANDLERS = new Array(MAX_BLOCK_IDS).fill(null);
+
+export function registerRandomTickHandler(blockId, fn) {
+    const id = blockId & 0xFFF;
+    if (id >= 0 && id < RANDOM_TICK_HANDLERS.length && typeof fn === "function") {
+        RANDOM_TICK_HANDLERS[id] = fn;
+    }
+}
 
 // Minecraft Java Edition 準拠: 草ブロックの枯死（上を不透明ブロックで塞いだ場合）と隣接土への自然伝播
 RANDOM_TICK_HANDLERS[BLOCK_TYPES.GRASS] = (wx, wy, wz) => {
@@ -8492,3 +9018,32 @@ async function loadFullSaveData() {
         tx.onabort = () => reject(tx.error || new Error("セーブデータの読み込みが中断されました"));
     });
 }
+
+/* ======================================================
+   【外部プラグイン・デバッグ診断用 統一ファサード】
+   ====================================================== */
+window.MinecraftEngine = Object.freeze({
+    BLOCK_CONFIG,
+    BLOCK_TYPES,
+    STATE_SCHEMAS,
+    registerCustomBlock,
+    registerGeometryBuilder,
+    registerPlacementRule,
+    registerSupportRule,
+    registerRandomTickHandler,
+    TickScheduler,
+    RedstoneEngine,
+    ChunkSaveManager,
+    saveCurrentWorld,
+    getStats: () => ({
+        seed: currentSeed,
+        ticks: worldTickCount,
+        gameTime: Math.floor(gameTime),
+        loadedChunks: loadedChunks.size,
+        editedChunks: ChunkSaveManager.playerModifiedKeys.size,
+        unsavedChunks: ChunkSaveManager.dirtySaveKeys.size,
+        pendingTicks: TickScheduler.pendingCount,
+        drawCalls: renderer ? renderer.info.render.calls : 0,
+        triangles: renderer ? renderer.info.render.triangles : 0
+    })
+});
