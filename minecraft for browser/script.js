@@ -2632,6 +2632,7 @@ function evictDistantChunkCaches(pCx, pCz) {
             ChunkSaveManager.modifiedChunks.delete(key);
             ChunkSaveManager.decoratedChunks.delete(key);
             ChunkSaveManager.chunkUpdateInfo.delete(key);
+            FluidEngine.onChunkEvicted(key);
             invalidateVoxelReadCache(key);
             if (++evictedVoxels >= MAX_EVICT_PER_MAP) break;
         }
@@ -5112,7 +5113,7 @@ function interactWithBlock(action) {
 
     // --- 1. 統一ボクセルレイキャスト（黒枠・HUD・操作で100%同一アルゴリズムを使用） ---
     camera.getWorldDirection(_workVec3_CamDir);
-    const includeWater = (action === "destroy" && activeBlockType === BLOCK_TYPES.WATER);
+    const includeWater = (action === "destroy" && (activeBlockType === BLOCK_TYPES.WATER || activeBlockType === BLOCK_TYPES.LAVA));
     const hit = raycastVoxel(camera.position, _workVec3_CamDir, BLOCK_INTERACT_RANGE, includeWater);
     if (!hit) return;
 
@@ -6644,7 +6645,7 @@ const TickScheduler = (() => {
                 const delay = item.delay > 1 ? (item.delay | 0) : 1;
                 const chunkKey = encodeChunkKey(x >> 4, z >> 4);
 
-                if (ChunkSaveManager.modifiedChunks.has(chunkKey)) {
+                if (loadedChunks.has(chunkKey)) {
                     scheduler.schedule(x, y, z, delay, item.type, item.priority | 0, item.payload | 0);
                 } else {
                     deferTaskForChunk(chunkKey, x, y, z, delay, item.type, item.priority | 0, item.payload | 0);
@@ -6675,8 +6676,8 @@ const TickScheduler = (() => {
                     }
 
                     const chunkKey = encodeChunkKey(task.x >> 4, task.z >> 4);
-                    if (!ChunkSaveManager.modifiedChunks.has(chunkKey)) {
-                        // チャンクが未ロードなら捨てずに保留し、再訪問時に再開
+                    if (!loadedChunks.has(chunkKey)) {
+                        // 描画範囲外へアンロードされたチャンクは捨てずに保留し、再訪問時に再開
                         deferTaskForChunk(chunkKey, task.x, task.y, task.z, 1, task.type, task.priority, task.payload);
                     } else {
                         const handler = handlers.get(task.type);
@@ -6730,7 +6731,7 @@ const RedstoneEngine = createRedstoneEngine({
     isRedstoneConductive: _isRedstoneConductive,
     blockConfigFastArray: _blockConfigFastArray,
     getWorldRawLoaded: _getWorldRawLoaded,
-    setBlockFromWorldTick,
+    setBlockFromWorldTick: (wx, wy, wz, newRaw) => setBlockFromWorldTick(wx, wy, wz, newRaw, true),
     tickScheduler: TickScheduler,
     getCurrentTick: () => worldTickCount,
     onTorchBurnout: (wx, wy, wz) => {
@@ -6748,7 +6749,11 @@ const FluidEngine = createFluidEngine({
     isOpaqueBlock: _isOpaqueBlock,
     blockConfigFastArray: _blockConfigFastArray,
     getWorldRawLoaded: _getWorldRawLoaded,
-    setBlockFromWorldTick,
+    setBlockFromWorldTick: (wx, wy, wz, newRaw, srcX = wx, srcZ = wz) => {
+        const srcKey = encodeChunkKey(srcX >> 4, srcZ >> 4);
+        const persist = ChunkSaveManager.playerModifiedKeys.has(srcKey);
+        return setBlockFromWorldTick(wx, wy, wz, newRaw, persist);
+    },
     tickScheduler: TickScheduler,
     onFluidReplacedBlock: (wx, wy, wz, oldRaw) => {
         const oldId = oldRaw & 0xFFF;
@@ -6758,7 +6763,7 @@ const FluidEngine = createFluidEngine({
     }
 });
 
-function setBlockFromWorldTick(wx, wy, wz, newRaw) {
+function setBlockFromWorldTick(wx, wy, wz, newRaw, forcePersist = false) {
     if (wy < 0 || wy >= CHUNK_HEIGHT) return false;
     const cx = wx >> 4;
     const cz = wz >> 4;
@@ -6775,7 +6780,10 @@ function setBlockFromWorldTick(wx, wy, wz, newRaw) {
     if (oldRaw === packed) return false;
 
     dataArray[idx] = packed;
-    if (ChunkSaveManager.playerModifiedKeys.has(key)) {
+    if (forcePersist) {
+        ChunkSaveManager.playerModifiedKeys.add(key);
+        ChunkSaveManager.dirtySaveKeys.add(key);
+    } else if (ChunkSaveManager.playerModifiedKeys.has(key)) {
         ChunkSaveManager.dirtySaveKeys.add(key);
     }
 

@@ -73,19 +73,19 @@ export function createFluidEngine(deps) {
     });
 
     // 標準接触反応：水 × 溶岩 -> 丸石（または黒曜石）
-    registerReaction(BLOCK_TYPES.WATER, BLOCK_TYPES.LAVA, ({ tx, ty, tz, targetRaw }) => {
+    registerReaction(BLOCK_TYPES.WATER, BLOCK_TYPES.LAVA, ({ sx, sz, tx, ty, tz, targetRaw }) => {
         const targetMeta = (targetRaw >> 12) & 0xF;
         const targetLevel = targetMeta & 7;
         const isTargetSource = (targetLevel === 0) && (((targetMeta >> 3) & 1) === 0);
         const resultId = (isTargetSource && BLOCK_TYPES.OBSIDIAN)
             ? BLOCK_TYPES.OBSIDIAN
             : BLOCK_TYPES.COBBLE_STONE;
-        setBlockFromWorldTick(tx, ty, tz, resultId);
+        setBlockFromWorldTick(tx, ty, tz, resultId, sx, sz);
         return true;
     });
 
-    registerReaction(BLOCK_TYPES.LAVA, BLOCK_TYPES.WATER, ({ tx, ty, tz }) => {
-        setBlockFromWorldTick(tx, ty, tz, BLOCK_TYPES.COBBLE_STONE);
+    registerReaction(BLOCK_TYPES.LAVA, BLOCK_TYPES.WATER, ({ sx, sz, tx, ty, tz }) => {
+        setBlockFromWorldTick(tx, ty, tz, BLOCK_TYPES.COBBLE_STONE, sx, sz);
         return true;
     });
 
@@ -325,7 +325,7 @@ export function createFluidEngine(deps) {
                     const nextBelowRaw = id | (fallMeta << 12);
                     if (belowRaw !== nextBelowRaw) {
                         clearPassableBlockIfNeeded(x, y - 1, z, belowRaw, id);
-                        setBlockFromWorldTick(x, y - 1, z, nextBelowRaw);
+                        setBlockFromWorldTick(x, y - 1, z, nextBelowRaw, x, z);
                         tickScheduler.schedule(x, y - 1, z, fCfg.tickDelay, "fluid_flow", 1, id);
                     }
                     // 源流以外は落下中なら横へ広げず、着地してから横へ広がる（本家準拠）
@@ -395,7 +395,7 @@ export function createFluidEngine(deps) {
 
             clearPassableBlockIfNeeded(nx, y, nz, nRaw, id);
             const nextRaw = id | ((nextLevel & 7) << 12);
-            setBlockFromWorldTick(nx, y, nz, nextRaw);
+            setBlockFromWorldTick(nx, y, nz, nextRaw, x, z);
             tickScheduler.schedule(nx, y, nz, fCfg.tickDelay, "fluid_flow", 1, id);
         }
     }
@@ -514,6 +514,9 @@ export function createFluidEngine(deps) {
             scheduleFluidAround(wx | 0, wy | 0, wz | 0);
         },
         onChunkLoaded,
+        onChunkEvicted(chunkKey) {
+            activatedChunks.delete(chunkKey);
+        },
         resetActivatedChunks() {
             activatedChunks.clear();
         },
