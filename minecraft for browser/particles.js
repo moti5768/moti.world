@@ -1,13 +1,20 @@
 "use strict";
 import * as THREE from './build/three.module.js';
 import { camera, scene, getVoxelAtWorld, ChunkSaveManager, blockCollisionBoxCache } from './script.js';
-import { getBlockMaterials, BLOCK_TYPES, getBlockConfiguration, applyRotationToCollisionBox } from './blocks.js';
+import { getBlockMaterials, BLOCK_TYPES, getBlockConfiguration, applyRotationToCollisionBox, usesConnectionMeta } from './blocks.js';
 /* ======================================================
    【統合・最適化】パーティクルシステム（マイクラ準拠）
    ====================================================== */
+const MAX_PARTICLE_POOL = 256;
+const MAX_PARTICLE_GROUPS = 8; // 同時最大 8ブロック分（512個）でメモリ・ドローコール暴走を防止
 const particlePool = [];
+const particleGroupPool = [];
 const activeParticleGroups = [];
 const GRAVITY = 9.8 * 0.8;
+
+// パーティクル生成用再利用ベクトル（毎回 new Vector3 を廃止）
+const _pOffset = new THREE.Vector3();
+const _pRndVec = new THREE.Vector3();
 
 const materialPool = new Map();
 let noTextureMaterial = null;
@@ -52,19 +59,11 @@ const getCachedParticleGeometry = (i, j, grid, size) => {
     const geo = new THREE.PlaneGeometry(size, size).center();
     const uv = geo.attributes.uv.array;
 
-    // UVの範囲を計算
     const u0 = i / grid;
     const v0 = j / grid;
     const u1 = (i + 1) / grid;
     const v1 = (j + 1) / grid;
 
-    /**
-     * Three.js PlaneGeometry の標準的なUV順序:
-     * [0, 1] 左上: (u0, v1)
-     * [2, 3] 右上: (u1, v1)
-     * [4, 5] 左下: (u0, v0)
-     * [6, 7] 右下: (u1, v0)
-     */
     uv.set([
         u0, v1, // 左上
         u1, v1, // 右上
@@ -79,41 +78,69 @@ const getCachedParticleGeometry = (i, j, grid, size) => {
     return geo;
 };
 
-const getPooledParticle = () => {
+/**
+ * プールからパーティクルを取得（キャッシュ済み共有 geo/mat を直接渡し、ダミーVRAMリークを完全ゼロ化）
+ */
+const getPooledParticle = (sharedGeo, sharedMat) => {
     const p = particlePool.pop();
     if (p) {
+        p.geometry = sharedGeo;
+        p.material = sharedMat;
         p.visible = true;
         return p;
     }
-    const geo = new THREE.PlaneGeometry(1, 1);
-    geo.__cached = false;
-    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1, side: THREE.DoubleSide });
-    return new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(sharedGeo, sharedMat);
+    mesh.userData = {
+        velocity: new THREE.Vector3(),
+        lifetime: 0,
+        elapsed: 0
+    };
+    return mesh;
 };
 
 const releasePooledParticle = p => {
     p.visible = false;
     if (p.parent) p.parent.remove(p);
+    // 共有キャッシュジオメトリ/マテリアルは破棄せず参照のみ切断
     if (p.geometry && !p.geometry.__cached) {
         p.geometry.dispose();
-        p.geometry = null;
     }
-    particlePool.push(p);
+    p.geometry = null;
+    p.material = null;
+    if (particlePool.length < MAX_PARTICLE_POOL) {
+        particlePool.push(p);
+    }
+};
+
+const acquireParticleGroup = () => {
+    return particleGroupPool.length > 0 ? particleGroupPool.pop() : new THREE.Group();
+};
+
+const releaseParticleGroup = (group) => {
+    for (let i = group.children.length - 1; i >= 0; i--) {
+        releasePooledParticle(group.children[i]);
+    }
+    if (group.parent) group.parent.remove(group);
+    if (particleGroupPool.length < MAX_PARTICLE_GROUPS) {
+        particleGroupPool.push(group);
+    }
 };
 
 /**
- * マイクラ準拠の破壊パーティクルを一括生成（最適化版）
+ * マイクラ準拠の破壊パーティクルを一括生成（ゼロリーク・上限管理版）
  */
 export const createMinecraftBreakParticles = (pos, blockType, lifetime = 3.0) => {
+    // 同時発生上限を超えたら最も古いグループを回収してメモリ・ドローコール膨張を防止
+    while (activeParticleGroups.length >= MAX_PARTICLE_GROUPS) {
+        const oldest = activeParticleGroups.shift();
+        releaseParticleGroup(oldest);
+    }
+
     const grid = 4;
     const size = 0.5 / grid;
-    const group = new THREE.Group();
+    const group = acquireParticleGroup();
     const texture = getBlockMaterials(blockType)?.[0]?.map || null;
     const sharedMat = getOrCreateMaterialForTexture(texture);
-
-    // 💡 改善：再利用するベクトル（メモリ確保の抑制）
-    const offset = new THREE.Vector3();
-    const rndVec = new THREE.Vector3();
 
     const invGrid = 1 / grid;
     const baseOffset = 0.5 * invGrid - 0.5;
@@ -122,45 +149,25 @@ export const createMinecraftBreakParticles = (pos, blockType, lifetime = 3.0) =>
         const xBase = i * invGrid + baseOffset;
         for (let j = 0; j < grid; j++) {
             const yBase = j * invGrid + baseOffset;
+            const cachedGeo = getCachedParticleGeometry(i, j, grid, size);
 
             for (let k = 0; k < grid; k++) {
-                // 💡 改善：zBaseをkループの先頭で1回だけ計算
                 const zBase = k * invGrid + baseOffset;
+                const p = getPooledParticle(cachedGeo, sharedMat);
+                const ud = p.userData;
 
-                const p = getPooledParticle();
-                const ud = p.userData; // 💡 改善：参照をキャッシュ
-                const pPos = p.position; // 💡 改善：参照をキャッシュ
-
-                p.material = sharedMat;
-                p.geometry = getCachedParticleGeometry(i, j, grid, size);
-
-                // 💡 改善：事前計算済みのzBaseを使用
-                offset.set(
+                _pOffset.set(
                     xBase + (Math.random() - 0.5) * 0.05,
                     yBase + (Math.random() - 0.5) * 0.05,
                     zBase + (Math.random() - 0.5) * 0.05
                 );
-
-                pPos.copy(pos).add(offset);
+                p.position.copy(pos).add(_pOffset);
                 p.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
 
-                rndVec.set((Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2);
-
-                // 💡 改善：userDataの構造チェックと代入を最適化
-                if (!ud.origin) {
-                    p.userData = {
-                        origin: new THREE.Vector3(),
-                        velocity: new THREE.Vector3(),
-                        lifetime: 0,
-                        elapsed: 0
-                    };
-                }
-
-                // 💡 改善：キャッシュした ud を使って直接アクセス
-                p.userData.origin.copy(pos);
-                p.userData.velocity.copy(rndVec);
-                p.userData.lifetime = 0.2 + Math.random() * (lifetime - 0.2);
-                p.userData.elapsed = 0;
+                _pRndVec.set((Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2);
+                ud.velocity.copy(_pRndVec);
+                ud.lifetime = 0.2 + Math.random() * (lifetime - 0.2);
+                ud.elapsed = 0;
 
                 group.add(p);
             }
@@ -192,16 +199,13 @@ export const updateBlockParticles = delta => {
             const p = children[pi];
             const ud = p.userData;
 
-            // 💡 改善：最初に寿命チェックを行い、無駄な計算（物理・衝突判定）をスキップ
+            // 寿命チェック（releasePooledParticle 内で parent.remove 済みのため二重 remove 不要）
             if (ud.elapsed >= ud.lifetime) {
-                // 共有マテリアルの色変更は全パーティクルに影響するため削除、または個別設定が必要
                 releasePooledParticle(p);
-                group.remove(p);
                 continue;
             }
             ud.elapsed += delta;
 
-            // 💡 改善：プロパティアクセスをキャッシュ
             const pos = p.position;
             const vel = ud.velocity;
 
@@ -213,7 +217,6 @@ export const updateBlockParticles = delta => {
             vel.x *= 0.98;
             vel.z *= 0.98;
 
-            // 💡 改善：Math.floorを高速化（正の数前提ならビット演算も可だが、負の数対応のためそのままか |0 を検討）
             const bx = Math.floor(pos.x);
             const by = Math.floor(pos.y);
             const bz = Math.floor(pos.z);
@@ -223,7 +226,6 @@ export const updateBlockParticles = delta => {
             const lx = bx & 15;
             const lz = bz & 15;
 
-            // 💡 改善：Chunk内のブロック取得を直接行う
             const rawVoxel = ChunkSaveManager.getBlock(pCx, pCz, lx, by, lz)
                 ?? getVoxelAtWorld(bx, by, bz, true);
 
@@ -237,18 +239,22 @@ export const updateBlockParticles = delta => {
 
                     const relBoxes = blockCollisionBoxCache ? blockCollisionBoxCache.get(id) : null;
                     if (relBoxes && relBoxes.length > 0) {
+                        const isConnBlock = usesConnectionMeta(id);
                         let maxBoxY = -Infinity;
                         for (let j = 0; j < relBoxes.length; j++) {
-                            _tempRotatedBox.makeEmpty();
-                            applyRotationToCollisionBox(relBoxes[j], metadata, _tempRotatedBox);
-                            if (_tempRotatedBox.max.y > maxBoxY) maxBoxY = _tempRotatedBox.max.y;
+                            if (isConnBlock) {
+                                if (relBoxes[j].max.y > maxBoxY) maxBoxY = relBoxes[j].max.y;
+                            } else {
+                                _tempRotatedBox.makeEmpty();
+                                applyRotationToCollisionBox(relBoxes[j], metadata, _tempRotatedBox);
+                                if (_tempRotatedBox.max.y > maxBoxY) maxBoxY = _tempRotatedBox.max.y;
+                            }
                         }
                         topY = by + maxBoxY;
                     } else {
                         topY = by + getBlockHeight(id);
                     }
 
-                    // 💡 改善：pos.y への直接アクセス
                     if (vel.y < 0 && pos.y >= topY - 0.1 && pos.y <= topY + 0.2) {
                         pos.y = topY;
                         vel.y = 0;
@@ -262,12 +268,13 @@ export const updateBlockParticles = delta => {
                             const cx = bx + dir.x;
                             const cz = bz + dir.z;
 
-                            // 💡 改善：隣接チャンク判定の高速化
+                            // null 返却時も確実に getVoxelAtWorld へフォールバックして誤空気判定を防止
                             const rawSideVoxel = ((cx >> 4) === pCx && (cz >> 4) === pCz)
-                                ? ChunkSaveManager.getBlock(pCx, pCz, cx & 15, by, cz & 15)
+                                ? (ChunkSaveManager.getBlock(pCx, pCz, cx & 15, by, cz & 15) ?? getVoxelAtWorld(cx, by, cz, true))
                                 : getVoxelAtWorld(cx, by, cz, true);
 
-                            if ((rawSideVoxel & 0xFFF) === BLOCK_TYPES.SKY || (rawSideVoxel & 0xFFF) === BLOCK_TYPES.WATER) {
+                            const sideId = rawSideVoxel & 0xFFF;
+                            if (sideId === BLOCK_TYPES.SKY || sideId === BLOCK_TYPES.WATER) {
                                 _validCandidates[validCount++] = dir;
                             }
                         }
@@ -281,7 +288,7 @@ export const updateBlockParticles = delta => {
                             vel.y = 0;
                         } else {
                             vel.set(0, 0, 0);
-                            ud.elapsed = ud.lifetime; // 即座に終了フラグ
+                            ud.elapsed = ud.lifetime;
                         }
                     }
                 }
@@ -290,10 +297,9 @@ export const updateBlockParticles = delta => {
             p.quaternion.copy(camQuat);
         }
 
-        // グループ破棄判定
+        // 空になったグループをプールへ返却（GC削減）
         if (group.children.length === 0) {
-            if (group.userData?.dispose) group.userData.dispose();
-            scene.remove(group);
+            releaseParticleGroup(group);
             ag.splice(gi, 1);
         }
     }

@@ -2,7 +2,7 @@
 import { BLOCK_TYPES } from '../blocks.js';
 
 /**
- * アルファ版用バイオームID定義
+ * バイオームID定義
  * Zero-GCキャッシュのために数値で管理
  */
 export const BIOME_TYPES = {
@@ -16,10 +16,7 @@ export const BIOME_TYPES = {
 
 /**
  * バイオームの設定データ
- * 
- * 最適化ポイント:
- * 1. 数値キーによる高速ルックアップ
- * 2. 常に同じオブジェクト参照を返すことでGC負荷をゼロに抑制
+ * 常に同じ不変オブジェクト参照を返すことでGC負荷をゼロに抑制
  */
 export const BIOME_CONFIG = {
     [BIOME_TYPES.PLAINS]: {
@@ -29,60 +26,57 @@ export const BIOME_CONFIG = {
         fillerBlock: BLOCK_TYPES.DIRT,
         baseHeight: 64,
         heightVariation: 6,
-        noiseScale: 0.01
+        noiseScale: 0.008
     },
     [BIOME_TYPES.SNOWY_TUNDRA]: {
         id: 1,
         name: 'Snowy Tundra',
         topBlock: BLOCK_TYPES.SNOW,
         fillerBlock: BLOCK_TYPES.DIRT,
-        baseHeight: 64,
-        heightVariation: 5,
-        noiseScale: 0.01
+        baseHeight: 65,
+        heightVariation: 7,
+        noiseScale: 0.009
     },
     [BIOME_TYPES.FOREST]: {
         id: 2,
         name: 'Forest',
         topBlock: BLOCK_TYPES.GRASS,
         fillerBlock: BLOCK_TYPES.DIRT,
-        baseHeight: 66,
-        heightVariation: 15,
-        noiseScale: 0.02
+        baseHeight: 67,
+        heightVariation: 14,
+        noiseScale: 0.015
     },
     [BIOME_TYPES.DESERT]: {
         id: 3,
         name: 'Desert',
         topBlock: BLOCK_TYPES.SAND,
         fillerBlock: BLOCK_TYPES.SANDSTONE,
-        baseHeight: 62,
-        heightVariation: 5,
-        noiseScale: 0.01
+        baseHeight: 64,
+        heightVariation: 6,
+        noiseScale: 0.008
     },
     [BIOME_TYPES.MOUNTAINS]: {
         id: 4,
         name: 'Mountains',
         topBlock: BLOCK_TYPES.STONE,
         fillerBlock: BLOCK_TYPES.STONE,
-        baseHeight: 90,
-        heightVariation: 50,
-        noiseScale: 0.05
+        baseHeight: 86,
+        heightVariation: 36,
+        noiseScale: 0.025
     },
     [BIOME_TYPES.RIVER]: {
         id: 5,
         name: 'River',
         topBlock: BLOCK_TYPES.DIRT,
         fillerBlock: BLOCK_TYPES.DIRT,
-        baseHeight: 58,
+        baseHeight: 56,
         heightVariation: 2,
-        noiseScale: 0.01
+        noiseScale: 0.008
     }
 };
 
 /**
  * キャッシュからの逆引き用テーブル
- * 
- * 最適化ポイント:
- * 実行時の計算を排除するため、リテラルとして定義
  */
 export const BIOME_ID_TO_NAME = {
     0: 'Plains',
@@ -94,40 +88,37 @@ export const BIOME_ID_TO_NAME = {
 };
 
 /**
- * 温度、湿度、標高に基づいてバイオームを決定する
- * 
- * 軽量化ポイント:
- * 1. Math.absを使わずインラインで絶対値を計算し、関数呼び出しを削減
- * 2. 頻繁にアクセスされるBIOME_CONFIG[BIOME_TYPES.X]を直接返却
+ * 気温(0..1)・湿度(0..1)・大陸度/起伏(0..1)・川ノイズ(0..1)に基づいてバイオームを決定する
+ * 循環依存(標高入力)を廃止し、大陸度パラメータにより山岳バイオームを確実に連続生成する
  */
-export function determineBiome(temp, humidity, height = 64, riverValue = 0.5) {
-
-    // 1. 特殊地形：川の判定（減算や絶対値計算を省き、直接範囲比較で高速化）
-    if (riverValue > 0.45 && riverValue < 0.55) {
+export function determineBiome(temp, humidity, continentalness = 0.5, riverValue = 0.5) {
+    // 1. 河川判定（中心 0.5 から ±0.042 の帯、高地山岳の頂上付近は渓谷化しすぎないよう緩和）
+    const riverDist = riverValue >= 0.5 ? (riverValue - 0.5) : (0.5 - riverValue);
+    if (riverDist < 0.042 && continentalness < 0.72) {
         return BIOME_CONFIG[BIOME_TYPES.RIVER];
     }
 
-    // 2. 山岳判定 (標高による優先判定)
-    if (height > 95) {
+    // 2. 山岳判定（大陸度・隆起度による連続エリア形成）
+    if (continentalness > 0.66) {
         return BIOME_CONFIG[BIOME_TYPES.MOUNTAINS];
     }
 
-    // 3. 気温と湿度による判定
+    // 3. 気温と湿度による気候帯判定
     // --- 寒冷地 ---
-    if (temp < 0.3) {
+    if (temp < 0.32) {
         return BIOME_CONFIG[BIOME_TYPES.SNOWY_TUNDRA];
     }
 
     // --- 乾燥帯 ---
-    if (temp > 0.7 && humidity < 0.3) {
+    if (temp > 0.64 && humidity < 0.38) {
         return BIOME_CONFIG[BIOME_TYPES.DESERT];
     }
 
-    // --- 温帯 ---
-    if (humidity > 0.5) {
+    // --- 温帯・湿潤 ---
+    if (humidity > 0.52) {
         return BIOME_CONFIG[BIOME_TYPES.FOREST];
     }
 
-    // デフォルト
+    // デフォルト（温帯草原）
     return BIOME_CONFIG[BIOME_TYPES.PLAINS];
 }

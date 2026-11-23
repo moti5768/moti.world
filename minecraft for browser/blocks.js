@@ -9,6 +9,8 @@ const ERROR_TEXTURE = (() => {
     ]); // 2x2 マゼンタ/ブラック
     const tex = new THREE.DataTexture(data, 2, 2, THREE.RGBAFormat);
     tex.magFilter = THREE.NearestFilter;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
     tex.needsUpdate = true;
     return tex;
 })();
@@ -83,23 +85,7 @@ function getFenceCollisionBoxes(meta) {
     return result;
 }
 
-export function getCollisionBoxes(type, meta = 0) {
-    // 1. フェンスは meta に基づいて動的に生成
-    if (type === "fence") {
-        return getFenceCollisionBoxes(meta);
-    }
-
-    // 2. それ以外は既存のキャッシュから取得 (階段、スラブ、カーペット等)
-    const baseBoxes = CUSTOM_COLLISION_CACHE[type] || DEFAULT_BOX_ARRAY;
-
-    // 軽量にコピーして返す
-    return baseBoxes.map(src => new THREE.Box3().copy(src));
-}
-
-/**
- * 板ガラスの接続状態に基づいた当たり判定
- */
-function getPaneCollisionBoxes(meta) {
+const PANE_BOXES_PRECOMPUTED = Array.from({ length: 16 }, (_, meta) => {
     const boxes = [];
     const thick = 0.125; // 厚み（2/16ブロック）
     const center = 0.5;
@@ -108,14 +94,104 @@ function getPaneCollisionBoxes(meta) {
     // 中央の芯
     boxes.push(createBox(center - half, 0, center - half, center + half, 1, center + half));
 
-    const { n, s, e, w } = getSideConnections(meta);
+    const n = (meta >> 3) & 1;
+    const s = (meta >> 2) & 1;
+    const e = (meta >> 1) & 1;
+    const w = meta & 1;
 
     if (n) boxes.push(createBox(center - half, 0, 0, center + half, 1, center - half));
     if (s) boxes.push(createBox(center - half, 0, center + half, center + half, 1, 1));
     if (e) boxes.push(createBox(center + half, 0, center - half, 1, 1, center + half));
     if (w) boxes.push(createBox(0, 0, center - half, center - half, 1, center + half));
 
-    return boxes;
+    return Object.freeze(boxes);
+});
+
+/**
+ * 板ガラスの接続状態に基づいた当たり判定（事前計算キャッシュ参照）
+ */
+function getPaneCollisionBoxes(meta) {
+    const baseBoxes = PANE_BOXES_PRECOMPUTED[meta & 15];
+    const len = baseBoxes.length;
+    const result = new Array(len);
+    for (let i = 0; i < len; i++) {
+        result[i] = new THREE.Box3().copy(baseBoxes[i]);
+    }
+    return result;
+}
+
+/**
+ * 4bitメタデータを「回転・上下反転」ではなく「4方向接続ビットマスク(N/S/E/W)」として使うブロックか判定する
+ */
+export function usesConnectionMeta(blockId) {
+    const cfg = getBlockConfiguration(blockId);
+    if (!cfg) return false;
+    return cfg.geometryType === "fence" || cfg.geometryType === "pane";
+}
+
+// フェンスの選択・視線判定用ボックス（物理衝突用の高さ1.5と分離し、見た目の高さ1.0に一致させる）
+const FENCE_SELECTION_BOXES_PRECOMPUTED = Array.from({ length: 16 }, (_, meta) => {
+    const boxes = [];
+    boxes.push(createBox(0.375, 0, 0.375, 0.625, 1.0, 0.625));
+    const n = (meta >> 3) & 1, s = (meta >> 2) & 1, e = (meta >> 1) & 1, w = meta & 1;
+    if (n) boxes.push(createBox(0.4375, 0.375, 0, 0.5625, 0.9375, 0.375));
+    if (s) boxes.push(createBox(0.4375, 0.375, 0.625, 0.5625, 0.9375, 1.0));
+    if (e) boxes.push(createBox(0.625, 0.375, 0.4375, 1.0, 0.9375, 0.5625));
+    if (w) boxes.push(createBox(0, 0.375, 0.4375, 0.375, 0.9375, 0.5625));
+    return Object.freeze(boxes);
+});
+
+const WATER_SELECTION_BOX_ARRAY = Object.freeze([createBox(0, 0, 0, 1, 0.88, 1)]);
+
+/**
+ * 読み取り専用の衝突判定ボックス配列を返す（配列・Box3の新規生成なし・ゼロGC）
+ * ※返却されたBox3を変更してはならない
+ */
+export function getCollisionBoxesReadOnly(type, meta = 0) {
+    if (type === "fence") {
+        return FENCE_BOXES_PRECOMPUTED[meta & 15];
+    }
+    if (type === "pane") {
+        return PANE_BOXES_PRECOMPUTED[meta & 15];
+    }
+    return CUSTOM_COLLISION_CACHE[type] || DEFAULT_BOX_ARRAY;
+}
+
+/**
+ * 視線判定（Raycast）および選択黒枠用の読み取り専用ボックス配列を返す（ゼロGC）
+ * ※返却されたBox3を変更してはならない
+ */
+export function getSelectionBoxesReadOnly(blockId, meta = 0) {
+    const cfg = blockConfigLookup[blockId];
+    if (!cfg) return DEFAULT_BOX_ARRAY;
+
+    const gType = cfg.geometryType;
+    if (gType === "fence") return FENCE_SELECTION_BOXES_PRECOMPUTED[meta & 15];
+    if (gType === "pane") return PANE_BOXES_PRECOMPUTED[meta & 15];
+    if (gType === "stairs") return CUSTOM_COLLISION_CACHE.stairs;
+    if (gType === "water") return WATER_SELECTION_BOX_ARRAY;
+    if (cfg._selectionBoxes) return cfg._selectionBoxes;
+
+    return DEFAULT_BOX_ARRAY;
+}
+
+export function getCollisionBoxes(type, meta = 0) {
+    // 1. フェンス・板ガラスは接続マスク(meta)の事前計算キャッシュから取得
+    if (type === "fence") {
+        return getFenceCollisionBoxes(meta);
+    }
+    if (type === "pane") {
+        return getPaneCollisionBoxes(meta);
+    }
+
+    // 2. それ以外は既存のキャッシュから取得 (階段、スラブ、カーペット、ハシゴ等)
+    const baseBoxes = CUSTOM_COLLISION_CACHE[type] || DEFAULT_BOX_ARRAY;
+    const len = baseBoxes.length;
+    const result = new Array(len);
+    for (let i = 0; i < len; i++) {
+        result[i] = new THREE.Box3().copy(baseBoxes[i]);
+    }
+    return result;
 }
 
 /**
@@ -198,14 +274,18 @@ const LOG_MATRICES = [
         .premultiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
         .premultiply(new THREE.Matrix4().makeTranslation(0.5, 0.5, 0.5)), // Axis 2: Z
 ];
-export function getLogRotationMatrix(metadata) {
+/**
+ * 読み取り専用の原木回転行列を返す（cloneなし・ゼロGC）
+ * ※返却された Matrix4 を直接書き換えないこと
+ */
+export function getLogRotationMatrixReadOnly(metadata) {
     let axis = (metadata & 3) % 3;
-
-    // 💡 万が一の範囲外や不正値をクランプ、および配列要素の存在チェックを追加
     if (axis < 0 || axis > 2) axis = 0;
-    const targetMatrix = LOG_MATRICES[axis] || LOG_MATRICES[0];
+    return LOG_MATRICES[axis] || LOG_MATRICES[0];
+}
 
-    return targetMatrix.clone();
+export function getLogRotationMatrix(metadata) {
+    return getLogRotationMatrixReadOnly(metadata).clone();
 }
 
 /**
@@ -216,22 +296,27 @@ export function getLogRotationMatrix(metadata) {
  * @param {THREE.Vector3} intersectPoint - クリックした位置の精密な座標
  * @returns {number} metaData (4ビット分: 0-15)
  */
+// ハシゴのメタデータ(0..3)に対応する支持壁への相対オフセット [dx, dz]
+const LADDER_SUPPORT_DX = [0, -1, 0, 1];
+const LADDER_SUPPORT_DZ = [-1, 0, 1, 0];
+
 export function calculatePlacementMeta(blockId, camDir, rawNormal, intersectPoint) {
     const cfg = getBlockConfiguration(blockId);
     if (!cfg) return 0;
 
+    // --- 0. ハシゴ (isLadder) 専用ロジック ---
     if (cfg.isLadder) {
-        // クリックした壁の面にピッタリ吸着する方向を返す
-        if (rawNormal.z > 0.5) return 0; // 南面をクリック -> 南向き
-        if (rawNormal.z < -0.5) return 2; // 北面をクリック -> 北向き
-        if (rawNormal.x > 0.5) return 1; // 東面をクリック -> 東向き
-        if (rawNormal.x < -0.5) return 3; // 西面をクリック -> 西向き
-        return 0;
+        // 水平の壁面クリックのみ許可（床・天井クリックは無効値 -1 を返す）
+        if (Math.abs(rawNormal.y) > 0.5) return -1;
+        if (rawNormal.z > 0.5) return 0;  // 南面をクリック -> 北側壁(z=0)へ吸着
+        if (rawNormal.z < -0.5) return 2; // 北面をクリック -> 南側壁(z=1)へ吸着
+        if (rawNormal.x > 0.5) return 1;  // 東面をクリック -> 西側壁(x=0)へ吸着
+        if (rawNormal.x < -0.5) return 3; // 西面をクリック -> 東側壁(x=1)へ吸着
+        return -1;
     }
 
     // --- 1. 原木 (isLog) 専用ロジック ---
     if (cfg.isLog) {
-        // 法線の絶対値が一番大きい軸に倒す
         const ax = Math.abs(rawNormal.x);
         const ay = Math.abs(rawNormal.y);
         const az = Math.abs(rawNormal.z);
@@ -241,8 +326,7 @@ export function calculatePlacementMeta(blockId, camDir, rawNormal, intersectPoin
         return 0; // Y軸(上下面)
     }
 
-    // --- 2. 既存の向き(Directional/Slab)計算 ---
-    // ... (既存のコードをそのまま維持) ...
+    // --- 2. 向き(Directional) / 上下反転(Slab・Stairs) 計算 ---
     let direction = 0;
     if (cfg.directional) {
         const lookX = -camDir.x;
@@ -259,15 +343,75 @@ export function calculatePlacementMeta(blockId, camDir, rawNormal, intersectPoin
         if (rawNormal.y < -0.5) {
             isUpsideDown = 1;
         } else if (Math.abs(rawNormal.y) < 0.5) {
-            // 💡 座標からピュアな小数部分のみを抽出し、負の座標でも確実に 0 〜 1 に収まるように補正
             let fractionY = intersectPoint.y - Math.floor(intersectPoint.y);
             if (fractionY < 0) fractionY += 1;
-
-            // 境界（0.5）付近の微小誤差を考慮して 0.49999 で判定（ハックを安全化）
             if (fractionY > 0.49999) isUpsideDown = 1;
         }
     }
     return direction | (isUpsideDown << 2);
+}
+
+/**
+ * 隣接・下部ブロックの支持を必要とするブロックかどうかを返す
+ */
+export function isSupportDependentBlock(blockId) {
+    const cfg = getBlockConfiguration(blockId);
+    if (!cfg) return false;
+    return cfg.isLadder === true || cfg.geometryType === "carpet" || cfg.geometryType === "cross";
+}
+
+/**
+ * 指定座標・メタデータでブロックを設置・維持できるか（支持条件）を判定する
+ * @param {number} blockId - 対象ブロックID (12bit)
+ * @param {number} meta - 確定済みメタデータ (0-15、無効時は負数)
+ * @param {number} wx - ワールドX座標
+ * @param {number} wy - ワールドY座標
+ * @param {number} wz - ワールドZ座標
+ * @param {function(number, number, number): number} getBlockIdFn - ワールド座標から12bitブロックIDを返す関数
+ * @returns {boolean}
+ */
+export function canPlaceBlockAt(blockId, meta, wx, wy, wz, getBlockIdFn) {
+    if (wy < 0 || wy >= 256) return false;
+    const cfg = getBlockConfiguration(blockId);
+    if (!cfg || blockId === BLOCK_TYPES.SKY) return false;
+
+    // 1. ハシゴ: 背面が完全な不透明立方体であること
+    if (cfg.isLadder) {
+        if (meta < 0 || meta > 3) return false;
+        const supportX = wx + LADDER_SUPPORT_DX[meta];
+        const supportZ = wz + LADDER_SUPPORT_DZ[meta];
+        const supportId = getBlockIdFn(supportX, wy, supportZ) & 0xFFF;
+        const supportCfg = getBlockConfiguration(supportId);
+        return !!(supportCfg && supportCfg.isOpaqueCube === true);
+    }
+
+    // 2. カーペット: 下に空気・液体以外のブロックがあること
+    if (cfg.geometryType === "carpet") {
+        if (wy <= 0) return false;
+        const belowId = getBlockIdFn(wx, wy - 1, wz) & 0xFFF;
+        if (belowId === BLOCK_TYPES.SKY) return false;
+        const belowCfg = getBlockConfiguration(belowId);
+        return !!(belowCfg && belowCfg.geometryType !== "water");
+    }
+
+    // 3. クロス形状（花・草・苗木・キノコ・枯れ木）: 種類に応じた土壌・支持ブロックがあること
+    if (cfg.geometryType === "cross") {
+        if (wy <= 0) return false;
+        const belowId = getBlockIdFn(wx, wy - 1, wz) & 0xFFF;
+        if (belowId === BLOCK_TYPES.SKY) return false;
+
+        if (blockId === BLOCK_TYPES.MUSHROOM_RED || blockId === BLOCK_TYPES.MUSHROOM_BROWN) {
+            const belowCfg = getBlockConfiguration(belowId);
+            return !!(belowCfg && belowCfg.isOpaqueCube === true);
+        }
+        if (blockId === BLOCK_TYPES.DEADBUSH) {
+            return belowId === BLOCK_TYPES.SAND || belowId === BLOCK_TYPES.DIRT;
+        }
+        // 花・バラ・背の高い草・苗木は草ブロックまたは土の上のみ
+        return belowId === BLOCK_TYPES.GRASS || belowId === BLOCK_TYPES.DIRT;
+    }
+
+    return true;
 }
 
 // ── 共通のデフォルト設定 ──
@@ -827,6 +971,17 @@ for (const cfg of Object.values(BLOCK_CONFIG)) {
     if (typeof cfg.customCollision === "function") {
         cfg._cachedCollision = cfg.customCollision();
     }
+    // 独自 selectionSize が定義されたブロック（スラブ・花・草・カーペット・ハシゴ等）の選択枠ボックスを事前構築
+    if (cfg.selectionSize && cfg.geometryType !== "cube" && cfg.geometryType !== "stairs" && cfg.geometryType !== "fence" && cfg.geometryType !== "pane") {
+        const s = cfg.selectionSize;
+        const o = cfg.selectionOffset || { x: 0.5, y: 0.5, z: 0.5 };
+        cfg._selectionBoxes = Object.freeze([
+            createBox(
+                o.x - s.x * 0.5, o.y - s.y * 0.5, o.z - s.z * 0.5,
+                o.x + s.x * 0.5, o.y + s.y * 0.5, o.z + s.z * 0.5
+            )
+        ]);
+    }
 }
 
 const loadingManager = new THREE.LoadingManager();
@@ -853,9 +1008,11 @@ function cachedLoadTexture(path, fallback = null) {
     if (textureCache.has(path)) return textureCache.get(path);
 
     const placeholder = new THREE.Texture();
-    // 初期状態（ロード中・失敗時）をピンク黒にしておく
+    // 初期状態（ロード中・失敗時）をピンク黒にしておく（個別テクスチャのタイル繰り返しを有効化）
     placeholder.image = ERROR_TEXTURE.image;
     placeholder.magFilter = ERROR_TEXTURE.magFilter;
+    placeholder.wrapS = THREE.RepeatWrapping;
+    placeholder.wrapT = THREE.RepeatWrapping;
     placeholder.needsUpdate = true;
 
     textureCache.set(path, placeholder);
@@ -870,6 +1027,8 @@ function cachedLoadTexture(path, fallback = null) {
                 placeholder.image = tex.image;
                 placeholder.magFilter = tex.magFilter;
                 placeholder.minFilter = tex.minFilter;
+                placeholder.wrapS = THREE.RepeatWrapping;
+                placeholder.wrapT = THREE.RepeatWrapping;
                 placeholder.needsUpdate = true;
                 resolve(placeholder);
             },
@@ -904,13 +1063,13 @@ function cachedLoadTexture(path, fallback = null) {
 // ========================================================
 // 1. シェーダー書き換えロジックの共通化 (メモリ・コンパイル最適化)
 // ========================================================
-/**
- * 全ブロック共通の頂点シェーダー注入ロジック
- */
+// 全ブロックマテリアルで共有する単一スカイライトUniform（O(1)で全チャンクへ昼夜反映）
+export const SHARED_SKY_UNIFORM = { value: 1.0 };
+
 function onBeforeCompileBlock(shader, mat) {
-    // ユニフォームの参照をシェーダーに渡す
-    shader.uniforms.u_skyFactor = mat.userData.shaderUniforms.u_skyFactor;
-    shader.uniforms.u_isLightSource = mat.userData.shaderUniforms.u_isLightSource;
+    const u = mat.userData && mat.userData.shaderUniforms;
+    shader.uniforms.u_skyFactor = SHARED_SKY_UNIFORM;
+    shader.uniforms.u_isLightSource = (u && u.u_isLightSource) ? u.u_isLightSource : { value: 0.0 };
 
     const vertexInjection = `
         #include <color_vertex>
@@ -939,6 +1098,7 @@ function onBeforeCompileBlock(shader, mat) {
 
 const BLOCK_MATERIALS_CACHE = new Map();
 const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
+const _blockShaderCacheKey = () => 'mc_block_light_v1';
 
 // 1. マテリアル生成の核となる部分を独立（高速化）
 function _buildMaterial(texPath, config, props) {
@@ -955,23 +1115,27 @@ function _buildMaterial(texPath, config, props) {
 
     mat.userData.screenFill = props.sf;
     mat.userData.shaderUniforms = {
-        u_skyFactor: { value: 1.0 },
+        u_skyFactor: SHARED_SKY_UNIFORM,
         u_isLightSource: { value: config.lightLevel > 0 ? 1.0 : 0.0 }
     };
+    mat.userData.isShared = true;
+    mat.customProgramCacheKey = _blockShaderCacheKey;
     mat.onBeforeCompile = (shader) => onBeforeCompileBlock(shader, mat);
     return mat;
 }
 
 export function createMaterialsFromBlockConfig(config) {
     // 共通プロパティの計算（1回だけ実行）
-    const isWater = !!config.isWater;
+    const isWater = (config.geometryType === "water") || !!config.isWater;
+    const isBlendTransparent = isWater && ((config.opacity ?? 1.0) < 1.0);
     const isDoubleSide = ["cross", "leaves", "ladder"].includes(config.geometryType);
     const props = {
-        isBlendTransparent: isWater,
+        isBlendTransparent,
         isAlphaCutout: !!config.transparent && !isWater,
         isGlass: !!config.transparent && !isWater && !isDoubleSide,
         side: (isDoubleSide || isWater) ? THREE.DoubleSide : THREE.FrontSide,
-        useVertexColors: !["stairs", "slab"].includes(config.geometryType) && !isDoubleSide && !isWater,
+        // 全チャンクジオメトリが vertexColor(Sky/BlockLight) を持つため true に統一し vColor 未定義エラーを防止
+        useVertexColors: true,
         sf: {
             enabled: config.screenFill?.enabled ?? !!config.screenFill,
             opacity: config.screenFill?.opacity ?? 1.0
@@ -1056,20 +1220,266 @@ function adjustSideUVsForCarpet(geom, scaleY = 0.0625) {
     }
     geom.attributes.uv.needsUpdate = true;
 }
-/**
- * 指定タイプのブロックジオメトリを取得する。
- * ・カスタムジオメトリは一度だけ生成してキャッシュし、再利用
- * ・標準ジオメトリは一度だけ生成してキャッシュし、再利用
- * @param {string} type - "cube", "stairs", "slab", "cross" 等
- * @param {object} [config] - ブロック設定。カスタムジオメトリ用の customGeometry プロパティ等を含む
- * @returns {THREE.BufferGeometry}
- */
 const SHARED_PLANE = new THREE.PlaneGeometry(1, 1);
+
+// 形状ごとのビルダー関数マップ（ストラテジーパターンによる拡張性の向上）
+const GEOMETRY_BUILDERS = {
+    cube: () => {
+        const geom = new THREE.BoxGeometry(1, 1, 1);
+        geom.translate(0.5, 0.5, 0.5);
+        return geom;
+    },
+    slab: () => {
+        const slabGeom = new THREE.BoxGeometry(1, 0.5, 1);
+        slabGeom.translate(0.5, 0.25, 0.5);
+        const posAttr = slabGeom.getAttribute('position');
+        const normAttr = slabGeom.getAttribute('normal');
+        const uvAttr = slabGeom.getAttribute('uv');
+        const indexAttr = slabGeom.index;
+
+        slabGeom.clearGroups();
+        for (let i = 0; i < indexAttr.count; i += 6) {
+            const vertexIndex = indexAttr.array[i] * 3;
+            const nx = normAttr.array[vertexIndex];
+            const ny = normAttr.array[vertexIndex + 1];
+            const nz = normAttr.array[vertexIndex + 2];
+
+            let matIdx = 0;
+            if (nx > 0.5) matIdx = 0;
+            else if (nx < -0.5) matIdx = 1;
+            else if (ny > 0.5) matIdx = 2;
+            else if (ny < -0.5) matIdx = 3;
+            else if (nz > 0.5) matIdx = 4;
+            else if (nz < -0.5) matIdx = 5;
+
+            slabGeom.addGroup(i, 6, matIdx);
+
+            for (let f = 0; f < 6; f++) {
+                const idx = indexAttr.array[i + f];
+                const vx = posAttr.array[idx * 3];
+                const vy = posAttr.array[idx * 3 + 1];
+                const vz = posAttr.array[idx * 3 + 2];
+                let u = 0, v = 0;
+                switch (matIdx) {
+                    case 0: u = 1.0 - vz; v = vy; break;
+                    case 1: u = vz; v = vy; break;
+                    case 2: u = vx; v = 1.0 - vz; break;
+                    case 3: u = vx; v = vz; break;
+                    case 4: u = vx; v = vy; break;
+                    case 5: u = 1.0 - vx; v = vy; break;
+                }
+                uvAttr.array[idx * 2] = u;
+                uvAttr.array[idx * 2 + 1] = v;
+            }
+        }
+        uvAttr.needsUpdate = true;
+        return slabGeom;
+    },
+    stairs: () => {
+        const lower = new THREE.BoxGeometry(1, 0.5, 1);
+        lower.translate(0.5, 0.25, 0.5);
+        const upper = new THREE.BoxGeometry(0.5, 0.5, 1);
+        upper.translate(0.75, 0.75, 0.5);
+
+        const merged = BufferGeometryUtils.mergeBufferGeometries([lower, upper], true);
+        const posAttr = merged.getAttribute('position');
+        const normAttr = merged.getAttribute('normal');
+        const uvAttr = merged.getAttribute('uv');
+        const indexAttr = merged.index;
+
+        merged.clearGroups();
+        for (let i = 0; i < indexAttr.count; i += 6) {
+            const vertexIndex = indexAttr.array[i] * 3;
+            const nx = normAttr.array[vertexIndex];
+            const ny = normAttr.array[vertexIndex + 1];
+            const nz = normAttr.array[vertexIndex + 2];
+
+            let matIdx = 0;
+            if (nx > 0.5) matIdx = 0;
+            else if (nx < -0.5) matIdx = 1;
+            else if (ny > 0.5) matIdx = 2;
+            else if (ny < -0.5) matIdx = 3;
+            else if (nz > 0.5) matIdx = 4;
+            else if (nz < -0.5) matIdx = 5;
+
+            merged.addGroup(i, 6, matIdx);
+
+            for (let f = 0; f < 6; f++) {
+                const idx = indexAttr.array[i + f];
+                const vx = posAttr.array[idx * 3];
+                const vy = posAttr.array[idx * 3 + 1];
+                const vz = posAttr.array[idx * 3 + 2];
+                let u = 0, v = 0;
+                switch (matIdx) {
+                    case 0: u = 1.0 - vz; v = vy; break;
+                    case 1: u = vz; v = vy; break;
+                    case 2: case 3: u = vx; v = vz; break;
+                    case 4: u = vx; v = vy; break;
+                    case 5: u = 1.0 - vx; v = vy; break;
+                }
+                uvAttr.array[idx * 2] = u;
+                uvAttr.array[idx * 2 + 1] = v;
+            }
+        }
+        uvAttr.needsUpdate = true;
+        return merged;
+    },
+    cross: () => {
+        const p1 = SHARED_PLANE.clone();
+        p1.rotateY(THREE.MathUtils.degToRad(45));
+        const p2 = SHARED_PLANE.clone();
+        p2.rotateY(THREE.MathUtils.degToRad(-45));
+        const geom = BufferGeometryUtils.mergeBufferGeometries([p1, p2], true);
+        geom.translate(0.5, 0.5, 0.5);
+        return geom;
+    },
+    fence: (config, meta) => {
+        const { n, s, e, w } = getSideConnections(meta);
+        const geometries = [];
+        const applyGroup = (g) => {
+            g.clearGroups();
+            g.addGroup(0, Infinity, 0); // フェンスは単一テクスチャ[cite: 1]
+            return g;
+        };
+
+        const post = new THREE.BoxGeometry(0.25, 1, 0.25);
+        post.translate(0.5, 0.5, 0.5);
+        geometries.push(applyGroup(post));
+
+        const barWidth = 0.125;
+        const barHeight = 0.1875;
+
+        const createBar = (x, z, bw, bd) => {
+            const b1 = new THREE.BoxGeometry(bw, barHeight, bd);
+            const b2 = b1.clone();
+            b1.translate(x, 0.375 + (barHeight / 2), z);
+            b2.translate(x, 0.75 + (barHeight / 2), z);
+            return [applyGroup(b1), applyGroup(b2)];
+        };
+
+        if (n) geometries.push(...createBar(0.5, 0.25, barWidth, 0.5)); // 北 (-Z)[cite: 1]
+        if (s) geometries.push(...createBar(0.5, 0.75, barWidth, 0.5)); // 南 (+Z)[cite: 1]
+        if (e) geometries.push(...createBar(0.75, 0.5, 0.5, barWidth)); // 東 (+X)[cite: 1]
+        if (w) geometries.push(...createBar(0.25, 0.5, 0.5, barWidth)); // 西 (-X)[cite: 1]
+
+        const geom = BufferGeometryUtils.mergeBufferGeometries(geometries, true); // 全てのパーツを1つのジオメトリに統合[cite: 1]
+        const posAttr = geom.getAttribute('position');
+        const normAttr = geom.getAttribute('normal');
+        const uvAttr = geom.getAttribute('uv');
+
+        for (let i = 0; i < posAttr.count; i++) {
+            const nx = Math.abs(normAttr.getX(i));
+            const ny = Math.abs(normAttr.getY(i));
+            const nz = Math.abs(normAttr.getZ(i));
+
+            let u, v;
+            if (ny > 0.5) {
+                u = posAttr.getX(i);
+                v = posAttr.getZ(i);
+            } else if (nx > 0.5) {
+                u = posAttr.getZ(i);
+                v = posAttr.getY(i);
+            } else {
+                u = posAttr.getX(i);
+                v = posAttr.getY(i);
+            }
+            uvAttr.setXY(i, u, v);
+        }
+        uvAttr.needsUpdate = true;
+        return geom;
+    },
+    pane: (config, meta) => {
+        const { n, s, e, w } = getSideConnections(meta);
+        const geometries = [];
+        const thick = 0.125;
+        const halfThick = thick / 2;
+        const MAT_GLASS = 0;
+        const MAT_FRAME = 2;
+
+        const addFlatPart = (x, y, z, w_size, h_size, d_size, axis) => {
+            const g = new THREE.BoxGeometry(w_size, h_size, d_size);
+            g.translate(x + w_size / 2, y + h_size / 2, z + d_size / 2);
+            g.clearGroups();
+
+            const pos = g.getAttribute('position');
+            const uv = g.getAttribute('uv');
+
+            for (let i = 0; i < 6; i++) {
+                let idx = MAT_FRAME;
+                if (axis === 'z' && (i === 0 || i === 1)) idx = MAT_GLASS;
+                if (axis === 'x' && (i === 4 || i === 5)) idx = MAT_GLASS;
+                g.addGroup(i * 6, 6, idx);
+            }
+
+            for (let i = 0; i < pos.count; i++) {
+                const worldX = pos.getX(i);
+                const worldY = pos.getY(i);
+                const worldZ = pos.getZ(i);
+
+                let u = (axis === 'x') ? worldX : worldZ;
+                let v = worldY;
+
+                uv.setXY(i, u, v);
+            }
+            uv.needsUpdate = true;
+            geometries.push(g);
+        };
+
+        const hasAnyConn = (n || s || e || w);
+
+        if (n || s || !hasAnyConn) {
+            const zStart = n ? 0 : 0.5 - halfThick;
+            const zEnd = s ? 1 : 0.5 + halfThick;
+            const depth = zEnd - zStart;
+            addFlatPart(0.5 - halfThick, 0, zStart, thick, 1, depth, 'z'); // 南北方向[cite: 1]
+        }
+
+        if (e || w) {
+            const xStart = w ? 0 : 0.5 - halfThick;
+            const xEnd = e ? 1 : 0.5 + halfThick;
+            const width = xEnd - xStart;
+            addFlatPart(xStart, 0, 0.5 - halfThick, width, 1, thick, 'x'); // 東西方向[cite: 1]
+        }
+
+        return BufferGeometryUtils.mergeBufferGeometries(geometries, true); // 全てのパーツを1つのジオメトリに統合[cite: 1]
+    },
+    water: (config, meta = 0) => {
+        // meta === 1（上に同種液体がある水中ブロック）は高さ 1.0 にして段間の横縞隙間を完全防止
+        if (meta === 1) {
+            const geom = new THREE.BoxGeometry(1, 1, 1);
+            geom.translate(0.5, 0.5, 0.5);
+            return geom;
+        }
+        const geom = new THREE.BoxGeometry(1, 0.88, 1);
+        geom.translate(0.5, 0.44, 0.5);
+        adjustSideUVs(geom, 0.88);
+        return geom;
+    },
+    leaves: () => {
+        const geom = new THREE.BoxGeometry(1, 1, 1);
+        geom.translate(0.5, 0.5, 0.5);
+        return geom;
+    },
+    carpet: () => {
+        const geom = new THREE.BoxGeometry(1, 0.0625, 1);
+        geom.translate(0.5, 0.03125, 0.5);
+        adjustSideUVsForCarpet(geom, 0.0625);
+        return geom;
+    },
+    ladder: () => {
+        const geom = new THREE.PlaneGeometry(1, 1);
+        geom.translate(0.5, 0.5, 0.05);
+        geom.addGroup(0, 6, 0);
+        return geom;
+    }
+};
+
 /**
- * ブロックのジオメトリを取得（完全版）
+ * 指定タイプのブロックジオメトリを取得する（完全版・リファクタリング済み）
  * @param {string|number} type - ブロックタイプID
- * @param {Object} config - ブロック設定オブジェクト
- * @param {number} meta - 接続状態や回転などの追加情報 (0-15)
+ * @param {Object} [config] - ブロック設定オブジェクト
+ * @param {number} [meta=0] - 接続状態や回転などの追加情報 (0-15)
+ * @returns {THREE.BufferGeometry}
  */
 export function getBlockGeometry(type, config, meta = 0) {
     // 1. カスタムジオメトリ（外部モデルなど）の処理
@@ -1085,303 +1495,18 @@ export function getBlockGeometry(type, config, meta = 0) {
         return cachedCustomGeometries[config.id];
     }
 
-    // 2. ★ キャッシュキーの生成 (type + meta を組み合わせる)
-    // これにより、接続パターンごとのフェンスが別々にキャッシュされます
+    // 2. キャッシュキーの生成 (type + meta を組み合わせる)
     const cacheKey = typeof type === 'number' ? (type << 4) | (meta & 0xF) : `${type}_${meta}`;
     if (cachedBlockGeometries[cacheKey]) return cachedBlockGeometries[cacheKey];
 
-    let geom;
-
-    switch (type) {
-        case "cube":
-            geom = new THREE.BoxGeometry(1, 1, 1);
-            geom.translate(0.5, 0.5, 0.5);
-            break;
-
-        case "slab": {
-            const slabGeom = new THREE.BoxGeometry(1, 0.5, 1);
-            slabGeom.translate(0.5, 0.25, 0.5);
-            const posAttr = slabGeom.getAttribute('position');
-            const normAttr = slabGeom.getAttribute('normal');
-            const uvAttr = slabGeom.getAttribute('uv');
-            const indexAttr = slabGeom.index;
-
-            slabGeom.clearGroups();
-            for (let i = 0; i < indexAttr.count; i += 6) {
-                const vertexIndex = indexAttr.array[i] * 3;
-                const nx = normAttr.array[vertexIndex];
-                const ny = normAttr.array[vertexIndex + 1];
-                const nz = normAttr.array[vertexIndex + 2];
-
-                let matIdx = 0;
-                if (nx > 0.5) matIdx = 0;      // East
-                else if (nx < -0.5) matIdx = 1; // West
-                else if (ny > 0.5) matIdx = 2; // Top
-                else if (ny < -0.5) matIdx = 3; // Bottom
-                else if (nz > 0.5) matIdx = 4; // South
-                else if (nz < -0.5) matIdx = 5; // North
-
-                slabGeom.addGroup(i, 6, matIdx);
-
-                for (let f = 0; f < 6; f++) {
-                    const idx = indexAttr.array[i + f];
-                    const vx = posAttr.array[idx * 3];
-                    const vy = posAttr.array[idx * 3 + 1];
-                    const vz = posAttr.array[idx * 3 + 2];
-                    let u = 0, v = 0;
-                    switch (matIdx) {
-                        case 0: u = 1.0 - vz; v = vy; break;
-                        case 1: u = vz; v = vy; break;
-                        case 2: u = vx; v = 1.0 - vz; break;
-                        case 3: u = vx; v = vz; break;
-                        case 4: u = vx; v = vy; break;
-                        case 5: u = 1.0 - vx; v = vy; break;
-                    }
-                    uvAttr.array[idx * 2] = u;
-                    uvAttr.array[idx * 2 + 1] = v;
-                }
-            }
-            uvAttr.needsUpdate = true;
-            geom = slabGeom;
-            break;
-        }
-
-        case "stairs": {
-            const lower = new THREE.BoxGeometry(1, 0.5, 1);
-            lower.translate(0.5, 0.25, 0.5);
-            const upper = new THREE.BoxGeometry(0.5, 0.5, 1);
-            upper.translate(0.75, 0.75, 0.5);
-
-            const merged = BufferGeometryUtils.mergeBufferGeometries([lower, upper], true);
-            const posAttr = merged.getAttribute('position');
-            const normAttr = merged.getAttribute('normal');
-            const uvAttr = merged.getAttribute('uv');
-            const indexAttr = merged.index;
-
-            merged.clearGroups();
-            for (let i = 0; i < indexAttr.count; i += 6) {
-                const vertexIndex = indexAttr.array[i] * 3;
-                const nx = normAttr.array[vertexIndex];
-                const ny = normAttr.array[vertexIndex + 1];
-                const nz = normAttr.array[vertexIndex + 2];
-
-                let matIdx = 0;
-                if (nx > 0.5) matIdx = 0;
-                else if (nx < -0.5) matIdx = 1;
-                else if (ny > 0.5) matIdx = 2;
-                else if (ny < -0.5) matIdx = 3;
-                else if (nz > 0.5) matIdx = 4;
-                else if (nz < -0.5) matIdx = 5;
-
-                merged.addGroup(i, 6, matIdx);
-
-                for (let f = 0; f < 6; f++) {
-                    const idx = indexAttr.array[i + f];
-                    const vx = posAttr.array[idx * 3];
-                    const vy = posAttr.array[idx * 3 + 1];
-                    const vz = posAttr.array[idx * 3 + 2];
-                    let u = 0, v = 0;
-                    switch (matIdx) {
-                        case 0: u = 1.0 - vz; v = vy; break;
-                        case 1: u = vz; v = vy; break;
-                        case 2: case 3: u = vx; v = vz; break;
-                        case 4: u = vx; v = vy; break;
-                        case 5: u = 1.0 - vx; v = vy; break;
-                    }
-                    uvAttr.array[idx * 2] = u;
-                    uvAttr.array[idx * 2 + 1] = v;
-                }
-            }
-            uvAttr.needsUpdate = true;
-            geom = merged;
-            break;
-        }
-
-        case "cross": {
-            const p1 = SHARED_PLANE.clone();
-            p1.rotateY(THREE.MathUtils.degToRad(45));
-            const p2 = SHARED_PLANE.clone();
-            p2.rotateY(THREE.MathUtils.degToRad(-45));
-            geom = BufferGeometryUtils.mergeBufferGeometries([p1, p2], true);
-            geom.translate(0.5, 0.5, 0.5);
-            break;
-        }
-
-        case "fence": {
-            const { n, s, e, w } = getSideConnections(meta);
-
-            const geometries = [];
-            const applyGroup = (g) => {
-                g.clearGroups();
-                g.addGroup(0, Infinity, 0); // フェンスは単一テクスチャ[cite: 1]
-                return g;
-            };
-
-            // 1. 中央の柱 (常に表示 / 幅0.25)[cite: 1]
-            const post = new THREE.BoxGeometry(0.25, 1, 0.25);
-            post.translate(0.5, 0.5, 0.5);
-            geometries.push(applyGroup(post));
-
-            const barWidth = 0.125;  // 横幅: 4/16 (0.25)
-            const barHeight = 0.1875; // 高さ: 3/16 (0.1875)
-
-            // 2. 接続用の棒を生成するヘルパーの修正
-            const createBar = (x, z, bw, bd) => {
-                // 常に barHeight(0.1875) を高さとして使用するように固定
-                const b1 = new THREE.BoxGeometry(bw, barHeight, bd);
-                const b2 = b1.clone();
-
-                // 配置の高さ（Y座標）も本家の位置へ微調整
-                // 下の棒: 地面から 6/16 (0.375)
-                // 上の棒: 地面から 12/16 (0.75)
-                b1.translate(x, 0.375 + (barHeight / 2), z);
-                b2.translate(x, 0.75 + (barHeight / 2), z);
-
-                return [applyGroup(b1), applyGroup(b2)];
-            };
-
-            // 各方向への接続[cite: 1]
-            if (n) geometries.push(...createBar(0.5, 0.25, barWidth, 0.5)); // 北 (-Z)
-            if (s) geometries.push(...createBar(0.5, 0.75, barWidth, 0.5)); // 南 (+Z)
-            if (e) geometries.push(...createBar(0.75, 0.5, 0.5, barWidth)); // 東 (+X)
-            if (w) geometries.push(...createBar(0.25, 0.5, 0.5, barWidth)); // 西 (-X)
-
-            // 全てのパーツを1つのジオメトリに統合[cite: 1]
-            geom = BufferGeometryUtils.mergeBufferGeometries(geometries, true);
-
-            // --- 🟢 テクスチャUVの再計算処理 (崩れ防止) ---
-            const posAttr = geom.getAttribute('position');
-            const normAttr = geom.getAttribute('normal');
-            const uvAttr = geom.getAttribute('uv');
-
-            for (let i = 0; i < posAttr.count; i++) {
-                const nx = Math.abs(normAttr.getX(i));
-                const ny = Math.abs(normAttr.getY(i));
-                const nz = Math.abs(normAttr.getZ(i));
-
-                let u, v;
-                // 面の向き（法線）に応じて、座標値をUVに投影する
-                if (ny > 0.5) {
-                    // 上下面: XZ平面を投影
-                    u = posAttr.getX(i);
-                    v = posAttr.getZ(i);
-                } else if (nx > 0.5) {
-                    // 側面 (X向き): ZY平面を投影
-                    u = posAttr.getZ(i);
-                    v = posAttr.getY(i);
-                } else {
-                    // 側面 (Z向き): XY平面を投影
-                    u = posAttr.getX(i);
-                    v = posAttr.getY(i);
-                }
-                uvAttr.setXY(i, u, v);
-            }
-            uvAttr.needsUpdate = true;
-            break;
-        }
-
-        case "pane": {
-            const { n, s, e, w } = getSideConnections(meta);
-
-            const geometries = [];
-            // 厚みを 0.0625 (1/16) から 0.125 (2/16) に変更
-            const thick = 0.125;
-            const halfThick = thick / 2;
-
-            const MAT_GLASS = 0; // glass.png
-            const MAT_FRAME = 2; // glass_pane_top.png
-
-            /**
-             * 一定の厚みでパーツを生成し、UVを投影する
-             */
-            const addFlatPart = (x, y, z, w_size, h_size, d_size, axis) => {
-                const g = new THREE.BoxGeometry(w_size, h_size, d_size);
-                g.translate(x + w_size / 2, y + h_size / 2, z + d_size / 2);
-                g.clearGroups();
-
-                const pos = g.getAttribute('position');
-                const uv = g.getAttribute('uv');
-
-                // 1. マテリアル割り当て
-                for (let i = 0; i < 6; i++) {
-                    let idx = MAT_FRAME;
-                    if (axis === 'z' && (i === 0 || i === 1)) idx = MAT_GLASS; // E/W面
-                    if (axis === 'x' && (i === 4 || i === 5)) idx = MAT_GLASS; // N/S面
-                    g.addGroup(i * 6, 6, idx);
-                }
-
-                // 2. UVの再計算：ワールド座標投影で繋ぎ目を消す
-                for (let i = 0; i < pos.count; i++) {
-                    const worldX = pos.getX(i);
-                    const worldY = pos.getY(i);
-                    const worldZ = pos.getZ(i);
-
-                    let u = (axis === 'x') ? worldX : worldZ;
-                    let v = worldY;
-
-                    uv.setXY(i, u, v);
-                }
-                uv.needsUpdate = true;
-                geometries.push(g);
-            };
-
-            const hasAnyConn = (n || s || e || w);
-
-            // 南北方向：中心からの厚みを増やしてフラットに生成[cite: 1]
-            if (n || s || !hasAnyConn) {
-                const zStart = n ? 0 : 0.5 - halfThick;
-                const zEnd = s ? 1 : 0.5 + halfThick;
-                const depth = zEnd - zStart;
-
-                addFlatPart(0.5 - halfThick, 0, zStart, thick, 1, depth, 'z');
-            }
-
-            // 東西方向：南北パーツと同じ厚みで交差させる[cite: 1]
-            if (e || w) {
-                const xStart = w ? 0 : 0.5 - halfThick;
-                const xEnd = e ? 1 : 0.5 + halfThick;
-                const width = xEnd - xStart;
-
-                addFlatPart(xStart, 0, 0.5 - halfThick, width, 1, thick, 'x');
-            }
-
-            geom = BufferGeometryUtils.mergeBufferGeometries(geometries, true);
-            break;
-        }
-
-        case "water":
-            geom = new THREE.BoxGeometry(1, 0.88, 1);
-            geom.translate(0.5, 0.44, 0.5);
-            adjustSideUVs(geom, 0.88);
-            break;
-
-        case "leaves":
-            geom = new THREE.BoxGeometry(1, 1, 1);
-            geom.translate(0.5, 0.5, 0.5);
-            break;
-
-        case "carpet":
-            geom = new THREE.BoxGeometry(1, 0.0625, 1);
-            geom.translate(0.5, 0.03125, 0.5);
-            adjustSideUVsForCarpet(geom, 0.0625);
-            break;
-
-        case "ladder":
-            geom = new THREE.PlaneGeometry(1, 1);
-            geom.translate(0.5, 0.5, 0.05);
-            geom.addGroup(0, 6, 0);
-            break;
-
-        default:
-            geom = new THREE.BoxGeometry(1, 1, 1);
-            geom.translate(0.5, 0.5, 0.5);
-            break;
-    }
+    // 3. 辞書から対応するビルダーを取得して実行（存在しない場合はcubeへフォールバック）
+    const builder = GEOMETRY_BUILDERS[type] || GEOMETRY_BUILDERS["cube"];
+    const geom = builder(config, meta);
 
     geom.computeBoundingBox();
     geom.computeVertexNormals();
 
-    // ★ 生成されたジオメトリを cacheKey で保存
+    // 4. 生成されたジオメトリを cacheKey で保存
     cachedBlockGeometries[cacheKey] = geom;
     return geom;
 }
@@ -1404,6 +1529,9 @@ export function applyMetadataTransform(target, metadata, blockId) {
 
     const cfg = getBlockConfiguration(blockId);
     if (!cfg) return;
+
+    // フェンス・板ガラスのmetadataは4方向接続マスクであり回転・上下反転ではないため変換しない
+    if (cfg.geometryType === "fence" || cfg.geometryType === "pane") return;
 
     // 行列の初期化 (_tmpMat, _rotMat, _transMat, _center は事前に定義されている前提)
     _tmpMat.identity();
