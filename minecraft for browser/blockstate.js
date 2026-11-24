@@ -71,7 +71,59 @@ export const STATE_SCHEMAS = {
 
 // ブロックID -> BlockState コンパイル済み設定の高速配列 (MAX 4096)
 const MAX_STATE_BLOCK_IDS = 4096;
+const MAX_GLOBAL_STATES = 65536;
+const MAX_STATE_BITS = 12; // 1ブロックあたりのプロパティ合計ビット上限 (最大 4096 状態/ブロック)
+
 const _stateEntries = new Array(MAX_STATE_BLOCK_IDS).fill(null);
+
+// 16bit グローバル BlockState パレット (0..4095 = 各ブロックの localState=0、4096..65535 = localState>=1)
+const _globalToBlockId = new Uint16Array(MAX_GLOBAL_STATES);
+const _globalToLocalState = new Uint16Array(MAX_GLOBAL_STATES);
+let _nextGlobalStateId = MAX_STATE_BLOCK_IDS;
+
+/**
+ * 16bit パック済みボクセル値 (globalStateId) からブロック ID (0..4095) を O(1) 取得する
+ */
+export function getRawBlockId(raw) {
+    return _globalToBlockId[raw & 0xFFFF];
+}
+
+/**
+ * 16bit パック済みボクセル値 (globalStateId) からブロック内状態値 (localState) を O(1) 取得する
+ */
+export function getRawLocalState(raw) {
+    return _globalToLocalState[raw & 0xFFFF];
+}
+
+/**
+ * ブロック ID とブロック内状態値 (localState) から 16bit グローバル状態 ID を O(1) で返す
+ */
+export function packRawBlock(blockId, localState = 0) {
+    const id = blockId & 0xFFF;
+    const entry = _stateEntries[id];
+    if (!entry) return id;
+    const ls = (localState >= 0 && localState < entry.stateCount) ? localState : 0;
+    return entry.localToGlobal[ls];
+}
+
+/**
+ * 指定ブロックが持つ状態空間サイズ (1..4096) を返す
+ */
+export function getBlockStateCount(blockId) {
+    const entry = _stateEntries[blockId & 0xFFF];
+    return entry ? entry.stateCount : 1;
+}
+
+/**
+ * 現在のグローバル状態パレット使用状況を取得する（デバッグ診断用）
+ */
+export function getGlobalStatePaletteStats() {
+    return {
+        usedExtendedStates: _nextGlobalStateId - MAX_STATE_BLOCK_IDS,
+        maxExtendedStates: MAX_GLOBAL_STATES - MAX_STATE_BLOCK_IDS,
+        nextGlobalStateId: _nextGlobalStateId
+    };
+}
 
 /**
  * 新しい BlockState スキーマを登録する（ブロック追加時の拡張用）
@@ -173,7 +225,7 @@ export function buildStateSchemaFromProperties(properties, blockName = "unknown"
         let shift = explicitShift;
 
         if (shift === null) {
-            for (let s = 0; s <= 4 - bits; s++) {
+            for (let s = 0; s <= MAX_STATE_BITS - bits; s++) {
                 if (((mask << s) & usedBitMask) === 0) {
                     shift = s;
                     break;
@@ -181,9 +233,9 @@ export function buildStateSchemaFromProperties(properties, blockName = "unknown"
             }
         }
 
-        if (shift === null || shift < 0 || (shift + bits) > 4 || ((mask << shift) & usedBitMask) !== 0) {
+        if (shift === null || shift < 0 || (shift + bits) > MAX_STATE_BITS || ((mask << shift) & usedBitMask) !== 0) {
             console.error(
-                `[BlockState] ブロック "${blockName}" のプロパティ "${propName}" (${bits}bit) が4bit上限を超過または重複しました。`
+                `[BlockState] ブロック "${blockName}" のプロパティ "${propName}" (${bits}bit) が${MAX_STATE_BITS}bit上限を超過または重複しました。`
             );
             continue;
         }
@@ -202,9 +254,30 @@ export function buildStateSchemaFromProperties(properties, blockName = "unknown"
     return Object.freeze(compiled);
 }
 
+const STATE_LOCAL_MASK = (1 << MAX_STATE_BITS) - 1; // 0xFFF
+
 /**
- * スキーマ内の各プロパティの defaultVal から初期 4bit 状態値を計算する
+ * スキーマが使用する最大ビット幅から状態空間サイズ (1, 2, 4, 8, 16, 32, 64...) を計算する
  */
+export function computeSchemaStateSpace(schema) {
+    if (!schema || typeof schema !== "object") return 1;
+    const keys = Object.keys(schema);
+    if (keys.length === 0) return 1;
+
+    let maxBitEnd = 0;
+    for (let i = 0; i < keys.length; i++) {
+        const def = schema[keys[i]];
+        if (!def || !def.mask) continue;
+        let bits = 0;
+        let m = def.mask >>> 0;
+        while (m > 0) { bits++; m >>>= 1; }
+        const end = (def.shift | 0) + bits;
+        if (end > maxBitEnd) maxBitEnd = end;
+    }
+    if (maxBitEnd > MAX_STATE_BITS) maxBitEnd = MAX_STATE_BITS;
+    return 1 << maxBitEnd;
+}
+
 export function getSchemaDefaultState(schema) {
     if (!schema || typeof schema !== "object") return 0;
     let packed = 0;
@@ -214,7 +287,7 @@ export function getSchemaDefaultState(schema) {
         if (!def || def.defaultVal === undefined) continue;
         packed = _writePropToMeta(def, packed, def.defaultVal);
     }
-    return packed & 0xF;
+    return packed & STATE_LOCAL_MASK;
 }
 
 /**
@@ -245,13 +318,13 @@ export function resolveStateSchema(config) {
  */
 export function computeTransformMask(stateSchema, explicitMask = null) {
     if (explicitMask !== undefined && explicitMask !== null) {
-        return explicitMask & 0xF;
+        return explicitMask & STATE_LOCAL_MASK;
     }
     let mask = 0;
     if (stateSchema.facing) mask |= (stateSchema.facing.mask << stateSchema.facing.shift);
     if (stateSchema.axis) mask |= (stateSchema.axis.mask << stateSchema.axis.shift);
     if (stateSchema.half) mask |= (stateSchema.half.mask << stateSchema.half.shift);
-    return mask & 0xF;
+    return mask & STATE_LOCAL_MASK;
 }
 
 function _encodePropValue(def, value) {
@@ -277,15 +350,15 @@ function _decodePropValue(def, raw) {
 function _writePropToMeta(def, meta, value) {
     const raw = _encodePropValue(def, value);
     const clearMask = ~(def.mask << def.shift);
-    return ((meta & clearMask) | ((raw & def.mask) << def.shift)) & 0xF;
+    return ((meta & clearMask) | ((raw & def.mask) << def.shift)) & STATE_LOCAL_MASK;
 }
 
 /**
- * 数値またはプロパティオブジェクト ({ lit: true, mount: 'floor' }) を 4bit 状態値へ正規化する
+ * 数値またはプロパティオブジェクト ({ lit: true, mount: 'floor' }) をブロック内状態値へ正規化する
  * （オブジェクト指定時はスキーマ側の defaultVal を土台にして差分適用する）
  */
 export function normalizeStateValue(schema, stateValue, fallback = 0) {
-    if (typeof stateValue === "number") return stateValue & 0xF;
+    if (typeof stateValue === "number") return stateValue & STATE_LOCAL_MASK;
     if (stateValue && typeof stateValue === "object" && schema) {
         let packed = getSchemaDefaultState(schema);
         const keys = Object.keys(stateValue);
@@ -295,9 +368,9 @@ export function normalizeStateValue(schema, stateValue, fallback = 0) {
             if (!def) continue;
             packed = _writePropToMeta(def, packed, stateValue[propName]);
         }
-        return packed & 0xF;
+        return packed & STATE_LOCAL_MASK;
     }
-    return fallback & 0xF;
+    return fallback & STATE_LOCAL_MASK;
 }
 
 /**
@@ -326,20 +399,47 @@ function _matchesVariantCondition(schema, meta, condStr) {
 }
 
 /**
- * ブロック1種の 16状態(0..15) に対するバリアント・発光量・F3文字列を事前コンパイルして登録する
+ * ブロック1種の全状態 (0..stateCount-1) に対するバリアント・発光量・F3文字列・16bitグローバル状態IDを事前コンパイルする
  */
 export function compileAndRegisterBlockState(cfg) {
     const id = cfg.id & 0xFFF;
     const schema = cfg.stateSchema || STATE_SCHEMAS.NONE;
     const schemaKeys = Object.keys(schema);
+    const stateCount = computeSchemaStateSpace(schema);
+    const stateMask = stateCount - 1;
 
-    const stateLightLevels = new Uint8Array(16);
-    const compiledVariants = new Array(16).fill(null);
-    const stateStrings = new Array(16);
+    // 1. 16bit グローバル状態IDテーブルの確保（再コンパイル時は既存の割当を再利用してIDズレを防止）
+    const prevEntry = _stateEntries[id];
+    let localToGlobal;
+    if (prevEntry && prevEntry.localToGlobal && prevEntry.localToGlobal.length === stateCount) {
+        localToGlobal = prevEntry.localToGlobal;
+    } else {
+        localToGlobal = new Uint16Array(stateCount);
+        // localState = 0 は常に globalStateId = id (0..4095) へ固定マッピング
+        localToGlobal[0] = id;
+        _globalToBlockId[id] = id;
+        _globalToLocalState[id] = 0;
+
+        for (let m = 1; m < stateCount; m++) {
+            if (_nextGlobalStateId >= MAX_GLOBAL_STATES) {
+                console.error(`[BlockState] 16bit グローバル状態上限 (65536) に達しました: ${cfg.name || id}`);
+                localToGlobal[m] = id;
+                continue;
+            }
+            const gid = _nextGlobalStateId++;
+            localToGlobal[m] = gid;
+            _globalToBlockId[gid] = id;
+            _globalToLocalState[gid] = m;
+        }
+    }
+
+    const stateLightLevels = new Uint8Array(stateCount);
+    const compiledVariants = new Array(stateCount).fill(null);
+    const stateStrings = new Array(stateCount);
     const variantEntries = cfg.stateVariants ? Object.entries(cfg.stateVariants) : null;
 
-    for (let m = 0; m < 16; m++) {
-        // 1. 静的 stateVariants ＋ 動的 resolveStateVisual のマージ
+    for (let m = 0; m < stateCount; m++) {
+        // 2. 静的 stateVariants ＋ 動的 resolveStateVisual のマージ
         let merged = null;
         if (variantEntries) {
             for (let v = 0; v < variantEntries.length; v++) {
@@ -354,7 +454,7 @@ export function compileAndRegisterBlockState(cfg) {
         }
         compiledVariants[m] = merged;
 
-        // 2. 状態別発光量の決定
+        // 3. 状態別発光量の決定
         let light = cfg.lightLevel > 0 ? cfg.lightLevel : 0;
         if (merged && typeof merged.lightLevel === "number") {
             light = merged.lightLevel;
@@ -363,7 +463,7 @@ export function compileAndRegisterBlockState(cfg) {
         }
         stateLightLevels[m] = light & 15;
 
-        // 3. F3 / デバッグ表示文字列の事前キャッシュ（ランタイム文字列生成をゼロ化）
+        // 4. F3 / デバッグ表示文字列の事前キャッシュ（ランタイム文字列生成をゼロ化）
         if (schemaKeys.length === 0) {
             stateStrings[m] = "";
         } else {
@@ -378,16 +478,22 @@ export function compileAndRegisterBlockState(cfg) {
         }
     }
 
+    cfg.stateCount = stateCount;
+    cfg.stateMask = stateMask;
     cfg._stateLightLevels = stateLightLevels;
     cfg._compiledVariants = compiledVariants;
     cfg._stateStrings = stateStrings;
+    cfg._localToGlobal = localToGlobal;
 
     _stateEntries[id] = {
         id,
         schema,
         schemaKeys,
-        transformMask: cfg.transformMask & 0xF,
-        defaultState: cfg.defaultState & 0xF,
+        stateCount,
+        stateMask,
+        localToGlobal,
+        transformMask: cfg.transformMask & stateMask,
+        defaultState: cfg.defaultState & stateMask,
         stateLightLevels,
         compiledVariants,
         stateStrings
@@ -425,22 +531,24 @@ export function getBlockStateProp(blockId, meta, propName) {
 }
 
 /**
- * ブロックの 4bit BlockState の指定プロパティを書き換えた新しい 4bit 状態値を返す
+ * ブロックの BlockState の指定プロパティを書き換えた新しい状態値 (localState) を返す
  */
 export function setBlockStateProp(blockId, meta, propName, value) {
     const entry = _stateEntries[blockId & 0xFFF];
-    const def = entry && entry.schema[propName];
-    if (!def) return meta & 0xF;
-    return _writePropToMeta(def, meta, value);
+    if (!entry) return 0;
+    const def = entry.schema[propName];
+    if (!def) return meta & entry.stateMask;
+    return _writePropToMeta(def, meta, value) & entry.stateMask;
 }
 
 /**
- * 指定プロパティを次の値へ巡回（トグル・段階切替）した新しい 4bit 状態値を返す
+ * 指定プロパティを次の値へ巡回（トグル・段階切替）した新しい状態値 (localState) を返す
  */
 export function cycleBlockStateProp(blockId, meta, propName) {
     const entry = _stateEntries[blockId & 0xFFF];
-    const def = entry && entry.schema[propName];
-    if (!def) return meta & 0xF;
+    if (!entry) return 0;
+    const def = entry.schema[propName];
+    if (!def) return meta & entry.stateMask;
 
     const raw = (meta >> def.shift) & def.mask;
     const count = def.bool
@@ -448,28 +556,29 @@ export function cycleBlockStateProp(blockId, meta, propName) {
         : (def.values ? def.values.length : (def.count || (def.mask + 1)));
     const nextRaw = (raw + 1) % count;
     const clearMask = ~(def.mask << def.shift);
-    return ((meta & clearMask) | ((nextRaw & def.mask) << def.shift)) & 0xF;
+    return ((meta & clearMask) | ((nextRaw & def.mask) << def.shift)) & entry.stateMask;
 }
 
 /**
- * プロパティオブジェクトから 4bit BlockState を生成する（baseMeta を渡すと差分更新になる）
+ * プロパティオブジェクトから BlockState 値 (localState) を生成する（baseMeta を渡すと差分更新になる）
  */
 export function packBlockState(blockId, propsObj, baseMeta = 0) {
     const entry = _stateEntries[blockId & 0xFFF];
-    if (!entry || !propsObj) return baseMeta & 0xF;
-    let meta = baseMeta & 0xF;
+    if (!entry) return 0;
+    let meta = baseMeta & entry.stateMask;
+    if (!propsObj) return meta;
     const keys = Object.keys(propsObj);
     for (let i = 0; i < keys.length; i++) {
         const propName = keys[i];
         const def = entry.schema[propName];
         if (!def) continue;
-        meta = _writePropToMeta(def, meta, propsObj[propName]);
+        meta = _writePropToMeta(def, meta, propsObj[propName]) & entry.stateMask;
     }
     return meta;
 }
 
 /**
- * 4bit BlockState を人間が読みやすいプロパティオブジェクトへ展開する（デバッグ・ロジック用）
+ * BlockState 値 (localState) を人間が読みやすいプロパティオブジェクトへ展開する（デバッグ・ロジック用）
  */
 export function unpackBlockState(blockId, meta) {
     const entry = _stateEntries[blockId & 0xFFF];
@@ -491,11 +600,12 @@ export function unpackBlockState(blockId, meta) {
 export function formatBlockStateString(blockId, meta) {
     const entry = _stateEntries[blockId & 0xFFF];
     if (!entry) return "";
-    return entry.stateStrings[meta & 15];
+    const idx = (meta >= 0 && meta < entry.stateCount) ? meta : 0;
+    return entry.stateStrings[idx];
 }
 
 /**
- * 4bit BlockState から「3D回転・上下反転に使うビット」を事前コンパイル済み transformMask で O(1) 抽出する
+ * BlockState から「3D回転・上下反転に使うビット」を事前コンパイル済み transformMask で O(1) 抽出する
  */
 export function getTransformMeta(blockId, rawMeta) {
     if (!rawMeta) return 0;
@@ -508,7 +618,9 @@ export function getTransformMeta(blockId, rawMeta) {
  */
 export function getBlockLightEmissionForState(blockId, meta = 0) {
     const entry = _stateEntries[blockId & 0xFFF];
-    return entry ? entry.stateLightLevels[meta & 15] : 0;
+    if (!entry) return 0;
+    const idx = (meta >= 0 && meta < entry.stateCount) ? meta : 0;
+    return entry.stateLightLevels[idx];
 }
 
 /**
@@ -516,5 +628,7 @@ export function getBlockLightEmissionForState(blockId, meta = 0) {
  */
 export function getCompiledStateVariant(blockId, meta = 0) {
     const entry = _stateEntries[blockId & 0xFFF];
-    return entry ? entry.compiledVariants[meta & 15] : null;
+    if (!entry) return null;
+    const idx = (meta >= 0 && meta < entry.stateCount) ? meta : 0;
+    return entry.compiledVariants[idx];
 }

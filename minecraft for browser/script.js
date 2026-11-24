@@ -4,7 +4,8 @@ import {
     STATE_SCHEMAS,
     registerStateSchema, getBlockStateProp, getBlockStateRawProp, setBlockStateProp,
     cycleBlockStateProp, hasBlockStateProp, packBlockState, unpackBlockState,
-    formatBlockStateString, getTransformMeta, getBlockLightEmissionForState
+    formatBlockStateString, getTransformMeta, getBlockLightEmissionForState,
+    getRawBlockId, getRawLocalState, packRawBlock, getGlobalStatePaletteStats
 } from './blockstate.js';
 import {
     BLOCK_CONFIG, BLOCK_TYPES, SHARED_SKY_UNIFORM, SHARED_BRIGHTNESS_UNIFORM,
@@ -14,10 +15,15 @@ import {
     isRedstoneComponent,
     calculatePlacementMeta, canPlaceBlockAt, isSupportDependentBlock,
     getLogRotationMatrixReadOnly, applyRotationToCollisionBox, getCustomGeometryMatrix,
-    idToKey, keyToId
+    idToKey, keyToId, loadBlockAssets
 } from './blocks.js';
 import { createRedstoneEngine } from './redstone_engine.js';
 import { createFluidEngine } from './fluid_engine.js';
+import { createPlayerData, GAME_MODES } from './entities/player_data.js';
+import { createEntityManager } from './entities/entity_manager.js';
+import { MOB_TYPES } from './entities/mob_registry.js';
+import { createBlockEntityManager } from './blocks/block_entity.js';
+import { createContainerUI } from './ui/container_ui.js';
 import { createMinecraftBreakParticles, updateBlockParticles } from './particles.js';
 import { setMinecraftSky, loadCloudTexture, updateCloudGrid, updateCloudTiles, updateCloudOpacity, adjustCloudLayerDepth } from './cloudsky.js';
 import { determineBiome, BIOME_CONFIG } from './biomes/biomes.js';
@@ -906,7 +912,7 @@ export const ChunkSaveManager = {
 
         const dataArray = this.getOrCreateBaseTerrain(cx, cz);
         const idx = (wy | (lz << 8) | (lx << 12)) | 0;
-        const currentId = dataArray[idx] & 0xFFF;
+        const currentId = getRawBlockId(dataArray[idx]);
 
         const SKY = BLOCK_TYPES.SKY;
         const LEAVES = BLOCK_TYPES.LEAVES_OAK;
@@ -931,7 +937,7 @@ export const ChunkSaveManager = {
 
         const dataArray = this.getOrCreateBaseTerrain(cx, cz);
         const idx = (wy | (lz << 8) | (lx << 12)) | 0;
-        return dataArray[idx] & 0xFFF;
+        return getRawBlockId(dataArray[idx]);
     },
 
     // 4. デコレーション適用処理（高速地表探索・葉保護・決定論的乱数）
@@ -975,7 +981,7 @@ export const ChunkSaveManager = {
             const colBase = (lz << 8) | (lx << 12);
             let surfaceY = -1;
             for (let y = CHUNK_HEIGHT - 1; y > seaLevel; y--) {
-                const block = centerData[colBase | y] & 0xFFF;
+                const block = getRawBlockId(centerData[colBase | y]);
                 if (block === SKY) continue;
                 if (
                     block !== LEAVES_OAK &&
@@ -1049,7 +1055,7 @@ function getConnectionMask(x, y, z, targetGeometryType) {
     for (let i = 0; i < neighbors.length; i++) {
         const { dx, dz, bit } = neighbors[i];
         const neighborRaw = getVoxelAtWorld(x + dx, y, z + dz, true);
-        const neighborId = neighborRaw & 0xFFF;
+        const neighborId = getRawBlockId(neighborRaw);
 
         const cfg = getBlockConfiguration(neighborId);
         if (cfg) {
@@ -1202,7 +1208,7 @@ function initCanvas() {
     renderer.domElement.addEventListener("mousedown", onCanvasMouseDown, false);
 
     renderer.domElement.addEventListener("click", (e) => {
-        if (isInventoryOpen || pointerLocked || (inventoryContainer && inventoryContainer.contains(e.target))) return;
+        if (isInventoryOpen || isContainerOpen || pointerLocked || (inventoryContainer && inventoryContainer.contains(e.target))) return;
         if (e.target === renderer.domElement && !("ontouchstart" in window)) {
             renderer.domElement.requestPointerLock();
         }
@@ -1315,7 +1321,7 @@ function collectCollisionBoxes(sMinX, sMinY, sMinZ, sMaxX, sMaxY, sMaxZ) {
                 const rawVoxel = getVoxelAtWorld(x, y, z, true) | 0;
                 if (rawVoxel <= 0) continue;
 
-                const id = rawVoxel & 0xFFF;
+                const id = getRawBlockId(rawVoxel);
                 const cfg = _blockConfigFastArray[id];
                 if (!cfg || cfg.collision === false) continue;
 
@@ -1335,7 +1341,7 @@ function collectCollisionBoxes(sMinX, sMinY, sMinZ, sMaxX, sMaxY, sMaxZ) {
                     continue;
                 }
 
-                const meta = (rawVoxel >> 12) & 0xF;
+                const meta = getRawLocalState(rawVoxel);
                 const relBoxes = getCollisionBoxesReadOnly(gType, meta);
                 const tMeta = getTransformMeta(id, meta);
 
@@ -1495,7 +1501,7 @@ function checkAABBCollision(aabb) {
                 const rawVoxel = getVoxelAtWorld(x, y, z, true) | 0;
                 if (rawVoxel <= 0) continue;
 
-                const id = rawVoxel & 0xFFF;
+                const id = getRawBlockId(rawVoxel);
                 const cfg = _blockConfigFastArray[id];
                 if (!cfg || cfg.collision === false) continue;
 
@@ -1511,7 +1517,7 @@ function checkAABBCollision(aabb) {
                     continue;
                 }
 
-                const meta = (rawVoxel >> 12) & 0xF;
+                const meta = getRawLocalState(rawVoxel);
                 const relBoxes = getCollisionBoxesReadOnly(gType, meta);
                 const tMeta = getTransformMeta(id, meta);
 
@@ -1632,7 +1638,7 @@ export function getVoxelAtWorld(x, y, z, isRaw = false) {
 
     const idx = (fy | ((fz & 0xF) << 8) | ((fx & 0xF) << 12)) | 0;
     const val = data[idx] | 0;
-    return isRaw ? val : (val & 0xFFF);
+    return isRaw ? val : getRawBlockId(val);
 }
 
 // 定数は関数外で完全に固定（JITによるインライン化を促進）
@@ -2034,9 +2040,9 @@ function isOnLadder() {
         for (let x = minX; x <= maxX; x = (x + 1) | 0) {
             for (let z = minZ; z <= maxZ; z = (z + 1) | 0) {
                 const voxel = getVoxelAtWorld(x, y, z, true) | 0;
-                if ((voxel & 0xFFF) !== ladderId) continue;
+                if (getRawBlockId(voxel) !== ladderId) continue;
 
-                const meta = (voxel >> 12) & 0xF;
+                const meta = getRawLocalState(voxel);
                 for (let i = 0; i < ladderBoxes.length; i++) {
                     let box = ladderBoxes[i];
                     if (meta !== 0) {
@@ -2808,7 +2814,7 @@ function _getWorldRawLoaded(wx, wy, wz) {
 
 function _getWorldBlockIdLoaded(wx, wy, wz) {
     const raw = _getWorldRawLoaded(wx, wy, wz);
-    return raw < 0 ? -1 : (raw & 0xFFF);
+    return raw < 0 ? -1 : getRawBlockId(raw);
 }
 
 function _setWorldSkyLight(wx, wy, wz, val, outDirtyChunks) {
@@ -2945,12 +2951,12 @@ function _runSkyLightAddBFS(addHead, addTail, outDirtyChunks) {
 function updateLightAtBlockChange(wx, wy, wz, oldRaw, newRaw, outDirtyChunks) {
     if (wy < 0 || wy >= CH) return;
 
-    const oldId = oldRaw & 0xFFF;
-    const newId = newRaw & 0xFFF;
+    const oldId = getRawBlockId(oldRaw);
+    const newId = getRawBlockId(newRaw);
     const oldOpacity = getBlockLightOpacity(oldId);
     const newOpacity = getBlockLightOpacity(newId);
-    const oldEmit = getBlockLightEmission(oldId, (oldRaw >> 12) & 0xF);
-    const newEmit = getBlockLightEmission(newId, (newRaw >> 12) & 0xF);
+    const oldEmit = getBlockLightEmission(oldId, getRawLocalState(oldRaw));
+    const newEmit = getBlockLightEmission(newId, getRawLocalState(newRaw));
 
     // 光学特性が完全に同一ならライト再計算不要（石->土、階段回転変更など）
     if (oldOpacity === newOpacity && oldEmit === newEmit) return;
@@ -3003,7 +3009,7 @@ function updateLightAtBlockChange(wx, wy, wz, oldRaw, newRaw, outDirtyChunks) {
                     if (nVal === 0) continue;
 
                     const nRaw = _getWorldRawLoaded(nx, ny, nz);
-                    const nEmit = nRaw >= 0 ? getBlockLightEmission(nRaw & 0xFFF, (nRaw >> 12) & 0xF) : 0;
+                    const nEmit = nRaw >= 0 ? getBlockLightEmission(getRawBlockId(nRaw), getRawLocalState(nRaw)) : 0;
 
                     if (nVal < oldVal) {
                         if (nEmit > 0) {
@@ -3194,7 +3200,7 @@ function syncBorderLightFromNeighbors(chunkKey, voxelData) {
                 const nVal = nm[nCol | y];
                 if (nVal === 0) continue;
 
-                const myType = voxelData[idx] & 0xFFF;
+                const myType = getRawBlockId(voxelData[idx]);
                 const opacity = getBlockLightOpacity(myType);
                 if (opacity >= 15) continue;
 
@@ -3241,7 +3247,7 @@ function syncBorderLightFromNeighbors(chunkKey, voxelData) {
                 const nBlk = nm[nCol | y] & 15;
                 if (nBlk <= 1) continue;
 
-                const myType = voxelData[idx] & 0xFFF;
+                const myType = getRawBlockId(voxelData[idx]);
                 const opacity = getBlockLightOpacity(myType);
                 if (opacity >= 15) continue;
 
@@ -3325,10 +3331,10 @@ function generateChunkLightMap(chunkKey, voxelData) {
 
             for (let y = 255; y >= 0; y = (y - 1) | 0) {
                 const idx = (xzBase | y) | 0;
-                const type = voxelData[idx] & 0xFFF;
+                const type = getRawBlockId(voxelData[idx]);
 
                 if (type !== 0) {
-                    const emit = getBlockLightEmission(type, (voxelData[idx] >> 12) & 0xF);
+                    const emit = getBlockLightEmission(type, getRawLocalState(voxelData[idx]));
                     if (emit > 0 && bSeedCount < 4096) {
                         _blockSeedIndices[bSeedCount] = idx;
                         _blockSeedLevels[bSeedCount] = emit;
@@ -3369,12 +3375,12 @@ function generateChunkLightMap(chunkKey, voxelData) {
                     if (sky <= 1) continue;
 
                     let needSpread = false;
-                    if (x < 15 && ((lightData[idx + CS_CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(voxelData[idx + CS_CH] & 0xFFF) < 15) needSpread = true;
-                    else if (x > 0 && ((lightData[idx - CS_CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(voxelData[idx - CS_CH] & 0xFFF) < 15) needSpread = true;
-                    else if (z < 15 && ((lightData[idx + CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(voxelData[idx + CH] & 0xFFF) < 15) needSpread = true;
-                    else if (z > 0 && ((lightData[idx - CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(voxelData[idx - CH] & 0xFFF) < 15) needSpread = true;
-                    else if (y > 0 && ((lightData[idx - 1] >> 4) & 15) < sky - 1 && getBlockLightOpacity(voxelData[idx - 1] & 0xFFF) < 15) needSpread = true;
-                    else if (y < 255 && ((lightData[idx + 1] >> 4) & 15) < sky - 1 && getBlockLightOpacity(voxelData[idx + 1] & 0xFFF) < 15) needSpread = true;
+                    if (x < 15 && ((lightData[idx + CS_CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx + CS_CH])) < 15) needSpread = true;
+                    else if (x > 0 && ((lightData[idx - CS_CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx - CS_CH])) < 15) needSpread = true;
+                    else if (z < 15 && ((lightData[idx + CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx + CH])) < 15) needSpread = true;
+                    else if (z > 0 && ((lightData[idx - CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx - CH])) < 15) needSpread = true;
+                    else if (y > 0 && ((lightData[idx - 1] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx - 1])) < 15) needSpread = true;
+                    else if (y < 255 && ((lightData[idx + 1] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx + 1])) < 15) needSpread = true;
 
                     if (needSpread) pushLocal(idx);
                 }
@@ -3408,7 +3414,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
                 const mySky = (lightData[idx] >> 4) & 15;
 
                 if (nSky > mySky + 1) {
-                    const myOp = getBlockLightOpacity(voxelData[idx] & 0xFFF);
+                    const myOp = getBlockLightOpacity(getRawBlockId(voxelData[idx]));
                     if (myOp < 15) {
                         const nextSky = nSky - (myOp > 1 ? myOp : 1);
                         if (nextSky > mySky) {
@@ -3417,7 +3423,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
                         }
                     }
                 } else if (nv && mySky > nSky + 1) {
-                    const nOp = getBlockLightOpacity(nv[nIdx] & 0xFFF);
+                    const nOp = getBlockLightOpacity(getRawBlockId(nv[nIdx]));
                     if (nOp < 15) {
                         const nextSky = mySky - (nOp > 1 ? nOp : 1);
                         if (nextSky > nSky) {
@@ -3458,7 +3464,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
                     const nx = (i === 0) ? 0 : (i === 1) ? 15 : x;
                     const nz = (i === 4) ? 0 : (i === 5) ? 15 : z;
                     const nIdx = (y | (nz << 8) | (nx << 12)) | 0;
-                    const nOp = getBlockLightOpacity(nv[nIdx] & 0xFFF);
+                    const nOp = getBlockLightOpacity(getRawBlockId(nv[nIdx]));
                     if (nOp < 15) {
                         const nextSky = skyLight - (nOp > 1 ? nOp : 1);
                         if (nextSky > ((nm[nIdx] >> 4) & 15)) {
@@ -3477,7 +3483,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
             }
 
             const nIdx = (idx + MOVE_OFFSETS[i]) | 0;
-            const nOp = getBlockLightOpacity(voxelData[nIdx] & 0xFFF);
+            const nOp = getBlockLightOpacity(getRawBlockId(voxelData[nIdx]));
             if (nOp < 15) {
                 const nextSky = (i === 3 && skyLight === 15) ? (15 - nOp) : (skyLight - (nOp > 1 ? nOp : 1));
                 if (nextSky > ((lightData[nIdx] >> 4) & 15)) {
@@ -3528,7 +3534,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
                 if (nBlk <= 1) continue;
 
                 const idx = myCol | y;
-                const myOp = getBlockLightOpacity(voxelData[idx] & 0xFFF);
+                const myOp = getBlockLightOpacity(getRawBlockId(voxelData[idx]));
                 if (myOp >= 15) continue;
 
                 const nextBlk = nBlk - (myOp > 1 ? myOp : 1);
@@ -3562,7 +3568,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
                     const nx = (i === 0) ? 0 : (i === 1) ? 15 : x;
                     const nz = (i === 4) ? 0 : (i === 5) ? 15 : z;
                     const nIdx = (y | (nz << 8) | (nx << 12)) | 0;
-                    const nOp = getBlockLightOpacity(nv[nIdx] & 0xFFF);
+                    const nOp = getBlockLightOpacity(getRawBlockId(nv[nIdx]));
                     if (nOp < 15) {
                         const nextBlk = blockLight - (nOp > 1 ? nOp : 1);
                         if (nextBlk > (nm[nIdx] & 15)) {
@@ -3581,7 +3587,7 @@ function generateChunkLightMap(chunkKey, voxelData) {
             }
 
             const nIdx = (idx + MOVE_OFFSETS[i]) | 0;
-            const nOp = getBlockLightOpacity(voxelData[nIdx] & 0xFFF);
+            const nOp = getBlockLightOpacity(getRawBlockId(voxelData[nIdx]));
             if (nOp < 15) {
                 const nextBlk = blockLight - (nOp > 1 ? nOp : 1);
                 if (nextBlk > (lightData[nIdx] & 15)) {
@@ -3790,8 +3796,8 @@ function releaseUploadedTypedArray() {
 }
 
 function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
-    // 8bit shapeMeta(ワイヤー水平4bit+上り4bit等)を衝突なしでキャッシュ
-    const key = (type << 12) | ((shapeMeta & 0xFF) << 4) | (transformMeta & 0xF);
+    // 12bit shapeMeta（多状態ブロック・ワイヤー8bit等）を32bitオーバーフローなしでキャッシュ
+    const key = type * 65536 + ((shapeMeta & 0xFFF) << 4) + (transformMeta & 0xF);
     const cached = _bakedCustomTemplateCache.get(key);
     if (cached !== undefined) return cached;
 
@@ -4155,7 +4161,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
     }
 
     function get(x, y, z) {
-        return getRawLocal(x, y, z) & 0xFFF;
+        return getRawBlockId(getRawLocal(x, y, z));
     }
 
     // 3x3 境界ビュー対応 O(1) ライト取得（角座標対応・未ロード境界の地下ライトリーク防止）
@@ -4339,9 +4345,10 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                     const cellIdx = rowOff | x;
                     const vIdx = y | zShift | (x << 12);
                     const raw = voxelData[vIdx];
-                    const type = raw & 0xFFF;
+                    const type = getRawBlockId(raw);
+                    const meta = getRawLocalState(raw);
 
-                    if (type === 0 || _isGreedyCubeBlock[type] === 0 || (_isLogBlock[type] === 1 && (raw >> 12) !== 0)) {
+                    if (type === 0 || _isGreedyCubeBlock[type] === 0 || (_isLogBlock[type] === 1 && meta !== 0)) {
                         _greedyMaskPos[cellIdx] = 0;
                         _greedyMaskNeg[cellIdx] = 0;
                         continue;
@@ -4349,9 +4356,9 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
 
                     const myOp = _isOpaqueBlock[type];
                     const myCs = _cullSameBlock[type];
-                    const mats = getBlockMaterialsFast(type, (raw >> 12) & 0xF);
+                    const mats = getBlockMaterialsFast(type, meta);
 
-                    const upType = (y < H_MAX) ? (voxelData[vIdx + 1] & 0xFFF) : 0;
+                    const upType = (y < H_MAX) ? getRawBlockId(voxelData[vIdx + 1]) : 0;
                     if (shouldShowFace(type, myOp, myCs, upType) && mats) {
                         const m = mats[2] || mats[0];
                         _greedyMaskPos[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x, y + 1, z);
@@ -4360,7 +4367,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                         _greedyMaskPos[cellIdx] = 0;
                     }
 
-                    const dnType = (y > 0) ? (voxelData[vIdx - 1] & 0xFFF) : 0;
+                    const dnType = (y > 0) ? getRawBlockId(voxelData[vIdx - 1]) : 0;
                     if (shouldShowFace(type, myOp, myCs, dnType) && mats) {
                         const m = mats[3] || mats[0];
                         _greedyMaskNeg[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x, y - 1, z);
@@ -4388,9 +4395,10 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                     const cellIdx = rowOff | z;
                     const vIdx = y | (z << 8) | xShift;
                     const raw = voxelData[vIdx];
-                    const type = raw & 0xFFF;
+                    const type = getRawBlockId(raw);
+                    const meta = getRawLocalState(raw);
 
-                    if (type === 0 || _isGreedyCubeBlock[type] === 0 || (_isLogBlock[type] === 1 && (raw >> 12) !== 0)) {
+                    if (type === 0 || _isGreedyCubeBlock[type] === 0 || (_isLogBlock[type] === 1 && meta !== 0)) {
                         _greedyMaskPos[cellIdx] = 0;
                         _greedyMaskNeg[cellIdx] = 0;
                         continue;
@@ -4398,9 +4406,9 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
 
                     const myOp = _isOpaqueBlock[type];
                     const myCs = _cullSameBlock[type];
-                    const mats = getBlockMaterialsFast(type, (raw >> 12) & 0xF);
+                    const mats = getBlockMaterialsFast(type, meta);
 
-                    const pxType = (x < 15) ? (voxelData[vIdx + STRIDE_X] & 0xFFF) : get(x + 1, y, z);
+                    const pxType = (x < 15) ? getRawBlockId(voxelData[vIdx + STRIDE_X]) : get(x + 1, y, z);
                     if (shouldShowFace(type, myOp, myCs, pxType) && mats) {
                         const m = mats[0];
                         _greedyMaskPos[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x + 1, y, z);
@@ -4409,7 +4417,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                         _greedyMaskPos[cellIdx] = 0;
                     }
 
-                    const nxType = (x > 0) ? (voxelData[vIdx - STRIDE_X] & 0xFFF) : get(x - 1, y, z);
+                    const nxType = (x > 0) ? getRawBlockId(voxelData[vIdx - STRIDE_X]) : get(x - 1, y, z);
                     if (shouldShowFace(type, myOp, myCs, nxType) && mats) {
                         const m = mats[1] || mats[0];
                         _greedyMaskNeg[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x - 1, y, z);
@@ -4436,9 +4444,10 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                     const cellIdx = rowOff | x;
                     const vIdx = y | zShift | (x << 12);
                     const raw = voxelData[vIdx];
-                    const type = raw & 0xFFF;
+                    const type = getRawBlockId(raw);
+                    const meta = getRawLocalState(raw);
 
-                    if (type === 0 || _isGreedyCubeBlock[type] === 0 || (_isLogBlock[type] === 1 && (raw >> 12) !== 0)) {
+                    if (type === 0 || _isGreedyCubeBlock[type] === 0 || (_isLogBlock[type] === 1 && meta !== 0)) {
                         _greedyMaskPos[cellIdx] = 0;
                         _greedyMaskNeg[cellIdx] = 0;
                         continue;
@@ -4446,9 +4455,9 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
 
                     const myOp = _isOpaqueBlock[type];
                     const myCs = _cullSameBlock[type];
-                    const mats = getBlockMaterialsFast(type, (raw >> 12) & 0xF);
+                    const mats = getBlockMaterialsFast(type, meta);
 
-                    const pzType = (z < 15) ? (voxelData[vIdx + STRIDE_Z] & 0xFFF) : get(x, y, z + 1);
+                    const pzType = (z < 15) ? getRawBlockId(voxelData[vIdx + STRIDE_Z]) : get(x, y, z + 1);
                     if (shouldShowFace(type, myOp, myCs, pzType) && mats) {
                         const m = mats[4] || mats[0];
                         _greedyMaskPos[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x, y, z + 1);
@@ -4457,7 +4466,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                         _greedyMaskPos[cellIdx] = 0;
                     }
 
-                    const nzType = (z > 0) ? (voxelData[vIdx - STRIDE_Z] & 0xFFF) : get(x, y, z - 1);
+                    const nzType = (z > 0) ? getRawBlockId(voxelData[vIdx - STRIDE_Z]) : get(x, y, z - 1);
                     if (shouldShowFace(type, myOp, myCs, nzType) && mats) {
                         const m = mats[5] || mats[0];
                         _greedyMaskNeg[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x, y, z - 1);
@@ -4493,8 +4502,8 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                 const raw = voxelData[vIdx];
                 if (raw === 0) continue;
 
-                const type = raw & 0xFFF;
-                const meta = (raw >> 12) & 0xF;
+                const type = getRawBlockId(raw);
+                const meta = getRawLocalState(raw);
 
                 // 2-A. カスタム形状（水・溶岩・草花・階段・スラブ・フェンス・板ガラス・カーペット・ハシゴ）
                 if (_isCustomGeometryBlock[type] === 1) {
@@ -4504,7 +4513,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                     const gType = cfg.geometryType;
                     const isLiquid = (gType === "water");
                     const cullAdj = cfg.cullAdjacentFaces !== false;
-                    const aboveType = (y < 255) ? (voxelData[vIdx + 1] & 0xFFF) : 0;
+                    const aboveType = (y < 255) ? getRawBlockId(voxelData[vIdx + 1]) : 0;
                     let visMask = 63;
 
                     // 水・溶岩など隣接カリング対象のみ6近傍チェックし、段差側面ギャップと未ロード境界壁を正しく制御
@@ -4516,9 +4525,9 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                             : 0;
 
                         const showHorizFace = (nx, nz, nRaw) => {
-                            const nType = nRaw & 0xFFF;
+                            const nType = getRawBlockId(nRaw);
                             if (isLiquid && nType === type) {
-                                const nMeta = (nRaw >> 12) & 0xF;
+                                const nMeta = getRawLocalState(nRaw);
                                 const nAboveType = (y < 255) ? get(nx, y + 1, nz) : 0;
                                 const nRank = (nAboveType === type || ((nMeta >> 3) & 1) !== 0) ? 9 : (8 - (nMeta & 7));
                                 return myLiquidRank > nRank;
@@ -4541,7 +4550,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                         }
 
                         if (shouldShowFace(type, myOp, myCs, aboveType)) visMask |= 4;
-                        if (shouldShowFace(type, myOp, myCs, (y > 0) ? (voxelData[vIdx - 1] & 0xFFF) : 0)) visMask |= 8;
+                        if (shouldShowFace(type, myOp, myCs, (y > 0) ? getRawBlockId(voxelData[vIdx - 1]) : 0)) visMask |= 8;
 
                         if (z < 15) {
                             if (showHorizFace(x, z + 1, voxelData[vIdx + STRIDE_Z])) visMask |= 16;
@@ -4628,12 +4637,12 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                     const myOp = _isOpaqueBlock[type];
                     const myCs = _cullSameBlock[type];
                     let visMask = 0;
-                    if (shouldShowFace(type, myOp, myCs, (x < 15) ? (voxelData[vIdx + STRIDE_X] & 0xFFF) : get(x + 1, y, z))) visMask |= 1;
-                    if (shouldShowFace(type, myOp, myCs, (x > 0) ? (voxelData[vIdx - STRIDE_X] & 0xFFF) : get(x - 1, y, z))) visMask |= 2;
-                    if (shouldShowFace(type, myOp, myCs, (y < 255) ? (voxelData[vIdx + 1] & 0xFFF) : 0)) visMask |= 4;
-                    if (shouldShowFace(type, myOp, myCs, (y > 0) ? (voxelData[vIdx - 1] & 0xFFF) : 0)) visMask |= 8;
-                    if (shouldShowFace(type, myOp, myCs, (z < 15) ? (voxelData[vIdx + STRIDE_Z] & 0xFFF) : get(x, y, z + 1))) visMask |= 16;
-                    if (shouldShowFace(type, myOp, myCs, (z > 0) ? (voxelData[vIdx - STRIDE_Z] & 0xFFF) : get(x, y, z - 1))) visMask |= 32;
+                    if (shouldShowFace(type, myOp, myCs, (x < 15) ? getRawBlockId(voxelData[vIdx + STRIDE_X]) : get(x + 1, y, z))) visMask |= 1;
+                    if (shouldShowFace(type, myOp, myCs, (x > 0) ? getRawBlockId(voxelData[vIdx - STRIDE_X]) : get(x - 1, y, z))) visMask |= 2;
+                    if (shouldShowFace(type, myOp, myCs, (y < 255) ? getRawBlockId(voxelData[vIdx + 1]) : 0)) visMask |= 4;
+                    if (shouldShowFace(type, myOp, myCs, (y > 0) ? getRawBlockId(voxelData[vIdx - 1]) : 0)) visMask |= 8;
+                    if (shouldShowFace(type, myOp, myCs, (z < 15) ? getRawBlockId(voxelData[vIdx + STRIDE_Z]) : get(x, y, z + 1))) visMask |= 16;
+                    if (shouldShowFace(type, myOp, myCs, (z > 0) ? getRawBlockId(voxelData[vIdx - STRIDE_Z]) : get(x, y, z - 1))) visMask |= 32;
                     if (visMask === 0) continue;
 
                     const logMat = getLogRotationMatrixReadOnly(meta);
@@ -4969,7 +4978,7 @@ function resolvePlacementTarget(base, target, rawNormal) {
     const baseZ = Math.floor(base.z);
 
     const baseRaw = getVoxelAtWorld(baseX, baseY, baseZ, true);
-    const baseId = baseRaw & 0xFFF;
+    const baseId = getRawBlockId(baseRaw);
     const baseCfg = getBlockConfiguration(baseId);
 
     if (baseId !== BLOCK_TYPES.SKY && baseCfg && (baseCfg.overwrite === true || baseCfg.geometryType === "water")) {
@@ -5025,10 +5034,10 @@ function updateNeighborBlockStates(originX, originY, originZ) {
         head++;
 
         const raw = getVoxelAtWorld(wx, wy, wz, true);
-        const id = raw & 0xFFF;
+        const id = getRawBlockId(raw);
         if (id === BLOCK_TYPES.SKY) continue;
 
-        const meta = (raw >> 12) & 0xF;
+        const meta = getRawLocalState(raw);
         const cfg = getBlockConfiguration(id);
         if (!cfg) continue;
 
@@ -5038,7 +5047,7 @@ function updateNeighborBlockStates(originX, originY, originZ) {
             if (newMask !== meta) {
                 const cx = wx >> 4;
                 const cz = wz >> 4;
-                ChunkSaveManager.setBlock(cx, cz, wx & 15, wy, wz & 15, (id & 0xFFF) | ((newMask & 0xF) << 12));
+                ChunkSaveManager.setBlock(cx, cz, wx & 15, wy, wz & 15, packRawBlock(id, newMask));
                 if (wx !== originX || wy !== originY || wz !== originZ) {
                     _extraUpdateCoords.push({ x: wx, y: wy, z: wz });
                 }
@@ -5052,6 +5061,7 @@ function updateNeighborBlockStates(originX, originY, originZ) {
             const cz = wz >> 4;
             _particleCenterTmp.set(wx + 0.5, wy + 0.5, wz + 0.5);
             createMinecraftBreakParticles(_particleCenterTmp, id, 0.8);
+            BlockEntityManager.remove(wx, wy, wz);
             ChunkSaveManager.setBlock(cx, cz, wx & 15, wy, wz & 15, BLOCK_TYPES.SKY);
             updateLightAtBlockChange(wx, wy, wz, raw, BLOCK_TYPES.SKY, _lightDirtySet);
 
@@ -5077,10 +5087,10 @@ function updateNeighborBlockStates(originX, originY, originZ) {
             let nextRaw = raw;
 
             if (typeof result === "number" && result >= 0) {
-                nextRaw = (id & 0xFFF) | ((result & 0xF) << 12);
+                nextRaw = packRawBlock(id, result);
             } else if (result && typeof result === "object" && typeof result.id === "number") {
-                const nextState = (result.state !== undefined) ? (result.state & 0xF) : 0;
-                nextRaw = (result.id & 0xFFF) | (nextState << 12);
+                const nextState = (result.state !== undefined) ? result.state : 0;
+                nextRaw = packRawBlock(result.id, nextState);
             }
 
             if (nextRaw !== raw) {
@@ -5145,7 +5155,7 @@ function interactWithBlock(action) {
     // ブロックデータ取得
     const cx = bx >> 4, cz = bz >> 4, lx = bx & 15, lz = bz & 15;
     let voxel = ChunkSaveManager.getBlock(cx, cz, lx, by, lz) ?? getVoxelAtWorld(bx, by, bz, true);
-    const voxelIdOnly = voxel & 0xFFF;
+    const voxelIdOnly = getRawBlockId(voxel);
     const cfg = getBlockConfiguration(voxelIdOnly);
 
     let playerBox = null;
@@ -5162,6 +5172,7 @@ function interactWithBlock(action) {
         createMinecraftBreakParticles(_workVec3_Center, voxelIdOnly, 1.0);
 
         _lightDirtySet.clear();
+        BlockEntityManager.remove(bx, by, bz);
         ChunkSaveManager.setBlock(cx, cz, lx, by, lz, BLOCK_TYPES.SKY);
         updateLightAtBlockChange(bx, by, bz, voxel, BLOCK_TYPES.SKY, _lightDirtySet);
         if (lastPlacedKey === candidateHash) lastPlacedKey = null;
@@ -5176,8 +5187,13 @@ function interactWithBlock(action) {
             const hCx = hit.x >> 4, hCz = hit.z >> 4;
             const hitRaw = ChunkSaveManager.getBlock(hCx, hCz, hit.x & 15, hit.y, hit.z & 15)
                 ?? getVoxelAtWorld(hit.x, hit.y, hit.z, true);
-            const hitId = hitRaw & 0xFFF;
-            const currentState = (hitRaw >> 12) & 0xF;
+            const hitId = getRawBlockId(hitRaw);
+            const currentState = getRawLocalState(hitRaw);
+
+            let hitBE = BlockEntityManager.get(hit.x, hit.y, hit.z);
+            if (!hitBE && hitCfg.blockEntityType) {
+                hitBE = BlockEntityManager.create(hit.x, hit.y, hit.z, hitCfg.blockEntityType);
+            }
 
             const nextState = hitCfg.onInteract({
                 x: hit.x,
@@ -5187,13 +5203,24 @@ function interactWithBlock(action) {
                 state: currentState,
                 normal: rawNormal,
                 point: hit.point,
+                activeBlockType,
+                blockEntity: hitBE,
+                openContainer: (be) => {
+                    if (be && ContainerUI) ContainerUI.open(be);
+                },
                 getBlock: _getBlockIdForPlacement,
                 scheduleTick: (delay, type, priority = 0, payload = 0) =>
                     TickScheduler.schedule(hit.x, hit.y, hit.z, delay, type, priority, payload)
             });
 
+            if (nextState === "consumed") {
+                stopInteraction("right");
+                stopInteraction("touch");
+                return;
+            }
+
             if (typeof nextState === "number" && nextState >= 0) {
-                const updatedRaw = (hitId & 0xFFF) | ((nextState & 0xF) << 12);
+                const updatedRaw = packRawBlock(hitId, nextState);
                 _lightDirtySet.clear();
                 ChunkSaveManager.setBlock(hCx, hCz, hit.x & 15, hit.y, hit.z & 15, updatedRaw);
                 updateLightAtBlockChange(hit.x, hit.y, hit.z, hitRaw, updatedRaw, _lightDirtySet);
@@ -5235,7 +5262,7 @@ function interactWithBlock(action) {
             _neighborHookCtx.state = meta;
             const placedMeta = newBlockCfg.onPlace(_neighborHookCtx);
             if (typeof placedMeta === "number" && placedMeta >= 0) {
-                meta = placedMeta & 0xF;
+                meta = placedMeta & (newBlockCfg.stateMask ?? 0xFFF);
             }
         }
 
@@ -5257,10 +5284,16 @@ function interactWithBlock(action) {
             }
         }
 
-        // 5) ブロック確定書き込み ＋ 2フェーズ インクリメンタル光源更新
-        const blockDataToSave = (activeBlockType & 0xFFF) | ((meta & 0xF) << 12);
+        // 5) ブロック確定書き込み ＋ BlockEntity生成 ＋ 2フェーズ インクリメンタル光源更新
+        const blockDataToSave = packRawBlock(activeBlockType, meta);
         _lightDirtySet.clear();
+        if (voxelIdOnly !== activeBlockType) {
+            BlockEntityManager.remove(bx, by, bz);
+        }
         ChunkSaveManager.setBlock(cx, cz, lx, by, lz, blockDataToSave);
+        if (newBlockCfg.blockEntityType) {
+            BlockEntityManager.create(bx, by, bz, newBlockCfg.blockEntityType);
+        }
         updateLightAtBlockChange(bx, by, bz, voxel, blockDataToSave, _lightDirtySet);
         lastPlacedKey = candidateHash;
     }
@@ -5377,7 +5410,7 @@ const create2DPreview = ({ id, textures = {}, previewTexture = null, previewOpti
 
         const cfg = getBlockConfiguration(id);
         const pMeta = (cfg && cfg.previewState !== null && cfg.previewState !== undefined) ? cfg.previewState : (cfg?.defaultState ?? 0);
-        const variant = cfg && cfg._compiledVariants ? cfg._compiledVariants[pMeta & 15] : null;
+        const variant = cfg && cfg._compiledVariants ? cfg._compiledVariants[pMeta & (cfg.stateMask ?? 0xFFF)] : null;
         const tintHex = (variant && variant.defaultColor !== undefined) ? variant.defaultColor : (cfg?.defaultColor ?? 0xffffff);
 
         if (tintHex !== 0xffffff) {
@@ -5467,7 +5500,10 @@ const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) 
     const cfg = getBlockConfiguration(id);
     if (!cfg) return previewCanvas;
 
-    const sharedGeom = getBlockGeometry(cfg.geometryType, cfg, 0);
+    const previewMeta = (cfg.previewState !== null && cfg.previewState !== undefined)
+        ? cfg.previewState
+        : (cfg.defaultState ?? 0);
+    const sharedGeom = getBlockGeometry(cfg.geometryType, cfg, previewMeta & (cfg.stateMask ?? 0xFFF));
     const sharedMats = getBlockMaterials(id);
     if (!sharedGeom || !sharedMats) {
         console.error(`プレビュー素材取得失敗 id: ${id}`);
@@ -6066,14 +6102,14 @@ function raycastVoxel(origin, dir, maxDistance, includeWater = false, outResult 
         // ステップ0（カメラ現在セル）を含めてボクセル検査
         if (y >= 0 && y < CHUNK_HEIGHT) {
             const rawVoxel = getVoxelAtWorld(x, y, z, true);
-            const blockId = rawVoxel & 0xFFF;
+            const blockId = getRawBlockId(rawVoxel);
 
             if (blockId !== BLOCK_TYPES.SKY) {
                 const conf = _blockConfigFastArray[blockId];
                 const isWaterTarget = includeWater && conf && conf.geometryType === "water";
 
                 if (conf && (conf.targetblock !== false || isWaterTarget)) {
-                    const meta = (rawVoxel >> 12) & 0xF;
+                    const meta = getRawLocalState(rawVoxel);
                     if (rayIntersectVoxelBoxes(
                         ox, oy, oz, dx, dy, dz,
                         x, y, z, blockId, meta,
@@ -6273,8 +6309,8 @@ function updateHeadBlockInfo() {
     const rawValue = ChunkSaveManager.getBlock(cx, cz, hLx, hY, hLz)
         ?? getVoxelAtWorld(hX, hY, hZ, true);
 
-    const blockId = rawValue & 0xFFF;
-    const meta = (rawValue >> 12) & 0xF;
+    const blockId = getRawBlockId(rawValue);
+    const meta = getRawLocalState(rawValue);
     const blockName = BLOCK_NAMES[blockId] || "Unknown";
     const stateStr = formatBlockStateString(blockId, meta);
 
@@ -6335,8 +6371,7 @@ function isPlayerEntireBodyInWater() {
             _waterCellCache.set(numericKey, blockValue);
         }
 
-        // 💡 ここを修正：上位ビットのメタデータを切り落として純粋なIDにする
-        const blockId = blockValue & 0xFFF;
+        const blockId = getRawBlockId(blockValue);
         const isWater = (blockId === BLOCK_TYPES.WATER || blockId === BLOCK_TYPES.LAVA);
 
         if (i < 5) {
@@ -6724,6 +6759,99 @@ const TickScheduler = (() => {
 /* ======================================================
    【レッドストーン信号伝播エンジン】(redstone_engine.js へ分離済)
    ====================================================== */
+/**
+ * プレイヤーの AABB が指定ブロック上の感圧板検出領域 (x+0.125..x+0.875, y..y+0.25, z+0.125..z+0.875) に
+ * 重なっているか判定する（Minecraft Java Edition BasePressurePlateBlock.TOUCH_AABB 準拠・ゼロGC）
+ */
+const PlayerData = createPlayerData();
+
+const EntityManager = createEntityManager({
+    scene,
+    chunkHeight: CHUNK_HEIGHT,
+    isChunkLoaded: (cx, cz) => loadedChunks.has(encodeChunkKey(cx, cz)),
+    getWorldBlockIdLoaded: _getWorldBlockIdLoaded,
+    blockConfigFastArray: _blockConfigFastArray,
+    getLightBrightnessAt: (wx, wy, wz) => {
+        const cell = _getWorldLightCell(wx, wy, wz);
+        if (cell < 0) return 1.0;
+        const sky = LIGHT_LEVEL_FACTORS[(cell >> 4) & 15] * SHARED_SKY_UNIFORM.value;
+        const blk = LIGHT_LEVEL_FACTORS[cell & 15];
+        const lit = Math.max(sky, blk) * SHARED_BRIGHTNESS_UNIFORM.value;
+        return Math.max(0.08, Math.min(1.0, lit));
+    },
+    getPlayerPosition: () => (player ? player.position : null)
+});
+
+let isContainerOpen = false;
+
+const ContainerUI = createContainerUI({
+    getBlockConfiguration,
+    keyToId,
+    idToKey,
+    createPreview: (cfg) => createInventoryItemPreview(cfg),
+    getHotbarKeys: () => {
+        const out = new Array(9).fill("");
+        for (let i = 0; i < 9; i++) {
+            const rawId = Number(_hotbarSlotEls[i]?.dataset.blocktype || 0);
+            out[i] = rawId > 0 ? idToKey(rawId & 0xFFF) : "";
+        }
+        return out;
+    },
+    setHotbarSlotKey: async (slotIdx, key) => {
+        const slotEl = _hotbarSlotEls[slotIdx];
+        if (!slotEl || !key) return;
+        const bid = keyToId(key);
+        const cfg = getBlockConfiguration(bid);
+        if (!cfg) return;
+        slotEl.innerHTML = "";
+        slotEl.dataset.blocktype = String(bid);
+        const preview = await createHotbarItemPreview(cfg);
+        preview.style.width = preview.style.height = "55px";
+        slotEl.appendChild(preview);
+        updateHotbarSelection();
+    },
+    onOpenChanged: (opened) => {
+        isContainerOpen = opened;
+        if (opened) {
+            releaseAllActiveInputs();
+            if (document.pointerLockElement && document.exitPointerLock) {
+                document.exitPointerLock();
+            }
+        } else if (!isPaused && !isInventoryOpen && renderer && renderer.domElement.requestPointerLock) {
+            renderer.domElement.requestPointerLock();
+        }
+    },
+    addChatMessage
+});
+
+const BlockEntityManager = createBlockEntityManager({
+    isChunkLoaded: (cx, cz) => loadedChunks.has(encodeChunkKey(cx, cz)),
+    getWorldRawLoaded: _getWorldRawLoaded,
+    setBlockFromWorldTick,
+    setBlockStateProp,
+    onMessage: (text, color) => {
+        if (typeof addChatMessage === "function") addChatMessage(text, color);
+    }
+});
+
+function isPlayerSteppingOnBlock(wx, wy, wz) {
+    if (!player) return false;
+    const aabb = getPlayerAABB(player.position);
+    return (
+        aabb.max.x > wx + 0.125 && aabb.min.x < wx + 0.875 &&
+        aabb.max.y > wy && aabb.min.y < wy + 0.25 &&
+        aabb.max.z > wz + 0.125 && aabb.min.z < wz + 0.875
+    );
+}
+
+/**
+ * プレイヤーまたはモブが感圧板検出領域に乗っているか判定（Java Edition 準拠）
+ */
+function isAnyEntityOnBlock(wx, wy, wz) {
+    if (isPlayerSteppingOnBlock(wx, wy, wz)) return true;
+    return EntityManager.isAnyEntityInBox(wx + 0.125, wy, wz + 0.125, wx + 0.875, wy + 0.25, wz + 0.875);
+}
+
 const _burnoutParticleVec = new THREE.Vector3();
 const RedstoneEngine = createRedstoneEngine({
     chunkHeight: CHUNK_HEIGHT,
@@ -6734,6 +6862,7 @@ const RedstoneEngine = createRedstoneEngine({
     setBlockFromWorldTick: (wx, wy, wz, newRaw) => setBlockFromWorldTick(wx, wy, wz, newRaw, true),
     tickScheduler: TickScheduler,
     getCurrentTick: () => worldTickCount,
+    isEntityOnBlock: isAnyEntityOnBlock,
     onTorchBurnout: (wx, wy, wz) => {
         _burnoutParticleVec.set(wx + 0.5, wy + 0.65, wz + 0.5);
         createMinecraftBreakParticles(_burnoutParticleVec, BLOCK_TYPES.REDSTONE_TORCH, 0.6);
@@ -6756,7 +6885,7 @@ const FluidEngine = createFluidEngine({
     },
     tickScheduler: TickScheduler,
     onFluidReplacedBlock: (wx, wy, wz, oldRaw) => {
-        const oldId = oldRaw & 0xFFF;
+        const oldId = getRawBlockId(oldRaw);
         _fluidParticleVec.set(wx + 0.5, wy + 0.5, wz + 0.5);
         createMinecraftBreakParticles(_fluidParticleVec, oldId, 0.7);
         RedstoneEngine.onBlockChanged(wx, wy, wz);
@@ -6779,6 +6908,10 @@ function setBlockFromWorldTick(wx, wy, wz, newRaw, forcePersist = false) {
     const packed = newRaw & 0xFFFF;
     if (oldRaw === packed) return false;
 
+    // ブロック種自体が変わった時のみ BlockEntity を破棄（かまどの lit 切替等の状態変更では保持）
+    if (getRawBlockId(oldRaw) !== getRawBlockId(packed)) {
+        BlockEntityManager.remove(wx, wy, wz);
+    }
     dataArray[idx] = packed;
     if (forcePersist) {
         ChunkSaveManager.playerModifiedKeys.add(key);
@@ -6872,14 +7005,14 @@ function processRandomTicks(pCx, pCz) {
             const raw = vData[ly | (lz << 8) | (lx << 12)];
             if (raw === 0) continue;
 
-            const blockId = raw & 0xFFF;
+            const blockId = getRawBlockId(raw);
             const cfg = _blockConfigFastArray[blockId];
             if (cfg && typeof cfg.onRandomTick === "function") {
                 _randomTickCtx.x = baseX + lx;
                 _randomTickCtx.y = ly;
                 _randomTickCtx.z = baseZ + lz;
                 _randomTickCtx.blockId = blockId;
-                _randomTickCtx.state = (raw >> 12) & 0xF;
+                _randomTickCtx.state = getRawLocalState(raw);
                 _randomTickCtx.raw = raw;
                 cfg.onRandomTick(_randomTickCtx);
                 continue;
@@ -6920,21 +7053,115 @@ function runPhysicsStep() {
         updateNormalPhysics();
     }
 
+    const prevOnGround = player.onGround;
     resolvePlayerCollision();
     updateOnGround();
+
+    // サバイバルモード時の落下ダメージ計算（Java Edition 準拠: 3マス超の落下で1ダメージ/マス）
+    if (PlayerData.data.gameMode === GAME_MODES.SURVIVAL && !flightMode && !wasUnderwater) {
+        if (!player.onGround && player.velocity.y < 0) {
+            const dy = player.prevPosition.y - player.position.y;
+            if (dy > 0) PlayerData.data.fallDistance += dy;
+        } else if (player.onGround && !prevOnGround) {
+            const dmg = Math.floor(PlayerData.data.fallDistance - 3.0);
+            if (dmg > 0) {
+                PlayerData.data.health = Math.max(0, PlayerData.data.health - dmg);
+                addChatMessage(`落下ダメージ -${dmg} (HP: ${PlayerData.data.health}/20)`, "#ff5555");
+                if (PlayerData.data.health <= 0) {
+                    PlayerData.data.health = PlayerData.data.maxHealth;
+                    PlayerData.data.foodLevel = 20;
+                    player.position.set(spawnX, Math.max(getTerrainHeight(spawnX, spawnZ), SEA_LEVEL + 2) + 2, spawnZ);
+                    player.prevPosition.copy(player.position);
+                    player.velocity.set(0, 0, 0);
+                    addChatMessage("リスポーンしました", "#ffff55");
+                }
+            }
+            PlayerData.data.fallDistance = 0;
+        } else if (player.onGround) {
+            PlayerData.data.fallDistance = 0;
+        }
+    } else {
+        PlayerData.data.fallDistance = 0;
+    }
+
     resetLastPlacedIfOnGround();
 }
 
+const _entityStepCtx = {
+    x: 0,
+    y: 0,
+    z: 0,
+    blockId: 0,
+    state: 0,
+    cfg: null,
+    setState: null,
+    scheduleTick: null
+};
+
+function triggerEntityStepAt(x, y, z) {
+    if (y < 0 || y >= CHUNK_HEIGHT) return;
+    const raw = _getWorldRawLoaded(x, y, z);
+    if (raw <= 0) return;
+    const id = getRawBlockId(raw);
+    const cfg = _blockConfigFastArray[id];
+    if (!cfg || typeof cfg.onEntityStep !== "function") return;
+    if (!isAnyEntityOnBlock(x, y, z)) return;
+
+    _entityStepCtx.x = x;
+    _entityStepCtx.y = y;
+    _entityStepCtx.z = z;
+    _entityStepCtx.blockId = id;
+    _entityStepCtx.state = getRawLocalState(raw);
+    _entityStepCtx.cfg = cfg;
+    _entityStepCtx.setState = (nextMeta) => {
+        const packed = packRawBlock(id, nextMeta);
+        if (setBlockFromWorldTick(x, y, z, packed, true)) {
+            RedstoneEngine.onBlockChanged(x, y, z);
+        }
+    };
+    _entityStepCtx.scheduleTick = (delay, type = "redstone_device", priority = -1, payload = 0) => {
+        TickScheduler.schedule(x, y, z, delay, type, priority, payload);
+    };
+    cfg.onEntityStep(_entityStepCtx);
+}
+
 /**
- * 固定 20 TPS ワールドロジック 1Tick実行（Minecraft Java Edition 準拠）
+ * プレイヤー＋全モブの足元と重なるブロックの onEntityStep フックを実行（感圧板等）
  */
+function processEntityBlockSteps() {
+    if (player) {
+        const aabb = getPlayerAABB(player.position);
+        const ix0 = Math.floor(aabb.min.x) | 0, ix1 = Math.floor(aabb.max.x) | 0;
+        const iy0 = Math.floor(aabb.min.y) | 0, iy1 = Math.floor(aabb.max.y) | 0;
+        const iz0 = Math.floor(aabb.min.z) | 0, iz1 = Math.floor(aabb.max.z) | 0;
+        for (let y = iy0; y <= iy1; y++) {
+            for (let x = ix0; x <= ix1; x++) {
+                for (let z = iz0; z <= iz1; z++) {
+                    triggerEntityStepAt(x, y, z);
+                }
+            }
+        }
+    }
+
+    const ents = EntityManager.entities;
+    for (let i = 0; i < ents.length; i++) {
+        const e = ents[i];
+        triggerEntityStepAt(Math.floor(e.x), Math.floor(e.y), Math.floor(e.z));
+    }
+}
+
 function runWorldTick(pCx, pCz) {
     worldTickCount++;
     ticksInSecond++;
 
     gameTime = (gameTime + TIME_SPEED) % TICKS_PER_DAY;
+    EntityManager.tick();
+    BlockEntityManager.tick();
+    processEntityBlockSteps();
     TickScheduler.processTick(worldTickCount);
     processRandomTicks(pCx, pCz);
+    ContainerUI.refreshIfOpen();
+    ContainerUI.updateSurvivalHUD(PlayerData.data);
 }
 
 /**
@@ -7033,6 +7260,7 @@ function animate() {
     // 2. -------- 補間済み時間による昼夜サイクル・天体更新 --------
     const worldTickAlpha = isPaused ? 0 : (worldTickAccumulator * WORLD_TPS);
     const renderGameTime = (gameTime + worldTickAlpha * TIME_SPEED) % TICKS_PER_DAY;
+    EntityManager.updateRenderInterpolation(isPaused ? 1.0 : worldTickAlpha);
     updateSunMoonPosition(renderGameTime);
     updateStars(renderGameTime);
     const currentSkyFactor = getSkyLightFactor(renderGameTime);
@@ -7076,7 +7304,8 @@ function animate() {
         x: ${pxInt} (C: ${curPCx})<br>
         y: ${Math.round(py)} (feet)<br>
         z: ${pzInt} (C: ${curPCz})<br>
-        Mode: ${moveMode} / Dash: ${dashActive ? "ON" : "OFF"}<br>
+        E: ${EntityManager.count} mobs, BE: ${BlockEntityManager.count}<br>
+        Mode: ${moveMode} (${PlayerData.data.gameMode === GAME_MODES.SURVIVAL ? "Survival" : "Creative"}) / Dash: ${dashActive ? "ON" : "OFF"}<br>
         --------------------------<br>
         TargetBlock: ${targetText}
     `;
@@ -7395,7 +7624,8 @@ document.getElementById('btn-load-saved').onclick = async () => {
                 restoredTime,
                 saveData.worldUid || null,
                 saveData.playerState || null,
-                saveData.simulationState || null
+                saveData.simulationState || null,
+                saveData.worldEntitiesState || null
             );
         } else {
             ui.loading.style.display = 'none';
@@ -7420,7 +7650,7 @@ function generateWorldUid() {
     return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0, savedWorldUid = null, savedPlayerState = null, savedSimulationState = null) {
+async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0, savedWorldUid = null, savedPlayerState = null, savedSimulationState = null, savedWorldEntitiesState = null) {
     const fill = document.getElementById('loading-fill');
 
     const updateProgress = async (percent) => {
@@ -7435,6 +7665,16 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     initCanvas();
     initSunMoon();
     initStars();
+
+    // Java Edition 準拠の JSON モデル＆BlockState アセットを並列ロードし高速テーブルを再同期
+    const jsonUpdatedBlocks = await loadBlockAssets();
+    if (jsonUpdatedBlocks.length > 0) {
+        _bakedCustomTemplateCache.clear();
+        for (let i = 0; i < jsonUpdatedBlocks.length; i++) {
+            const uCfg = jsonUpdatedBlocks[i];
+            _syncBlockFastEntry(uCfg.id, uCfg);
+        }
+    }
 
     gameTime = Number.isFinite(savedTime) ? savedTime : 0;
 
@@ -7474,6 +7714,10 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     TickScheduler.clear();
     RedstoneEngine.clearAllBurnouts();
     FluidEngine.resetActivatedChunks();
+    BlockEntityManager.clear();
+    EntityManager.clear();
+    PlayerData.reset();
+
     worldTickCount = 0;
     worldTickAccumulator = 0;
     physicsAccumulator = 0;
@@ -7509,6 +7753,18 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
         }
         if (Array.isArray(savedSimulationState.scheduledTicks)) {
             TickScheduler.importState(savedSimulationState.scheduledTicks);
+        }
+    }
+
+    if (savedWorldEntitiesState) {
+        if (savedWorldEntitiesState.playerData) {
+            PlayerData.importNBT(savedWorldEntitiesState.playerData);
+        }
+        if (Array.isArray(savedWorldEntitiesState.blockEntities)) {
+            BlockEntityManager.importState(savedWorldEntitiesState.blockEntities);
+        }
+        if (Array.isArray(savedWorldEntitiesState.entities)) {
+            EntityManager.importState(savedWorldEntitiesState.entities);
         }
     }
 
@@ -7623,11 +7879,29 @@ async function saveCurrentWorld() {
             : { x: 0, y: 64, z: 0, yaw: 0, pitch: 0 };
 
         const playerState = collectPlayerSaveState();
+        PlayerData.syncFromRuntime({
+            position: player.position,
+            velocity: player.velocity,
+            yaw,
+            pitch,
+            onGround: player.onGround,
+            flightMode,
+            selectedHotbarIndex,
+            hotbarKeys: playerState.hotbarKeys
+        });
         const simulationState = {
             scheduledTicks: TickScheduler.exportState(),
             redstoneBurnouts: RedstoneEngine.exportBurnoutState()
         };
-        const result = await saveWorldData(s, pPos, ChunkSaveManager, gameTime, currentWorldUid, playerState, simulationState);
+        const worldEntitiesState = {
+            playerData: PlayerData.exportNBT(),
+            blockEntities: BlockEntityManager.exportState(),
+            entities: EntityManager.exportState()
+        };
+        const result = await saveWorldData(
+            s, pPos, ChunkSaveManager, gameTime, currentWorldUid,
+            playerState, simulationState, worldEntitiesState
+        );
 
         console.log(
             `[Save] 完了 (${result.mode}): ${result.savedChunks} チャンク / ` +
@@ -7761,7 +8035,7 @@ if (ua.includes("mobile") || ua.indexOf("ipad") > -1 || (ua.indexOf("macintosh")
 const INTERACT_SPEED = 150;
 
 function isGameplayInputActive() {
-    return !!renderer && !isPaused && !isInventoryOpen && mainMenu && mainMenu.style.display === "none";
+    return !!renderer && !isPaused && !isInventoryOpen && !isContainerOpen && mainMenu && mainMenu.style.display === "none";
 }
 
 function startInteraction(action, key = "default") {
@@ -7833,12 +8107,52 @@ window.addEventListener('keydown', (e) => {
         }
         return;
     }
+    if (f3Pressed && code === "KeyM") {
+        e.preventDefault();
+        const hit = getTargetBlockByDDA(12);
+        const sx = hit ? (hit.x + hit.normal.x + 0.5) : (player.position.x + 2);
+        const sy = hit ? (hit.y + hit.normal.y) : (player.position.y + 0.5);
+        const sz = hit ? (hit.z + hit.normal.z + 0.5) : (player.position.z + 2);
+        const types = [MOB_TYPES.PIG, MOB_TYPES.SHEEP, MOB_TYPES.ZOMBIE];
+        const chosen = types[(Math.random() * types.length) | 0];
+        const ent = EntityManager.spawn(chosen, sx, sy, sz);
+        if (ent) addChatMessage(`モブを召喚しました: ${ent.def.name} (計 ${EntityManager.count} 体)`, "#55ffff");
+        return;
+    }
+    if (f3Pressed && code === "KeyK") {
+        e.preventDefault();
+        EntityManager.clear();
+        addChatMessage("全モブを削除しました", "#ff8888");
+        return;
+    }
+    if (f3Pressed && code === "KeyN") {
+        e.preventDefault();
+        const nextMode = (PlayerData.data.gameMode === GAME_MODES.CREATIVE)
+            ? GAME_MODES.SURVIVAL
+            : GAME_MODES.CREATIVE;
+        PlayerData.setGameMode(nextMode);
+        if (nextMode === GAME_MODES.SURVIVAL) {
+            flightMode = false;
+            PlayerData.data.fallDistance = 0;
+        }
+        ContainerUI.updateSurvivalHUD(PlayerData.data);
+        addChatMessage(
+            `ゲームモードを ${nextMode === GAME_MODES.SURVIVAL ? "サバイバル" : "クリエイティブ"} に変更しました`,
+            "#55ff55"
+        );
+        return;
+    }
 
-    // --- B. Eキー (インベントリ開閉) ---
+    // --- B. Eキー (コンテナ閉じ / インベントリ開閉) ---
     if (code === "KeyE") {
         if (isPaused || mainMenu.style.display !== "none") return;
         e.preventDefault();
         e.stopImmediatePropagation();
+
+        if (isContainerOpen) {
+            ContainerUI.close();
+            return;
+        }
 
         if (isInventoryOpen) {
             isInventoryOpen = false;
@@ -7863,8 +8177,12 @@ window.addEventListener('keydown', (e) => {
         return;
     }
 
-    // --- C. ESCキー (インベントリ閉じ / ポーズ遷移の単一経路化) ---
+    // --- C. ESCキー (コンテナ閉じ / インベントリ閉じ / ポーズ遷移の単一経路化) ---
     if (code === "Escape") {
+        if (isContainerOpen) {
+            ContainerUI.close();
+            return;
+        }
         if (isInventoryOpen) {
             isInventoryOpen = false;
             inventoryContainer.style.display = "none";
@@ -7898,7 +8216,7 @@ window.addEventListener('keydown', (e) => {
         e.preventDefault();
         if (e.repeat) return;
         const now = performance.now();
-        if (now - lastSpaceTime < doubleTapThreshold) {
+        if (PlayerData.data.abilities.mayfly && now - lastSpaceTime < doubleTapThreshold) {
             flightMode = !flightMode;
             jumpRequest = false;
         }
@@ -7985,7 +8303,7 @@ document.addEventListener('pointerlockchange', () => {
     if (pointerLocked) {
         isPaused = false;
         updatePauseUI();
-    } else if (!isInventoryOpen && mainMenu && mainMenu.style.display === "none") {
+    } else if (!isInventoryOpen && !isContainerOpen && mainMenu && mainMenu.style.display === "none") {
         isPaused = true;
         updatePauseUI();
     }
@@ -8003,7 +8321,7 @@ if (btnResume) {
 
         await new Promise(resolve => setTimeout(resolve, 100));
 
-        if (!isPaused && !isInventoryOpen && renderer && renderer.domElement) {
+        if (!isPaused && !isInventoryOpen && !isContainerOpen && renderer && renderer.domElement) {
             renderer.domElement.requestPointerLock();
         }
     });
@@ -8496,8 +8814,8 @@ function encodeChunkPaletteRLE(dataArray) {
             if (palIdx < _rleUsedVals.length) {
                 _rleUsedVals[palIdx] = val;
             }
-            const id = val & 0xFFF;
-            const meta = (val >> 12) & 0xF;
+            const id = getRawBlockId(val);
+            const meta = getRawLocalState(val);
             palette.push(idToKey(id) + ":" + meta);
         }
 
@@ -8544,7 +8862,7 @@ async function readStoredWorldUid(db) {
 /**
  * ワールドデータの保存（パレット＋RLEバイナリ圧縮・編集チャンク限定・差分セーブ・アトミック置換）
  */
-async function saveWorldData(seed, playerPos, chunkManager, gameTime, worldUid = null, playerState = null, simulationState = null) {
+async function saveWorldData(seed, playerPos, chunkManager, gameTime, worldUid = null, playerState = null, simulationState = null, worldEntitiesState = null) {
     const startTime = performance.now();
     const db = await getDB();
     const activeWorldUid = worldUid || generateWorldUid();
@@ -8595,6 +8913,9 @@ async function saveWorldData(seed, playerPos, chunkManager, gameTime, worldUid =
         if (simulationState) {
             metaStore.put(simulationState, "simulation_state");
         }
+        if (worldEntitiesState) {
+            metaStore.put(worldEntitiesState, "world_entities_state");
+        }
 
         for (let i = 0; i < encodedEntries.length; i++) {
             const entry = encodedEntries[i];
@@ -8639,6 +8960,7 @@ async function loadFullSaveData() {
         const reqWorldUid = metaStore.get("world_uid");
         const reqPlayerState = metaStore.get("player_state");
         const reqSimState = metaStore.get("simulation_state");
+        const reqWorldEntitiesState = metaStore.get("world_entities_state");
         const reqKeys = chunkStore.getAllKeys();
         const reqValues = chunkStore.getAll();
 
@@ -8674,7 +8996,7 @@ async function loadFullSaveData() {
                         const parts = entry.split(":");
                         const id = _keyToId(parts[0]);
                         const meta = parseInt(parts[1], 10) || 0;
-                        palPacked[p] = (id & 0xFFF) | ((meta & 0xF) << 12);
+                        palPacked[p] = packRawBlock(id, meta);
                     }
 
                     const rle = chunkData.rle;
@@ -8700,7 +9022,7 @@ async function loadFullSaveData() {
                         const parts = blockStrings[j].split(":");
                         const id = _keyToId(parts[0]);
                         const meta = parseInt(parts[1], 10) || 0;
-                        numericBlocks[j] = (id & 0xFFF) | ((meta & 0xF) << 12);
+                        numericBlocks[j] = packRawBlock(id, meta);
                     }
                     hasValidData = true;
                 }
@@ -8718,17 +9040,21 @@ async function loadFullSaveData() {
                             if (isObjMode && item) {
                                 const id = _keyToId(item.k);
                                 const meta = item.m ?? 0;
-                                numericBlocks[j] = (id & 0xFFF) | ((meta & 0xF) << 12);
+                                numericBlocks[j] = packRawBlock(id, meta);
                             } else {
-                                numericBlocks[j] = _keyToId(item) & 0xFFF;
+                                numericBlocks[j] = packRawBlock(_keyToId(item), 0);
                             }
                         }
                     }
                     hasValidData = true;
                 }
-                // 3. 旧・直接Uint16Array形式
+                // 3. 旧・直接Uint16Array形式（旧4bit形式から16bitグローバル状態へ自動変換）
                 else if (chunkData instanceof Uint16Array) {
-                    numericBlocks.set(chunkData.subarray(0, TOTAL_CELLS));
+                    const bLen = Math.min(chunkData.length, TOTAL_CELLS);
+                    for (let j = 0; j < bLen; j++) {
+                        const oldVal = chunkData[j];
+                        numericBlocks[j] = packRawBlock(oldVal & 0xFFF, (oldVal >> 12) & 0xF);
+                    }
                     hasValidData = true;
                 }
 
@@ -8744,6 +9070,7 @@ async function loadFullSaveData() {
                 worldUid: reqWorldUid.result ?? null,
                 playerState: reqPlayerState.result ?? null,
                 simulationState: reqSimState.result ?? null,
+                worldEntitiesState: reqWorldEntitiesState.result ?? null,
                 chunks: chunks
             });
         };
@@ -8769,6 +9096,10 @@ window.MinecraftEngine = Object.freeze({
     packBlockState,
     unpackBlockState,
     formatBlockStateString,
+    getRawBlockId,
+    getRawLocalState,
+    packRawBlock,
+    getGlobalStatePaletteStats,
     registerCustomBlock,
     registerGeometryBuilder,
     registerPlacementRule,
@@ -8778,6 +9109,14 @@ window.MinecraftEngine = Object.freeze({
     RedstoneEngine,
     FluidEngine,
     ChunkSaveManager,
+    PlayerData,
+    EntityManager,
+    BlockEntityManager,
+    ContainerUI,
+    MOB_TYPES,
+    GAME_MODES,
+    spawnMob: (typeId = MOB_TYPES.PIG, x = player.position.x + 2, y = player.position.y, z = player.position.z + 2) =>
+        EntityManager.spawn(typeId, x, y, z),
     saveCurrentWorld,
     getStats: () => ({
         seed: currentSeed,

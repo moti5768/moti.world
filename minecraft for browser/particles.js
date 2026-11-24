@@ -1,7 +1,7 @@
 "use strict";
 import * as THREE from './build/three.module.js';
 import { camera, scene, getVoxelAtWorld, ChunkSaveManager, blockCollisionBoxCache } from './script.js';
-import { getBlockMaterials, BLOCK_TYPES, getBlockConfiguration, applyRotationToCollisionBox, usesConnectionMeta } from './blocks.js';
+import { getBlockMaterials, BLOCK_TYPES, getBlockConfiguration, applyRotationToCollisionBox, usesConnectionMeta, getRawBlockId, getRawLocalState } from './blocks.js';
 
 /* ======================================================
    【three.js r128 最適化版】InstancedMesh パーティクルシステム（64 Draw Calls -> 1 Draw Call）
@@ -232,8 +232,8 @@ export const updateBlockParticles = delta => {
             const rawVoxel = ChunkSaveManager.getBlock(pCx, pCz, bx & 15, by, bz & 15)
                 ?? getVoxelAtWorld(bx, by, bz, true);
 
-            const id = rawVoxel & 0xFFF;
-            const metadata = (rawVoxel >> 12) & 0xF;
+            const id = getRawBlockId(rawVoxel);
+            const metadata = getRawLocalState(rawVoxel);
 
             if (id !== BLOCK_TYPES.SKY && id !== BLOCK_TYPES.WATER) {
                 const cfg = getBlockConfiguration(id);
@@ -274,7 +274,7 @@ export const updateBlockParticles = delta => {
                                 ? (ChunkSaveManager.getBlock(pCx, pCz, cx & 15, by, cz & 15) ?? getVoxelAtWorld(cx, by, cz, true))
                                 : getVoxelAtWorld(cx, by, cz, true);
 
-                            const sideId = rawSideVoxel & 0xFFF;
+                            const sideId = getRawBlockId(rawSideVoxel);
                             if (sideId === BLOCK_TYPES.SKY || sideId === BLOCK_TYPES.WATER) {
                                 _validCandidates[validCount++] = dir;
                             }

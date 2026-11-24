@@ -2,7 +2,8 @@
 
 import {
     MOUNT_SUPPORT_DX, MOUNT_SUPPORT_DY, MOUNT_SUPPORT_DZ,
-    getBlockStateProp, getBlockStateRawProp, setBlockStateProp
+    getBlockStateProp, getBlockStateRawProp, setBlockStateProp,
+    getRawBlockId, getRawLocalState, packRawBlock
 } from './blockstate.js';
 import { BLOCK_TYPES } from './blocks.js';
 
@@ -47,16 +48,16 @@ export function createRedstoneEngine(deps) {
         setBlockFromWorldTick,
         tickScheduler,
         getCurrentTick = () => 0,
-        onTorchBurnout = null
+        onTorchBurnout = null,
+        isEntityOnBlock = () => false
     } = deps;
 
-    // Minecraft Java Edition RedstoneTorchBlock 準拠の焼き切れ定数
-    const TORCH_BURNOUT_WINDOW = 60;    // 監視窓 (60 ticks = 3秒)
-    const TORCH_BURNOUT_LIMIT = 8;      // 監視窓内の消灯回数上限 (8回で焼き切れ)
-    const TORCH_BURNOUT_COOLDOWN = 160; // 焼き切れ後の再点灯待機 (160 ticks = 8秒)
+    // Minecraft Java Edition RedstoneTorchBlock.java 完全準拠定数
+    const TORCH_BURNOUT_WINDOW = 60;    // RECENT_TOGGLE_TIMER = 60 ticks (3秒)
+    const TORCH_BURNOUT_LIMIT = 8;      // MAX_RECENT_TOGGLES = 8 回
+    const TORCH_BURNOUT_RESTART = 160;  // RESTART_DELAY = 160 ticks (8秒後の自動復帰チェック)
 
     const _torchToggleHistory = new Map(); // Map<coordKey, { x, y, z, ticks: number[] }>
-    const _torchBurnoutUntil = new Map();  // Map<coordKey, { x, y, z, untilTick: number }>
 
     const MAX_WIRE_NODES = 1024;
     const _wireX = new Int32Array(MAX_WIRE_NODES);
@@ -75,25 +76,15 @@ export function createRedstoneEngine(deps) {
     // 外部モジュール・新ブロック向けのカスタムロール拡張レジストリ
     const customRoles = new Map();
 
-    function isTorchBurnedOut(wx, wy, wz, currentTick) {
+    /**
+     * Java Edition 準拠: gameTime - toggle.when > 60 の古い反転履歴のみを除去する
+     */
+    function pruneTorchToggles(wx, wy, wz, currentTick) {
         const key = encodeBlockKey(wx, wy, wz);
-        const rec = _torchBurnoutUntil.get(key);
-        if (!rec) return false;
-        if (currentTick < rec.untilTick) return true;
-        _torchBurnoutUntil.delete(key);
-        return false;
-    }
-
-    function recordTorchToggleAndCheckBurnout(wx, wy, wz, currentTick) {
-        const key = encodeBlockKey(wx, wy, wz);
-        let entry = _torchToggleHistory.get(key);
-        if (!entry) {
-            entry = { x: wx, y: wy, z: wz, ticks: [] };
-            _torchToggleHistory.set(key, entry);
-        }
+        const entry = _torchToggleHistory.get(key);
+        if (!entry) return null;
 
         const list = entry.ticks;
-        // 60 ticks より古い反転履歴を先頭から除去
         let writeIdx = 0;
         for (let i = 0; i < list.length; i++) {
             if ((currentTick - list[i]) <= TORCH_BURNOUT_WINDOW) {
@@ -101,50 +92,69 @@ export function createRedstoneEngine(deps) {
             }
         }
         list.length = writeIdx;
-        list.push(currentTick);
-
-        if (list.length >= TORCH_BURNOUT_LIMIT) {
-            list.length = 0;
+        if (list.length === 0) {
             _torchToggleHistory.delete(key);
-            return true;
+            return null;
         }
-        return false;
+        return entry;
+    }
+
+    /**
+     * Java Edition RedstoneTorchBlock.isToggledTooFrequently(level, pos, addToggle) 完全再現
+     */
+    function isTorchToggledTooFrequently(wx, wy, wz, currentTick, addToggle) {
+        let entry = pruneTorchToggles(wx, wy, wz, currentTick);
+        if (addToggle) {
+            if (!entry) {
+                entry = { x: wx, y: wy, z: wz, ticks: [] };
+                _torchToggleHistory.set(encodeBlockKey(wx, wy, wz), entry);
+            }
+            entry.ticks.push(currentTick);
+        }
+        return entry !== null && entry.ticks.length >= TORCH_BURNOUT_LIMIT;
     }
 
     function clearTorchBurnout(wx, wy, wz) {
-        const key = encodeBlockKey(wx, wy, wz);
-        _torchToggleHistory.delete(key);
-        _torchBurnoutUntil.delete(key);
+        _torchToggleHistory.delete(encodeBlockKey(wx, wy, wz));
     }
 
     function exportBurnoutState() {
         const nowTick = getCurrentTick();
-        const burnouts = [];
-        for (const rec of _torchBurnoutUntil.values()) {
-            const remaining = rec.untilTick - nowTick;
-            if (remaining > 0) {
-                burnouts.push({ x: rec.x, y: rec.y, z: rec.z, remaining });
+        const histories = [];
+        for (const entry of _torchToggleHistory.values()) {
+            const ages = [];
+            for (let i = 0; i < entry.ticks.length; i++) {
+                const age = nowTick - entry.ticks[i];
+                if (age >= 0 && age <= TORCH_BURNOUT_WINDOW) {
+                    ages.push(age);
+                }
+            }
+            if (ages.length > 0) {
+                histories.push({ x: entry.x, y: entry.y, z: entry.z, ages });
             }
         }
-        return { burnouts };
+        return { histories };
     }
 
     function importBurnoutState(state) {
         _torchToggleHistory.clear();
-        _torchBurnoutUntil.clear();
-        if (!state || !Array.isArray(state.burnouts)) return;
+        if (!state || !Array.isArray(state.histories)) return;
 
         const nowTick = getCurrentTick();
-        for (let i = 0; i < state.burnouts.length; i++) {
-            const b = state.burnouts[i];
-            if (!b || !Number.isFinite(b.remaining) || b.remaining <= 0) continue;
-            const key = encodeBlockKey(b.x | 0, b.y | 0, b.z | 0);
-            _torchBurnoutUntil.set(key, {
-                x: b.x | 0,
-                y: b.y | 0,
-                z: b.z | 0,
-                untilTick: nowTick + (b.remaining | 0)
-            });
+        for (let i = 0; i < state.histories.length; i++) {
+            const h = state.histories[i];
+            if (!h || !Array.isArray(h.ages) || h.ages.length === 0) continue;
+            const ticks = [];
+            for (let j = 0; j < h.ages.length; j++) {
+                const age = h.ages[j] | 0;
+                if (age >= 0 && age <= TORCH_BURNOUT_WINDOW) {
+                    ticks.push(nowTick - age);
+                }
+            }
+            if (ticks.length > 0) {
+                const x = h.x | 0, y = h.y | 0, z = h.z | 0;
+                _torchToggleHistory.set(encodeBlockKey(x, y, z), { x, y, z, ticks });
+            }
         }
     }
 
@@ -156,24 +166,24 @@ export function createRedstoneEngine(deps) {
 
     // ブロック定義の redstoneConductive に基づく「通電する / しない」統一判定
     function isRedstoneConductor(wx, wy, wz) {
-        return isRedstoneConductive[getRaw(wx, wy, wz) & 0xFFF] === 1;
+        return isRedstoneConductive[getRawBlockId(getRaw(wx, wy, wz))] === 1;
     }
 
     // 段差ワイヤーの物理遮断用（不透明ブロック全般）
     function isWireBlockingOpaque(wx, wy, wz) {
-        return isOpaqueBlock[getRaw(wx, wy, wz) & 0xFFF] === 1;
+        return isOpaqueBlock[getRawBlockId(getRaw(wx, wy, wz))] === 1;
     }
 
     /**
      * ワイヤーから方向 (dx, dz) にある隣接ブロックへ接続すべきか判定する（リピーターは入出力2方向のみ接続）
      */
     function canWireConnectToBlock(nRaw, dx, dz) {
-        const nId = nRaw & 0xFFF;
+        const nId = getRawBlockId(nRaw);
         const nCfg = blockConfigFastArray[nId];
         const mode = nCfg && nCfg.redstoneConnectsWire;
         if (!mode) return false;
         if (mode === "axis") {
-            const rot = (nRaw >> 12) & 3;
+            const rot = getRawLocalState(nRaw) & 3;
             const rdx = REPEATER_OUT_DX[rot];
             const rdz = REPEATER_OUT_DZ[rot];
             return (dx === rdx && dz === rdz) || (dx === -rdx && dz === -rdz);
@@ -187,7 +197,7 @@ export function createRedstoneEngine(deps) {
      */
     function getWireConnectionMask(lx, ly, lz, getRawFn = getRaw) {
         let mask = 0;
-        const aboveId = (ly < chunkHeight - 1) ? (getRawFn(lx, ly + 1, lz) & 0xFFF) : 0;
+        const aboveId = (ly < chunkHeight - 1) ? getRawBlockId(getRawFn(lx, ly + 1, lz)) : 0;
         const canClimbUp = (isOpaqueBlock[aboveId] === 0);
 
         for (let i = 0; i < 4; i++) {
@@ -198,7 +208,7 @@ export function createRedstoneEngine(deps) {
             const bit = WIRE_CONN_BITS[i];
 
             const sameRaw = getRawFn(nx, ly, nz);
-            const sameId = sameRaw & 0xFFF;
+            const sameId = getRawBlockId(sameRaw);
 
             if (canWireConnectToBlock(sameRaw, dx, dz)) {
                 mask |= (1 << bit);
@@ -206,7 +216,7 @@ export function createRedstoneEngine(deps) {
             }
 
             // 1ブロック上へ登るワイヤー（自直上が不透明でなく、隣が壁/段差）
-            if (canClimbUp && ly < chunkHeight - 1 && (getRawFn(nx, ly + 1, nz) & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE) {
+            if (canClimbUp && ly < chunkHeight - 1 && getRawBlockId(getRawFn(nx, ly + 1, nz)) === BLOCK_TYPES.REDSTONE_WIRE) {
                 mask |= (1 << bit);
                 if (isOpaqueBlock[sameId] === 1) {
                     mask |= (1 << (bit + 4)); // 壁を垂直に登る立ち上がり面を有効化
@@ -215,7 +225,7 @@ export function createRedstoneEngine(deps) {
             }
 
             // 1ブロック下へ降りるワイヤー（隣の同高度が不透明でなければ接続）
-            if (ly > 0 && isOpaqueBlock[sameId] === 0 && (getRawFn(nx, ly - 1, nz) & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE) {
+            if (ly > 0 && isOpaqueBlock[sameId] === 0 && getRawBlockId(getRawFn(nx, ly - 1, nz)) === BLOCK_TYPES.REDSTONE_WIRE) {
                 mask |= (1 << bit);
             }
         }
@@ -248,8 +258,8 @@ export function createRedstoneEngine(deps) {
      */
     function getDirectStrongPowerTo(sx, sy, sz, tx, ty, tz, targetIsConductor = false) {
         const raw = getRaw(sx, sy, sz);
-        const id = raw & 0xFFF;
-        const meta = (raw >> 12) & 0xF;
+        const id = getRawBlockId(raw);
+        const meta = getRawLocalState(raw);
         const cfg = blockConfigFastArray[id];
         if (!cfg) return 0;
 
@@ -259,7 +269,7 @@ export function createRedstoneEngine(deps) {
         }
 
         const role = cfg.redstoneRole;
-        if (role === "lever") {
+        if (role === "lever" || role === "button") {
             if (!getBlockStateProp(id, meta, "powered")) return 0;
             const mount = Math.min(getBlockStateRawProp(id, meta, "mount"), 4);
             if (targetIsConductor) {
@@ -268,6 +278,15 @@ export function createRedstoneEngine(deps) {
                     ty === sy + MOUNT_SUPPORT_DY[mount] &&
                     tz === sz + MOUNT_SUPPORT_DZ[mount]
                 ) ? 15 : 0;
+            }
+            return 15;
+        }
+
+        if (role === "pressure_plate") {
+            if (!getBlockStateProp(id, meta, "powered")) return 0;
+            if (targetIsConductor) {
+                // バニラ BasePressurePlateBlock 準拠: 真下の支持ブロックのみ強励起
+                return (tx === sx && ty === sy - 1 && tz === sz) ? 15 : 0;
             }
             return 15;
         }
@@ -334,8 +353,8 @@ export function createRedstoneEngine(deps) {
         if (maxP === 15) return 15;
 
         const upRaw = getRaw(cx, cy + 1, cz);
-        if ((upRaw & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE && !(cx === excludeX && (cy + 1) === excludeY && cz === excludeZ)) {
-            const wp = (upRaw >> 12) & 0xF;
+        if (getRawBlockId(upRaw) === BLOCK_TYPES.REDSTONE_WIRE && !(cx === excludeX && (cy + 1) === excludeY && cz === excludeZ)) {
+            const wp = getRawLocalState(upRaw) & 0xF;
             if (wp > maxP) maxP = wp;
         }
 
@@ -344,8 +363,8 @@ export function createRedstoneEngine(deps) {
             const nz = cz + RS_HORIZ_DZ[d];
             if (nx === excludeX && cy === excludeY && nz === excludeZ) continue;
             const nRaw = getRaw(nx, cy, nz);
-            if ((nRaw & 0xFFF) === BLOCK_TYPES.REDSTONE_WIRE) {
-                const wp = (nRaw >> 12) & 0xF;
+            if (getRawBlockId(nRaw) === BLOCK_TYPES.REDSTONE_WIRE) {
+                const wp = getRawLocalState(nRaw) & 0xF;
                 if (wp > maxP && doesWirePointTowards(nx, cy, nz, cx, cz)) {
                     maxP = wp;
                 }
@@ -359,7 +378,7 @@ export function createRedstoneEngine(deps) {
      * レッドストーントーチの支持ブロック (sx, sy, sz) が通電状態か統一判定
      */
     function isSupportBlockPowered(sx, sy, sz, torchX, torchY, torchZ) {
-        const sId = getRaw(sx, sy, sz) & 0xFFF;
+        const sId = getRawBlockId(getRaw(sx, sy, sz));
         const sCfg = blockConfigFastArray[sId];
         if (sCfg && sCfg.redstonePowerOutput > 0) return true;
         return getConductorAnyPower(sx, sy, sz, torchX, torchY, torchZ) > 0;
@@ -378,9 +397,9 @@ export function createRedstoneEngine(deps) {
             if (direct > maxP) maxP = direct;
 
             const nRaw = getRaw(nx, ny, nz);
-            const nId = nRaw & 0xFFF;
+            const nId = getRawBlockId(nRaw);
             if (nId === BLOCK_TYPES.REDSTONE_WIRE) {
-                const wp = (nRaw >> 12) & 0xF;
+                const wp = getRawLocalState(nRaw) & 0xF;
                 if (wp > maxP && (ny !== wy || doesWirePointTowards(nx, ny, nz, wx, wz))) {
                     maxP = wp;
                 }
@@ -420,10 +439,10 @@ export function createRedstoneEngine(deps) {
         const ix = rx - REPEATER_OUT_DX[rot];
         const iz = rz - REPEATER_OUT_DZ[rot];
         const iRaw = getRaw(ix, ry, iz);
-        const iId = iRaw & 0xFFF;
+        const iId = getRawBlockId(iRaw);
 
         if (iId === BLOCK_TYPES.REDSTONE_WIRE) {
-            return ((iRaw >> 12) & 0xF) > 0 && doesWirePointTowards(ix, ry, iz, rx, rz);
+            return (getRawLocalState(iRaw) & 0xF) > 0 && doesWirePointTowards(ix, ry, iz, rx, rz);
         }
         if (getDirectStrongPowerTo(ix, ry, iz, rx, ry, rz, false) > 0) {
             return true;
@@ -436,8 +455,8 @@ export function createRedstoneEngine(deps) {
 
     function evaluateDevice(wx, wy, wz) {
         const raw = getRaw(wx, wy, wz);
-        const id = raw & 0xFFF;
-        const meta = (raw >> 12) & 0xF;
+        const id = getRawBlockId(raw);
+        const meta = getRawLocalState(raw);
         const cfg = blockConfigFastArray[id];
         if (!cfg || !cfg.redstoneDevice) return;
 
@@ -446,8 +465,13 @@ export function createRedstoneEngine(deps) {
             const powered = getTotalPowerAt(wx, wy, wz) > 0;
             if (getBlockStateProp(id, meta, "lit") !== powered) {
                 const nextMeta = setBlockStateProp(id, meta, "lit", powered);
-                setBlockFromWorldTick(wx, wy, wz, (id & 0xFFF) | (nextMeta << 12));
+                setBlockFromWorldTick(wx, wy, wz, packRawBlock(id, nextMeta));
             }
+            return;
+        }
+
+        // ボタン・感圧板は操作／踏み判定で起動し、予約Tickで自動復帰するため周囲信号では再評価しない
+        if (role === "button" || role === "pressure_plate") {
             return;
         }
 
@@ -463,11 +487,7 @@ export function createRedstoneEngine(deps) {
             const currentLit = getBlockStateProp(id, meta, "lit");
             const targetLit = !isSupportBlockPowered(sx, sy, sz, wx, wy, wz);
 
-            // 焼き切れクールダウン中は再点灯予約を行わない
-            if (targetLit && !currentLit && isTorchBurnedOut(wx, wy, wz, getCurrentTick())) {
-                return;
-            }
-
+            // Java Edition neighborChanged 準拠: 常に 2 ticks 後の更新を予約し、焼き切れ判定は tick() 時に行う
             if (currentLit !== targetLit && !alreadyScheduled) {
                 tickScheduler.schedule(wx, wy, wz, 2, "redstone_device", -1, targetLit ? 1 : 0);
             }
@@ -489,7 +509,7 @@ export function createRedstoneEngine(deps) {
                 if (currentPowered) {
                     priority = -3;
                 } else {
-                    const outId = getRaw(wx + REPEATER_OUT_DX[rot], wy, wz + REPEATER_OUT_DZ[rot]) & 0xFFF;
+                    const outId = getRawBlockId(getRaw(wx + REPEATER_OUT_DX[rot], wy, wz + REPEATER_OUT_DZ[rot]));
                     const outCfg = blockConfigFastArray[outId];
                     if (outCfg && outCfg.redstoneRole === "repeater") {
                         priority = -2;
@@ -536,7 +556,7 @@ export function createRedstoneEngine(deps) {
 
         const addDevice = (x, y, z) => {
             if (y < 0 || y >= chunkHeight || devCount >= 512) return;
-            const id = getRaw(x, y, z) & 0xFFF;
+            const id = getRawBlockId(getRaw(x, y, z));
             const cfg = blockConfigFastArray[id];
             if (!cfg || !cfg.redstoneDevice) return;
 
@@ -552,7 +572,7 @@ export function createRedstoneEngine(deps) {
         const addWire = (x, y, z) => {
             if (y < 0 || y >= chunkHeight || wireCount >= MAX_WIRE_NODES) return -1;
             const raw = getRaw(x, y, z);
-            if ((raw & 0xFFF) !== BLOCK_TYPES.REDSTONE_WIRE) return -1;
+            if (getRawBlockId(raw) !== BLOCK_TYPES.REDSTONE_WIRE) return -1;
             const k = encodeBlockKey(x, y, z);
             const existing = _wireVisited.get(k);
             if (existing !== undefined) return existing;
@@ -562,7 +582,7 @@ export function createRedstoneEngine(deps) {
             _wireX[idx] = x;
             _wireY[idx] = y;
             _wireZ[idx] = z;
-            _wireOldPower[idx] = (raw >> 12) & 0xF;
+            _wireOldPower[idx] = getRawLocalState(raw) & 0xF;
             _wireNewPower[idx] = 0;
             return idx;
         };
@@ -632,7 +652,7 @@ export function createRedstoneEngine(deps) {
             const powerChanged = (newP !== _wireOldPower[idx]);
 
             if (powerChanged) {
-                const packed = (BLOCK_TYPES.REDSTONE_WIRE & 0xFFF) | ((newP & 0xF) << 12);
+                const packed = packRawBlock(BLOCK_TYPES.REDSTONE_WIRE, newP & 0xF);
                 setBlockFromWorldTick(wx, wy, wz, packed);
             }
 
@@ -658,8 +678,8 @@ export function createRedstoneEngine(deps) {
     function handleScheduledDeviceTick(task, currentTick = getCurrentTick()) {
         const { x, y, z, payload } = task;
         const raw = getRaw(x, y, z);
-        const id = raw & 0xFFF;
-        const meta = (raw >> 12) & 0xF;
+        const id = getRawBlockId(raw);
+        const meta = getRawLocalState(raw);
         const cfg = blockConfigFastArray[id];
         if (!cfg || !cfg.redstoneDevice) return;
 
@@ -669,33 +689,28 @@ export function createRedstoneEngine(deps) {
             const sy = y + MOUNT_SUPPORT_DY[mount];
             const sz = z + MOUNT_SUPPORT_DZ[mount];
             const currentLit = getBlockStateProp(id, meta, "lit");
-            const nextLit = !isSupportBlockPowered(sx, sy, sz, x, y, z);
+            const hasSignal = isSupportBlockPowered(sx, sy, sz, x, y, z);
 
-            // 焼き切れクールダウン中の再点灯を拒否
-            if (nextLit && !currentLit && isTorchBurnedOut(x, y, z, currentTick)) {
-                return;
-            }
+            // Java Edition RedstoneTorchBlock.tick() 完全準拠
+            pruneTorchToggles(x, y, z, currentTick);
 
-            if (currentLit !== nextLit) {
-                // 点灯 -> 消灯のタイミングで 60 ticks 内の反転回数を記録（8回以上で焼き切れ）
-                if (currentLit && !nextLit) {
-                    const burnedOut = recordTorchToggleAndCheckBurnout(x, y, z, currentTick);
-                    if (burnedOut) {
-                        const key = encodeBlockKey(x, y, z);
-                        _torchBurnoutUntil.set(key, {
-                            x, y, z,
-                            untilTick: currentTick + TORCH_BURNOUT_COOLDOWN
-                        });
+            if (currentLit) {
+                if (hasSignal) {
+                    const nextMeta = setBlockStateProp(id, meta, "lit", false);
+                    setBlockFromWorldTick(x, y, z, packRawBlock(id, nextMeta));
+                    resolveFromOrigin(x, y, z);
+
+                    if (isTorchToggledTooFrequently(x, y, z, currentTick, true)) {
                         if (typeof onTorchBurnout === "function") {
                             onTorchBurnout(x, y, z);
                         }
-                        // 本家準拠: 160 ticks 後に自動復帰チェックを予約
-                        tickScheduler.schedule(x, y, z, TORCH_BURNOUT_COOLDOWN, "redstone_device", -1, 1);
+                        // 通常の 2-tick 更新を阻害しない専用種別で 160 ticks 後の自動復帰チェックを予約
+                        tickScheduler.schedule(x, y, z, TORCH_BURNOUT_RESTART, "redstone_torch_restart", -1, 1);
                     }
                 }
-
-                const nextMeta = setBlockStateProp(id, meta, "lit", nextLit);
-                setBlockFromWorldTick(x, y, z, (id & 0xFFF) | (nextMeta << 12));
+            } else if (!hasSignal && !isTorchToggledTooFrequently(x, y, z, currentTick, false)) {
+                const nextMeta = setBlockStateProp(id, meta, "lit", true);
+                setBlockFromWorldTick(x, y, z, packRawBlock(id, nextMeta));
                 resolveFromOrigin(x, y, z);
             }
             return;
@@ -708,15 +723,39 @@ export function createRedstoneEngine(deps) {
 
             // Minecraft Java Edition DiodeBlock.tick() 準拠
             if (curPowered && !desiredPowered) {
-                setBlockFromWorldTick(x, y, z, (BLOCK_TYPES.REDSTONE_REPEATER & 0xFFF) | (meta << 12));
+                setBlockFromWorldTick(x, y, z, packRawBlock(BLOCK_TYPES.REDSTONE_REPEATER, meta));
                 resolveFromOrigin(x, y, z);
             } else if (!curPowered) {
-                setBlockFromWorldTick(x, y, z, (BLOCK_TYPES.REDSTONE_REPEATER_ON & 0xFFF) | (meta << 12));
+                setBlockFromWorldTick(x, y, z, packRawBlock(BLOCK_TYPES.REDSTONE_REPEATER_ON, meta));
                 if (!desiredPowered) {
                     const delayTicks = getBlockStateProp(id, meta, "delay");
                     tickScheduler.schedule(x, y, z, delayTicks, "redstone_device", -3, 0);
                 }
                 resolveFromOrigin(x, y, z);
+            }
+            return;
+        }
+
+        if (cfg.redstoneRole === "button") {
+            if (getBlockStateProp(id, meta, "powered")) {
+                const nextMeta = setBlockStateProp(id, meta, "powered", false);
+                setBlockFromWorldTick(x, y, z, packRawBlock(id, nextMeta));
+                resolveFromOrigin(x, y, z);
+            }
+            return;
+        }
+
+        if (cfg.redstoneRole === "pressure_plate") {
+            if (getBlockStateProp(id, meta, "powered")) {
+                // バニラ BasePressurePlateBlock 準拠: まだ踏まれていれば再チェックを20tick延長、降りていればOFF
+                if (isEntityOnBlock(x, y, z)) {
+                    const holdTicks = cfg.plateHoldTicks ?? 20;
+                    tickScheduler.schedule(x, y, z, holdTicks, "redstone_device", -1, 0);
+                } else {
+                    const nextMeta = setBlockStateProp(id, meta, "powered", false);
+                    setBlockFromWorldTick(x, y, z, packRawBlock(id, nextMeta));
+                    resolveFromOrigin(x, y, z);
+                }
             }
             return;
         }
@@ -735,7 +774,7 @@ export function createRedstoneEngine(deps) {
     const api = {
         onBlockChanged(wx, wy, wz) {
             const bx = wx | 0, by = wy | 0, bz = wz | 0;
-            if ((getRaw(bx, by, bz) & 0xFFF) !== BLOCK_TYPES.REDSTONE_TORCH) {
+            if (getRawBlockId(getRaw(bx, by, bz)) !== BLOCK_TYPES.REDSTONE_TORCH) {
                 clearTorchBurnout(bx, by, bz);
             }
             resolveFromOrigin(bx, by, bz);
@@ -750,7 +789,6 @@ export function createRedstoneEngine(deps) {
         importBurnoutState,
         clearAllBurnouts() {
             _torchToggleHistory.clear();
-            _torchBurnoutUntil.clear();
         },
         registerRole(roleName, roleHandlers) {
             if (roleName && roleHandlers && typeof roleHandlers === "object") {
@@ -759,9 +797,12 @@ export function createRedstoneEngine(deps) {
         }
     };
 
-    // TickScheduler へレッドストーン遅延デバイスハンドラを自動登録（currentTick を渡す）
+    // TickScheduler へレッドストーン遅延デバイス＆焼き切れ復帰ハンドラを自動登録
     if (tickScheduler && typeof tickScheduler.registerHandler === "function") {
         tickScheduler.registerHandler("redstone_device", (task, currentTick) => {
+            handleScheduledDeviceTick(task, currentTick);
+        });
+        tickScheduler.registerHandler("redstone_torch_restart", (task, currentTick) => {
             handleScheduledDeviceTick(task, currentTick);
         });
     }
