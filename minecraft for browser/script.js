@@ -4999,6 +4999,204 @@ function resolvePlacementTarget(base, target, rawNormal) {
     return _placementResult;
 }
 
+// ======================================================
+// 【統一ブロックアップデート基盤】(Minecraft Java Edition NC / PP Update 準拠)
+// ======================================================
+const MAX_BLOCK_UPDATE_DEPTH = 64;
+let _blockUpdateDepth = 0;
+
+const _ppUpdateCtx = {
+    x: 0,
+    y: 0,
+    z: 0,
+    blockId: 0,
+    state: 0,
+    fromX: 0,
+    fromY: 0,
+    fromZ: 0,
+    dx: 0,
+    dy: 0,
+    dz: 0,
+    oldRaw: 0,
+    newRaw: 0,
+    getRaw: _getWorldRawLoaded,
+    getBlockId: _getWorldBlockIdLoaded,
+    setBlock: null,
+    scheduleTick: null
+};
+
+const _ncUpdateCtx = {
+    x: 0,
+    y: 0,
+    z: 0,
+    blockId: 0,
+    state: 0,
+    fromX: 0,
+    fromY: 0,
+    fromZ: 0,
+    dx: 0,
+    dy: 0,
+    dz: 0,
+    getRaw: _getWorldRawLoaded,
+    getBlockId: _getWorldBlockIdLoaded,
+    setBlock: null,
+    scheduleTick: null
+};
+
+/**
+ * PP アップデート（Post-Placement / BlockState 変化通知）
+ * (fx, fy, fz) の BlockState が oldRaw -> newRaw へ変わったことを周囲6隣接へ通知する（オブザーバー等用）
+ */
+function notifyNeighborsPP(fx, fy, fz, oldRaw, newRaw) {
+    if (oldRaw === newRaw || _blockUpdateDepth >= MAX_BLOCK_UPDATE_DEPTH) return;
+    _blockUpdateDepth++;
+    try {
+        for (let i = 0; i < 6; i++) {
+            const nx = fx + _NEIGHBOR_6_DX[i];
+            const ny = fy + _NEIGHBOR_6_DY[i];
+            const nz = fz + _NEIGHBOR_6_DZ[i];
+            if (ny < 0 || ny >= CHUNK_HEIGHT) continue;
+
+            const nRaw = _getWorldRawLoaded(nx, ny, nz);
+            if (nRaw <= 0) continue;
+
+            const nId = getRawBlockId(nRaw);
+            const nCfg = _blockConfigFastArray[nId];
+            if (!nCfg || typeof nCfg.onShapeUpdate !== "function") continue;
+
+            _ppUpdateCtx.x = nx;
+            _ppUpdateCtx.y = ny;
+            _ppUpdateCtx.z = nz;
+            _ppUpdateCtx.blockId = nId;
+            _ppUpdateCtx.state = getRawLocalState(nRaw);
+            _ppUpdateCtx.fromX = fx;
+            _ppUpdateCtx.fromY = fy;
+            _ppUpdateCtx.fromZ = fz;
+            _ppUpdateCtx.dx = fx - nx;
+            _ppUpdateCtx.dy = fy - ny;
+            _ppUpdateCtx.dz = fz - nz;
+            _ppUpdateCtx.oldRaw = oldRaw;
+            _ppUpdateCtx.newRaw = newRaw;
+            _ppUpdateCtx.setBlock = setWorldBlock;
+            _ppUpdateCtx.scheduleTick = (delay, type = "redstone_device", priority = -1, payload = 0) => {
+                TickScheduler.schedule(nx, ny, nz, delay, type, priority, payload);
+            };
+            nCfg.onShapeUpdate(_ppUpdateCtx);
+        }
+    } finally {
+        _blockUpdateDepth--;
+    }
+}
+
+/**
+ * NC アップデート（Neighbor Changed 通知）
+ * (fx, fy, fz) が変化したことを周囲6隣接の onBlockUpdate へ通知する（ピストン・BUD・落下ブロック用）
+ */
+function notifyNeighborsNC(fx, fy, fz) {
+    if (_blockUpdateDepth >= MAX_BLOCK_UPDATE_DEPTH) return;
+    _blockUpdateDepth++;
+    try {
+        for (let i = 0; i < 6; i++) {
+            const nx = fx + _NEIGHBOR_6_DX[i];
+            const ny = fy + _NEIGHBOR_6_DY[i];
+            const nz = fz + _NEIGHBOR_6_DZ[i];
+            if (ny < 0 || ny >= CHUNK_HEIGHT) continue;
+
+            const nRaw = _getWorldRawLoaded(nx, ny, nz);
+            if (nRaw <= 0) continue;
+
+            const nId = getRawBlockId(nRaw);
+            const nCfg = _blockConfigFastArray[nId];
+            if (!nCfg || typeof nCfg.onBlockUpdate !== "function") continue;
+
+            _ncUpdateCtx.x = nx;
+            _ncUpdateCtx.y = ny;
+            _ncUpdateCtx.z = nz;
+            _ncUpdateCtx.blockId = nId;
+            _ncUpdateCtx.state = getRawLocalState(nRaw);
+            _ncUpdateCtx.fromX = fx;
+            _ncUpdateCtx.fromY = fy;
+            _ncUpdateCtx.fromZ = fz;
+            _ncUpdateCtx.dx = fx - nx;
+            _ncUpdateCtx.dy = fy - ny;
+            _ncUpdateCtx.dz = fz - nz;
+            _ncUpdateCtx.setBlock = setWorldBlock;
+            _ncUpdateCtx.scheduleTick = (delay, type = "redstone_device", priority = -1, payload = 0) => {
+                TickScheduler.schedule(nx, ny, nz, delay, type, priority, payload);
+            };
+            nCfg.onBlockUpdate(_ncUpdateCtx);
+        }
+    } finally {
+        _blockUpdateDepth--;
+    }
+}
+
+/**
+ * ワールド上のブロックを安全に書き換え、光源・チャンク・BlockEntity・NC/PPアップデート・回路・流体を一括連動させる統一API
+ * （ピストン押し出し・オブザーバー・今後のコマンド/構造物変更の共通入口）
+ */
+function setWorldBlock(wx, wy, wz, newRaw, options = null) {
+    const bx = wx | 0;
+    const by = wy | 0;
+    const bz = wz | 0;
+    if (by < 0 || by >= CHUNK_HEIGHT) return false;
+
+    const persist = options ? (options.persist !== false) : true;
+    const notifyNC = options ? (options.notifyNC !== false) : true;
+    const notifyPP = options ? (options.notifyPP !== false) : true;
+    const notifyRedstone = options ? (options.notifyRedstone !== false) : true;
+    const notifyFluid = options ? (options.notifyFluid !== false) : true;
+
+    const oldRaw = _getWorldRawLoaded(bx, by, bz);
+    if (oldRaw < 0) return false;
+
+    const packed = newRaw & 0xFFFF;
+    if (oldRaw === packed) return false;
+
+    const oldId = getRawBlockId(oldRaw);
+    const newId = getRawBlockId(packed);
+
+    // ブロック書き込み・光源更新・チャンク更新・BlockEntity破棄（PP通知は下の統一手順で1回だけ実行）
+    const changed = setBlockFromWorldTick(bx, by, bz, packed, persist, false);
+    if (!changed) return false;
+
+    if (oldId !== newId) {
+        TickScheduler.cancelAt(bx, by, bz);
+        const newCfg = _blockConfigFastArray[newId];
+        if (newCfg && newCfg.blockEntityType) {
+            BlockEntityManager.create(bx, by, bz, newCfg.blockEntityType);
+        }
+    }
+
+    if (notifyPP) {
+        notifyNeighborsPP(bx, by, bz, oldRaw, packed);
+    }
+
+    if (notifyNC && _blockUpdateDepth < MAX_BLOCK_UPDATE_DEPTH) {
+        _blockUpdateDepth++;
+        try {
+            const extraCoords = updateNeighborBlockStates(bx, by, bz);
+            notifyNeighborsNC(bx, by, bz);
+
+            if (notifyRedstone) RedstoneEngine.onBlockChanged(bx, by, bz);
+            if (notifyFluid) FluidEngine.onBlockChanged(bx, by, bz);
+
+            for (let i = 0; i < extraCoords.length; i++) {
+                const pos = extraCoords[i];
+                TickScheduler.cancelAt(pos.x, pos.y, pos.z);
+                notifyNeighborsNC(pos.x, pos.y, pos.z);
+                if (notifyRedstone) RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z);
+                if (notifyFluid) FluidEngine.onBlockChanged(pos.x, pos.y, pos.z);
+                requestChunkUpdate(pos.x >> 4, pos.z >> 4);
+            }
+        } finally {
+            _blockUpdateDepth--;
+        }
+    }
+
+    return true;
+}
+
 /**
  * ブロック設置・破壊後に自身および周囲6近傍の接続同期・支持チェック・宣言的 onNeighborChange を一括処理する
  * @returns {Array<{x: number, y: number, z: number}>} 追加でチャンク更新が必要になった座標リスト
@@ -5225,6 +5423,8 @@ function interactWithBlock(action) {
                 ChunkSaveManager.setBlock(hCx, hCz, hit.x & 15, hit.y, hit.z & 15, updatedRaw);
                 updateLightAtBlockChange(hit.x, hit.y, hit.z, hitRaw, updatedRaw, _lightDirtySet);
                 updateNeighborBlockStates(hit.x, hit.y, hit.z);
+                notifyNeighborsPP(hit.x, hit.y, hit.z, hitRaw, updatedRaw);
+                notifyNeighborsNC(hit.x, hit.y, hit.z);
                 RedstoneEngine.onBlockChanged(hit.x, hit.y, hit.z);
                 updateAffectedChunks({ x: hit.x, y: hit.y, z: hit.z }, false, _lightDirtySet);
                 updateTargetBlockDisplay(true);
@@ -5298,9 +5498,12 @@ function interactWithBlock(action) {
         lastPlacedKey = candidateHash;
     }
 
-    // --- 5. 予約Tickキャンセル ＆ 隣接ブロック状態同期 ＆ レッドストーン・流体更新 ---
+    // --- 5. 予約Tickキャンセル ＆ 隣接ブロック状態同期 ＆ NC/PP・レッドストーン・流体更新 ---
+    const writtenRaw = ChunkSaveManager.getBlock(cx, cz, lx, by, lz) ?? BLOCK_TYPES.SKY;
     TickScheduler.cancelAt(bx, by, bz);
     const extraCoords = updateNeighborBlockStates(bx, by, bz);
+    notifyNeighborsPP(bx, by, bz, voxel, writtenRaw);
+    notifyNeighborsNC(bx, by, bz);
     RedstoneEngine.onBlockChanged(bx, by, bz);
     FluidEngine.onBlockChanged(bx, by, bz);
 
@@ -5312,6 +5515,7 @@ function interactWithBlock(action) {
     for (let i = 0; i < extraCoords.length; i++) {
         const pos = extraCoords[i];
         TickScheduler.cancelAt(pos.x, pos.y, pos.z);
+        notifyNeighborsNC(pos.x, pos.y, pos.z);
         RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z);
         FluidEngine.onBlockChanged(pos.x, pos.y, pos.z);
         const eKey = encodeChunkKey(pos.x >> 4, pos.z >> 4);
@@ -6892,7 +7096,7 @@ const FluidEngine = createFluidEngine({
     }
 });
 
-function setBlockFromWorldTick(wx, wy, wz, newRaw, forcePersist = false) {
+function setBlockFromWorldTick(wx, wy, wz, newRaw, forcePersist = false, emitPP = true) {
     if (wy < 0 || wy >= CHUNK_HEIGHT) return false;
     const cx = wx >> 4;
     const cz = wz >> 4;
@@ -6934,6 +7138,10 @@ function setBlockFromWorldTick(wx, wy, wz, newRaw, forcePersist = false) {
             decodeChunkKey(dKey, _tickDirtyCoordTmp);
             requestChunkUpdate(_tickDirtyCoordTmp.cx, _tickDirtyCoordTmp.cz);
         }
+    }
+
+    if (emitPP) {
+        notifyNeighborsPP(wx, wy, wz, oldRaw, packed);
     }
     return true;
 }
@@ -9109,6 +9317,9 @@ window.MinecraftEngine = Object.freeze({
     RedstoneEngine,
     FluidEngine,
     ChunkSaveManager,
+    setWorldBlock,
+    notifyNeighborsNC,
+    notifyNeighborsPP,
     PlayerData,
     EntityManager,
     BlockEntityManager,

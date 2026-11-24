@@ -247,6 +247,8 @@ const defaultBlockConfig = {
 
     onPlace: null,
     onNeighborChange: null,
+    onShapeUpdate: null,
+    onBlockUpdate: null,
     onRandomTick: null,
     onRedstoneUpdate: null,
     onEntityStep: null,
