@@ -494,6 +494,21 @@ export function createRedstoneEngine(deps) {
     }
 
     /**
+     * Java Edition DiodeBlock.shouldPrioritize 準拠:
+     * 出力先がダイオード（リピーター等）であり、向かい合わせ（正面衝突）でなければ最優先 (-3)
+     */
+    function isRepeaterFacingDiode(rx, ry, rz, rot) {
+        const ox = rx + REPEATER_OUT_DX[rot];
+        const oz = rz + REPEATER_OUT_DZ[rot];
+        const oRaw = getRaw(ox, ry, oz);
+        const oId = getRawBlockId(oRaw);
+        const oCfg = blockConfigFastArray[oId];
+        if (!oCfg || oCfg.redstoneRole !== "repeater") return false;
+        const outRot = getBlockStateRawProp(oId, getRawLocalState(oRaw), "facing");
+        return outRot !== ((rot + 2) & 3);
+    }
+
+    /**
      * 指定座標 (wx, wy, wz) が方向 (dx, dy, dz) の隣接セルから信号を受けているか判定
      */
     function hasSignalFromDirection(wx, wy, wz, dx, dy, dz) {
@@ -610,19 +625,15 @@ export function createRedstoneEngine(deps) {
             const targetPowered = isRepeaterReceivingInput(wx, wy, wz, rot);
 
             if (currentPowered !== targetPowered && !alreadyScheduled) {
-                // Minecraft Java Edition DiodeBlock.checkTickOnNeighbor 準拠のTick優先度:
-                // 1. 消灯 (ON -> OFF): 最優先 (-3) ※同時Tickで後続のONに潰されないように必ず先に消す
-                // 2. 点灯かつ出力先が別リピーター: 高優先 (-2)
-                // 3. 通常点灯 (OFF -> ON): 標準優先 (-1)
+                // Minecraft Java Edition DiodeBlock.checkTickOnNeighbor 完全準拠のTick優先度:
+                // 1. 出力先がダイオード（側面ロック・直列接続・ON/OFF問わず）: EXTREMELY_HIGH (-3)
+                // 2. 通常消灯 (ON -> OFF): VERY_HIGH (-2)
+                // 3. 通常点灯 (OFF -> ON): HIGH (-1)
                 let priority = -1;
-                if (currentPowered) {
+                if (isRepeaterFacingDiode(wx, wy, wz, rot)) {
                     priority = -3;
-                } else {
-                    const outId = getRawBlockId(getRaw(wx + REPEATER_OUT_DX[rot], wy, wz + REPEATER_OUT_DZ[rot]));
-                    const outCfg = blockConfigFastArray[outId];
-                    if (outCfg && outCfg.redstoneRole === "repeater") {
-                        priority = -2;
-                    }
+                } else if (currentPowered) {
+                    priority = -2;
                 }
 
                 tickScheduler.schedule(wx, wy, wz, delayTicks, "redstone_device", priority, targetPowered ? 1 : 0);
@@ -692,8 +703,8 @@ export function createRedstoneEngine(deps) {
             devCount++;
         };
 
-        const notifyPistonsAround = (cx, cy, cz) => {
-            addDevice(cx, cy, cz, true);
+        const notifyPistonsAround = (cx, cy, cz, includeCenter = true) => {
+            if (includeCenter) addDevice(cx, cy, cz, true);
             for (let i = 0; i < 6; i++) {
                 addDevice(cx + DIR6_DX[i], cy + DIR6_DY[i], cz + DIR6_DZ[i], true);
             }
@@ -754,8 +765,8 @@ export function createRedstoneEngine(deps) {
             return idx;
         };
 
-        // 1. 変化元自身とその6隣接にあるピストンを直接通知（Java Edition updateNeighborsAt 準拠）
-        notifyPistonsAround(originX, originY, originZ);
+        // 1. 変化元の周囲6隣接にあるピストンを通知（Java Edition updateNeighborsAt 準拠: 変化元自身へは跳ね返さない）
+        notifyPistonsAround(originX, originY, originZ, false);
 
         // 2. 変化後・変化前(破壊時)双方のブロック種別に応じて距離2・強励起先ピストンへ通知
         const curRaw = getRaw(originX, originY, originZ);
@@ -953,7 +964,7 @@ export function createRedstoneEngine(deps) {
                 setBlockFromWorldTick(x, y, z, packRawBlock(BLOCK_TYPES.REDSTONE_REPEATER_ON, meta));
                 if (!desiredPowered) {
                     const delayTicks = getBlockStateProp(id, meta, "delay");
-                    tickScheduler.schedule(x, y, z, delayTicks, "redstone_device", -3, 0);
+                    tickScheduler.schedule(x, y, z, delayTicks, "redstone_device", -2, 0);
                 }
                 resolveFromOrigin(x, y, z, raw);
             }

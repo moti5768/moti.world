@@ -80,8 +80,9 @@ function finishMovingBlock(key, skipNotify = false) {
         if (typeof notifyBlock === "function") {
             notifyBlock(mb.x, mb.y, mb.z, mb.oldRaw, mb.movedRaw);
         }
-        // 収縮完了したピストン本体は、移動中に来ていた信号・BUD を即座に再評価する
-        if (mb.isSourcePiston) {
+        // Java Edition PistonMovingBlockEntity.tick() -> level.setBlock() -> PistonBaseBlock.onPlace() 準拠:
+        // 移動完了したブロックがピストン（収縮完了した本体・別ピストンに押された/引き戻されたピストンすべて）なら即座に信号を再評価する
+        if (mb.isSourcePiston || isPistonId(getRawBlockId(mb.movedRaw))) {
             checkPistonIfExtend(mb.x, mb.y, mb.z);
         }
     }
@@ -249,14 +250,13 @@ function executeExtend(x, y, z, id, meta, facingIdx, dx, dy, dz, currentTick, ge
         });
     }
 
-    // 3. 本体 extended=true ＆ 1マス先へピストンヘッドを独立 MovingBlock (2gt) として配置
-    const extMeta = setBlockStateProp(id, meta, "extended", true);
-    const extBaseRaw = packRawBlock(id, extMeta);
+    // 3. 1マス先へピストンヘッドを独立 MovingBlock (2gt) として配置
+    //    ※Java Edition PistonBaseBlock.triggerEvent 準拠:
+    //      moveBlocks() 完了まで本体(x,y,z)は extended=false のまま維持する
     let headMeta = setBlockStateProp(BLOCK_TYPES.PISTON_HEAD, 0, "facing", facingName);
     headMeta = setBlockStateProp(BLOCK_TYPES.PISTON_HEAD, headMeta, "type", isSticky ? "sticky" : "normal");
     const headRaw = packRawBlock(BLOCK_TYPES.PISTON_HEAD, headMeta);
 
-    setBlock(x, y, z, extBaseRaw, SILENT_WRITE);
     setBlock(hx, hy, hz, headRaw, SILENT_WRITE);
     registerMovingBlock({
         key: pistonCoordKey(hx, hy, hz),
@@ -272,7 +272,22 @@ function executeExtend(x, y, z, id, meta, facingIdx, dx, dy, dz, currentTick, ge
         finished: false
     });
 
-    // 4. 3D スライドアニメーション開始
+    // 4. moveBlocks() 内の移動元・破壊先の周囲通知（この時点では本体 extended=false なので自己遮断で0-tick収縮しない）
+    if (typeof notifyBlock === "function") {
+        if (plan.toDestroy) {
+            notifyBlock(plan.toDestroy.x, plan.toDestroy.y, plan.toDestroy.z, plan.toDestroy.raw, BLOCK_TYPES.SKY);
+        }
+        for (let i = plan.toMove.length - 1; i >= 0; i--) {
+            const b = plan.toMove[i];
+            notifyBlock(b.x, b.y, b.z, b.raw, BLOCK_TYPES.SKY);
+        }
+    }
+
+    // 5. moveBlocks() 完了後に本体を extended=true へ確定し、周囲6隣接（上の更新用ピストン等）のみ通知
+    const extMeta = setBlockStateProp(id, meta, "extended", true);
+    const extBaseRaw = packRawBlock(id, extMeta);
+    setBlock(x, y, z, extBaseRaw, SILENT_WRITE);
+
     if (_pistonAnimatorCallback) {
         _pistonAnimatorCallback({
             type: "extend",
@@ -285,22 +300,10 @@ function executeExtend(x, y, z, id, meta, facingIdx, dx, dy, dz, currentTick, ge
         });
     }
 
-    // 5. 移動開始時 (0gt) の周囲通知（Java Edition moveBlocks 準拠）:
-    //    ・破壊された終端・空いた元座標は即座に NC + レッドストーン通知（元電源の即消灯＆BUD発火）
-    //    ・移動先ブロックの到着通知は 2gt 後の finishMovingBlock まで保留
     if (typeof notifyBlock === "function") {
-        if (plan.toDestroy) {
-            notifyBlock(plan.toDestroy.x, plan.toDestroy.y, plan.toDestroy.z, plan.toDestroy.raw, BLOCK_TYPES.SKY);
-        }
-        for (let i = plan.toMove.length - 1; i >= 0; i--) {
-            const b = plan.toMove[i];
-            notifyBlock(b.x, b.y, b.z, b.raw, BLOCK_TYPES.SKY);
-        }
         notifyBlock(x, y, z, oldBaseRaw, extBaseRaw);
     }
 
-    // 6. 0-tick パルス等で既に信号が切れていれば同一 Phase 2 内で即座に収縮 (ACTION_DROP) を予約
-    checkPistonIfExtend(x, y, z);
     return true;
 }
 
