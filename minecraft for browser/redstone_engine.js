@@ -2,7 +2,7 @@
 
 import {
     MOUNT_SUPPORT_DX, MOUNT_SUPPORT_DY, MOUNT_SUPPORT_DZ,
-    getBlockStateProp, getBlockStateRawProp, setBlockStateProp,
+    getBlockStateProp, getBlockStateRawProp, setBlockStateProp, hasBlockStateProp,
     getRawBlockId, getRawLocalState, packRawBlock
 } from './blockstate.js';
 import { BLOCK_TYPES } from './blocks.js';
@@ -11,7 +11,8 @@ import { BLOCK_TYPES } from './blocks.js';
    【レッドストーン信号伝播エンジン】(redstone_engine.js)
    - Minecraft Java Edition 強/弱動力モデル準拠
    - 2フェーズ ワイヤーネットワーク再解決（リング配線のゴースト電力防止）
-   - トーチ(NOTゲート: 2ticks) / リピーター(2,4,6,8ticks) の遅延駆動
+   - トーチ(NOTゲート: 2ticks) / リピーター(2,4,6,8ticks + ロック) の遅延駆動
+   - ピストン準接続(QC/BUD)・移動中ブロック(Block 36)除外・距離2通知対応
    - 拡張API: registerRole() / ブロック定義 onRedstoneUpdate() 対応
    ====================================================== */
 
@@ -46,6 +47,9 @@ export function createRedstoneEngine(deps) {
         blockConfigFastArray,
         getWorldRawLoaded,
         setBlockFromWorldTick,
+        setWorldBlock = null,
+        notifyWorldBlockChanged = null,
+        isCoordInTransit = null,
         tickScheduler,
         getCurrentTick = () => 0,
         onTorchBurnout = null,
@@ -75,6 +79,10 @@ export function createRedstoneEngine(deps) {
 
     // 外部モジュール・新ブロック向けのカスタムロール拡張レジストリ
     const customRoles = new Map();
+
+    // ピストン動作中などによる resolveFromOrigin 再入を安全に直列化する FIFO キュー
+    let _isResolving = false;
+    const _pendingResolveOrigins = [];
 
     /**
      * Java Edition 準拠: gameTime - toggle.when > 60 の古い反転履歴のみを除去する
@@ -160,6 +168,7 @@ export function createRedstoneEngine(deps) {
 
     function getRaw(wx, wy, wz) {
         if (wy < 0 || wy >= chunkHeight) return 0;
+        if (isCoordInTransit && isCoordInTransit(wx, wy, wz)) return 0;
         const r = getWorldRawLoaded(wx, wy, wz);
         return r < 0 ? 0 : r;
     }
@@ -198,7 +207,7 @@ export function createRedstoneEngine(deps) {
     function getWireConnectionMask(lx, ly, lz, getRawFn = getRaw) {
         let mask = 0;
         const aboveId = (ly < chunkHeight - 1) ? getRawBlockId(getRawFn(lx, ly + 1, lz)) : 0;
-        const canClimbUp = (isOpaqueBlock[aboveId] === 0);
+        const canClimbUp = (isRedstoneConductive[aboveId] === 0);
 
         for (let i = 0; i < 4; i++) {
             const dx = WIRE_CONN_DX[i];
@@ -215,23 +224,26 @@ export function createRedstoneEngine(deps) {
                 continue;
             }
 
-            // 1ブロック上へ登るワイヤー（自直上が不透明でなく、隣が壁/段差）
-            if (canClimbUp && ly < chunkHeight - 1 && getRawBlockId(getRawFn(nx, ly + 1, nz)) === BLOCK_TYPES.REDSTONE_WIRE) {
-                mask |= (1 << bit);
-                if (isOpaqueBlock[sameId] === 1) {
-                    mask |= (1 << (bit + 4)); // 壁を垂直に登る立ち上がり面を有効化
-                }
+            // Java Edition 準拠:
+            // 隣が導体ブロックかつ自直上が非導体のときのみ 1段上へ壁を登る接続になる
+            // （隣がグロウストーン・上付きスラブ等の非導体なら下のワイヤーは上へ繋がらず一方向ダイオード化）
+            if (
+                canClimbUp &&
+                isRedstoneConductive[sameId] === 1 &&
+                ly < chunkHeight - 1 &&
+                getRawBlockId(getRawFn(nx, ly + 1, nz)) === BLOCK_TYPES.REDSTONE_WIRE
+            ) {
+                mask |= (1 << bit) | (1 << (bit + 4));
                 continue;
             }
 
-            // 1ブロック下へ降りるワイヤー（隣の同高度が不透明でなければ接続）
-            if (ly > 0 && isOpaqueBlock[sameId] === 0 && getRawBlockId(getRawFn(nx, ly - 1, nz)) === BLOCK_TYPES.REDSTONE_WIRE) {
+            // 1ブロック下へ降りるワイヤー（隣の同高度が非導体なら接続）
+            if (ly > 0 && isRedstoneConductive[sameId] === 0 && getRawBlockId(getRawFn(nx, ly - 1, nz)) === BLOCK_TYPES.REDSTONE_WIRE) {
                 mask |= (1 << bit);
             }
         }
         return mask;
     }
-
     /**
      * ワイヤー (wx, wy, wz) の現在の接続形状に基づき、水平隣接 (tx, wy, tz) 方向へ出力が向いているか判定
      */
@@ -400,7 +412,7 @@ export function createRedstoneEngine(deps) {
             const nId = getRawBlockId(nRaw);
             if (nId === BLOCK_TYPES.REDSTONE_WIRE) {
                 const wp = getRawLocalState(nRaw) & 0xF;
-                if (wp > maxP && (ny !== wy || doesWirePointTowards(nx, ny, nz, wx, wz))) {
+                if (wp > maxP && (ny === wy + 1 || (ny === wy && doesWirePointTowards(nx, ny, nz, wx, wz)))) {
                     maxP = wp;
                 }
             } else if (isRedstoneConductive[nId] === 1) {
@@ -453,6 +465,79 @@ export function createRedstoneEngine(deps) {
         return false;
     }
 
+    /**
+     * Java Edition RepeaterBlock.isLocked 準拠:
+     * 左右どちらかの側面から ON 状態のダイオード（リピーター等）が刺さっているか判定
+     */
+    function isRepeaterLocked(rx, ry, rz, rot) {
+        const leftRot = (rot + 1) & 3;
+        const rightRot = (rot + 3) & 3;
+        const sideRots = [leftRot, rightRot];
+
+        for (let i = 0; i < 2; i++) {
+            const sr = sideRots[i];
+            const sx = rx + REPEATER_OUT_DX[sr];
+            const sz = rz + REPEATER_OUT_DZ[sr];
+            const sRaw = getRaw(sx, ry, sz);
+            const sId = getRawBlockId(sRaw);
+            const sCfg = blockConfigFastArray[sId];
+            if (!sCfg) continue;
+
+            if (sCfg.redstoneRole === "repeater" && sCfg.repeaterPowered) {
+                const sOutRot = getBlockStateRawProp(sId, getRawLocalState(sRaw), "facing");
+                if (sx + REPEATER_OUT_DX[sOutRot] === rx && sz + REPEATER_OUT_DZ[sOutRot] === rz) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 指定座標 (wx, wy, wz) が方向 (dx, dy, dz) の隣接セルから信号を受けているか判定
+     */
+    function hasSignalFromDirection(wx, wy, wz, dx, dy, dz) {
+        const nx = wx + dx, ny = wy + dy, nz = wz + dz;
+        if (ny < 0 || ny >= chunkHeight) return false;
+
+        if (getDirectStrongPowerTo(nx, ny, nz, wx, wy, wz, false) > 0) return true;
+
+        const nRaw = getRaw(nx, ny, nz);
+        const nId = getRawBlockId(nRaw);
+        if (nId === BLOCK_TYPES.REDSTONE_WIRE) {
+            const wp = getRawLocalState(nRaw) & 0xF;
+            if (wp > 0 && (dy === 1 || (dy === 0 && doesWirePointTowards(nx, ny, nz, wx, wz)))) {
+                return true;
+            }
+        } else if (isRedstoneConductive[nId] === 1) {
+            if (getConductorAnyPower(nx, ny, nz, wx, wy, wz) > 0) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Java Edition PistonBaseBlock.getNeighborSignal 完全準拠:
+     * 1. 本体位置の「前面方向 (fdx, fdy, fdz) を除く 5 方向」をチェック
+     * 2. 元がドアのコードだった仕様による準接続 (QC / BUD): 1マス上 (wx, wy+1, wz) の全方向もチェック
+     */
+    function getPistonSignalAt(wx, wy, wz, fdx, fdy, fdz) {
+        for (let i = 0; i < 6; i++) {
+            const dx = DIR6_DX[i], dy = DIR6_DY[i], dz = DIR6_DZ[i];
+            if (dx === fdx && dy === fdy && dz === fdz) continue;
+            if (hasSignalFromDirection(wx, wy, wz, dx, dy, dz)) return 15;
+        }
+
+        const upY = wy + 1;
+        if (upY < chunkHeight) {
+            for (let i = 0; i < 6; i++) {
+                const dx = DIR6_DX[i], dy = DIR6_DY[i], dz = DIR6_DZ[i];
+                if (dx === 0 && dy === -1 && dz === 0) continue; // ピストン本体自身は除外
+                if (hasSignalFromDirection(wx, upY, wz, dx, dy, dz)) return 15;
+            }
+        }
+        return 0;
+    }
+
     function evaluateDevice(wx, wy, wz) {
         const raw = getRaw(wx, wy, wz);
         const id = getRawBlockId(raw);
@@ -462,10 +547,23 @@ export function createRedstoneEngine(deps) {
 
         const role = cfg.redstoneRole;
         if (role === "lamp") {
+            const currentLit = getBlockStateProp(id, meta, "lit");
             const powered = getTotalPowerAt(wx, wy, wz) > 0;
-            if (getBlockStateProp(id, meta, "lit") !== powered) {
-                const nextMeta = setBlockStateProp(id, meta, "lit", powered);
-                setBlockFromWorldTick(wx, wy, wz, packRawBlock(id, nextMeta));
+            if (currentLit !== powered) {
+                if (powered) {
+                    // Java Edition RedstoneLampBlock 準拠: 点灯は即時 (0gt)
+                    const nextMeta = setBlockStateProp(id, meta, "lit", true);
+                    setBlockFromWorldTick(wx, wy, wz, packRawBlock(id, nextMeta));
+                    resolveFromOrigin(wx, wy, wz, raw);
+                } else {
+                    // 消灯は 4 game ticks (2 redstone ticks) の遅延
+                    const lampScheduled = (typeof tickScheduler.hasScheduled === "function")
+                        ? tickScheduler.hasScheduled(wx, wy, wz, "redstone_device")
+                        : false;
+                    if (!lampScheduled) {
+                        tickScheduler.schedule(wx, wy, wz, 4, "redstone_device", 0, 0);
+                    }
+                }
             }
             return;
         }
@@ -496,7 +594,18 @@ export function createRedstoneEngine(deps) {
 
         if (role === "repeater") {
             const rot = getBlockStateRawProp(id, meta, "facing");
-            const delayTicks = getBlockStateProp(id, meta, "delay");
+            const locked = isRepeaterLocked(wx, wy, wz, rot);
+            let curMeta = meta;
+
+            if (hasBlockStateProp(id, "locked") && getBlockStateProp(id, curMeta, "locked") !== locked) {
+                curMeta = setBlockStateProp(id, curMeta, "locked", locked);
+                setBlockFromWorldTick(wx, wy, wz, packRawBlock(id, curMeta));
+            }
+
+            // ロック中は現在の ON/OFF 状態を保持し、入力変化による予約Tickを出さない
+            if (locked) return;
+
+            const delayTicks = getBlockStateProp(id, curMeta, "delay");
             const currentPowered = !!cfg.repeaterPowered;
             const targetPowered = isRepeaterReceivingInput(wx, wy, wz, rot);
 
@@ -527,9 +636,15 @@ export function createRedstoneEngine(deps) {
             custom.evaluate({
                 x: wx, y: wy, z: wz, id, meta, cfg,
                 power: getTotalPowerAt(wx, wy, wz),
+                currentTick: getCurrentTick(),
+                getRaw,
                 setBlock: setBlockFromWorldTick,
+                setWorldBlock: setWorldBlock || setBlockFromWorldTick,
+                notifyBlock: notifyWorldBlockChanged,
                 scheduleTick: (delay, priority = 0, payload = 0) =>
                     tickScheduler.schedule(wx, wy, wz, delay, "redstone_device", priority, payload),
+                scheduleTypedTick: (delay, type, priority = 0, payload = 0) =>
+                    tickScheduler.schedule(wx, wy, wz, delay, type, priority, payload),
                 engine: api
             });
             return;
@@ -540,25 +655,33 @@ export function createRedstoneEngine(deps) {
             cfg.onRedstoneUpdate({
                 x: wx, y: wy, z: wz, id, meta, cfg,
                 power: getTotalPowerAt(wx, wy, wz),
+                currentTick: getCurrentTick(),
+                getRaw,
                 setBlock: setBlockFromWorldTick,
+                setWorldBlock: setWorldBlock || setBlockFromWorldTick,
+                notifyBlock: notifyWorldBlockChanged,
                 scheduleTick: (delay, priority = 0, payload = 0) =>
                     tickScheduler.schedule(wx, wy, wz, delay, "redstone_device", priority, payload),
+                scheduleTypedTick: (delay, type, priority = 0, payload = 0) =>
+                    tickScheduler.schedule(wx, wy, wz, delay, type, priority, payload),
                 engine: api
             });
         }
     }
 
-    function resolveFromOrigin(originX, originY, originZ) {
+    function resolveSingleOrigin(originX, originY, originZ, prevRaw = 0) {
         _wireVisited.clear();
         _deviceVisited.clear();
         let wireCount = 0;
         let devCount = 0;
 
-        const addDevice = (x, y, z) => {
+        // allowPiston=false の広域探索ではピストンを拾わないことで、レッドストーンブロック等による斜め上・2マス上の BUD 待機状態を完全保持する
+        const addDevice = (x, y, z, allowPiston = false) => {
             if (y < 0 || y >= chunkHeight || devCount >= 512) return;
             const id = getRawBlockId(getRaw(x, y, z));
             const cfg = blockConfigFastArray[id];
             if (!cfg || !cfg.redstoneDevice) return;
+            if (!allowPiston && cfg.redstoneRole === "piston") return;
 
             const k = encodeBlockKey(x, y, z);
             if (_deviceVisited.has(k)) return;
@@ -567,6 +690,50 @@ export function createRedstoneEngine(deps) {
             _deviceCoordsY[devCount] = y;
             _deviceCoordsZ[devCount] = z;
             devCount++;
+        };
+
+        const notifyPistonsAround = (cx, cy, cz) => {
+            addDevice(cx, cy, cz, true);
+            for (let i = 0; i < 6; i++) {
+                addDevice(cx + DIR6_DX[i], cy + DIR6_DY[i], cz + DIR6_DZ[i], true);
+            }
+        };
+
+        const notifyPistonsDist2 = (cx, cy, cz) => {
+            notifyPistonsAround(cx, cy, cz);
+            for (let i = 0; i < 6; i++) {
+                notifyPistonsAround(cx + DIR6_DX[i], cy + DIR6_DY[i], cz + DIR6_DZ[i]);
+            }
+        };
+
+        // Java Edition 各ブロックの updateNeighborsAt 範囲に 100% 準拠したピストン通知
+        const notifyPistonsByRole = (bx, by, bz, raw) => {
+            const rId = getRawBlockId(raw);
+            const rCfg = blockConfigFastArray[rId];
+            if (!rCfg) return;
+            const role = rCfg.redstoneRole;
+            const rMeta = getRawLocalState(raw);
+
+            if (role === "torch" || role === "wire") {
+                // RedstoneTorchBlock / RedStoneWireBlock 準拠: 全6隣接のさらに6隣接（距離2）を無条件通知
+                notifyPistonsDist2(bx, by, bz);
+            } else if (role === "lever" || role === "button") {
+                const mount = Math.min(getBlockStateRawProp(rId, rMeta, "mount"), 4);
+                notifyPistonsAround(
+                    bx + MOUNT_SUPPORT_DX[mount],
+                    by + MOUNT_SUPPORT_DY[mount],
+                    bz + MOUNT_SUPPORT_DZ[mount]
+                );
+            } else if (role === "pressure_plate") {
+                notifyPistonsAround(bx, by - 1, bz);
+            } else if (role === "repeater") {
+                const rot = getBlockStateRawProp(rId, rMeta, "facing");
+                notifyPistonsAround(
+                    bx + REPEATER_OUT_DX[rot],
+                    by,
+                    bz + REPEATER_OUT_DZ[rot]
+                );
+            }
         };
 
         const addWire = (x, y, z) => {
@@ -587,27 +754,37 @@ export function createRedstoneEngine(deps) {
             return idx;
         };
 
+        // 1. 変化元自身とその6隣接にあるピストンを直接通知（Java Edition updateNeighborsAt 準拠）
+        notifyPistonsAround(originX, originY, originZ);
+
+        // 2. 変化後・変化前(破壊時)双方のブロック種別に応じて距離2・強励起先ピストンへ通知
+        const curRaw = getRaw(originX, originY, originZ);
+        notifyPistonsByRole(originX, originY, originZ, curRaw);
+        if (prevRaw > 0 && prevRaw !== curRaw) {
+            notifyPistonsByRole(originX, originY, originZ, prevRaw);
+        }
+
         for (let dx = -2; dx <= 2; dx++) {
             for (let dy = -2; dy <= 2; dy++) {
                 for (let dz = -2; dz <= 2; dz++) {
                     if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > 3) continue;
                     const x = originX + dx, y = originY + dy, z = originZ + dz;
                     addWire(x, y, z);
-                    addDevice(x, y, z);
+                    addDevice(x, y, z, false);
                 }
             }
         }
 
         for (let idx = 0; idx < wireCount; idx++) {
             const wx = _wireX[idx], wy = _wireY[idx], wz = _wireZ[idx];
-            const aboveOpaque = isWireBlockingOpaque(wx, wy + 1, wz);
+            const aboveConductive = isRedstoneConductor(wx, wy + 1, wz);
 
             for (let d = 0; d < 4; d++) {
                 const nx = wx + RS_HORIZ_DX[d];
                 const nz = wz + RS_HORIZ_DZ[d];
                 addWire(nx, wy, nz);
-                if (!aboveOpaque) addWire(nx, wy + 1, nz);
-                if (!isWireBlockingOpaque(nx, wy, nz)) addWire(nx, wy - 1, nz);
+                if (!aboveConductive) addWire(nx, wy + 1, nz);
+                if (!isRedstoneConductor(nx, wy, nz)) addWire(nx, wy - 1, nz);
             }
         }
 
@@ -627,7 +804,9 @@ export function createRedstoneEngine(deps) {
             const nextP = curP - 1;
 
             const wx = _wireX[idx], wy = _wireY[idx], wz = _wireZ[idx];
-            const aboveOpaque = isWireBlockingOpaque(wx, wy + 1, wz);
+            const aboveConductive = isRedstoneConductor(wx, wy + 1, wz);
+            // Java Edition 準拠: 下り伝播は足元が導体ブロックのときのみ許可（グロウストーン・上付きスラブ上は下り遮断）
+            const belowConductive = isRedstoneConductor(wx, wy - 1, wz);
 
             const relax = (nx, ny, nz) => {
                 const nIdx = _wireVisited.get(encodeBlockKey(nx, ny, nz));
@@ -641,8 +820,10 @@ export function createRedstoneEngine(deps) {
                 const nx = wx + RS_HORIZ_DX[d];
                 const nz = wz + RS_HORIZ_DZ[d];
                 relax(nx, wy, nz);
-                if (!aboveOpaque) relax(nx, wy + 1, nz);
-                if (!isWireBlockingOpaque(nx, wy, nz)) relax(nx, wy - 1, nz);
+                // 上り (wy -> wy+1): 自直上が非導体ならグロウストーン・スラブ上へも登る
+                if (!aboveConductive) relax(nx, wy + 1, nz);
+                // 下り (wy -> wy-1): 自分の足元が導体 かつ 隣(nx,wy,nz)が非導体のときのみ降りる
+                if (belowConductive && !isRedstoneConductor(nx, wy, nz)) relax(nx, wy - 1, nz);
             }
         }
 
@@ -654,6 +835,9 @@ export function createRedstoneEngine(deps) {
             if (powerChanged) {
                 const packed = packRawBlock(BLOCK_TYPES.REDSTONE_WIRE, newP & 0xF);
                 setBlockFromWorldTick(wx, wy, wz, packed);
+
+                // Java Edition RedStoneWireBlock 準拠: 電力変化したワイヤーの全6隣接のさらに6隣接（距離2）を無条件通知
+                notifyPistonsDist2(wx, wy, wz);
             }
 
             const nearOrigin = (Math.abs(wx - originX) + Math.abs(wy - originY) + Math.abs(wz - originZ)) <= 2;
@@ -662,7 +846,7 @@ export function createRedstoneEngine(deps) {
                     for (let dy = -2; dy <= 2; dy++) {
                         for (let dz = -2; dz <= 2; dz++) {
                             if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) <= 2) {
-                                addDevice(wx + dx, wy + dy, wz + dz);
+                                addDevice(wx + dx, wy + dy, wz + dz, false);
                             }
                         }
                     }
@@ -675,6 +859,34 @@ export function createRedstoneEngine(deps) {
         }
     }
 
+    function resolveFromOrigin(originX, originY, originZ, prevRaw = 0) {
+        if (_isResolving) {
+            if (_pendingResolveOrigins.length < 4096) {
+                _pendingResolveOrigins.push(originX, originY, originZ, prevRaw);
+            }
+            return;
+        }
+
+        _isResolving = true;
+        try {
+            resolveSingleOrigin(originX, originY, originZ, prevRaw);
+            let qHead = 0;
+            let guard = 0;
+            while (qHead + 3 < _pendingResolveOrigins.length && guard < 256) {
+                const nx = _pendingResolveOrigins[qHead];
+                const ny = _pendingResolveOrigins[qHead + 1];
+                const nz = _pendingResolveOrigins[qHead + 2];
+                const pRaw = _pendingResolveOrigins[qHead + 3];
+                qHead += 4;
+                resolveSingleOrigin(nx, ny, nz, pRaw);
+                guard++;
+            }
+        } finally {
+            _pendingResolveOrigins.length = 0;
+            _isResolving = false;
+        }
+    }
+
     function handleScheduledDeviceTick(task, currentTick = getCurrentTick()) {
         const { x, y, z, payload } = task;
         const raw = getRaw(x, y, z);
@@ -682,6 +894,15 @@ export function createRedstoneEngine(deps) {
         const meta = getRawLocalState(raw);
         const cfg = blockConfigFastArray[id];
         if (!cfg || !cfg.redstoneDevice) return;
+
+        if (cfg.redstoneRole === "lamp") {
+            if (getBlockStateProp(id, meta, "lit") && getTotalPowerAt(x, y, z) === 0) {
+                const nextMeta = setBlockStateProp(id, meta, "lit", false);
+                setBlockFromWorldTick(x, y, z, packRawBlock(id, nextMeta));
+                resolveFromOrigin(x, y, z, raw);
+            }
+            return;
+        }
 
         if (cfg.redstoneRole === "torch") {
             const mount = Math.min(getBlockStateRawProp(id, meta, "mount"), 4);
@@ -698,7 +919,7 @@ export function createRedstoneEngine(deps) {
                 if (hasSignal) {
                     const nextMeta = setBlockStateProp(id, meta, "lit", false);
                     setBlockFromWorldTick(x, y, z, packRawBlock(id, nextMeta));
-                    resolveFromOrigin(x, y, z);
+                    resolveFromOrigin(x, y, z, raw);
 
                     if (isTorchToggledTooFrequently(x, y, z, currentTick, true)) {
                         if (typeof onTorchBurnout === "function") {
@@ -711,27 +932,30 @@ export function createRedstoneEngine(deps) {
             } else if (!hasSignal && !isTorchToggledTooFrequently(x, y, z, currentTick, false)) {
                 const nextMeta = setBlockStateProp(id, meta, "lit", true);
                 setBlockFromWorldTick(x, y, z, packRawBlock(id, nextMeta));
-                resolveFromOrigin(x, y, z);
+                resolveFromOrigin(x, y, z, raw);
             }
             return;
         }
 
         if (cfg.redstoneRole === "repeater") {
             const rot = getBlockStateRawProp(id, meta, "facing");
+            // 発火時点でロック中なら状態を変更せず出力を保持
+            if (isRepeaterLocked(x, y, z, rot)) return;
+
             const curPowered = !!cfg.repeaterPowered;
             const desiredPowered = isRepeaterReceivingInput(x, y, z, rot);
 
             // Minecraft Java Edition DiodeBlock.tick() 準拠
             if (curPowered && !desiredPowered) {
                 setBlockFromWorldTick(x, y, z, packRawBlock(BLOCK_TYPES.REDSTONE_REPEATER, meta));
-                resolveFromOrigin(x, y, z);
+                resolveFromOrigin(x, y, z, raw);
             } else if (!curPowered) {
                 setBlockFromWorldTick(x, y, z, packRawBlock(BLOCK_TYPES.REDSTONE_REPEATER_ON, meta));
                 if (!desiredPowered) {
                     const delayTicks = getBlockStateProp(id, meta, "delay");
                     tickScheduler.schedule(x, y, z, delayTicks, "redstone_device", -3, 0);
                 }
-                resolveFromOrigin(x, y, z);
+                resolveFromOrigin(x, y, z, raw);
             }
             return;
         }
@@ -740,7 +964,7 @@ export function createRedstoneEngine(deps) {
             if (getBlockStateProp(id, meta, "powered")) {
                 const nextMeta = setBlockStateProp(id, meta, "powered", false);
                 setBlockFromWorldTick(x, y, z, packRawBlock(id, nextMeta));
-                resolveFromOrigin(x, y, z);
+                resolveFromOrigin(x, y, z, raw);
             }
             return;
         }
@@ -754,7 +978,7 @@ export function createRedstoneEngine(deps) {
                 } else {
                     const nextMeta = setBlockStateProp(id, meta, "powered", false);
                     setBlockFromWorldTick(x, y, z, packRawBlock(id, nextMeta));
-                    resolveFromOrigin(x, y, z);
+                    resolveFromOrigin(x, y, z, raw);
                 }
             }
             return;
@@ -767,22 +991,24 @@ export function createRedstoneEngine(deps) {
                 setBlock: setBlockFromWorldTick,
                 engine: api
             });
-            if (changed) resolveFromOrigin(x, y, z);
+            if (changed) resolveFromOrigin(x, y, z, raw);
         }
     }
 
     const api = {
-        onBlockChanged(wx, wy, wz) {
+        onBlockChanged(wx, wy, wz, prevRaw = 0) {
             const bx = wx | 0, by = wy | 0, bz = wz | 0;
             if (getRawBlockId(getRaw(bx, by, bz)) !== BLOCK_TYPES.REDSTONE_TORCH) {
                 clearTorchBurnout(bx, by, bz);
             }
-            resolveFromOrigin(bx, by, bz);
+            resolveFromOrigin(bx, by, bz, prevRaw);
         },
         handleScheduledDeviceTick,
         getWireConnectionMask,
         canWireConnectToBlock,
         getTotalPowerAt,
+        getPistonSignalAt,
+        isRepeaterLocked,
         getConductorStrongPower,
         getConductorAnyPower,
         exportBurnoutState,

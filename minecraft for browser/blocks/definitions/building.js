@@ -1,6 +1,10 @@
 "use strict";
+import {
+    getBlockStateProp, setBlockStateProp,
+    getRawBlockId, getRawLocalState
+} from '../../blockstate.js';
 import { getCustomCollision, getFenceCollisionBoxes, getPaneCollisionBoxes } from '../collision.js';
-import { defineBlocks } from '../registry.js';
+import { defineBlocks, getBlockConfiguration, registerPlacementRule } from '../registry.js';
 
 // 1行量産ヘルパー（今後バリエーションを増やしてもコードが肥大化しない）
 const cube = (name, texture, extra = null) => ({
@@ -9,33 +13,142 @@ const cube = (name, texture, extra = null) => ({
     ...extra
 });
 
-const stairs = (name, texture) => ({
-    name,
-    textures: { all: texture },
-    geometryType: "stairs",
-    transparent: true,
-    lightOpacity: 0,
-    directional: true,
-    customCollision: () => getCustomCollision("stairs"),
-    cullAdjacentFaces: false,
-    screenFill: false,
-    hardness: 2.0
+const STAIRS_BLOCKSTATE_FOLDER = "stairs";
+const STAIRS_FACINGS = ['north', 'east', 'south', 'west'];
+const STAIRS_SHAPES = ['straight', 'inner_left', 'inner_right', 'outer_left', 'outer_right'];
+const STAIRS_DIR_DX = [0, 1, 0, -1]; // north, east, south, west
+const STAIRS_DIR_DZ = [-1, 0, 1, 0];
+
+registerPlacementRule("stairs", (cfg, camDir, rawNormal, intersectPoint) => {
+    let facingIdx = 0;
+    if (Math.abs(camDir.x) > Math.abs(camDir.z)) {
+        facingIdx = camDir.x > 0 ? 1 : 3; // east(1) or west(3)
+    } else {
+        facingIdx = camDir.z > 0 ? 2 : 0; // south(2) or north(0)
+    }
+
+    let isTop = false;
+    if (rawNormal.y < -0.5) {
+        isTop = true;
+    } else if (Math.abs(rawNormal.y) < 0.5) {
+        let fracY = intersectPoint.y - Math.floor(intersectPoint.y);
+        if (fracY < 0) fracY += 1;
+        if (fracY > 0.49999) isTop = true;
+    }
+
+    let meta = 0;
+    meta = setBlockStateProp(cfg.id, meta, "facing", STAIRS_FACINGS[facingIdx]);
+    meta = setBlockStateProp(cfg.id, meta, "half", isTop ? "top" : "bottom");
+    meta = setBlockStateProp(cfg.id, meta, "shape", "straight");
+    return meta;
 });
 
-const slab = (name, textures) => ({
+function readNeighborStairs(getRaw, wx, wy, wz) {
+    const raw = getRaw(wx, wy, wz);
+    if (raw <= 0) return null;
+    const nId = getRawBlockId(raw);
+    const nCfg = getBlockConfiguration(nId);
+    if (!nCfg || nCfg.isStairs !== true) return null;
+    const nMeta = getRawLocalState(raw);
+    return {
+        facingIdx: STAIRS_FACINGS.indexOf(getBlockStateProp(nId, nMeta, "facing")),
+        half: getBlockStateProp(nId, nMeta, "half")
+    };
+}
+
+// Java Edition StairBlock.getStairsShape 完全準拠（内角・外角・直線列の保護）
+function computeStairsShape(x, y, z, facingIdx, half, getRaw) {
+    const oppIdx = (facingIdx + 2) & 3;
+    const leftIdx = (facingIdx + 3) & 3;
+    const rightIdx = (facingIdx + 1) & 3;
+
+    const canTakeShape = (sideDirIdx) => {
+        const s = readNeighborStairs(getRaw, x + STAIRS_DIR_DX[sideDirIdx], y, z + STAIRS_DIR_DZ[sideDirIdx]);
+        return !s || s.facingIdx !== facingIdx || s.half !== half;
+    };
+
+    // 1. 正面（高い側）に直交する同上下の階段があれば外角化
+    const front = readNeighborStairs(getRaw, x + STAIRS_DIR_DX[facingIdx], y, z + STAIRS_DIR_DZ[facingIdx]);
+    if (front && front.half === half && front.facingIdx >= 0 && front.facingIdx !== facingIdx && front.facingIdx !== oppIdx) {
+        if (canTakeShape((front.facingIdx + 2) & 3)) {
+            return (front.facingIdx === leftIdx) ? "outer_left" : "outer_right";
+        }
+    }
+
+    // 2. 背面（低い側）に直交する同上下の階段があれば内角化
+    const back = readNeighborStairs(getRaw, x + STAIRS_DIR_DX[oppIdx], y, z + STAIRS_DIR_DZ[oppIdx]);
+    if (back && back.half === half && back.facingIdx >= 0 && back.facingIdx !== facingIdx && back.facingIdx !== oppIdx) {
+        if (canTakeShape(back.facingIdx)) {
+            return (back.facingIdx === leftIdx) ? "inner_left" : "inner_right";
+        }
+    }
+
+    return "straight";
+}
+
+const stairs = (name, texture, options = {}) => ({
     name,
-    textures: typeof textures === "string" ? { all: textures } : textures,
-    geometryType: "slab",
+    blockstateFolder: STAIRS_BLOCKSTATE_FOLDER,
+    blockstateFile: name,
+    fallbackTexture: texture,
+    isStairs: true,
+    properties: {
+        facing: STAIRS_FACINGS,
+        half: ['bottom', 'top'],
+        shape: STAIRS_SHAPES
+    },
+    placementRule: "stairs",
+    collision: true,
     transparent: true,
     lightOpacity: 0,
-    isSlab: true,
-    customCollision: () => getCustomCollision("slab"),
     cullAdjacentFaces: false,
     screenFill: false,
-    hardness: 1.5,
-    selectionSize: { x: 1, y: 0.5, z: 1 },
-    selectionOffset: { x: 0.5, y: 0.25, z: 0.5 }
+    hardness: 2.0,
+    onPlace: ({ x, y, z, blockId, state, getRaw }) => {
+        const facingIdx = STAIRS_FACINGS.indexOf(getBlockStateProp(blockId, state, "facing"));
+        const half = getBlockStateProp(blockId, state, "half");
+        if (facingIdx < 0) return state;
+        const shape = computeStairsShape(x, y, z, facingIdx, half, getRaw);
+        return setBlockStateProp(blockId, state, "shape", shape);
+    },
+    onNeighborChange: ({ x, y, z, blockId, state, getRaw }) => {
+        const facingIdx = STAIRS_FACINGS.indexOf(getBlockStateProp(blockId, state, "facing"));
+        const half = getBlockStateProp(blockId, state, "half");
+        if (facingIdx < 0) return null;
+        const nextShape = computeStairsShape(x, y, z, facingIdx, half, getRaw);
+        if (getBlockStateProp(blockId, state, "shape") !== nextShape) {
+            return setBlockStateProp(blockId, state, "shape", nextShape);
+        }
+        return null;
+    },
+    ...options
 });
+
+const SLAB_BLOCKSTATE_FOLDER = "halfblock";
+
+const slab = (name, textures, options = {}) => {
+    const fallbackTexture = typeof textures === "string"
+        ? textures
+        : (textures.top || textures.side || textures.all || "textures/blocks/stone.png");
+    return {
+        name,
+        blockstateFolder: SLAB_BLOCKSTATE_FOLDER,
+        blockstateFile: name,
+        fallbackTexture,
+        isSlab: true,
+        properties: {
+            type: ['bottom', 'top', 'double']
+        },
+        placementRule: "slab",
+        collision: true,
+        transparent: true,
+        lightOpacity: 0,
+        cullAdjacentFaces: false,
+        screenFill: false,
+        hardness: 1.5,
+        ...options
+    };
+};
 
 defineBlocks({
     STONE: cube("stone", "textures/blocks/stone.png"),
@@ -51,7 +164,11 @@ defineBlocks({
     BRICK: cube("brick", "textures/blocks/brick.png"),
     BEDROCK: cube("bedrock", "textures/blocks/bedrock.png"),
     WHITE_WOOL: cube("white_wool", "textures/blocks/wool_colored_white.png"),
-    GLOWSTONE: cube("glowstone", "textures/blocks/glowstone.png", { lightLevel: 15, hardness: 1.0 }),
+    GLOWSTONE: cube("glowstone", "textures/blocks/glowstone.png", {
+        lightLevel: 15,
+        hardness: 1.0,
+        redstoneConductive: false
+    }),
 
     GLASS: cube("glass", "textures/blocks/glass.png", {
         transparent: true,

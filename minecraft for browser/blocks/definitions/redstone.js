@@ -3,10 +3,16 @@ import { getBlockStateProp, setBlockStateProp } from '../../blockstate.js';
 import { getCustomCollision } from '../collision.js';
 import { defineBlocks } from '../registry.js';
 
+// blockstates 配下のサブフォルダ設定（フォルダ構成を変えたらここ1行だけで全量産ブロックへ反映）
+const BUTTON_BLOCKSTATE_FOLDER = "buttons";
+const PRESSURE_PLATE_BLOCKSTATE_FOLDER = "pressure_plate";
+const PLATE_BLOCKSTATE_FOLDER = "";
+
 // ボタン1行量産ヘルパー（今後シラカバ・マツ等を追加しても1行で完了）
-function buttonBlock(name, pressTicks) {
+function buttonBlock(name, pressTicks, options = {}) {
     return {
         name,
+        blockstateFolder: BUTTON_BLOCKSTATE_FOLDER,
         blockstateFile: name,
         redstoneRole: "button",
         redstoneConductive: false,
@@ -25,19 +31,21 @@ function buttonBlock(name, pressTicks) {
         cullAdjacentFaces: false,
         screenFill: false,
         hardness: 0.5,
-        previewOptions: { rotation: { x: 30, y: 45, z: 0 }, scale: 3.0 },
+        previewOptions: { rotation: { x: 0, y: 0, z: 0 }, scale: 4.2 },
         onInteract: ({ blockId, state, scheduleTick }) => {
             if (getBlockStateProp(blockId, state, "powered")) return "consumed";
             scheduleTick(pressTicks, "redstone_device", -1, 0);
             return setBlockStateProp(blockId, state, "powered", true);
-        }
+        },
+        ...options
     };
 }
 
 // 感圧板1行量産ヘルパー
-function pressurePlateBlock(name, holdTicks = 20) {
+function pressurePlateBlock(name, holdTicks = 20, options = {}) {
     return {
         name,
+        blockstateFolder: PRESSURE_PLATE_BLOCKSTATE_FOLDER,
         blockstateFile: name,
         redstoneRole: "pressure_plate",
         redstoneConductive: false,
@@ -58,7 +66,8 @@ function pressurePlateBlock(name, holdTicks = 20) {
                 setState(setBlockStateProp(blockId, state, "powered", true));
                 scheduleTick(holdTicks, "redstone_device", -1, 0);
             }
-        }
+        },
+        ...options
     };
 }
 
@@ -70,9 +79,10 @@ defineBlocks({
         redstoneConnectsWire: "all",
         properties: { power: { min: 0, max: 15, default: 0 } },
         previewState: 15,
+        itemIcon: "textures/items/redstone_dust.png",
         previewTexture: "textures/blocks/redstone_dust_dot.png",
         placementRule: "default_state",
-        supportRule: "floor_opaque",
+        supportRule: "floor_redstone_wire",
         shapeMode: "connect_wire",
         geometryType: "wire",
         alphaCutout: true,
@@ -215,19 +225,21 @@ defineBlocks({
         repeaterPowered: false,
         properties: {
             facing: ['east', 'north', 'west', 'south'],
-            delay: [2, 4, 6, 8]
+            delay: [2, 4, 6, 8],
+            locked: false
         },
         interactCycle: "delay",
         placementRule: "facing_horizontal",
         supportRule: "floor_opaque",
-        shapeMode: "propRaw:delay",
+        shapeMode: "raw",
         geometryType: "repeater",
         alphaCutout: true,
         textures: {
             top: "textures/blocks/repeater_off.png",
             side: "textures/blocks/stone_slab_side.png",
             bottom: "textures/blocks/stone_slab_top.png",
-            south: "textures/blocks/redstone_torch_off.png"
+            south: "textures/blocks/redstone_torch_off.png",
+            north: "textures/blocks/bedrock.png"
         },
         collision: true,
         transparent: true,
@@ -250,19 +262,21 @@ defineBlocks({
         repeaterPowered: true,
         properties: {
             facing: ['east', 'north', 'west', 'south'],
-            delay: [2, 4, 6, 8]
+            delay: [2, 4, 6, 8],
+            locked: false
         },
         interactCycle: "delay",
         placementRule: "facing_horizontal",
         supportRule: "floor_opaque",
-        shapeMode: "propRaw:delay",
+        shapeMode: "raw",
         geometryType: "repeater",
         alphaCutout: true,
         textures: {
             top: "textures/blocks/repeater_on.png",
             side: "textures/blocks/stone_slab_side.png",
             bottom: "textures/blocks/stone_slab_top.png",
-            south: "textures/blocks/redstone_torch_on.png"
+            south: "textures/blocks/redstone_torch_on.png",
+            north: "textures/blocks/bedrock.png"
         },
         lightLevel: 7,
         collision: true,

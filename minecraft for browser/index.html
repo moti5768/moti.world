@@ -81,7 +81,7 @@
       </div>
     </div>
 
-    <div id="pause-menu" class="overlay-screen" style="display:none; z-index: 2000;">
+    <div id="pause-menu" class="overlay-screen" style="display:none;">
       <h2 class="mc-label">ゲームメニュー</h2>
       <div class="menu-buttons" style="display: flex; flex-direction: column; gap: 10px;">
         <button id="btn-resume" class="mc-button">ゲームに戻る</button>
@@ -97,9 +97,7 @@
   </div>
 
   <div id="crosshair"></div>
-  <div class="overzindex">
-    <div id="fpsCounter"></div>
-  </div>
+  <div id="fpsCounter"></div>
 
   <div id="ui-buttons">
     <button id="btn-inventory" class="touch-action-btn">
@@ -112,8 +110,13 @@
   <div id="hotbar"></div>
 
   <div id="inventory-container">
-    <button id="btn-inventory-close">×</button>
-    <div id="inventory"></div>
+    <div id="inventory-panel">
+      <div id="inventory-header">
+        <div id="inventory-tabs" role="tablist"></div>
+        <button id="btn-inventory-close" aria-label="閉じる">×</button>
+      </div>
+      <div id="inventory"></div>
+    </div>
   </div>
 
   <div id="touch-controls-top">

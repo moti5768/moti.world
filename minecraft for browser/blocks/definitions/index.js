@@ -5,3 +5,4 @@ import './building.js';
 import './redstone.js';
 import './block_entities.js';
 import './doors.js';
+import './pistons.js';

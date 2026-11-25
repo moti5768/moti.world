@@ -29,10 +29,63 @@ const FACE_NAMES = ['east', 'west', 'up', 'down', 'south', 'north'];
 const _modelJsonCache = new Map();
 const _blockstateJsonCache = new Map();
 const _compiledVariantCache = new Map();
+const _roleBlockstateFolders = new Map();
+
+/**
+ * redstoneRole 等ごとにデフォルトの blockstates サブフォルダを一括登録する
+ * 例: registerBlockstateFolder('button', 'buttons')
+ */
+export function registerBlockstateFolder(role, folder) {
+    if (!role || typeof role !== 'string') return;
+    const clean = normalizeRelPath(folder || '');
+    if (clean) _roleBlockstateFolders.set(role, clean);
+    else _roleBlockstateFolders.delete(role);
+}
 
 function stripNamespace(id) {
     if (typeof id !== 'string') return '';
     return id.startsWith('minecraft:') ? id.slice(10) : id;
+}
+
+function normalizeRelPath(rawPath) {
+    const clean = stripNamespace(String(rawPath || '').trim())
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '')
+        .replace(/\.json$/i, '');
+    const parts = [];
+    for (const seg of clean.split('/')) {
+        if (!seg || seg === '.') continue;
+        if (seg === '..') {
+            if (parts.length > 0) parts.pop();
+        } else {
+            parts.push(seg);
+        }
+    }
+    return parts.join('/');
+}
+
+function resolveModelRelPath(modelId, currentDir = '') {
+    const raw = stripNamespace(String(modelId || '').trim()).replace(/\\/g, '/');
+    // "./button" や "../button" の相対親参照に対応（フォルダ移動耐性）
+    if (raw.startsWith('./') || raw.startsWith('../')) {
+        return normalizeRelPath(currentDir ? `${currentDir}/${raw}` : raw);
+    }
+    const rel = normalizeRelPath(raw);
+    // "/" を含まない単名のみ従来互換で "block/" を補完し、サブフォルダ指定はそのまま維持
+    return rel.includes('/') ? rel : `block/${rel}`;
+}
+
+function resolveBlockstateRelPath(cfg) {
+    const rawFile = (cfg.blockstateFile === true) ? cfg.name : cfg.blockstateFile;
+    const fileRel = normalizeRelPath(rawFile);
+    if (!fileRel) return '';
+    // blockstateFile 自体にサブフォルダが含まれていれば最優先
+    if (fileRel.includes('/')) return fileRel;
+
+    const folderRaw = cfg.blockstateFolder
+        || (cfg.redstoneRole ? _roleBlockstateFolders.get(cfg.redstoneRole) : '');
+    const folderRel = normalizeRelPath(folderRaw);
+    return folderRel ? `${folderRel}/${fileRel}` : fileRel;
 }
 
 /**
@@ -74,16 +127,15 @@ async function fetchJsonCached(url, cacheMap) {
 }
 
 /**
- * models/block/*.json を parent 継承チェーンごと再帰ロードし、textures と elements を統合解決する
+ * models/**\/*.json を parent 継承チェーンごと再帰ロードし、textures と elements を統合解決する
  */
-export async function loadResolvedModelJson(modelId, assetRoot = DEFAULT_ASSET_ROOT, depth = 0) {
+export async function loadResolvedModelJson(modelId, assetRoot = DEFAULT_ASSET_ROOT, depth = 0, currentDir = '') {
     if (depth > 16) {
         throw new Error(`[ModelCompiler] parent 継承が深すぎます: ${modelId}`);
     }
-    let rel = stripNamespace(modelId);
-    if (!rel.startsWith('block/') && !rel.startsWith('item/')) {
-        rel = `block/${rel}`;
-    }
+    const rel = resolveModelRelPath(modelId, currentDir);
+    const slashIdx = rel.lastIndexOf('/');
+    const nextDir = slashIdx >= 0 ? rel.slice(0, slashIdx) : '';
     const url = `${assetRoot}/models/${rel}.json`;
     const raw = await fetchJsonCached(url, _modelJsonCache);
 
@@ -91,7 +143,7 @@ export async function loadResolvedModelJson(modelId, assetRoot = DEFAULT_ASSET_R
     if (raw.parent) {
         const pClean = stripNamespace(raw.parent);
         if (pClean !== 'builtin/generated' && pClean !== 'builtin/entity') {
-            parentResolved = await loadResolvedModelJson(raw.parent, assetRoot, depth + 1);
+            parentResolved = await loadResolvedModelJson(raw.parent, assetRoot, depth + 1, nextDir);
         }
     }
 
@@ -414,7 +466,7 @@ export async function applyJavaAssetsToBlockConfig(cfg, assetRoot = DEFAULT_ASSE
     const texturesByMeta = new Array(stateCount).fill(null);
 
     if (cfg.blockstateFile) {
-        const bsName = stripNamespace(cfg.blockstateFile).replace(/\.json$/, '');
+        const bsName = resolveBlockstateRelPath(cfg);
         const bsUrl = `${assetRoot}/blockstates/${bsName}.json`;
         const bsJson = await fetchJsonCached(bsUrl, _blockstateJsonCache);
         const variantEntries = bsJson && bsJson.variants ? Object.entries(bsJson.variants) : [];

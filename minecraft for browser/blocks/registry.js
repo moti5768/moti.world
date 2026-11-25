@@ -3,7 +3,7 @@ import {
     MOUNT_SUPPORT_DX, MOUNT_SUPPORT_DY, MOUNT_SUPPORT_DZ,
     STATE_SCHEMAS, getSchemaDefaultState,
     resolveStateSchema, computeTransformMask, normalizeStateValue, compileAndRegisterBlockState,
-    cycleBlockStateProp
+    setBlockStateProp, cycleBlockStateProp
 } from '../blockstate.js';
 import { createBox, getSelectionBoxesForConfig } from './collision.js';
 
@@ -98,8 +98,26 @@ const PLACEMENT_STRATEGIES = {
         }
         return base | (camDir.z < 0 ? 1 : 3);
     },
+    facing_6dir: (cfg, camDir) => {
+        const ax = Math.abs(camDir.x);
+        const ay = Math.abs(camDir.y);
+        const az = Math.abs(camDir.z);
+        let dirName = "north";
+        if (ay > ax && ay > az) {
+            dirName = camDir.y < 0 ? "up" : "down";
+        } else if (ax > az) {
+            dirName = camDir.x > 0 ? "west" : "east";
+        } else {
+            dirName = camDir.z > 0 ? "north" : "south";
+        }
+        return setBlockStateProp(cfg.id, cfg.defaultState ?? 0, "facing", dirName);
+    },
     half_slab: (cfg, camDir, rawNormal, intersectPoint) => {
         return (_calcUpperHalfBit(rawNormal, intersectPoint) << 2);
+    },
+    slab: (cfg, camDir, rawNormal, intersectPoint) => {
+        const isTop = _calcUpperHalfBit(rawNormal, intersectPoint) === 1;
+        return setBlockStateProp(cfg.id, 0, "type", isTop ? "top" : "bottom");
     },
     directional_half: (cfg, camDir, rawNormal, intersectPoint) => {
         const lookX = -camDir.x;
@@ -198,6 +216,7 @@ export function canPlaceBlockAt(blockId, meta, wx, wy, wz, getBlockIdFn) {
 const defaultBlockConfig = {
     isOpaqueCube: true,
     itemdisplay: true,
+    creativeTab: null,
     collision: true,
     geometryType: "cube",
     transparent: false,
@@ -221,6 +240,7 @@ const defaultBlockConfig = {
 
     properties: null,
     interactCycle: null,
+    blockstateFolder: null,
     blockstateFile: null,
     modelFile: null,
     autoModelCollision: true,
@@ -228,6 +248,7 @@ const defaultBlockConfig = {
     defaultState: null,
     previewState: null,
     previewTexture: null,
+    itemIcon: null,
     selectionPreset: null,
     alphaCutout: null,
     stateVariants: null,
@@ -245,10 +266,14 @@ const defaultBlockConfig = {
     redstoneDevice: false,
     redstoneRole: "none",
 
+    pistonPushReaction: "normal",
     onPlace: null,
+    onAfterPlace: null,
+    onDestroy: null,
     onNeighborChange: null,
     onShapeUpdate: null,
     onBlockUpdate: null,
+    onScheduledTick: null,
     onRandomTick: null,
     onRedstoneUpdate: null,
     onEntityStep: null,

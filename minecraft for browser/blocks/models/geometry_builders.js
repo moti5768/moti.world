@@ -1,6 +1,7 @@
 "use strict";
 import * as THREE from '../../build/three.module.js';
 import { BufferGeometryUtils } from '../../jsm/utils/BufferGeometryUtils.js';
+import { getBlockStateProp, getBlockStateRawProp } from '../../blockstate.js';
 import { getSideConnections } from '../collision.js';
 
 /* ======================================================
@@ -560,7 +561,14 @@ const GEOMETRY_BUILDERS = {
         return merged;
     },
     repeater: (config, meta = 0) => {
-        const delayIdx = meta & 3;
+        const hasId = !!(config && typeof config.id === "number");
+        const delayIdx = hasId
+            ? (getBlockStateRawProp(config.id, meta, "delay") & 3)
+            : (meta & 3);
+        const isLocked = hasId
+            ? !!getBlockStateProp(config.id, meta, "locked")
+            : false;
+
         const base = new THREE.BoxGeometry(1.0, 0.125, 1.0);
         base.translate(0.5, 0.0625, 0.5);
 
@@ -618,9 +626,37 @@ const GEOMETRY_BUILDERS = {
             );
         };
 
+        const addLockBar = (px) => {
+            // Java Edition 準拠: 遅延ピン位置に幅2px・高さ2px・長さ12pxの岩盤バーを描画 (matIdx = 5)
+            const bar = new THREE.BoxGeometry(2 / 16, 2 / 16, 12 / 16);
+            const norm = bar.attributes.normal;
+            const uv = bar.attributes.uv;
+            for (let i = 0; i < uv.count; i++) {
+                const nx = Math.abs(norm.getX(i));
+                const ny = Math.abs(norm.getY(i));
+                const su = uv.getX(i), sv = uv.getY(i);
+                if (ny > 0.5) {
+                    uv.setXY(i, (7 / 16) + su * (2 / 16), (2 / 16) + sv * (12 / 16));
+                } else if (nx > 0.5) {
+                    uv.setXY(i, (2 / 16) + su * (12 / 16), (7 / 16) + sv * (2 / 16));
+                } else {
+                    uv.setXY(i, (7 / 16) + su * (2 / 16), (7 / 16) + sv * (2 / 16));
+                }
+            }
+            uv.needsUpdate = true;
+            bar.translate(px, 3 / 16, 0.5);
+            bar.clearGroups();
+            bar.addGroup(0, bar.index.count, 5);
+            parts.push(bar);
+        };
+
         const delayPinX = [0.5625, 0.4375, 0.3125, 0.1875][delayIdx];
         addTorchPin(0.8125, 0.0625);
-        addTorchPin(delayPinX, 0.0628);
+        if (isLocked) {
+            addLockBar(delayPinX);
+        } else {
+            addTorchPin(delayPinX, 0.0628);
+        }
 
         const merged = mergeGeometriesPreservingGroups(parts);
         for (let i = 0; i < parts.length; i++) parts[i].dispose();
