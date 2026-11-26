@@ -69,6 +69,12 @@ export function registerSmeltingRecipe(inputKey, outputKey) {
     if (inputKey && outputKey) SMELTING_RECIPES[inputKey] = outputKey;
 }
 
+registerBlockEntityType("minecraft:comparator", {
+    createData: () => ({
+        outputSignal: 0
+    })
+});
+
 registerBlockEntityType("minecraft:furnace", {
     createData: () => ({
         burnTime: 0,
@@ -82,56 +88,40 @@ registerBlockEntityType("minecraft:furnace", {
     tick: (be, ctx) => {
         const d = be.data;
         const wasLit = d.burnTime > 0;
+        let invChanged = false;
 
         if (d.burnTime > 0) {
             d.burnTime--;
         }
 
-        // 燃料が切れたら入力があれば次の燃料を消費して着火
-        if (d.burnTime <= 0 && d.input && d.input.count > 0 && d.fuelCount > 0) {
+        const resultKey = (d.input && d.input.count > 0)
+            ? (SMELTING_RECIPES[d.input.key] || "STONE")
+            : null;
+        const canSmelt = !!(resultKey && (!d.output || (d.output.key === resultKey && d.output.count < 64)));
+
+        // 燃焼切れ時に精錬可能＆燃料ありなら次の燃料を消費して着火
+        if (d.burnTime <= 0 && canSmelt && d.fuelCount > 0) {
             d.fuelCount--;
             d.burnTime = 200; // 10秒燃焼
             d.burnDuration = 200;
+            invChanged = true;
         }
 
-        // 燃焼中かつ入力があれば精錬を進行
-        if (d.burnTime > 0 && d.input && d.input.count > 0) {
+        if (d.burnTime > 0 && canSmelt) {
             d.cookTime++;
             if (d.cookTime >= d.cookTimeTotal) {
                 d.cookTime = 0;
                 d.input.count--;
                 if (d.input.count <= 0) d.input = null;
 
-                // 現在の原料が焼けるか確認し、完成品スロットと競合しない時のみ精錬進行
-                const resultKey = (d.input && d.input.count > 0)
-                    ? (SMELTING_RECIPES[d.input.key] || "STONE")
-                    : null;
-                const canSmelt = !!(resultKey && (!d.output || (d.output.key === resultKey && d.output.count < 64)));
-
-                if (d.burnTime <= 0 && canSmelt && d.fuelCount > 0) {
-                    d.fuelCount--;
-                    d.burnTime = 200;
-                    d.burnDuration = 200;
+                if (!d.output) {
+                    d.output = { key: resultKey, count: 1 };
+                } else {
+                    d.output.count++;
                 }
-
-                if (d.burnTime > 0 && canSmelt) {
-                    d.cookTime++;
-                    if (d.cookTime >= d.cookTimeTotal) {
-                        d.cookTime = 0;
-                        d.input.count--;
-                        if (d.input.count <= 0) d.input = null;
-
-                        if (!d.output) {
-                            d.output = { key: resultKey, count: 1 };
-                        } else {
-                            d.output.count++;
-                        }
-                        if (typeof ctx.onMessage === "function") {
-                            ctx.onMessage(`かまど [${be.x}, ${be.y}, ${be.z}] の精錬完了: ${resultKey} (計 ${d.output.count}個)`, "#55ff55");
-                        }
-                    }
-                } else if (d.cookTime > 0) {
-                    d.cookTime = Math.max(0, d.cookTime - 2);
+                invChanged = true;
+                if (typeof ctx.onMessage === "function") {
+                    ctx.onMessage(`かまど [${be.x}, ${be.y}, ${be.z}] の精錬完了: ${resultKey} (計 ${d.output.count}個)`, "#55ff55");
                 }
             }
         } else if (d.cookTime > 0) {
@@ -140,8 +130,10 @@ registerBlockEntityType("minecraft:furnace", {
 
         const isLit = d.burnTime > 0;
         if (wasLit !== isLit) {
-            // かまどブロックの lit BlockState（見た目＋発光13）を自動同期
             ctx.setBlockProp(be.x, be.y, be.z, "lit", isLit);
+        }
+        if (invChanged && typeof ctx.onInventoryChanged === "function") {
+            ctx.onInventoryChanged(be.x, be.y, be.z);
         }
     }
 });
@@ -152,7 +144,8 @@ export function createBlockEntityManager(deps) {
         getWorldRawLoaded,
         setBlockFromWorldTick,
         setBlockStateProp,
-        onMessage = null
+        onMessage = null,
+        onInventoryChanged = null
     } = deps;
 
     const entitiesByKey = new Map(); // Map<coordKey, BlockEntity>
@@ -169,8 +162,45 @@ export function createBlockEntityManager(deps) {
             if (nextMeta === meta) return false;
             return setBlockFromWorldTick(wx, wy, wz, packRawBlock(id, nextMeta), true);
         },
-        onMessage
+        onMessage,
+        onInventoryChanged
     };
+
+    /**
+     * Java Edition AbstractContainerMenu.getRedstoneSignalFromContainer 準拠:
+     * 指定座標にコンテナ系 BlockEntity があれば充填率 0..15 を返す（対象外は -1）
+     */
+    function getAnalogSignal(wx, wy, wz) {
+        const be = get(wx, wy, wz);
+        if (!be || !be.data) return -1;
+
+        if (be.type === "minecraft:chest") {
+            const slots = be.data.slots;
+            if (!Array.isArray(slots) || slots.length === 0) return 0;
+            let nonEmpty = 0;
+            let fillSum = 0;
+            for (let i = 0; i < slots.length; i++) {
+                const s = slots[i];
+                if (s && s.count > 0) {
+                    nonEmpty++;
+                    fillSum += Math.min(1.0, s.count / 64);
+                }
+            }
+            return nonEmpty === 0 ? 0 : (Math.floor((fillSum / slots.length) * 14) + 1);
+        }
+
+        if (be.type === "minecraft:furnace") {
+            const d = be.data;
+            let nonEmpty = 0;
+            let fillSum = 0;
+            if (d.input && d.input.count > 0) { nonEmpty++; fillSum += Math.min(1.0, d.input.count / 64); }
+            if (d.fuelCount > 0) { nonEmpty++; fillSum += Math.min(1.0, d.fuelCount / 64); }
+            if (d.output && d.output.count > 0) { nonEmpty++; fillSum += Math.min(1.0, d.output.count / 64); }
+            return nonEmpty === 0 ? 0 : (Math.floor((fillSum / 3) * 14) + 1);
+        }
+
+        return -1;
+    }
 
     function create(wx, wy, wz, typeId, initialData = null) {
         const spec = _blockEntityTypes.get(typeId);
@@ -260,6 +290,7 @@ export function createBlockEntityManager(deps) {
         remove,
         tick,
         clear,
+        getAnalogSignal,
         exportState,
         importState,
         registerType: registerBlockEntityType

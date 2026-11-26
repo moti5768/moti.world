@@ -53,7 +53,10 @@ export function createRedstoneEngine(deps) {
         tickScheduler,
         getCurrentTick = () => 0,
         onTorchBurnout = null,
-        isEntityOnBlock = () => false
+        isEntityOnBlock = () => false,
+        getBlockEntity = null,
+        ensureBlockEntity = null,
+        getContainerAnalogSignal = null
     } = deps;
 
     // Minecraft Java Edition RedstoneTorchBlock.java 完全準拠定数
@@ -174,9 +177,20 @@ export function createRedstoneEngine(deps) {
         return r < 0 ? 0 : r;
     }
 
-    // ブロック定義の redstoneConductive に基づく「通電する / しない」統一判定
+    // ブロック定義の redstoneConductive ＋ ダブルスラブ (type=double) を含む統一導体判定
+    function isRawConductive(raw) {
+        if (raw <= 0) return false;
+        const id = getRawBlockId(raw);
+        if (isRedstoneConductive[id] === 1) return true;
+        const cfg = blockConfigFastArray[id];
+        if (cfg && cfg.isSlab === true && hasBlockStateProp(id, "type")) {
+            return getBlockStateProp(id, getRawLocalState(raw), "type") === "double";
+        }
+        return false;
+    }
+
     function isRedstoneConductor(wx, wy, wz) {
-        return isRedstoneConductive[getRawBlockId(getRaw(wx, wy, wz))] === 1;
+        return isRawConductive(getRaw(wx, wy, wz));
     }
 
     // 段差ワイヤーの物理遮断用（不透明ブロック全般）
@@ -207,8 +221,8 @@ export function createRedstoneEngine(deps) {
      */
     function getWireConnectionMask(lx, ly, lz, getRawFn = getRaw) {
         let mask = 0;
-        const aboveId = (ly < chunkHeight - 1) ? getRawBlockId(getRawFn(lx, ly + 1, lz)) : 0;
-        const canClimbUp = (isRedstoneConductive[aboveId] === 0);
+        const aboveRaw = (ly < chunkHeight - 1) ? getRawFn(lx, ly + 1, lz) : 0;
+        const canClimbUp = !isRawConductive(aboveRaw);
 
         for (let i = 0; i < 4; i++) {
             const dx = WIRE_CONN_DX[i];
@@ -218,19 +232,19 @@ export function createRedstoneEngine(deps) {
             const bit = WIRE_CONN_BITS[i];
 
             const sameRaw = getRawFn(nx, ly, nz);
-            const sameId = getRawBlockId(sameRaw);
 
             if (canWireConnectToBlock(sameRaw, dx, dz)) {
                 mask |= (1 << bit);
                 continue;
             }
 
+            const sameConductive = isRawConductive(sameRaw);
+
             // Java Edition 準拠:
-            // 隣が導体ブロックかつ自直上が非導体のときのみ 1段上へ壁を登る接続になる
-            // （隣がグロウストーン・上付きスラブ等の非導体なら下のワイヤーは上へ繋がらず一方向ダイオード化）
+            // 隣が導体ブロック（ダブルスラブ含む）かつ自直上が非導体のときのみ 1段上へ壁を登る接続になる
             if (
                 canClimbUp &&
-                isRedstoneConductive[sameId] === 1 &&
+                sameConductive &&
                 ly < chunkHeight - 1 &&
                 getRawBlockId(getRawFn(nx, ly + 1, nz)) === BLOCK_TYPES.REDSTONE_WIRE
             ) {
@@ -239,7 +253,7 @@ export function createRedstoneEngine(deps) {
             }
 
             // 1ブロック下へ降りるワイヤー（隣の同高度が非導体なら接続）
-            if (ly > 0 && isRedstoneConductive[sameId] === 0 && getRawBlockId(getRawFn(nx, ly - 1, nz)) === BLOCK_TYPES.REDSTONE_WIRE) {
+            if (ly > 0 && !sameConductive && getRawBlockId(getRawFn(nx, ly - 1, nz)) === BLOCK_TYPES.REDSTONE_WIRE) {
                 mask |= (1 << bit);
             }
         }
@@ -324,6 +338,16 @@ export function createRedstoneEngine(deps) {
             const rot = getBlockStateRawProp(id, meta, "facing");
             if (tx === sx + REPEATER_OUT_DX[rot] && ty === sy && tz === sz + REPEATER_OUT_DZ[rot]) {
                 return 15;
+            }
+            return 0;
+        }
+
+        if (role === "comparator") {
+            const outSig = getComparatorOutputAt(sx, sy, sz);
+            if (outSig <= 0) return 0;
+            const rot = getBlockStateRawProp(id, meta, "facing");
+            if (tx === sx + REPEATER_OUT_DX[rot] && ty === sy && tz === sz + REPEATER_OUT_DZ[rot]) {
+                return outSig;
             }
             return 0;
         }
@@ -416,7 +440,7 @@ export function createRedstoneEngine(deps) {
                 if (wp > maxP && (ny === wy + 1 || (ny === wy && doesWirePointTowards(nx, ny, nz, wx, wz)))) {
                     maxP = wp;
                 }
-            } else if (isRedstoneConductive[nId] === 1) {
+            } else if (isRawConductive(nRaw)) {
                 const cp = getConductorAnyPower(nx, ny, nz, wx, wy, wz);
                 if (cp > maxP) maxP = cp;
             }
@@ -460,16 +484,117 @@ export function createRedstoneEngine(deps) {
         if (getDirectStrongPowerTo(ix, ry, iz, rx, ry, rz, false) > 0) {
             return true;
         }
-        if (isRedstoneConductive[iId] === 1) {
+        if (isRawConductive(iRaw)) {
             return getConductorAnyPower(ix, ry, iz, rx, ry, rz) > 0;
         }
         return false;
     }
 
+    function getComparatorOutputAt(wx, wy, wz) {
+        if (typeof getBlockEntity === "function") {
+            const be = getBlockEntity(wx, wy, wz);
+            if (be && be.type === "minecraft:comparator" && be.data) {
+                const v = be.data.outputSignal | 0;
+                return v < 0 ? 0 : (v > 15 ? 15 : v);
+            }
+        }
+        const raw = getRaw(wx, wy, wz);
+        const id = getRawBlockId(raw);
+        if (id > 0 && hasBlockStateProp(id, "powered")) {
+            return getBlockStateProp(id, getRawLocalState(raw), "powered") ? 15 : 0;
+        }
+        return 0;
+    }
+
     /**
-     * Java Edition RepeaterBlock.isLocked 準拠:
-     * 左右どちらかの側面から ON 状態のダイオード（リピーター等）が刺さっているか判定
+     * Java Edition ComparatorBlock.getInputSignal 準拠:
+     * 背面信号 (0..15) ＋ 背面コンテナ強度 ＋ 導体ブロック1マス越しのコンテナ強度
      */
+    function getComparatorInputSignal(cx, cy, cz, rot) {
+        const dx = REPEATER_OUT_DX[rot];
+        const dz = REPEATER_OUT_DZ[rot];
+        const bx = cx - dx;
+        const bz = cz - dz;
+        const bRaw = getRaw(bx, cy, bz);
+        const bId = getRawBlockId(bRaw);
+
+        let sig = 0;
+        if (bId === BLOCK_TYPES.REDSTONE_WIRE) {
+            sig = getRawLocalState(bRaw) & 0xF;
+        } else {
+            sig = getDirectStrongPowerTo(bx, cy, bz, cx, cy, cz, false);
+            if (sig === 0 && isRawConductive(bRaw)) {
+                sig = getConductorAnyPower(bx, cy, bz, cx, cy, cz);
+            }
+        }
+
+        if (typeof getContainerAnalogSignal === "function") {
+            const directAnalog = getContainerAnalogSignal(bx, cy, bz);
+            if (directAnalog >= 0) {
+                return directAnalog;
+            }
+            if (sig < 15 && isRawConductive(bRaw)) {
+                const throughAnalog = getContainerAnalogSignal(bx - dx, cy, bz - dz);
+                if (throughAnalog > 0) {
+                    return throughAnalog;
+                }
+            }
+        }
+        return sig;
+    }
+
+    /**
+     * Java Edition SignalGetter.getControlInputSignal 準拠:
+     * 左右側面のレッドストーンブロック・ワイヤー・リピーター・コンパレーターのみ読み取る
+     */
+    function getComparatorSideSignal(cx, cy, cz, rot) {
+        const leftRot = (rot + 1) & 3;
+        const rightRot = (rot + 3) & 3;
+        const sideRots = [leftRot, rightRot];
+        let maxSide = 0;
+
+        for (let i = 0; i < 2; i++) {
+            const sr = sideRots[i];
+            const sx = cx + REPEATER_OUT_DX[sr];
+            const sz = cz + REPEATER_OUT_DZ[sr];
+            const sRaw = getRaw(sx, cy, sz);
+            const sId = getRawBlockId(sRaw);
+            const sCfg = blockConfigFastArray[sId];
+            if (!sCfg) continue;
+
+            let sVal = 0;
+            if (sCfg.redstonePowerOutput > 0) {
+                sVal = sCfg.redstonePowerOutput;
+            } else if (sId === BLOCK_TYPES.REDSTONE_WIRE) {
+                sVal = getRawLocalState(sRaw) & 0xF;
+            } else if (sCfg.redstoneRole === "repeater" && sCfg.repeaterPowered) {
+                const sOutRot = getBlockStateRawProp(sId, getRawLocalState(sRaw), "facing");
+                if (sx + REPEATER_OUT_DX[sOutRot] === cx && sz + REPEATER_OUT_DZ[sOutRot] === cz) {
+                    sVal = 15;
+                }
+            } else if (sCfg.redstoneRole === "comparator") {
+                const sOutRot = getBlockStateRawProp(sId, getRawLocalState(sRaw), "facing");
+                if (sx + REPEATER_OUT_DX[sOutRot] === cx && sz + REPEATER_OUT_DZ[sOutRot] === cz) {
+                    sVal = getComparatorOutputAt(sx, cy, sz);
+                }
+            }
+
+            if (sVal > maxSide) maxSide = sVal;
+            if (maxSide === 15) return 15;
+        }
+        return maxSide;
+    }
+
+    function calculateComparatorOutput(cx, cy, cz, rot, isSubtract) {
+        const rear = getComparatorInputSignal(cx, cy, cz, rot);
+        if (rear === 0) return 0;
+        const side = getComparatorSideSignal(cx, cy, cz, rot);
+        if (isSubtract) {
+            return rear > side ? (rear - side) : 0;
+        }
+        return rear >= side ? rear : 0;
+    }
+
     function isRepeaterLocked(rx, ry, rz, rot) {
         const leftRot = (rot + 1) & 3;
         const rightRot = (rot + 3) & 3;
@@ -489,6 +614,11 @@ export function createRedstoneEngine(deps) {
                 if (sx + REPEATER_OUT_DX[sOutRot] === rx && sz + REPEATER_OUT_DZ[sOutRot] === rz) {
                     return true;
                 }
+            } else if (sCfg.redstoneRole === "comparator" && getComparatorOutputAt(sx, ry, sz) > 0) {
+                const sOutRot = getBlockStateRawProp(sId, getRawLocalState(sRaw), "facing");
+                if (sx + REPEATER_OUT_DX[sOutRot] === rx && sz + REPEATER_OUT_DZ[sOutRot] === rz) {
+                    return true;
+                }
             }
         }
         return false;
@@ -496,7 +626,7 @@ export function createRedstoneEngine(deps) {
 
     /**
      * Java Edition DiodeBlock.shouldPrioritize 準拠:
-     * 出力先がダイオード（リピーター等）であり、向かい合わせ（正面衝突）でなければ最優先 (-3)
+     * 出力先がダイオード（リピーター・コンパレーター）であり、向かい合わせでなければ最優先 (-3)
      */
     function isRepeaterFacingDiode(rx, ry, rz, rot) {
         const ox = rx + REPEATER_OUT_DX[rot];
@@ -504,7 +634,7 @@ export function createRedstoneEngine(deps) {
         const oRaw = getRaw(ox, ry, oz);
         const oId = getRawBlockId(oRaw);
         const oCfg = blockConfigFastArray[oId];
-        if (!oCfg || oCfg.redstoneRole !== "repeater") return false;
+        if (!oCfg || (oCfg.redstoneRole !== "repeater" && oCfg.redstoneRole !== "comparator")) return false;
         const outRot = getBlockStateRawProp(oId, getRawLocalState(oRaw), "facing");
         return outRot !== ((rot + 2) & 3);
     }
@@ -525,7 +655,7 @@ export function createRedstoneEngine(deps) {
             if (wp > 0 && (dy === 1 || (dy === 0 && doesWirePointTowards(nx, ny, nz, wx, wz)))) {
                 return true;
             }
-        } else if (isRedstoneConductive[nId] === 1) {
+        } else if (isRawConductive(nRaw)) {
             if (getConductorAnyPower(nx, ny, nz, wx, wy, wz) > 0) return true;
         }
         return false;
@@ -642,6 +772,25 @@ export function createRedstoneEngine(deps) {
             return;
         }
 
+        if (role === "comparator") {
+            const rot = getBlockStateRawProp(id, meta, "facing");
+            const isSubtract = getBlockStateProp(id, meta, "mode") === "subtract";
+            const currentPowered = !!getBlockStateProp(id, meta, "powered");
+            const currentOut = getComparatorOutputAt(wx, wy, wz);
+            const targetOut = calculateComparatorOutput(wx, wy, wz, rot, isSubtract);
+
+            if ((targetOut !== currentOut || currentPowered !== (targetOut > 0)) && !alreadyScheduled) {
+                let priority = -1;
+                if (isRepeaterFacingDiode(wx, wy, wz, rot)) {
+                    priority = -3;
+                } else if (currentPowered) {
+                    priority = -2;
+                }
+                tickScheduler.schedule(wx, wy, wz, 2, "redstone_device", priority, 0);
+            }
+            return;
+        }
+
         // 拡張ポイント1: カスタムロール評価
         const custom = customRoles.get(role);
         if (custom && typeof custom.evaluate === "function") {
@@ -749,7 +898,7 @@ export function createRedstoneEngine(deps) {
                 );
             } else if (role === "pressure_plate") {
                 evalPistonsAround(bx, by - 1, bz, true);
-            } else if (role === "repeater") {
+            } else if (role === "repeater" || role === "comparator") {
                 const rot = getBlockStateRawProp(rId, rMeta, "facing");
                 evalPistonsAround(
                     bx + REPEATER_OUT_DX[rot],
@@ -1012,6 +1161,31 @@ export function createRedstoneEngine(deps) {
                     const delayTicks = getBlockStateProp(id, meta, "delay");
                     tickScheduler.schedule(x, y, z, delayTicks, "redstone_device", -2, 0);
                 }
+                resolveFromOrigin(x, y, z, raw);
+            }
+            return;
+        }
+
+        if (cfg.redstoneRole === "comparator") {
+            const rot = getBlockStateRawProp(id, meta, "facing");
+            const isSubtract = getBlockStateProp(id, meta, "mode") === "subtract";
+            const be = typeof ensureBlockEntity === "function"
+                ? ensureBlockEntity(x, y, z, "minecraft:comparator")
+                : (typeof getBlockEntity === "function" ? getBlockEntity(x, y, z) : null);
+
+            const oldOut = (be && be.data) ? (be.data.outputSignal | 0) : 0;
+            const newOut = calculateComparatorOutput(x, y, z, rot, isSubtract);
+            if (be && be.data) {
+                be.data.outputSignal = newOut;
+            }
+
+            const curPowered = !!getBlockStateProp(id, meta, "powered");
+            const nextPowered = newOut > 0;
+            if (curPowered !== nextPowered) {
+                const nextMeta = setBlockStateProp(id, meta, "powered", nextPowered);
+                setBlockFromWorldTick(x, y, z, packRawBlock(id, nextMeta));
+            }
+            if (oldOut !== newOut || curPowered !== nextPowered) {
                 resolveFromOrigin(x, y, z, raw);
             }
             return;

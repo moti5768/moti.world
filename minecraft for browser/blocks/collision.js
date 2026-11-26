@@ -26,7 +26,9 @@ const CUSTOM_COLLISION_CACHE = {
     torch: Object.freeze([createBox(0.375, 0, 0.375, 0.625, 0.625, 0.625)]),
     redstone_torch: Object.freeze([createBox(0.375, 0, 0.375, 0.625, 0.625, 0.625)]),
     lever: Object.freeze([createBox(0.25, 0, 0.25, 0.75, 0.5, 0.75)]),
-    repeater: Object.freeze([createBox(0, 0, 0, 1, 0.125, 1)])
+    repeater: Object.freeze([createBox(0, 0, 0, 1, 0.125, 1)]),
+    comparator: Object.freeze([createBox(0, 0, 0, 1, 0.125, 1)]),
+    chest: Object.freeze([createBox(0.0625, 0, 0.0625, 0.9375, 0.875, 0.9375)])
 };
 
 // meta別(長さ16配列)衝突判定キャッシュ（Java JSONモデル自動導出・ボタン/ドア等用）
@@ -185,6 +187,7 @@ export function getSelectionBoxesForConfig(cfg, meta = 0) {
     if (preset === "torch" || preset === "redstone_torch") return TORCH_SELECTION_BOXES[Math.min(meta & 7, 4)];
     if (preset === "lever") return LEVER_SELECTION_BOXES[Math.min(meta & 7, 4)];
     if (preset === "stairs") return CUSTOM_COLLISION_CACHE.stairs;
+    if (preset === "chest") return CUSTOM_COLLISION_CACHE.chest;
     if (preset === "water") return WATER_SELECTION_BOXES_BY_LEVEL[meta & 15];
 
     const customPreset = CUSTOM_SELECTION_PRESETS[preset];

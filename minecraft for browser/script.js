@@ -24,6 +24,7 @@ import { createEntityManager } from './entities/entity_manager.js';
 import { MOB_TYPES } from './entities/mob_registry.js';
 import { createBlockEntityManager } from './blocks/block_entity.js';
 import { createPistonAnimator } from './blocks/piston_animator.js';
+import { createChestAnimator } from './blocks/chest_animator.js';
 import { PistonEngine, registerPistonAnimator } from './blocks/definitions/pistons.js';
 import { createContainerUI } from './ui/container_ui.js';
 import { createMinecraftBreakParticles, updateBlockParticles } from './particles.js';
@@ -627,6 +628,7 @@ const _getRawHeightAt = (wx, wz) => {
 
 export const ChunkSaveManager = {
     modifiedChunks: new Map(),
+    workerBaseCache: new Map(),    // Web Worker で事前生成した未装飾ベース地形の一時待機キャッシュ（回路・保存対象から完全隔離）
     playerModifiedKeys: new Set(), // プレイヤー編集済み・セーブ読込済みチャンク（自動回収から保護・永続保存対象）
     dirtySaveKeys: new Set(),      // 前回セーブ以降に新たに編集されたチャンク（高速差分セーブ対象）
     decoratedChunks: new Set(),    // applyDecorations 完了済みチャンク
@@ -898,8 +900,14 @@ export const ChunkSaveManager = {
         const key = encodeChunkKey(cx, cz);
         let dataArray = this.modifiedChunks.get(key);
         if (dataArray === undefined) {
-            const data = this.generateBaseTerrain(cx, cz);
-            dataArray = new Uint16Array(data);
+            const prebuilt = this.workerBaseCache.get(key);
+            if (prebuilt !== undefined) {
+                this.workerBaseCache.delete(key);
+                dataArray = prebuilt;
+            } else {
+                const data = this.generateBaseTerrain(cx, cz);
+                dataArray = new Uint16Array(data);
+            }
             this.modifiedChunks.set(key, dataArray);
         }
         return dataArray;
@@ -1085,6 +1093,8 @@ const SEA_LEVEL = 62;             // 本家マイクラの海面(Y=62)
 
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 256;
+const SECTION_HEIGHT = 16;
+const SECTIONS_PER_CHUNK = CHUNK_HEIGHT >> 4; // 16 セクション (sy: 0..15)
 
 let CHUNK_VISIBLE_DISTANCE = 6;
 
@@ -1895,7 +1905,7 @@ function axisSeparatedCollisionResolve(dt) {
     const oMinX = aabb.min.x, oMinY = aabb.min.y, oMinZ = aabb.min.z;
     const oMaxX = aabb.max.x, oMaxY = aabb.max.y, oMaxZ = aabb.max.z;
 
-    const allowStep = !flightMode && !wasUnderwater;
+    const allowStep = !flightMode;
     const allowSneakGuard = sneakActive && !flightMode && player.onGround;
 
     // 1. 移動領域全体（段差登り上側＋スニーク下側余裕込み）の衝突ボックスを1回だけ収集
@@ -1936,9 +1946,9 @@ function axisSeparatedCollisionResolve(dt) {
     let hitX = Math.abs(dx - resX) > 1e-6;
     let hitZ = Math.abs(dz - resZ) > 1e-6;
 
-    // 4. 解析的段差登り（Minecraft Java Edition Entity.collide 準拠・天井干渉自動尊重）
+    // 4. 解析的段差登り（Minecraft Java Edition Entity.collide 準拠・水中での段差乗り上げ対応）
     let steppedUp = false;
-    if (allowStep && (player.onGround || hitGround) && (hitX || hitZ)) {
+    if (allowStep && (player.onGround || hitGround || wasUnderwater) && (hitX || hitZ)) {
         // 4-A. 元の位置から最大 MAX_STEP_HEIGHT(0.6) まで上昇（低い天井があれば自動で手前停止）
         const upY = clipAxisY(oMinX, oMinY, oMinZ, oMaxX, oMaxY, oMaxZ, MAX_STEP_HEIGHT, boxCount);
         if (upY > 1e-4) {
@@ -1980,7 +1990,8 @@ function axisSeparatedCollisionResolve(dt) {
 
     if (hitX) vel.x = 0;
     if (hitZ) vel.z = 0;
-    if (hitGround || hitCeiling || steppedUp) vel.y = 0;
+    if (hitGround || hitCeiling || (steppedUp && !wasUnderwater)) vel.y = 0;
+    else if (steppedUp && wasUnderwater && vel.y < 0) vel.y = 0;
     if (hitGround || steppedUp) player.onGround = true;
 }
 
@@ -2274,41 +2285,136 @@ function isChunkWithinDataRetainDistance(cx, cz, pCx, pCz) {
     return (dx * dx + dz * dz) <= (maxR * maxR);
 }
 
+function finalizeChunkFadeImmediately(container) {
+    if (!container || container.userData.fadedIn) return;
+    container.userData.fadedIn = true;
+    container.traverse(onMeshChildFinalize);
+    for (let i = activeFadeTasks.length - 1; i >= 0; i--) {
+        if (activeFadeTasks[i].object === container) {
+            activeFadeTasks.splice(i, 1);
+            break;
+        }
+    }
+}
+
+function recomputeChunkBoundingBox(container) {
+    const baseX = container.userData.cx * CH_S;
+    const baseZ = container.userData.cz * CH_S;
+    const sections = container.userData.sections;
+
+    let minY = CH_H;
+    let maxY = -1;
+    if (sections) {
+        for (let sy = 0; sy < SECTIONS_PER_CHUNK; sy++) {
+            const sec = sections[sy];
+            if (!sec || !sec.userData.boundingBox) continue;
+            const sb = sec.userData.boundingBox;
+            if (sb.min.y < minY) minY = sb.min.y;
+            if (sb.max.y > maxY) maxY = sb.max.y;
+        }
+    }
+
+    if (maxY < minY) {
+        container.userData.boundingBox = null;
+    } else if (container.userData.boundingBox) {
+        container.userData.boundingBox.min.set(baseX, minY, baseZ);
+        container.userData.boundingBox.max.set(baseX + CH_S, maxY, baseZ + CH_S);
+    } else {
+        container.userData.boundingBox = new THREE.Box3(
+            new THREE.Vector3(baseX, minY, baseZ),
+            new THREE.Vector3(baseX + CH_S, maxY, baseZ + CH_S)
+        );
+    }
+}
+
+/**
+ * 指定チャンク内の対象 16x16x16 セクション (syMask のビットが立っている層) のみを高速再構築する
+ */
+function refreshChunkSections(cx, cz, syMask) {
+    const mask = syMask & 0xFFFF;
+    if (mask === 0) return;
+
+    const key = encodeChunkKey(cx, cz);
+    const container = loadedChunks.get(key);
+
+    const pCx = getChunkCoord(player.position.x);
+    const pCz = getChunkCoord(player.position.z);
+    if (!isChunkWithinUnloadDistance(cx, cz, pCx, pCz)) {
+        if (container) unloadChunkByKey(key);
+        return;
+    }
+
+    if (!container || !container.userData.sections) {
+        refreshChunkAt(cx, cz);
+        return;
+    }
+
+    finalizeChunkFadeImmediately(container);
+
+    let voxelData = ChunkSaveManager.modifiedChunks.get(key);
+    let isNewChunk = false;
+    if (!voxelData || !ChunkSaveManager.decoratedChunks.has(key)) {
+        voxelData = ChunkSaveManager.captureBaseChunkData(cx, cz);
+        isNewChunk = true;
+    }
+
+    let lightMap = chunkLightCache.get(key);
+    if (!lightMap || isNewChunk) {
+        lightMap = generateChunkLightMap(key, voxelData);
+    }
+
+    container.userData.missingNeighborMask = populateChunkBoundaryView(cx, cz, voxelData, lightMap);
+    const sections = container.userData.sections;
+
+    for (let sy = 0; sy < SECTIONS_PER_CHUNK; sy++) {
+        if (((mask >> sy) & 1) === 0) continue;
+
+        const oldSec = sections[sy];
+        const newSec = buildChunkSectionMesh(cx, cz, sy, voxelData, lightMap, false, false);
+        if (newSec) {
+            container.add(newSec);
+            sections[sy] = newSec;
+        } else {
+            sections[sy] = null;
+        }
+
+        if (oldSec) {
+            container.remove(oldSec);
+            disposeMesh(oldSec);
+        }
+
+        chunkUpdatesInSecond++;
+    }
+
+    recomputeChunkBoundingBox(container);
+    syncSingleChunkSkyLight(container);
+}
+
 function refreshChunkAt(cx, cz) {
     const key = encodeChunkKey(cx, cz);
     const oldChunk = loadedChunks.get(key);
 
-    // 1. プレイヤーからの距離チェック（ヒステリシスを含むアンロード半径で判定）
     const pCx = getChunkCoord(player.position.x);
     const pCz = getChunkCoord(player.position.z);
 
     if (!isChunkWithinUnloadDistance(cx, cz, pCx, pCz)) {
-        if (oldChunk) {
-            unloadChunkByKey(key);
-        }
+        if (oldChunk) unloadChunkByKey(key);
         return;
     }
 
-    // 2. 新しいメッシュの生成（通常リビルドはフェード不要のため共有マテリアル直結）
     const newChunk = generateChunkMeshMultiTexture(cx, cz, false, false);
-
     if (!newChunk) {
-        if (oldChunk) {
-            unloadChunkByKey(key);
-        }
+        if (oldChunk) unloadChunkByKey(key);
         return;
     }
 
-    // 3. 属性のセットアップ
     newChunk.userData.fadedIn = true;
     syncSingleChunkSkyLight(newChunk);
 
-    // 4. 入れ替え処理（チラつき防止のため「追加」してから「削除」）
     scene.add(newChunk);
     loadedChunks.set(key, newChunk);
 
     if (oldChunk) {
-        // 旧メッシュがフェード中だった場合はタスクからも即除去
         for (let i = activeFadeTasks.length - 1; i >= 0; i--) {
             if (activeFadeTasks[i].object === oldChunk) {
                 activeFadeTasks.splice(i, 1);
@@ -2332,21 +2438,29 @@ function decodeChunkKey(key, out = _sharedChunkCoord) {
 }
 
 // ───────────────────────────────
-// 更新要求用のバッチセットと処理（最適化完全版）
+// 16x16x16 セクション単位 更新要求キュー（重複自動マージ・メインループ統合管理）
 // ───────────────────────────────
 
-// 内部管理用：Setを併用してキュー内の重複チェックを O(1) にする（メインループ統合管理）
 let pendingChunkUpdates = new Set();
 let chunkUpdateQueue = [];
 let chunkUpdateLookup = new Set();
+const chunkUpdateMasks = new Map(); // Map<chunkKey, 16bit sectionMask>
 let chunkUpdateIdx = 0;
 
-/**
- * チャンク更新要求（メインループ animate() の描画直前バジェットで消化）
- */
-function requestChunkUpdate(cx, cz) {
-    const key = encodeChunkKey(cx, cz);
+function getSectionMaskForY(wy) {
+    const sy = wy >> 4;
+    if (sy < 0 || sy >= SECTIONS_PER_CHUNK) return 0;
+    let mask = 1 << sy;
+    const ly = wy & 15;
+    if (ly === 0 && sy > 0) mask |= (1 << (sy - 1));
+    else if (ly === 15 && sy < SECTIONS_PER_CHUNK - 1) mask |= (1 << (sy + 1));
+    return mask;
+}
 
+function requestChunkUpdateMaskByKey(key, syMask) {
+    const mask = syMask & 0xFFFF;
+    if (mask === 0) return;
+    chunkUpdateMasks.set(key, (chunkUpdateMasks.get(key) || 0) | mask);
     if (!chunkUpdateLookup.has(key)) {
         chunkUpdateLookup.add(key);
         chunkUpdateQueue.push(key);
@@ -2354,7 +2468,39 @@ function requestChunkUpdate(cx, cz) {
 }
 
 /**
- * メインループ(animate)から呼ばれる差分チャンク再構築（回路・ピストン・流体優先）
+ * チャンク／セクション更新要求（sy 省略時は全 16 セクション、sy=0..15 指定時は該当 16x16x16 のみ）
+ */
+function requestChunkUpdate(cx, cz, sy = -1) {
+    const key = encodeChunkKey(cx, cz);
+    const mask = (sy >= 0 && sy < SECTIONS_PER_CHUNK) ? (1 << sy) : 0xFFFF;
+    requestChunkUpdateMaskByKey(key, mask);
+}
+
+/**
+ * 1 ブロック座標 (wx, wy, wz) の変化に伴う最小限の 16x16x16 セクション群のみを更新予約する
+ */
+function requestBlockSectionUpdate(wx, wy, wz) {
+    if (wy < 0 || wy >= CHUNK_HEIGHT) return;
+    const cx = wx >> 4;
+    const cz = wz >> 4;
+    const lx = wx & 15;
+    const lz = wz & 15;
+    const syMask = getSectionMaskForY(wy);
+    if (syMask === 0) return;
+
+    requestChunkUpdateMaskByKey(encodeChunkKey(cx, cz), syMask);
+    if (lx === 0) requestChunkUpdateMaskByKey(encodeChunkKey(cx - 1, cz), syMask);
+    else if (lx === 15) requestChunkUpdateMaskByKey(encodeChunkKey(cx + 1, cz), syMask);
+    if (lz === 0) requestChunkUpdateMaskByKey(encodeChunkKey(cx, cz - 1), syMask);
+    else if (lz === 15) requestChunkUpdateMaskByKey(encodeChunkKey(cx, cz + 1), syMask);
+    if (lx === 0 && lz === 0) requestChunkUpdateMaskByKey(encodeChunkKey(cx - 1, cz - 1), syMask);
+    else if (lx === 0 && lz === 15) requestChunkUpdateMaskByKey(encodeChunkKey(cx - 1, cz + 1), syMask);
+    else if (lx === 15 && lz === 0) requestChunkUpdateMaskByKey(encodeChunkKey(cx + 1, cz - 1), syMask);
+    else if (lx === 15 && lz === 15) requestChunkUpdateMaskByKey(encodeChunkKey(cx + 1, cz + 1), syMask);
+}
+
+/**
+ * メインループ(animate)から呼ばれる差分セクション再構築（回路・ピストン・流体優先）
  */
 function processChunkUpdateQueue(budgetMs = 6.0) {
     if (chunkUpdateIdx >= chunkUpdateQueue.length) return;
@@ -2364,14 +2510,19 @@ function processChunkUpdateQueue(budgetMs = 6.0) {
         const key = chunkUpdateQueue[chunkUpdateIdx];
         chunkUpdateIdx++;
 
-        // アンロード済み等でキャンセルされたキーは O(1) でスキップ
         if (!chunkUpdateLookup.has(key)) continue;
         chunkUpdateLookup.delete(key);
+        const syMask = chunkUpdateMasks.get(key) || 0xFFFF;
+        chunkUpdateMasks.delete(key);
         if (!loadedChunks.has(key)) continue;
 
         const cx = key >> 16;
         const cz = (key << 16) >> 16;
-        refreshChunkAt(cx, cz);
+        if (syMask === 0xFFFF) {
+            refreshChunkAt(cx, cz);
+        } else {
+            refreshChunkSections(cx, cz, syMask);
+        }
 
         if ((performance.now() - start) >= budgetMs) break;
     }
@@ -2386,10 +2537,160 @@ function processChunkUpdateQueue(budgetMs = 6.0) {
 // 周辺の自動チャンク生成キュー (メインループ定時バジェット駆動)
 // ==========================================
 
-/**
- * チャンク生成メインループ（animate() から毎フレーム1回だけ呼ばれる）
- * @param {boolean} isInitialBoost - 初期スポーン待機中は高バジェットで最速ロード
- */
+// ==========================================
+// 基本地形生成 Web Worker プール（最大 3 並列・ゼロコピー転送・自動フォールバック）
+// ==========================================
+const TerrainWorkerPool = (() => {
+    const workers = [];
+    const inFlight = new Set();
+    let nextWorkerIdx = 0;
+    let generation = 0;
+    let initialized = false;
+    let available = false;
+
+    function buildInitPayload(seed) {
+        const biomes = [];
+        for (let i = 0; i < 6; i++) {
+            const b = BIOME_CONFIG[i];
+            biomes.push({
+                id: b.id,
+                topBlock: b.topBlock,
+                fillerBlock: b.fillerBlock,
+                baseHeight: b.baseHeight,
+                heightVariation: b.heightVariation,
+                noiseScale: b.noiseScale
+            });
+        }
+        return {
+            type: "init",
+            seed: seed >>> 0,
+            seaLevel: SEA_LEVEL,
+            biomes,
+            blockIds: {
+                SKY: BLOCK_TYPES.SKY,
+                STONE: BLOCK_TYPES.STONE,
+                WATER: BLOCK_TYPES.WATER,
+                LAVA: BLOCK_TYPES.LAVA,
+                BEDROCK: BLOCK_TYPES.BEDROCK,
+                GRAVEL: BLOCK_TYPES.GRAVEL,
+                COAL_ORE: BLOCK_TYPES.COAL_ORE,
+                IRON_ORE: BLOCK_TYPES.IRON_ORE,
+                GOLD_ORE: BLOCK_TYPES.GOLD_ORE,
+                REDSTONE_ORE: BLOCK_TYPES.REDSTONE_ORE,
+                LAPIS_ORE: BLOCK_TYPES.LAPIS_ORE,
+                EMERALD_ORE: BLOCK_TYPES.EMERALD_ORE
+            }
+        };
+    }
+
+    function onWorkerMessage(e) {
+        const msg = e.data;
+        if (!msg || msg.type !== "chunk") return;
+        if (msg.gen !== generation) return;
+
+        const key = msg.key;
+        inFlight.delete(key);
+
+        // 上書き禁止ガード: 待機中に同期生成・プレイヤー編集されたチャンクは既存データを絶対優先
+        if (ChunkSaveManager.modifiedChunks.has(key) || ChunkSaveManager.playerModifiedKeys.has(key)) {
+            return;
+        }
+
+        const pCx = getChunkCoord(player.position.x);
+        const pCz = getChunkCoord(player.position.z);
+        if (!isChunkWithinDataRetainDistance(msg.cx, msg.cz, pCx, pCz)) {
+            return;
+        }
+
+        ChunkSaveManager.workerBaseCache.set(key, new Uint16Array(msg.buffer));
+
+        // 描画範囲内かつ未ロードならメインスレッドのメッシュ化キューへ即戻す
+        if (
+            (msg.isPrimary || isChunkWithinRenderDistance(msg.cx, msg.cz, pCx, pCz)) &&
+            !loadedChunks.has(key)
+        ) {
+            chunkQueue.push(key);
+        }
+    }
+
+    function ensureWorkers() {
+        if (initialized) return;
+        initialized = true;
+        if (typeof Worker === "undefined") return;
+
+        const count = Math.min(3, Math.max(1, (navigator.hardwareConcurrency || 2) - 1));
+        try {
+            for (let i = 0; i < count; i++) {
+                const w = new Worker("./terrain_worker.js");
+                w.onmessage = onWorkerMessage;
+                w.onerror = (err) => {
+                    console.warn("[TerrainWorker] エラー発生のため同期フォールバックへ切替:", err.message || err);
+                    available = false;
+                    inFlight.clear();
+                };
+                workers.push(w);
+            }
+            available = workers.length > 0;
+        } catch (err) {
+            console.warn("[TerrainWorker] 初期化スキップ（同期生成を使用）:", err);
+            available = false;
+        }
+    }
+
+    function dispatchOne(cx, cz, isPrimary) {
+        const key = encodeChunkKey(cx, cz);
+        if (
+            inFlight.has(key) ||
+            ChunkSaveManager.modifiedChunks.has(key) ||
+            ChunkSaveManager.workerBaseCache.has(key)
+        ) {
+            return false;
+        }
+        inFlight.add(key);
+        const w = workers[nextWorkerIdx];
+        nextWorkerIdx = (nextWorkerIdx + 1) % workers.length;
+        w.postMessage({ type: "generate", gen: generation, key, cx, cz, isPrimary });
+        return true;
+    }
+
+    return {
+        reset(seed) {
+            generation++;
+            inFlight.clear();
+            ChunkSaveManager.workerBaseCache.clear();
+            ensureWorkers();
+            if (!available) return;
+            const payload = buildInitPayload(seed);
+            for (let i = 0; i < workers.length; i++) {
+                workers[i].postMessage(payload);
+            }
+        },
+
+        isAvailable() {
+            return available;
+        },
+
+        get pendingCount() {
+            return inFlight.size;
+        },
+
+        /**
+         * 指定チャンクを最優先で Worker へ投入し、周囲 4 近傍も同時プリフェッチ（木の越境同期生成を抑制）
+         */
+        request(cx, cz) {
+            if (!available) return false;
+            dispatchOne(cx, cz, true);
+            if (inFlight.size < 48) {
+                dispatchOne(cx + 1, cz, false);
+                dispatchOne(cx - 1, cz, false);
+                dispatchOne(cx, cz + 1, false);
+                dispatchOne(cx, cz - 1, false);
+            }
+            return true;
+        }
+    };
+})();
+
 function processChunkQueue(isInitialBoost = false) {
     if (chunkQueue.length === 0) return;
 
@@ -2397,12 +2698,15 @@ function processChunkQueue(isInitialBoost = false) {
     const FRAME_TIME_BUDGET = isInitialBoost ? 12.0 : 6.0;
     const startTime = performance.now();
     let tasksProcessed = 0;
+    let workerDispatches = 0;
+    const MAX_WORKER_DISPATCH_PER_FRAME = 12;
 
     const pCx = getChunkCoord(player.position.x);
     const pCz = getChunkCoord(player.position.z);
 
     // 描画距離0または初期スポーン待機中はフェードなしで即表示
     const useFade = !isInitialBoost && CHUNK_VISIBLE_DISTANCE > 0;
+    const useWorker = !isInitialBoost && TerrainWorkerPool.isAvailable();
 
     while (
         chunkQueue.length > 0 &&
@@ -2418,6 +2722,17 @@ function processChunkQueue(isInitialBoost = false) {
 
         if (!isChunkWithinRenderDistance(cx, cz, pCx, pCz)) continue;
         if (loadedChunks.has(key)) continue;
+
+        // ベース地形が未生成ならメインスレッドを止めず Web Worker へ委譲
+        if (
+            useWorker &&
+            !ChunkSaveManager.modifiedChunks.has(key) &&
+            !ChunkSaveManager.workerBaseCache.has(key)
+        ) {
+            TerrainWorkerPool.request(cx, cz);
+            if (++workerDispatches >= MAX_WORKER_DISPATCH_PER_FRAME) break;
+            continue;
+        }
 
         const mesh = generateChunkMeshMultiTexture(cx, cz, false, useFade);
         if (!mesh) {
@@ -2545,6 +2860,7 @@ function unloadChunkByKey(hashKey) {
     loadedChunks.delete(hashKey);
     pendingChunkUpdates.delete(hashKey);
     chunkUpdateLookup.delete(hashKey);
+    chunkUpdateMasks.delete(hashKey);
     chunkUnloadLookup.delete(hashKey);
 
     // 進行中のフェードインタスクがあれば即座に解除
@@ -2641,6 +2957,16 @@ function evictDistantChunkCaches(pCx, pCz) {
         if (!isChunkWithinDataRetainDistance(_evictCoordTmp.cx, _evictCoordTmp.cz, pCx, pCz)) {
             invalidateVoxelReadCache(key);
             if (++evictedReadOnly >= MAX_EVICT_PER_MAP) break;
+        }
+    }
+
+    // 4. 遠方の Worker 事前生成ベース地形キャッシュを回収
+    let evictedWorkerBase = 0;
+    for (const key of ChunkSaveManager.workerBaseCache.keys()) {
+        decodeChunkKey(key, _evictCoordTmp);
+        if (!isChunkWithinDataRetainDistance(_evictCoordTmp.cx, _evictCoordTmp.cz, pCx, pCz)) {
+            ChunkSaveManager.workerBaseCache.delete(key);
+            if (++evictedWorkerBase >= MAX_EVICT_PER_MAP) break;
         }
     }
 }
@@ -2764,8 +3090,20 @@ const _incAddX = new Int32Array(INC_RING_SIZE);
 const _incAddY = new Int32Array(INC_RING_SIZE);
 const _incAddZ = new Int32Array(INC_RING_SIZE);
 
-// ブロック編集1回あたりに影響を受けたチャンクキーを集約する再利用Set
-const _lightDirtySet = new Set();
+// ブロック編集1回あたりに影響を受けたチャンクキーごとの 16bit セクションマスクを集約する再利用Map
+const _lightDirtySet = new Map();
+
+function _markLightDirty(outDirty, key, wy) {
+    if (!outDirty) return;
+    if (outDirty instanceof Map) {
+        const mask = getSectionMaskForY(wy);
+        if (mask !== 0) {
+            outDirty.set(key, (outDirty.get(key) || 0) | mask);
+        }
+    } else {
+        outDirty.add(key);
+    }
+}
 
 // ブロックIDごとの遮光度(0..15, 不透明=15)および発光量(0..15)の高速取得
 function getBlockLightOpacity(blockId) {
@@ -2816,7 +3154,7 @@ function _setWorldSkyLight(wx, wy, wz, val, outDirtyChunks) {
     const next = ((val & 15) << 4) | (prev & 15);
     if (prev !== next) {
         lMap[idx] = next;
-        if (outDirtyChunks) outDirtyChunks.add(key);
+        _markLightDirty(outDirtyChunks, key, wy);
     }
 }
 
@@ -2830,7 +3168,7 @@ function _setWorldBlockLight(wx, wy, wz, val, outDirtyChunks) {
     const next = (prev & 0xF0) | (val & 15);
     if (prev !== next) {
         lMap[idx] = next;
-        if (outDirtyChunks) outDirtyChunks.add(key);
+        _markLightDirty(outDirtyChunks, key, wy);
     }
 }
 
@@ -3947,7 +4285,7 @@ function createFadeCloneMaterial(originMat) {
 /**
  * スクラッチバッチ群から単一統合 BufferGeometry を構築（23B/頂点・Uint8正規化カラー・onUpload即解放）
  */
-function buildCombinedMeshFromBatches(batchMap, renderOrder, useFadeIn, baseX, baseZ, maxY) {
+function buildCombinedMeshFromBatches(batchMap, renderOrder, useFadeIn, baseX, baseZ, maxY, minY = 0) {
     let totalVerts = 0;
     let totalIndices = 0;
 
@@ -4003,13 +4341,15 @@ function buildCombinedMeshFromBatches(batchMap, renderOrder, useFadeIn, baseX, b
     geom.setAttribute('uv', new THREE.BufferAttribute(finalUv, 2).onUpload(releaseUploadedTypedArray));
     geom.setIndex(new THREE.BufferAttribute(finalIdx, 1).onUpload(releaseUploadedTypedArray));
 
-    const boxMaxY = (maxY + 1) < CH_H ? (maxY + 1) : CH_H;
+    const boxMinY = BEDROCK_LEVEL + minY;
+    const boxMaxY = BEDROCK_LEVEL + ((maxY + 1) < CH_H ? (maxY + 1) : CH_H);
     const cxS = baseX + 8.0;
-    const cyS = boxMaxY * 0.5;
+    const cyS = (boxMinY + boxMaxY) * 0.5;
     const czS = baseZ + 8.0;
-    const radius = Math.sqrt(64.0 + cyS * cyS + 64.0);
+    const halfH = (boxMaxY - boxMinY) * 0.5;
+    const radius = Math.sqrt(64.0 + halfH * halfH + 64.0);
     geom.boundingBox = new THREE.Box3(
-        new THREE.Vector3(baseX, 0, baseZ),
+        new THREE.Vector3(baseX, boxMinY, baseZ),
         new THREE.Vector3(baseX + CH_S, boxMaxY, baseZ + CH_S)
     );
     geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(cxS, cyS, czS), radius);
@@ -4090,53 +4430,50 @@ function getConnectionMaskLocal(lx, ly, lz, targetGeometryType, getFn) {
     return mask;
 }
 
-function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn = false) {
+const _secColMinY = new Int16Array(256);
+const _secColMaxY = new Int16Array(256);
+
+/**
+ * 16x16x16 サブチャンク (sy = 0..15) 単体のメッシュを生成する
+ * ※呼び出し前に populateChunkBoundaryView(cx, cz, voxelData, lightMap) を実行済みであること
+ */
+function buildChunkSectionMesh(cx, cz, sy, voxelData, lightMap, useInstancing = false, useFadeIn = false) {
     const baseX = cx * CH_S;
     const baseZ = cz * CH_S;
-    const container = new THREE.Object3D();
-    container.userData.cx = cx;
-    container.userData.cz = cz;
+    const yStart = sy << 4;
+    const yEnd = yStart + SECTION_HEIGHT - 1;
 
-    const chunkKey = encodeChunkKey(cx, cz);
-    let voxelData = ChunkSaveManager.modifiedChunks.get(chunkKey);
-    let isNewChunk = false;
-
-    // 隣接チャンクの木などでベース地形のみ先行生成されていた場合も確実に1回デコレーションを完了させる
-    if (!voxelData || !ChunkSaveManager.decoratedChunks.has(chunkKey)) {
-        voxelData = ChunkSaveManager.captureBaseChunkData(cx, cz);
-        isNewChunk = true;
-    }
-
-    let lightMap = chunkLightCache.get(chunkKey);
-    if (!lightMap || isNewChunk) {
-        lightMap = generateChunkLightMap(chunkKey, voxelData);
-    }
-
-    // --- 3x3 境界スナップショットを構築し、未ロード4近傍ビットを記録 ---
-    const missingNeighborMask = populateChunkBoundaryView(cx, cz, voxelData, lightMap);
-    container.userData.missingNeighborMask = missingNeighborMask;
-
-    // 1. 列ごとの最高非空気高度を一括計測（上空の完全空気層 70% を全パスから除外）
-    let chunkMaxY = -1;
+    // 1. この 16x16x16 セクション内の実非空気範囲を高速スキャン（完全空気セクションは即 return null）
+    let secMinY = CH_H;
+    let secMaxY = -1;
     for (let x = 0; x < CH_S; x = (x + 1) | 0) {
         const xOff = x << 12;
         const xCol = x << 4;
         for (let z = 0; z < CH_S; z = (z + 1) | 0) {
             const colBase = xOff | (z << 8);
-            let y = CH_H - 1;
-            while (y >= 0 && voxelData[colBase | y] === 0) y--;
-            _chunkColMaxY[xCol | z] = y;
-            if (y > chunkMaxY) chunkMaxY = y;
+            let yMax = yEnd;
+            while (yMax >= yStart && voxelData[colBase | yMax] === 0) yMax--;
+            if (yMax < yStart) {
+                _secColMinY[xCol | z] = CH_H;
+                _secColMaxY[xCol | z] = -1;
+                continue;
+            }
+            let yMin = yStart;
+            while (yMin < yMax && voxelData[colBase | yMin] === 0) yMin++;
+            _secColMinY[xCol | z] = yMin;
+            _secColMaxY[xCol | z] = yMax;
+            if (yMin < secMinY) secMinY = yMin;
+            if (yMax > secMaxY) secMaxY = yMax;
         }
     }
-    if (chunkMaxY < 0) return container;
+    if (secMaxY < 0) return null;
 
-    const hasPistonAnim = PistonAnimator.hasActiveAnimations();
+    const hasPistonAnim = PistonAnimator.hasActiveAnimations() || ChestAnimator.hasActiveAnimations();
+    const isHiddenAnim = (wx, wy, wz) => PistonAnimator.isCoordHidden(wx, wy, wz) || ChestAnimator.isCoordHidden(wx, wy, wz);
 
-    // 3x3 境界ビュー対応 O(1) 生ボクセル取得（16bit: ID + 4bit BlockState）
     function getRawLocal(x, y, z) {
         if (y < 0 || y >= CH_H) return 0;
-        if (hasPistonAnim && PistonAnimator.isCoordHidden(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) return 0;
+        if (hasPistonAnim && isHiddenAnim(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) return 0;
 
         if (((x | z) & ~15) === 0) {
             return voxelData[y | (z << 8) | (x << 12)];
@@ -4156,7 +4493,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
         return getRawBlockId(getRawLocal(x, y, z));
     }
 
-    // 3x3 境界ビュー対応 O(1) ライト取得（角座標対応・未ロード境界の地下ライトリーク防止）
     function getLightLevel(lx, ly, lz) {
         if (ly < 0) return 0;
         if (ly >= CH_H) return 0xF0;
@@ -4179,7 +4515,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
         return lightMap[ly | (clampedZ << 8) | (clampedX << 12)];
     }
 
-    // 隣接ブロックに対する面可視判定（インライン用）
     function shouldShowFace(myType, myOpaque, myCullSame, nType) {
         if (nType === 0) return true;
         if (_isOpaqueBlock[nType] === 1) return false;
@@ -4188,13 +4523,11 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
         return true;
     }
 
-    // 再利用スクラッチ状態のリセット
     releaseBatchMap(_opaqueBatchMap);
     releaseBatchMap(_waterBatchMap);
     _greedyMatToId.clear();
     _greedyIdToMat.length = 1;
 
-    // 2D Greedy Meshing で統合された1枚の極大クワッドをスクラッチバッチへ直書き（norm撤去・8bitカラー）
     function emitGreedyQuad(faceIdx, key, x0, y0, z0, w, h) {
         const mat = _greedyIdToMat[key >>> 8];
         if (!mat) return;
@@ -4218,48 +4551,46 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
         const uv = batch.uv;
         const idx = batch.idx;
 
-        if (faceIdx === 2) { // +Y: u=x(w), v=z(h)
+        if (faceIdx === 2) {
             const yTop = y0 + 1;
             pos[p0] = x0; pos[p0 + 1] = yTop; pos[p0 + 2] = z0 + h;
             pos[p0 + 3] = x0 + w; pos[p0 + 4] = yTop; pos[p0 + 5] = z0 + h;
             pos[p0 + 6] = x0 + w; pos[p0 + 7] = yTop; pos[p0 + 8] = z0;
             pos[p0 + 9] = x0; pos[p0 + 10] = yTop; pos[p0 + 11] = z0;
-        } else if (faceIdx === 3) { // -Y: u=x(w), v=z(h)
+        } else if (faceIdx === 3) {
             pos[p0] = x0; pos[p0 + 1] = y0; pos[p0 + 2] = z0;
             pos[p0 + 3] = x0 + w; pos[p0 + 4] = y0; pos[p0 + 5] = z0;
             pos[p0 + 6] = x0 + w; pos[p0 + 7] = y0; pos[p0 + 8] = z0 + h;
             pos[p0 + 9] = x0; pos[p0 + 10] = y0; pos[p0 + 11] = z0 + h;
-        } else if (faceIdx === 0) { // +X: u=z(w), v=y(h)
+        } else if (faceIdx === 0) {
             const xRight = x0 + 1;
             pos[p0] = xRight; pos[p0 + 1] = y0; pos[p0 + 2] = z0 + w;
             pos[p0 + 3] = xRight; pos[p0 + 4] = y0; pos[p0 + 5] = z0;
             pos[p0 + 6] = xRight; pos[p0 + 7] = y0 + h; pos[p0 + 8] = z0;
             pos[p0 + 9] = xRight; pos[p0 + 10] = y0 + h; pos[p0 + 11] = z0 + w;
-        } else if (faceIdx === 1) { // -X: u=z(w), v=y(h)
+        } else if (faceIdx === 1) {
             pos[p0] = x0; pos[p0 + 1] = y0; pos[p0 + 2] = z0;
             pos[p0 + 3] = x0; pos[p0 + 4] = y0; pos[p0 + 5] = z0 + w;
             pos[p0 + 6] = x0; pos[p0 + 7] = y0 + h; pos[p0 + 8] = z0 + w;
             pos[p0 + 9] = x0; pos[p0 + 10] = y0 + h; pos[p0 + 11] = z0;
-        } else if (faceIdx === 4) { // +Z: u=x(w), v=y(h)
+        } else if (faceIdx === 4) {
             const zFront = z0 + 1;
             pos[p0] = x0; pos[p0 + 1] = y0; pos[p0 + 2] = zFront;
             pos[p0 + 3] = x0 + w; pos[p0 + 4] = y0; pos[p0 + 5] = zFront;
             pos[p0 + 6] = x0 + w; pos[p0 + 7] = y0 + h; pos[p0 + 8] = zFront;
             pos[p0 + 9] = x0; pos[p0 + 10] = y0 + h; pos[p0 + 11] = zFront;
-        } else { // 5: -Z: u=x(w), v=y(h)
+        } else {
             pos[p0] = x0 + w; pos[p0 + 1] = y0; pos[p0 + 2] = z0;
             pos[p0 + 3] = x0; pos[p0 + 4] = y0; pos[p0 + 5] = z0;
             pos[p0 + 6] = x0; pos[p0 + 7] = y0 + h; pos[p0 + 8] = z0;
             pos[p0 + 9] = x0 + w; pos[p0 + 10] = y0 + h; pos[p0 + 11] = z0;
         }
 
-        // 8bit 正規化カラー（明るさはシェーダーの u_brightness Uniform で O(1) 乗算）
         col[p0] = sByte; col[p0 + 1] = bByte; col[p0 + 2] = 0;
         col[p0 + 3] = sByte; col[p0 + 4] = bByte; col[p0 + 5] = 0;
         col[p0 + 6] = sByte; col[p0 + 7] = bByte; col[p0 + 8] = 0;
         col[p0 + 9] = sByte; col[p0 + 10] = bByte; col[p0 + 11] = 0;
 
-        // RepeatWrapping により (w, h) 倍タイル描画（テクスチャアトラス不使用）
         uv[u0] = 0; uv[u0 + 1] = 0;
         uv[u0 + 2] = w; uv[u0 + 3] = 0;
         uv[u0 + 4] = w; uv[u0 + 5] = h;
@@ -4276,19 +4607,16 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
         batch.iCount = i0 + 6;
     }
 
-    // 2Dマスク配列（U_SIZE x V_SIZE）を走査して極大長方形へ統合する共通 Greedy 関数
-    function runGreedySlice(mask, uSize, vSize, faceIdx, fixedAxisVal) {
+    function runGreedySlice(mask, uSize, vSize, faceIdx, fixedAxisVal, yOffset = 0) {
         for (let v = 0; v < vSize; v = (v + 1) | 0) {
             const rowOff = v * uSize;
             for (let u = 0; u < uSize;) {
                 const key = mask[rowOff + u];
                 if (key === 0) { u++; continue; }
 
-                // U方向へ極大幅 w を拡張
                 let w = 1;
                 while (u + w < uSize && mask[rowOff + u + w] === key) w++;
 
-                // V方向へ極大高さ h を拡張
                 let h = 1;
                 outer: while (v + h < vSize) {
                     const nextRow = (v + h) * uSize + u;
@@ -4298,7 +4626,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                     h++;
                 }
 
-                // 消費済みセルを 0 にクリア
                 for (let dv = 0; dv < h; dv++) {
                     const clrRow = (v + dv) * uSize + u;
                     for (let du = 0; du < w; du++) {
@@ -4309,9 +4636,9 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                 if (faceIdx === 2 || faceIdx === 3) {
                     emitGreedyQuad(faceIdx, key, baseX + u, BEDROCK_LEVEL + fixedAxisVal, baseZ + v, w, h);
                 } else if (faceIdx === 0 || faceIdx === 1) {
-                    emitGreedyQuad(faceIdx, key, baseX + fixedAxisVal, BEDROCK_LEVEL + v, baseZ + u, w, h);
+                    emitGreedyQuad(faceIdx, key, baseX + fixedAxisVal, BEDROCK_LEVEL + yOffset + v, baseZ + u, w, h);
                 } else {
-                    emitGreedyQuad(faceIdx, key, baseX + u, BEDROCK_LEVEL + v, baseZ + fixedAxisVal, w, h);
+                    emitGreedyQuad(faceIdx, key, baseX + u, BEDROCK_LEVEL + yOffset + v, baseZ + fixedAxisVal, w, h);
                 }
 
                 u += w;
@@ -4319,14 +4646,12 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
         }
     }
 
-    // =========================================================================
-    // PASS 1: 3軸 2D Greedy Meshing（通常の立方体＋葉ブロック・横向き原木除く）
-    // =========================================================================
+    // PASS 1: 3軸 2D Greedy Meshing（このセクション secMinY..secMaxY のみ最大 16 層）
     if (!useInstancing) {
         const H_MAX = CH_H - 1;
 
-        // 1-A. Y軸スライス（+Y: 2 / -Y: 3）
-        for (let y = 0; y <= chunkMaxY; y = (y + 1) | 0) {
+        // 1-A. Y軸スライス
+        for (let y = secMinY; y <= secMaxY; y = (y + 1) | 0) {
             let hasPos = false;
             let hasNeg = false;
 
@@ -4336,7 +4661,7 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                 for (let x = 0; x < CH_S; x = (x + 1) | 0) {
                     const cellIdx = rowOff | x;
                     const vIdx = y | zShift | (x << 12);
-                    const raw = (hasPistonAnim && PistonAnimator.isCoordHidden(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) ? 0 : voxelData[vIdx];
+                    const raw = (hasPistonAnim && isHiddenAnim(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) ? 0 : voxelData[vIdx];
                     const type = getRawBlockId(raw);
                     const meta = getRawLocalState(raw);
 
@@ -4370,23 +4695,24 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                 }
             }
 
-            if (hasPos) runGreedySlice(_greedyMaskPos, CH_S, CH_S, 2, y);
-            if (hasNeg) runGreedySlice(_greedyMaskNeg, CH_S, CH_S, 3, y);
+            if (hasPos) runGreedySlice(_greedyMaskPos, CH_S, CH_S, 2, y, 0);
+            if (hasNeg) runGreedySlice(_greedyMaskNeg, CH_S, CH_S, 3, y, 0);
         }
 
-        // 1-B. X軸スライス（+X: 0 / -X: 1）
-        const vSizeXZ = chunkMaxY + 1;
+        // 1-B. X軸スライス
+        const vSizeXZ = secMaxY - secMinY + 1;
         for (let x = 0; x < CH_S; x = (x + 1) | 0) {
             let hasPos = false;
             let hasNeg = false;
             const xShift = x << 12;
 
-            for (let y = 0; y <= chunkMaxY; y = (y + 1) | 0) {
-                const rowOff = y << 4;
+            for (let ly = 0; ly < vSizeXZ; ly = (ly + 1) | 0) {
+                const y = secMinY + ly;
+                const rowOff = ly << 4;
                 for (let z = 0; z < CH_S; z = (z + 1) | 0) {
                     const cellIdx = rowOff | z;
                     const vIdx = y | (z << 8) | xShift;
-                    const raw = (hasPistonAnim && PistonAnimator.isCoordHidden(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) ? 0 : voxelData[vIdx];
+                    const raw = (hasPistonAnim && isHiddenAnim(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) ? 0 : voxelData[vIdx];
                     const type = getRawBlockId(raw);
                     const meta = getRawLocalState(raw);
 
@@ -4420,22 +4746,23 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                 }
             }
 
-            if (hasPos) runGreedySlice(_greedyMaskPos, CH_S, vSizeXZ, 0, x);
-            if (hasNeg) runGreedySlice(_greedyMaskNeg, CH_S, vSizeXZ, 1, x);
+            if (hasPos) runGreedySlice(_greedyMaskPos, CH_S, vSizeXZ, 0, x, secMinY);
+            if (hasNeg) runGreedySlice(_greedyMaskNeg, CH_S, vSizeXZ, 1, x, secMinY);
         }
 
-        // 1-C. Z軸スライス（+Z: 4 / -Z: 5）
+        // 1-C. Z軸スライス
         for (let z = 0; z < CH_S; z = (z + 1) | 0) {
             let hasPos = false;
             let hasNeg = false;
             const zShift = z << 8;
 
-            for (let y = 0; y <= chunkMaxY; y = (y + 1) | 0) {
-                const rowOff = y << 4;
+            for (let ly = 0; ly < vSizeXZ; ly = (ly + 1) | 0) {
+                const y = secMinY + ly;
+                const rowOff = ly << 4;
                 for (let x = 0; x < CH_S; x = (x + 1) | 0) {
                     const cellIdx = rowOff | x;
                     const vIdx = y | zShift | (x << 12);
-                    const raw = (hasPistonAnim && PistonAnimator.isCoordHidden(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) ? 0 : voxelData[vIdx];
+                    const raw = (hasPistonAnim && isHiddenAnim(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) ? 0 : voxelData[vIdx];
                     const type = getRawBlockId(raw);
                     const meta = getRawLocalState(raw);
 
@@ -4469,35 +4796,33 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                 }
             }
 
-            if (hasPos) runGreedySlice(_greedyMaskPos, CH_S, vSizeXZ, 4, z);
-            if (hasNeg) runGreedySlice(_greedyMaskNeg, CH_S, vSizeXZ, 5, z);
+            if (hasPos) runGreedySlice(_greedyMaskPos, CH_S, vSizeXZ, 4, z, secMinY);
+            if (hasNeg) runGreedySlice(_greedyMaskNeg, CH_S, vSizeXZ, 5, z, secMinY);
         }
     }
 
-    // =========================================================================
-    // PASS 2: カスタム形状（事前ベイク直書き）＆ 横向き原木（ゼロGC直書き）
-    // =========================================================================
+    // PASS 2: カスタム形状＆横向き原木（このセクション内のみ）
     for (let x = 0; x < CH_S; x = (x + 1) | 0) {
         const wx = baseX + x;
         const xOff = x << 12;
         const xCol = x << 4;
 
         for (let z = 0; z < CH_S; z = (z + 1) | 0) {
-            const colMax = _chunkColMaxY[xCol | z];
+            const colMax = _secColMaxY[xCol | z];
             if (colMax < 0) continue;
+            const colMin = _secColMinY[xCol | z];
 
             const wz = baseZ + z;
             const colBase = xOff | (z << 8);
 
-            for (let y = 0; y <= colMax; y = (y + 1) | 0) {
+            for (let y = colMin; y <= colMax; y = (y + 1) | 0) {
                 const vIdx = colBase | y;
-                const raw = (hasPistonAnim && PistonAnimator.isCoordHidden(wx, BEDROCK_LEVEL + y, wz)) ? 0 : voxelData[vIdx];
+                const raw = (hasPistonAnim && isHiddenAnim(wx, BEDROCK_LEVEL + y, wz)) ? 0 : voxelData[vIdx];
                 if (raw === 0) continue;
 
                 const type = getRawBlockId(raw);
                 const meta = getRawLocalState(raw);
 
-                // 2-A. カスタム形状（水・溶岩・草花・階段・スラブ・フェンス・板ガラス・カーペット・ハシゴ）
                 if (_isCustomGeometryBlock[type] === 1) {
                     const cfg = _blockConfigFastArray[type];
                     if (!cfg) continue;
@@ -4508,7 +4833,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                     const aboveType = (y < 255) ? getRawBlockId(voxelData[vIdx + 1]) : 0;
                     let visMask = 63;
 
-                    // 水・溶岩など隣接カリング対象のみ6近傍チェックし、段差側面ギャップと未ロード境界壁を正しく制御
                     if (cullAdj) {
                         const myOp = _isOpaqueBlock[type];
                         const myCs = _cullSameBlock[type];
@@ -4624,7 +4948,6 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
                     continue;
                 }
 
-                // 2-B. 横向き原木（X軸・Z軸回転の LOG_OAK）
                 if (_isLogBlock[type] === 1 && meta !== 0 && !useInstancing) {
                     const myOp = _isOpaqueBlock[type];
                     const myCs = _cullSameBlock[type];
@@ -4698,35 +5021,68 @@ function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn 
         }
     }
 
-    // =========================================================================
-    // PASS 3: 単一統合メッシュ構築（不透明/Cutout 1メッシュ ＋ 水 1メッシュ）
-    // =========================================================================
-    const opaqueMesh = buildCombinedMeshFromBatches(_opaqueBatchMap, 0, useFadeIn, baseX, baseZ, chunkMaxY);
-    const waterMesh = buildCombinedMeshFromBatches(_waterBatchMap, 10, useFadeIn, baseX, baseZ, chunkMaxY);
+    // PASS 3: セクション統合メッシュ構築
+    const opaqueMesh = buildCombinedMeshFromBatches(_opaqueBatchMap, 0, useFadeIn, baseX, baseZ, secMaxY, secMinY);
+    const waterMesh = buildCombinedMeshFromBatches(_waterBatchMap, 10, useFadeIn, baseX, baseZ, secMaxY, secMinY);
 
-    // スクラッチバッチをプールへ即返却（次チャンクでゼロGC再利用）
     releaseBatchMap(_opaqueBatchMap);
     releaseBatchMap(_waterBatchMap);
 
-    if (opaqueMesh) {
-        container.add(opaqueMesh);
-        container.userData.opaqueMesh = opaqueMesh;
-    }
-    if (waterMesh) {
-        container.add(waterMesh);
-        container.userData.waterMesh = waterMesh;
-    }
+    if (!opaqueMesh && !waterMesh) return null;
 
-    // 精密 AABB フラスタムカリング用ボックスをコンテナへ保持し、毎フレームの行列再計算を無効化
-    const boxMaxY = (chunkMaxY + 1) < CH_H ? (chunkMaxY + 1) : CH_H;
-    container.userData.boundingBox = new THREE.Box3(
-        new THREE.Vector3(baseX, 0, baseZ),
+    const secGroup = new THREE.Object3D();
+    secGroup.userData.sy = sy;
+    if (opaqueMesh) secGroup.add(opaqueMesh);
+    if (waterMesh) secGroup.add(waterMesh);
+
+    const boxMinY = BEDROCK_LEVEL + secMinY;
+    const boxMaxY = BEDROCK_LEVEL + ((secMaxY + 1) < CH_H ? (secMaxY + 1) : CH_H);
+    secGroup.userData.boundingBox = new THREE.Box3(
+        new THREE.Vector3(baseX, boxMinY, baseZ),
         new THREE.Vector3(baseX + CH_S, boxMaxY, baseZ + CH_S)
     );
+    secGroup.matrixAutoUpdate = false;
+    secGroup.updateMatrix();
+    secGroup.updateMatrixWorld(true);
+    return secGroup;
+}
+
+function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn = false) {
+    const container = new THREE.Object3D();
+    container.userData.cx = cx;
+    container.userData.cz = cz;
+    const sections = new Array(SECTIONS_PER_CHUNK).fill(null);
+    container.userData.sections = sections;
+
+    const chunkKey = encodeChunkKey(cx, cz);
+    let voxelData = ChunkSaveManager.modifiedChunks.get(chunkKey);
+    let isNewChunk = false;
+
+    if (!voxelData || !ChunkSaveManager.decoratedChunks.has(chunkKey)) {
+        voxelData = ChunkSaveManager.captureBaseChunkData(cx, cz);
+        isNewChunk = true;
+    }
+
+    let lightMap = chunkLightCache.get(chunkKey);
+    if (!lightMap || isNewChunk) {
+        lightMap = generateChunkLightMap(chunkKey, voxelData);
+    }
+
+    container.userData.missingNeighborMask = populateChunkBoundaryView(cx, cz, voxelData, lightMap);
+
+    for (let sy = 0; sy < SECTIONS_PER_CHUNK; sy++) {
+        const secGroup = buildChunkSectionMesh(cx, cz, sy, voxelData, lightMap, useInstancing, useFadeIn);
+        if (secGroup) {
+            container.add(secGroup);
+            sections[sy] = secGroup;
+            chunkUpdatesInSecond++;
+        }
+    }
+
+    recomputeChunkBoundingBox(container);
     container.matrixAutoUpdate = false;
     container.updateMatrix();
     container.updateMatrixWorld(true);
-
     return container;
 }
 
@@ -4807,32 +5163,35 @@ function getChunkCoord(val) {
     return Math.floor(val) >> 4;
 }
 
-const _refreshedSetTmp = new Set();
+const _refreshedMaskTmp = new Map();
 const _dirtyLightCoordTmp = { cx: 0, cz: 0 };
 
 function updateAffectedChunks(blockPos, forceImmediate = false, dirtyLightChunks = null) {
     const bx = Math.floor(blockPos.x);
+    const by = Math.floor(blockPos.y);
     const bz = Math.floor(blockPos.z);
     const cx = bx >> 4;
     const cz = bz >> 4;
     const lx = bx & 15;
     const lz = bz & 15;
 
+    const baseSyMask = getSectionMaskForY(by) || 0xFFFF;
     const centerKey = encodeChunkKey(cx, cz);
-    _refreshedSetTmp.clear();
+    _refreshedMaskTmp.clear();
 
-    // フォールバック: dirtyLightChunks が渡されなかった場合のみ中心チャンクのライトマップを保証
     if (dirtyLightChunks === null && !chunkLightCache.has(centerKey)) {
         const centerVoxel = ChunkSaveManager.modifiedChunks.get(centerKey) ||
             ChunkSaveManager.captureBaseChunkData(cx, cz);
         if (centerVoxel) generateChunkLightMap(centerKey, centerVoxel);
     }
 
-    // 1. 中心チャンクは即座にメッシュ再構築（ライトは既にインクリメンタル更新済み）
-    refreshChunkAt(cx, cz);
-    _refreshedSetTmp.add(centerKey);
+    // 1. 中心チャンクの対象 16x16x16 セクションを即時再構築
+    const centerLightMask = (dirtyLightChunks instanceof Map) ? (dirtyLightChunks.get(centerKey) || 0) : 0;
+    const centerMask = baseSyMask | centerLightMask;
+    refreshChunkSections(cx, cz, centerMask);
+    _refreshedMaskTmp.set(centerKey, centerMask);
 
-    // 2. 厳密に辺・角で接触している隣接チャンクを即時リビルド（面カリング・フェンス接続・境界照明反映）
+    // 2. 辺・角で接触している隣接チャンクの該当セクションを即時再構築
     for (let dx = -1; dx <= 1; dx++) {
         for (let dz = -1; dz <= 1; dz++) {
             if (dx === 0 && dz === 0) continue;
@@ -4844,24 +5203,40 @@ function updateAffectedChunks(blockPos, forceImmediate = false, dirtyLightChunks
             const nCx = cx + dx;
             const nCz = cz + dz;
             const nKey = encodeChunkKey(nCx, nCz);
-            if (!loadedChunks.has(nKey) || _refreshedSetTmp.has(nKey)) continue;
+            if (!loadedChunks.has(nKey)) continue;
 
-            refreshChunkAt(nCx, nCz);
-            _refreshedSetTmp.add(nKey);
+            const nLightMask = (dirtyLightChunks instanceof Map) ? (dirtyLightChunks.get(nKey) || 0) : 0;
+            const nMask = (baseSyMask | nLightMask) & ~(_refreshedMaskTmp.get(nKey) || 0);
+            if (nMask === 0) continue;
+
+            refreshChunkSections(nCx, nCz, nMask);
+            _refreshedMaskTmp.set(nKey, (_refreshedMaskTmp.get(nKey) || 0) | nMask);
         }
     }
 
-    // 3. インクリメンタル光源更新で光が変わった他のチャンク（境界越し光源など）をメッシュのみ再構築
+    // 3. 光源変化が及んだ他セクションのみを再構築
     if (dirtyLightChunks && dirtyLightChunks.size > 0) {
-        for (const dKey of dirtyLightChunks) {
-            if (_refreshedSetTmp.has(dKey) || !loadedChunks.has(dKey)) continue;
-            decodeChunkKey(dKey, _dirtyLightCoordTmp);
-            if (forceImmediate) {
-                refreshChunkAt(_dirtyLightCoordTmp.cx, _dirtyLightCoordTmp.cz);
-            } else {
-                requestChunkUpdate(_dirtyLightCoordTmp.cx, _dirtyLightCoordTmp.cz);
+        if (dirtyLightChunks instanceof Map) {
+            for (const [dKey, dMask] of dirtyLightChunks.entries()) {
+                if (!loadedChunks.has(dKey)) continue;
+                const remMask = dMask & ~(_refreshedMaskTmp.get(dKey) || 0);
+                if (remMask === 0) continue;
+                if (forceImmediate) {
+                    decodeChunkKey(dKey, _dirtyLightCoordTmp);
+                    refreshChunkSections(_dirtyLightCoordTmp.cx, _dirtyLightCoordTmp.cz, remMask);
+                } else {
+                    requestChunkUpdateMaskByKey(dKey, remMask);
+                }
+                _refreshedMaskTmp.set(dKey, (_refreshedMaskTmp.get(dKey) || 0) | remMask);
             }
-            _refreshedSetTmp.add(dKey);
+        } else {
+            for (const dKey of dirtyLightChunks) {
+                if (_refreshedMaskTmp.has(dKey) || !loadedChunks.has(dKey)) continue;
+                decodeChunkKey(dKey, _dirtyLightCoordTmp);
+                if (forceImmediate) refreshChunkAt(_dirtyLightCoordTmp.cx, _dirtyLightCoordTmp.cz);
+                else requestChunkUpdate(_dirtyLightCoordTmp.cx, _dirtyLightCoordTmp.cz);
+                _refreshedMaskTmp.set(dKey, 0xFFFF);
+            }
         }
     }
 }
@@ -5207,7 +5582,7 @@ function setWorldBlock(wx, wy, wz, newRaw, options = null) {
                 notifyNeighborsNC(pos.x, pos.y, pos.z);
                 if (notifyRedstone) RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z, pos.oldRaw || 0);
                 if (notifyFluid) FluidEngine.onBlockChanged(pos.x, pos.y, pos.z);
-                requestChunkUpdate(pos.x >> 4, pos.z >> 4);
+                requestBlockSectionUpdate(pos.x, pos.y, pos.z);
             }
         } finally {
             _blockUpdateDepth--;
@@ -5249,7 +5624,7 @@ function notifyWorldBlockChanged(wx, wy, wz, oldRaw = 0, newRaw = null) {
                 notifyNeighborsNC(pos.x, pos.y, pos.z);
                 RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z, pos.oldRaw || 0);
                 FluidEngine.onBlockChanged(pos.x, pos.y, pos.z);
-                requestChunkUpdate(pos.x >> 4, pos.z >> 4);
+                requestBlockSectionUpdate(pos.x, pos.y, pos.z);
             }
         } finally {
             _blockUpdateDepth--;
@@ -5261,15 +5636,13 @@ function notifyWorldBlockChanged(wx, wy, wz, oldRaw = 0, newRaw = null) {
  * ブロック設置・破壊後に自身および周囲6近傍の接続同期・支持チェック・宣言的 onNeighborChange を一括処理する
  * @returns {Array<{x: number, y: number, z: number}>} 追加でチャンク更新が必要になった座標リスト
  */
-const _cascadeLightDirtySet = new Set();
-const _cascadeLightCoordTmp = { cx: 0, cz: 0 };
+const _cascadeLightDirtySet = new Map();
 
 function flushCascadeLightUpdates() {
     if (_cascadeLightDirtySet.size === 0) return;
-    for (const dKey of _cascadeLightDirtySet) {
+    for (const [dKey, dMask] of _cascadeLightDirtySet.entries()) {
         if (loadedChunks.has(dKey)) {
-            decodeChunkKey(dKey, _cascadeLightCoordTmp);
-            requestChunkUpdate(_cascadeLightCoordTmp.cx, _cascadeLightCoordTmp.cz);
+            requestChunkUpdateMaskByKey(dKey, dMask);
         }
     }
     _cascadeLightDirtySet.clear();
@@ -5329,7 +5702,7 @@ function updateNeighborBlockStates(originX, originY, originZ, outLightDirty = _l
         }
 
         // 2. 支持依存ブロック（ハシゴ・カーペット・植物等）が支持を失っていれば破壊して周囲へ連鎖
-        if (isSupportDependentBlock(id) && !canPlaceBlockAt(id, meta, wx, wy, wz, _getBlockIdForPlacement)) {
+        if (isSupportDependentBlock(id) && !canPlaceBlockAt(id, meta, wx, wy, wz, _getBlockIdForPlacement, _getRawForPlacement)) {
             const cx = wx >> 4;
             const cz = wz >> 4;
             _particleCenterTmp.set(wx + 0.5, wy + 0.5, wz + 0.5);
@@ -5594,7 +5967,7 @@ function interactWithBlock(action) {
         }
 
         // 2) 支持条件（壁面・土壌・下面）チェック
-        if (!canPlaceBlockAt(activeBlockType, meta, bx, by, bz, _getBlockIdForPlacement)) return;
+        if (!canPlaceBlockAt(activeBlockType, meta, bx, by, bz, _getBlockIdForPlacement, _getRawForPlacement)) return;
 
         // 3) 実形状＋メタデータ適用済み衝突ボックスによるプレイヤー干渉判定
         if (newBlockCfg.collision !== false && playerBox) {
@@ -5652,8 +6025,6 @@ function interactWithBlock(action) {
     FluidEngine.onBlockChanged(bx, by, bz);
 
     // --- 6. チャンク・UI更新（光が変わった全チャンクを含め重複なしで再構築） ---
-    _updatedChunkSetTmp.clear();
-    _updatedChunkSetTmp.add(encodeChunkKey(cx, cz));
     updateAffectedChunks({ x: bx, y: by, z: bz }, false, _lightDirtySet);
 
     for (let i = 0; i < extraCoords.length; i++) {
@@ -5662,11 +6033,7 @@ function interactWithBlock(action) {
         notifyNeighborsNC(pos.x, pos.y, pos.z);
         RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z, pos.oldRaw || 0);
         FluidEngine.onBlockChanged(pos.x, pos.y, pos.z);
-        const eKey = encodeChunkKey(pos.x >> 4, pos.z >> 4);
-        if (!_updatedChunkSetTmp.has(eKey)) {
-            _updatedChunkSetTmp.add(eKey);
-            updateAffectedChunks(pos, false, _lightDirtySet);
-        }
+        updateAffectedChunks(pos, false, null);
     }
 
     updateTargetBlockDisplay(true);
@@ -7013,6 +7380,8 @@ let isInsideWorldTick = false;
 let isHandlingScheduledTicks = false;
 let ticksInSecond = 0;
 let measuredTps = WORLD_TPS;
+let chunkUpdatesInSecond = 0;
+let measuredChunkUpdates = 0;
 
 // タイマー管理用
 let chunkUpdateFrameTimer = 0;
@@ -7025,7 +7394,7 @@ const _tempVec3 = new THREE.Vector3();
 const _interpPlayerPos = new THREE.Vector3();
 const _chunkFrustum = new THREE.Frustum();
 const _projScreenMatrix = new THREE.Matrix4();
-const _tickLightDirtySet = new Set();
+const _tickLightDirtySet = new Map();
 const _tickDirtyCoordTmp = { cx: 0, cz: 0 };
 
 /**
@@ -7349,8 +7718,11 @@ const ContainerUI = createContainerUI({
         slotEl.appendChild(preview);
         updateHotbarSelection();
     },
-    onOpenChanged: (opened) => {
+    onOpenChanged: (opened, be) => {
         isContainerOpen = opened;
+        if (be && be.type === "minecraft:chest") {
+            ChestAnimator.setOpen(be.x, be.y, be.z, opened);
+        }
         if (opened) {
             releaseAllActiveInputs();
             if (document.pointerLockElement && document.exitPointerLock) {
@@ -7359,6 +7731,9 @@ const ContainerUI = createContainerUI({
         } else if (!isPaused && !isInventoryOpen && renderer && renderer.domElement.requestPointerLock) {
             renderer.domElement.requestPointerLock();
         }
+    },
+    onContainerModified: (be) => {
+        if (be) RedstoneEngine.onBlockChanged(be.x, be.y, be.z);
     },
     addChatMessage
 });
@@ -7370,6 +7745,9 @@ const BlockEntityManager = createBlockEntityManager({
     setBlockStateProp,
     onMessage: (text, color) => {
         if (typeof addChatMessage === "function") addChatMessage(text, color);
+    },
+    onInventoryChanged: (wx, wy, wz) => {
+        RedstoneEngine.onBlockChanged(wx, wy, wz);
     }
 });
 
@@ -7387,6 +7765,17 @@ const PistonAnimator = createPistonAnimator({
     blockTypes: BLOCK_TYPES
 });
 registerPistonAnimator(PistonAnimator.onPistonAction);
+
+const ChestAnimator = createChestAnimator({
+    scene,
+    getWorldRawLoaded: _getWorldRawLoaded,
+    getBlockMaterialsFast,
+    getTransformMeta,
+    getWorldLightCell: _getWorldLightCell,
+    lightLevelFactors: LIGHT_LEVEL_FACTORS,
+    requestBlockSectionUpdate,
+    blockTypes: BLOCK_TYPES
+});
 
 function isPlayerSteppingOnBlock(wx, wy, wz) {
     if (!player) return false;
@@ -7420,6 +7809,9 @@ const RedstoneEngine = createRedstoneEngine({
     tickScheduler: TickScheduler,
     getCurrentTick: () => worldTickCount,
     isEntityOnBlock: isAnyEntityOnBlock,
+    getBlockEntity: (wx, wy, wz) => BlockEntityManager.get(wx, wy, wz),
+    ensureBlockEntity: (wx, wy, wz, typeId) => BlockEntityManager.get(wx, wy, wz) || BlockEntityManager.create(wx, wy, wz, typeId),
+    getContainerAnalogSignal: (wx, wy, wz) => BlockEntityManager.getAnalogSignal(wx, wy, wz),
     onTorchBurnout: (wx, wy, wz) => {
         _burnoutParticleVec.set(wx + 0.5, wy + 0.65, wz + 0.5);
         createMinecraftBreakParticles(_burnoutParticleVec, BLOCK_TYPES.REDSTONE_TORCH, 0.6);
@@ -7489,16 +7881,11 @@ function setBlockFromWorldTick(wx, wy, wz, newRaw, forcePersist = false, emitPP 
     _tickLightDirtySet.clear();
     updateLightAtBlockChange(wx, wy, wz, oldRaw, packed, _tickLightDirtySet);
 
-    requestChunkUpdate(cx, cz);
-    if (lx === 0) requestChunkUpdate(cx - 1, cz);
-    else if (lx === 15) requestChunkUpdate(cx + 1, cz);
-    if (lz === 0) requestChunkUpdate(cx, cz - 1);
-    else if (lz === 15) requestChunkUpdate(cx, cz + 1);
+    requestBlockSectionUpdate(wx, wy, wz);
 
-    for (const dKey of _tickLightDirtySet) {
-        if (dKey !== key && loadedChunks.has(dKey)) {
-            decodeChunkKey(dKey, _tickDirtyCoordTmp);
-            requestChunkUpdate(_tickDirtyCoordTmp.cx, _tickDirtyCoordTmp.cz);
+    for (const [dKey, dMask] of _tickLightDirtySet.entries()) {
+        if (loadedChunks.has(dKey)) {
+            requestChunkUpdateMaskByKey(dKey, dMask);
         }
     }
 
@@ -7755,7 +8142,19 @@ function updateChunkFrustumCulling() {
 
     for (const chunk of loadedChunks.values()) {
         const bbox = chunk.userData.boundingBox;
-        chunk.visible = bbox ? _chunkFrustum.intersectsBox(bbox) : true;
+        const colVisible = bbox ? _chunkFrustum.intersectsBox(bbox) : false;
+        chunk.visible = colVisible;
+        if (!colVisible) continue;
+
+        const sections = chunk.userData.sections;
+        if (sections) {
+            for (let sy = 0; sy < SECTIONS_PER_CHUNK; sy++) {
+                const sec = sections[sy];
+                if (!sec) continue;
+                const sbox = sec.userData.boundingBox;
+                sec.visible = sbox ? _chunkFrustum.intersectsBox(sbox) : true;
+            }
+        }
     }
 }
 
@@ -7832,6 +8231,7 @@ function animate() {
         updateBlockParticles(delta);
         updateCloudTiles(delta);
         PistonAnimator.update(delta);
+        ChestAnimator.update(delta);
     } else {
         // ポーズ中は残余アキュムレータを破棄し、再開時のワープを防止
         physicsAccumulator = 0;
@@ -7856,7 +8256,8 @@ function animate() {
         const fps = Math.round(frameCount / elapsedSec);
         measuredTps = isPaused ? 0 : Math.min(WORLD_TPS, Math.round((ticksInSecond / elapsedSec) * 10) / 10);
 
-        const activeUpdates = pendingChunkUpdates.size + chunkQueue.length;
+        measuredChunkUpdates = chunkUpdatesInSecond;
+        const queuedUpdates = pendingChunkUpdates.size + chunkQueue.length + chunkUpdateLookup.size + TerrainWorkerPool.pendingCount;
         const editedCount = ChunkSaveManager.playerModifiedKeys.size;
         const unsavedCount = ChunkSaveManager.dirtySaveKeys.size;
         const cachedChunkCount = ChunkSaveManager.modifiedChunks.size;
@@ -7877,7 +8278,7 @@ function animate() {
         <b>Minecraft test 0.0.1</b><br>
         Seed: ${currentSeed}<br>
         Time: ${getGameClock(gameTime)} (${Math.floor(gameTime)} ticks)<br>
-        ${fps} fps, ${measuredTps.toFixed(1)} tps, ${activeUpdates} chunks update<br>
+       ${fps} fps, ${measuredTps.toFixed(1)} tps, ${measuredChunkUpdates} chunk updates (${queuedUpdates} queued)<br>
         <b>Draw calls: ${drawCalls}</b> (Tri: ${triangles.toLocaleString()})<br>
         ${editedCount} edited chunks (${unsavedCount} unsaved / ${cachedChunkCount} cached)<br>
         C: ${loadedChunks.size} loaded. (Quality: ${CHUNK_VISIBLE_DISTANCE})<br>
@@ -7894,6 +8295,7 @@ function animate() {
 
         frameCount = 0;
         ticksInSecond = 0;
+        chunkUpdatesInSecond = 0;
         lastFpsTime = now;
     }
 
@@ -8273,12 +8675,14 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
 
     // --- 1. シード値とキャッシュ・ワールド所有権・データの適用 ---
     applySeed(seed);
+    TerrainWorkerPool.reset(currentSeed);
     chunkLightCache.clear();
     chunkReadOnlyCache.clear();
     pendingChunkUpdates.clear();
     chunkUpdateQueue.length = 0;
     chunkUpdateIdx = 0;
     chunkUpdateLookup.clear();
+    chunkUpdateMasks.clear();
     chunkQueue.length = 0;
     chunkUnloadQueue.length = 0;
     chunkUnloadLookup.clear();
@@ -8314,6 +8718,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     BlockEntityManager.clear();
     PistonEngine.clear();
     PistonAnimator.clear();
+    ChestAnimator.clear();
     EntityManager.clear();
     PlayerData.reset();
 
@@ -8322,6 +8727,8 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     physicsAccumulator = 0;
     physicsStepCounter = 0;
     ticksInSecond = 0;
+    chunkUpdatesInSecond = 0;
+    measuredChunkUpdates = 0;
     clock.getDelta();
 
     const startPos = savedPos ? sanitizeSavedPosition(savedPos) : { x: 0, y: 40, z: 0, yaw: 0, pitch: 0 };

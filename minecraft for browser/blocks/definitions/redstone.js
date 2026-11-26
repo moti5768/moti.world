@@ -290,6 +290,63 @@ defineBlocks({
         selectionOffset: { x: 0.5, y: 0.0625, z: 0.5 }
     },
 
+    REDSTONE_COMPARATOR: {
+        name: "redstone_comparator",
+        redstoneRole: "comparator",
+        redstoneConductive: false,
+        redstoneConnectsWire: "all",
+        redstoneDevice: true,
+        blockEntityType: "minecraft:comparator",
+        pistonPushReaction: "destroy",
+        properties: {
+            facing: ['east', 'north', 'west', 'south'],
+            mode: ['compare', 'subtract'],
+            powered: false
+        },
+        interactCycle: "mode",
+        placementRule: "facing_horizontal",
+        supportRule: "floor_opaque",
+        shapeMode: "raw",
+        geometryType: "comparator",
+        alphaCutout: true,
+        textures: {
+            top: "textures/blocks/comparator_off.png",
+            side: "textures/blocks/stone_slab_side.png",
+            bottom: "textures/blocks/stone_slab_top.png",
+            south: "textures/blocks/redstone_torch_off.png",
+            north: "textures/blocks/redstone_torch_on.png"
+        },
+        stateVariants: {
+            "powered=false": {
+                textures: {
+                    top: "textures/blocks/comparator_off.png",
+                    side: "textures/blocks/stone_slab_side.png",
+                    bottom: "textures/blocks/stone_slab_top.png",
+                    south: "textures/blocks/redstone_torch_off.png",
+                    north: "textures/blocks/redstone_torch_on.png"
+                }
+            },
+            "powered=true": {
+                textures: {
+                    top: "textures/blocks/comparator_on.png",
+                    side: "textures/blocks/stone_slab_side.png",
+                    bottom: "textures/blocks/stone_slab_top.png",
+                    south: "textures/blocks/redstone_torch_off.png",
+                    north: "textures/blocks/redstone_torch_on.png"
+                }
+            }
+        },
+        collision: true,
+        transparent: true,
+        lightOpacity: 0,
+        customCollision: () => getCustomCollision("comparator"),
+        cullAdjacentFaces: false,
+        screenFill: false,
+        hardness: 0.0,
+        selectionSize: { x: 1, y: 0.125, z: 1 },
+        selectionOffset: { x: 0.5, y: 0.0625, z: 0.5 }
+    },
+
     STONE_BUTTON: buttonBlock("stone_button", 20),
     OAK_BUTTON: buttonBlock("oak_button", 30),
     STONE_PRESSURE_PLATE: pressurePlateBlock("stone_pressure_plate", 20),

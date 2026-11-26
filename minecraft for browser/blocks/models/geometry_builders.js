@@ -661,9 +661,188 @@ const GEOMETRY_BUILDERS = {
         const merged = mergeGeometriesPreservingGroups(parts);
         for (let i = 0; i < parts.length; i++) parts[i].dispose();
         return merged;
+    },
+    comparator: (config, meta = 0) => {
+        const hasId = !!(config && typeof config.id === "number");
+        const isPowered = hasId ? !!getBlockStateProp(config.id, meta, "powered") : false;
+        const isSubtract = hasId ? (getBlockStateProp(config.id, meta, "mode") === "subtract") : false;
+
+        // 1. 土台プレート（リピーターと同一の 16x2x16 構造）
+        const base = new THREE.BoxGeometry(1.0, 0.125, 1.0);
+        base.translate(0.5, 0.0625, 0.5);
+
+        const bNorm = base.attributes.normal;
+        const bUv = base.attributes.uv;
+        const bIdx = base.index;
+        base.clearGroups();
+        for (let i = 0; i < bIdx.count; i += 6) {
+            const vi = bIdx.array[i] * 3;
+            const ny = bNorm.array[vi + 1];
+            const matIdx = ny > 0.5 ? 2 : (ny < -0.5 ? 3 : 0);
+            base.addGroup(i, 6, matIdx);
+        }
+        for (let vIdx = 0; vIdx < bUv.count; vIdx++) {
+            const ny = bNorm.getY(vIdx);
+            const u = bUv.getX(vIdx), v = bUv.getY(vIdx);
+            if (ny > 0.5) bUv.setXY(vIdx, 1.0 - v, u);
+            else if (ny > -0.5) bUv.setXY(vIdx, u, v * 0.125);
+        }
+        bUv.needsUpdate = true;
+
+        const parts = [base];
+
+        // matIdx: 4 = redstone_torch_off, 5 = redstone_torch_on
+        // リピーターと同じ 6px 幅透過プレート＋2px 角キャップ方式（赤い発光縁を正しく描画）
+        const addTorchPin = (px, pz, lowered, matIdx, halfThick = 0.0625) => {
+            const capY = lowered ? (4 / 16) : (7 / 16);
+            const planeH = lowered ? (4 / 16) : (7 / 16);
+            const vStart = lowered ? (8 / 16) : (5 / 16);
+            const vSpan = planeH;
+
+            const cap = new THREE.PlaneGeometry(0.125, 0.125);
+            cap.rotateX(-Math.PI / 2);
+            cap.translate(px, capY, pz);
+            const cUv = cap.attributes.uv;
+            for (let i = 0; i < cUv.count; i++) {
+                cUv.setXY(i, (7 / 16) + cUv.getX(i) * (2 / 16), (8 / 16) + cUv.getY(i) * (2 / 16));
+            }
+            cUv.needsUpdate = true;
+            cap.clearGroups();
+            cap.addGroup(0, cap.index.count, matIdx);
+            parts.push(cap);
+
+            const makeSide = (rotY, ox, oz) => {
+                const g = new THREE.PlaneGeometry(6 / 16, planeH);
+                if (rotY !== 0) g.rotateY(rotY);
+                g.translate(px + ox, (2 / 16) + planeH * 0.5, pz + oz);
+                const uv = g.attributes.uv;
+                for (let i = 0; i < uv.count; i++) {
+                    uv.setXY(i, (5 / 16) + uv.getX(i) * (6 / 16), vStart + uv.getY(i) * vSpan);
+                }
+                uv.needsUpdate = true;
+                g.clearGroups();
+                g.addGroup(0, g.index.count, matIdx);
+                return g;
+            };
+
+            parts.push(
+                makeSide(0, 0, halfThick),
+                makeSide(Math.PI, 0, -halfThick),
+                makeSide(Math.PI / 2, halfThick, 0),
+                makeSide(-Math.PI / 2, -halfThick, 0)
+            );
+        };
+
+        // 背面トーチ2本（Java Edition comparator.json: 入力側 X=4/16, Z=5/16・11/16）
+        const rearMat = isPowered ? 5 : 4;
+        addTorchPin(4 / 16, 5 / 16, false, rearMat, 0.0625);
+        addTorchPin(4 / 16, 11 / 16, false, rearMat, 0.0626);
+
+        // 前面トーチ1本（Java Edition comparator.json: 出力側 X=13/16, Z=8/16）
+        const frontMat = isSubtract ? 5 : 4;
+        addTorchPin(13 / 16, 8 / 16, !isSubtract, frontMat, 0.0627);
+
+        const merged = mergeGeometriesPreservingGroups(parts);
+        for (let i = 0; i < parts.length; i++) parts[i].dispose();
+        return merged;
+    },
+    chest: () => {
+        const { base, lid, lock } = createRawChestParts();
+        const merged = mergeGeometriesPreservingGroups([base, lid, lock]);
+        base.dispose();
+        lid.dispose();
+        lock.dispose();
+        return merged;
     }
 };
 
+/**
+ * 64x64 エンティティチェストテクスチャ (textures/entity/chest/normal.png) 専用 Box 生成
+ * faceUvs 順: [0:+X(背面), 1:-X(正面), 2:+Y(上面), 3:-Y(底面), 4:+Z(右側面), 5:-Z(左側面)]
+ */
+function createChestUVBox(x1, y1, z1, x2, y2, z2, faceUvs) {
+    const geom = new THREE.BoxGeometry(x2 - x1, y2 - y1, z2 - z1);
+    const uv = geom.attributes.uv;
+    for (let f = 0; f < 6; f++) {
+        const [px0, py0, px1, py1] = faceUvs[f];
+        const u0 = px0 / 64;
+        const u1 = px1 / 64;
+        const vTop = 1.0 - (py0 / 64);
+        const vBot = 1.0 - (py1 / 64);
+        const baseV = f * 4;
+        for (let k = 0; k < 4; k++) {
+            const su = uv.getX(baseV + k);
+            const sv = uv.getY(baseV + k);
+            uv.setXY(baseV + k, u0 + su * (u1 - u0), vBot + sv * (vTop - vBot));
+        }
+    }
+    uv.needsUpdate = true;
+    geom.translate((x1 + x2) * 0.5, (y1 + y2) * 0.5, (z1 + z2) * 0.5);
+    geom.clearGroups();
+    for (let f = 0; f < 6; f++) {
+        geom.addGroup(f * 6, 6, 0);
+    }
+    return geom;
+}
+
+function createRawChestParts() {
+    // 1. 本体 (14x10x14): Zファイティング防止のため X/Z を 0.0005 だけ内側へ
+    const base = createChestUVBox(
+        1 / 16 + 0.0005, 0, 1 / 16 + 0.0005,
+        15 / 16 - 0.0005, 10 / 16, 15 / 16 - 0.0005,
+        [
+            [42, 33, 56, 43], // +X (背面)
+            [14, 33, 28, 43], // -X (正面)
+            [14, 19, 28, 33], // +Y (内底/上面)
+            [28, 19, 42, 33], // -Y (底面)
+            [0, 33, 14, 43],  // +Z (側面)
+            [28, 33, 42, 43]  // -Z (側面)
+        ]
+    );
+    // 2. 蓋 (14x5x14): y = 9/16..14/16
+    const lid = createChestUVBox(
+        1 / 16, 9 / 16, 1 / 16,
+        15 / 16, 14 / 16, 15 / 16,
+        [
+            [42, 14, 56, 19], // +X (背面)
+            [14, 14, 28, 19], // -X (正面)
+            [14, 0, 28, 14],  // +Y (天面)
+            [28, 0, 42, 14],  // -Y (蓋裏)
+            [0, 14, 14, 19],  // +Z (側面)
+            [28, 14, 42, 19]  // -Z (側面)
+        ]
+    );
+    // 3. 留め金 (1x4x2): 正面 -X 側へ 1px 突出
+    const lock = createChestUVBox(
+        0, 7 / 16, 7 / 16,
+        1 / 16, 11 / 16, 9 / 16,
+        [
+            [4, 1, 6, 5], // +X
+            [1, 1, 3, 5], // -X (正面)
+            [1, 0, 3, 1], // +Y
+            [3, 0, 5, 1], // -Y
+            [0, 1, 1, 5], // +Z
+            [3, 1, 4, 5]  // -Z
+        ]
+    );
+    return { base, lid, lock };
+}
+
+/**
+ * チェスト開閉アニメーション用パーツジオメトリ（本体はXZ中央原点、蓋＋留め金は背面ヒンジ原点）
+ */
+export function buildChestPartGeometries() {
+    const { base, lid, lock } = createRawChestParts();
+    base.translate(-0.5, 0, -0.5);
+
+    const lidCombined = mergeGeometriesPreservingGroups([lid, lock]);
+    lid.dispose();
+    lock.dispose();
+    // 背面ヒンジ (15/16, 9/16, 8/16) を回転原点へ移動
+    lidCombined.translate(-15 / 16, -9 / 16, -0.5);
+
+    return { baseGeom: base, lidGeom: lidCombined };
+}
 /**
  * 外部モジュールから新しいカスタムジオメトリ形状ビルダーを登録する拡張API
  */

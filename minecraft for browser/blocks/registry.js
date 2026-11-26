@@ -3,6 +3,7 @@ import {
     MOUNT_SUPPORT_DX, MOUNT_SUPPORT_DY, MOUNT_SUPPORT_DZ,
     STATE_SCHEMAS, getSchemaDefaultState,
     resolveStateSchema, computeTransformMask, normalizeStateValue, compileAndRegisterBlockState,
+    getBlockStateProp, hasBlockStateProp, getRawBlockId, getRawLocalState,
     setBlockStateProp, cycleBlockStateProp
 } from '../blockstate.js';
 import { createBox, getSelectionBoxesForConfig } from './collision.js';
@@ -147,29 +148,80 @@ export function calculatePlacementMeta(blockId, camDir, rawNormal, intersectPoin
     return strategy(cfg, camDir, rawNormal, intersectPoint);
 }
 
+// Java Edition 準拠: 上面支持判定（フル不透明・グロウストーン・上付き/ダブルスラブ・上付き階段）
+function hasFullTopSupport(wx, wy, wz, getBlockIdFn, getRawFn) {
+    if (wy < 0 || wy >= 256) return false;
+    if (typeof getRawFn === "function") {
+        const raw = getRawFn(wx, wy, wz);
+        const id = getRawBlockId(raw);
+        if (id === BLOCK_TYPES.SKY) return false;
+        if (BLOCK_TYPES.GLOWSTONE && id === BLOCK_TYPES.GLOWSTONE) return true;
+        const cfg = blockConfigLookup[id];
+        if (!cfg) return false;
+        if (cfg.isOpaqueCube === true) return true;
+        const state = getRawLocalState(raw);
+        if (cfg.isSlab === true) {
+            if (hasBlockStateProp(id, "type")) {
+                return getBlockStateProp(id, state, "type") !== "bottom";
+            }
+            return ((state >> 2) & 1) !== 0;
+        }
+        if (cfg.isStairs === true && hasBlockStateProp(id, "half")) {
+            return getBlockStateProp(id, state, "half") === "top";
+        }
+        return false;
+    }
+    const supportId = getBlockIdFn(wx, wy, wz) & 0xFFF;
+    const supportCfg = blockConfigLookup[supportId];
+    return !!(supportCfg && supportCfg.isOpaqueCube === true);
+}
+
+// Java Edition 準拠: 側面支持判定（フル不透明・ダブルスラブのみ）
+function hasFullSideSupport(wx, wy, wz, getBlockIdFn, getRawFn) {
+    if (wy < 0 || wy >= 256) return false;
+    if (typeof getRawFn === "function") {
+        const raw = getRawFn(wx, wy, wz);
+        const id = getRawBlockId(raw);
+        if (id === BLOCK_TYPES.SKY) return false;
+        const cfg = blockConfigLookup[id];
+        if (!cfg) return false;
+        if (cfg.isOpaqueCube === true) return true;
+        if (cfg.isSlab === true && hasBlockStateProp(id, "type")) {
+            return getBlockStateProp(id, getRawLocalState(raw), "type") === "double";
+        }
+        return false;
+    }
+    const supportId = getBlockIdFn(wx, wy, wz) & 0xFFF;
+    const supportCfg = blockConfigLookup[supportId];
+    return !!(supportCfg && supportCfg.isOpaqueCube === true);
+}
+
 // --- データ駆動・支持条件バリデータレジストリ ---
 const SUPPORT_VALIDATORS = {
     none: () => true,
-    wall_opaque: (cfg, meta, wx, wy, wz, getBlockIdFn) => {
+    wall_opaque: (cfg, meta, wx, wy, wz, getBlockIdFn, getRawFn) => {
         const dir = meta & 3;
         if (meta < 0 || dir > 3) return false;
-        const supportId = getBlockIdFn(wx + LADDER_SUPPORT_DX[dir], wy, wz + LADDER_SUPPORT_DZ[dir]) & 0xFFF;
-        const supportCfg = blockConfigLookup[supportId];
-        return !!(supportCfg && supportCfg.isOpaqueCube === true);
+        return hasFullSideSupport(
+            wx + LADDER_SUPPORT_DX[dir], wy, wz + LADDER_SUPPORT_DZ[dir],
+            getBlockIdFn, getRawFn
+        );
     },
-    mount_opaque: (cfg, meta, wx, wy, wz, getBlockIdFn) => {
+    mount_opaque: (cfg, meta, wx, wy, wz, getBlockIdFn, getRawFn) => {
         const mount = meta & 7;
         if (meta < 0 || mount > 4) return false;
+        const sx = wx + MOUNT_SUPPORT_DX[mount];
         const sy = wy + MOUNT_SUPPORT_DY[mount];
+        const sz = wz + MOUNT_SUPPORT_DZ[mount];
         if (sy < 0 || sy >= 256) return false;
-        const supportId = getBlockIdFn(wx + MOUNT_SUPPORT_DX[mount], sy, wz + MOUNT_SUPPORT_DZ[mount]) & 0xFFF;
-        const supportCfg = blockConfigLookup[supportId];
-        return !!(supportCfg && supportCfg.isOpaqueCube === true);
+        if (mount === 0) {
+            return hasFullTopSupport(sx, sy, sz, getBlockIdFn, getRawFn);
+        }
+        return hasFullSideSupport(sx, sy, sz, getBlockIdFn, getRawFn);
     },
-    floor_opaque: (cfg, meta, wx, wy, wz, getBlockIdFn) => {
+    floor_opaque: (cfg, meta, wx, wy, wz, getBlockIdFn, getRawFn) => {
         if (wy <= 0) return false;
-        const belowCfg = blockConfigLookup[getBlockIdFn(wx, wy - 1, wz) & 0xFFF];
-        return !!(belowCfg && belowCfg.isOpaqueCube === true);
+        return hasFullTopSupport(wx, wy - 1, wz, getBlockIdFn, getRawFn);
     },
     floor_non_liquid: (cfg, meta, wx, wy, wz, getBlockIdFn) => {
         if (wy <= 0) return false;
@@ -200,16 +252,16 @@ export function isSupportDependentBlock(blockId) {
     return !!(cfg.supportRule && cfg.supportRule !== "none") || typeof cfg.canSurvive === "function";
 }
 
-export function canPlaceBlockAt(blockId, meta, wx, wy, wz, getBlockIdFn) {
+export function canPlaceBlockAt(blockId, meta, wx, wy, wz, getBlockIdFn, getRawFn = null) {
     if (wy < 0 || wy >= 256) return false;
     const cfg = blockConfigLookup[blockId & 0xFFF];
     if (!cfg || blockId === BLOCK_TYPES.SKY) return false;
 
     if (typeof cfg.canSurvive === "function") {
-        return !!cfg.canSurvive(cfg, meta, wx, wy, wz, getBlockIdFn);
+        return !!cfg.canSurvive(cfg, meta, wx, wy, wz, getBlockIdFn, getRawFn);
     }
     const validator = SUPPORT_VALIDATORS[cfg.supportRule || "none"];
-    return validator ? validator(cfg, meta, wx, wy, wz, getBlockIdFn) : true;
+    return validator ? validator(cfg, meta, wx, wy, wz, getBlockIdFn, getRawFn) : true;
 }
 
 // ── 共通デフォルト設定 ──

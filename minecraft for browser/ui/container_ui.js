@@ -172,6 +172,7 @@ export function createContainerUI(deps) {
         getHotbarKeys,
         setHotbarSlotKey,
         onOpenChanged = null,
+        onContainerModified = null,
         addChatMessage = null
     } = deps;
 
@@ -197,29 +198,51 @@ export function createContainerUI(deps) {
 
     let activeBE = null;
     let isOpen = false;
-    let lastRenderHash = "";
+    let lastItemsHash = "";
+    let lastProgressHash = "";
+    let chestRefs = null;
+    let furnaceRefs = null;
+    let hotbarSlotEls = [];
+    let lastHotbarSig = "";
 
     // モーダル外側クリックで閉じる
     backdrop.addEventListener("mousedown", (e) => {
         if (e.target === backdrop) close();
     });
 
+    // コンテナを開いた直後の右クリック解放・モーダル上でのブラウザ標準メニュー表示を防止
+    backdrop.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+    });
+
     async function renderSlotIcon(slotEl, blockKey, count) {
-        slotEl.innerHTML = "";
-        if (!blockKey || count <= 0) {
+        const sig = (blockKey && count > 0) ? `${blockKey}:${count}` : "";
+        if (slotEl.dataset.renderSig === sig) return;
+        slotEl.dataset.renderSig = sig;
+
+        const token = ((Number(slotEl.dataset.renderTok) || 0) + 1);
+        slotEl.dataset.renderTok = String(token);
+
+        if (!sig) {
+            slotEl.innerHTML = "";
             slotEl.title = "";
             return;
         }
+
         const id = keyToId(blockKey);
         const cfg = getBlockConfiguration(id);
-        slotEl.title = cfg ? `${cfg.name} x${count}` : `${blockKey} x${count}`;
-
+        let canvas = null;
         if (cfg && typeof createPreview === "function") {
             try {
-                const canvas = await createPreview(cfg);
-                if (canvas) slotEl.appendChild(canvas);
+                canvas = await createPreview(cfg);
             } catch (e) { }
         }
+        // 非同期完了時にすでに別の内容へ更新されていれば破棄（点滅・逆転防止）
+        if (Number(slotEl.dataset.renderTok) !== token) return;
+
+        slotEl.title = cfg ? `${cfg.name} x${count}` : `${blockKey} x${count}`;
+        slotEl.innerHTML = "";
+        if (canvas) slotEl.appendChild(canvas);
         if (count > 1) {
             const badge = document.createElement("span");
             badge.className = "mc-slot-count";
@@ -240,7 +263,36 @@ export function createContainerUI(deps) {
         }
     }
 
-    function renderChestUI(be) {
+    function syncHotbarSlotsDOM() {
+        if (hotbarSlotEls.length !== 9) return;
+        const hotbarKeys = getHotbarKeys();
+        const sig = hotbarKeys.join(",");
+        if (sig === lastHotbarSig) return;
+        lastHotbarSig = sig;
+        for (let i = 0; i < 9; i++) {
+            const key = hotbarKeys[i];
+            hotbarSlotEls[i].dataset.hotbarKey = key || "";
+            renderSlotIcon(hotbarSlotEls[i], key || "", key ? 1 : 0);
+        }
+    }
+
+    function syncChestDOM(be) {
+        if (!chestRefs) return;
+        const slots = be.data.slots;
+        for (let i = 0; i < 27; i++) {
+            const item = slots[i];
+            if (item && item.key && item.count > 0) {
+                renderSlotIcon(chestRefs.slotEls[i], item.key, item.count);
+            } else {
+                renderSlotIcon(chestRefs.slotEls[i], "", 0);
+            }
+        }
+        syncHotbarSlotsDOM();
+    }
+
+    function buildChestUI(be) {
+        furnaceRefs = null;
+        lastHotbarSig = "";
         panel.innerHTML = `
             <div class="mc-ui-header">
                 <span>チェスト [${be.x}, ${be.y}, ${be.z}]</span>
@@ -255,46 +307,41 @@ export function createContainerUI(deps) {
 
         const chestGrid = panel.querySelector("#mc-chest-grid");
         const slots = be.data.slots;
+        const slotEls = new Array(27);
 
         for (let i = 0; i < 27; i++) {
             const slotEl = document.createElement("div");
             slotEl.className = "mc-slot";
-            const item = slots[i];
-            if (item && item.key && item.count > 0) {
-                renderSlotIcon(slotEl, item.key, item.count);
-            }
             slotEl.addEventListener("click", () => {
                 const cur = slots[i];
                 if (!cur) return;
                 addKeyToHotbarIfMissing(cur.key);
                 cur.count--;
                 if (cur.count <= 0) slots[i] = null;
-                forceRedraw();
+                onUserEdited();
             });
             slotEl.addEventListener("contextmenu", (e) => {
                 e.preventDefault();
                 if (!slots[i]) return;
                 slots[i].count--;
                 if (slots[i].count <= 0) slots[i] = null;
-                forceRedraw();
+                onUserEdited();
             });
             chestGrid.appendChild(slotEl);
+            slotEls[i] = slotEl;
         }
 
         const hotbarGrid = panel.querySelector("#mc-hotbar-grid");
-        const hotbarKeys = getHotbarKeys();
+        hotbarSlotEls = new Array(9);
         for (let i = 0; i < 9; i++) {
-            const key = hotbarKeys[i];
             const slotEl = document.createElement("div");
             slotEl.className = "mc-slot";
-            if (key) renderSlotIcon(slotEl, key, 1);
-
             slotEl.addEventListener("click", (e) => {
+                const key = slotEl.dataset.hotbarKey;
                 if (!key) return;
                 const addAmount = e.shiftKey ? 16 : 1;
                 let remaining = addAmount;
 
-                // 既存スタックへ加算
                 for (let s = 0; s < 27 && remaining > 0; s++) {
                     if (slots[s] && slots[s].key === key && slots[s].count < 64) {
                         const add = Math.min(remaining, 64 - slots[s].count);
@@ -302,7 +349,6 @@ export function createContainerUI(deps) {
                         remaining -= add;
                     }
                 }
-                // 空きスロットへ格納
                 for (let s = 0; s < 27 && remaining > 0; s++) {
                     if (!slots[s]) {
                         const add = Math.min(remaining, 64);
@@ -310,16 +356,49 @@ export function createContainerUI(deps) {
                         remaining -= add;
                     }
                 }
-                forceRedraw();
+                onUserEdited();
             });
             hotbarGrid.appendChild(slotEl);
+            hotbarSlotEls[i] = slotEl;
         }
+
+        chestRefs = { slotEls };
+        syncChestDOM(be);
     }
 
-    function renderFurnaceUI(be) {
+    function syncFurnaceProgressDOM(be) {
+        if (!furnaceRefs) return;
         const d = be.data;
         const burnPct = d.burnDuration > 0 ? Math.min(100, Math.round((d.burnTime / d.burnDuration) * 100)) : 0;
         const cookPct = d.cookTimeTotal > 0 ? Math.min(100, Math.round((d.cookTime / d.cookTimeTotal) * 100)) : 0;
+
+        furnaceRefs.flameFill.style.height = `${burnPct}%`;
+        furnaceRefs.flameBar.title = `残り燃焼: ${d.burnTime}t`;
+        furnaceRefs.arrowFill.style.width = `${cookPct}%`;
+        furnaceRefs.arrowBar.title = `精錬進行: ${cookPct}%`;
+        furnaceRefs.cookLabel.textContent = `${cookPct}%`;
+    }
+
+    function syncFurnaceSlotsDOM(be) {
+        if (!furnaceRefs) return;
+        const d = be.data;
+        if (d.input && d.input.count > 0) renderSlotIcon(furnaceRefs.inSlot, d.input.key, d.input.count);
+        else renderSlotIcon(furnaceRefs.inSlot, "", 0);
+
+        if (d.fuelCount > 0) renderSlotIcon(furnaceRefs.fuelSlot, "COAL_ORE", d.fuelCount);
+        else renderSlotIcon(furnaceRefs.fuelSlot, "", 0);
+
+        if (d.output && d.output.count > 0) renderSlotIcon(furnaceRefs.outSlot, d.output.key, d.output.count);
+        else renderSlotIcon(furnaceRefs.outSlot, "", 0);
+
+        furnaceRefs.fuelLabel.textContent = `燃料 (${d.fuelCount})`;
+        syncHotbarSlotsDOM();
+    }
+
+    function buildFurnaceUI(be) {
+        chestRefs = null;
+        lastHotbarSig = "";
+        const d = be.data;
 
         panel.innerHTML = `
             <div class="mc-ui-header">
@@ -330,13 +409,13 @@ export function createContainerUI(deps) {
                 <div class="mc-furnace-col">
                     <div class="mc-slot-label">原料</div>
                     <div class="mc-slot" id="mc-furnace-input"></div>
-                    <div class="mc-flame-bar" title="残り燃焼: ${d.burnTime}t"><div class="mc-flame-fill" style="height:${burnPct}%"></div></div>
+                    <div class="mc-flame-bar" id="mc-furnace-flame-bar"><div class="mc-flame-fill" id="mc-furnace-flame-fill"></div></div>
                     <div class="mc-slot" id="mc-furnace-fuel" title="クリックで燃料追加"></div>
-                    <div class="mc-slot-label">燃料 (${d.fuelCount})</div>
+                    <div class="mc-slot-label" id="mc-furnace-fuel-label"></div>
                 </div>
                 <div class="mc-furnace-col">
-                    <div class="mc-arrow-bar" title="精錬進行: ${cookPct}%"><div class="mc-arrow-fill" style="width:${cookPct}%"></div></div>
-                    <div class="mc-slot-label">${cookPct}%</div>
+                    <div class="mc-arrow-bar" id="mc-furnace-arrow-bar"><div class="mc-arrow-fill" id="mc-furnace-arrow-fill"></div></div>
+                    <div class="mc-slot-label" id="mc-furnace-cook-label"></div>
                 </div>
                 <div class="mc-furnace-col">
                     <div class="mc-slot-label">完成品</div>
@@ -353,21 +432,17 @@ export function createContainerUI(deps) {
         const fuelSlot = panel.querySelector("#mc-furnace-fuel");
         const outSlot = panel.querySelector("#mc-furnace-output");
 
-        if (d.input && d.input.count > 0) renderSlotIcon(inSlot, d.input.key, d.input.count);
-        if (d.fuelCount > 0) renderSlotIcon(fuelSlot, "COAL_ORE", d.fuelCount);
-        if (d.output && d.output.count > 0) renderSlotIcon(outSlot, d.output.key, d.output.count);
-
         inSlot.addEventListener("click", () => {
             if (!d.input) return;
             addKeyToHotbarIfMissing(d.input.key);
             d.input.count--;
             if (d.input.count <= 0) d.input = null;
-            forceRedraw();
+            onUserEdited();
         });
 
         fuelSlot.addEventListener("click", () => {
             d.fuelCount = Math.min(64, d.fuelCount + 1);
-            forceRedraw();
+            onUserEdited();
         });
 
         outSlot.addEventListener("click", () => {
@@ -377,73 +452,133 @@ export function createContainerUI(deps) {
                 addChatMessage(`かまどから ${d.output.key} x${d.output.count} を取り出しました`, "#55ff55");
             }
             d.output = null;
-            forceRedraw();
+            onUserEdited();
         });
 
         const hotbarGrid = panel.querySelector("#mc-hotbar-grid");
-        const hotbarKeys = getHotbarKeys();
+        hotbarSlotEls = new Array(9);
         for (let i = 0; i < 9; i++) {
-            const key = hotbarKeys[i];
             const slotEl = document.createElement("div");
             slotEl.className = "mc-slot";
-            if (key) renderSlotIcon(slotEl, key, 1);
-
             slotEl.addEventListener("click", () => {
+                const key = slotEl.dataset.hotbarKey;
                 if (!key) return;
                 if (!d.input) d.input = { key, count: 1 };
                 else if (d.input.key === key && d.input.count < 64) d.input.count++;
                 else d.input = { key, count: 1 };
-                forceRedraw();
+                onUserEdited();
             });
             slotEl.addEventListener("contextmenu", (e) => {
                 e.preventDefault();
+                const key = slotEl.dataset.hotbarKey;
                 if (!key) return;
                 d.fuelCount = Math.min(64, d.fuelCount + 1);
-                forceRedraw();
+                onUserEdited();
             });
             hotbarGrid.appendChild(slotEl);
+            hotbarSlotEls[i] = slotEl;
         }
+
+        furnaceRefs = {
+            inSlot,
+            fuelSlot,
+            outSlot,
+            flameBar: panel.querySelector("#mc-furnace-flame-bar"),
+            flameFill: panel.querySelector("#mc-furnace-flame-fill"),
+            arrowBar: panel.querySelector("#mc-furnace-arrow-bar"),
+            arrowFill: panel.querySelector("#mc-furnace-arrow-fill"),
+            cookLabel: panel.querySelector("#mc-furnace-cook-label"),
+            fuelLabel: panel.querySelector("#mc-furnace-fuel-label")
+        };
+
+        syncFurnaceSlotsDOM(be);
+        syncFurnaceProgressDOM(be);
     }
 
-    function computeStateHash(be) {
+    function computeItemsHash(be) {
         if (!be) return "";
         if (be.type === "minecraft:furnace") {
             const d = be.data;
-            return `f|${d.burnTime}|${d.cookTime}|${d.fuelCount}|${d.input?.key}:${d.input?.count}|${d.output?.key}:${d.output?.count}`;
+            return `f|${d.fuelCount}|${d.input?.key}:${d.input?.count}|${d.output?.key}:${d.output?.count}`;
         }
         return `c|${be.key}|${be.data.slots.map(s => s ? `${s.key}:${s.count}` : "").join(",")}`;
     }
 
-    function forceRedraw() {
+    function computeProgressHash(be) {
+        if (!be || be.type !== "minecraft:furnace") return "";
+        const d = be.data;
+        return `${d.burnTime}|${d.burnDuration}|${d.cookTime}`;
+    }
+
+    function onUserEdited() {
         if (!isOpen || !activeBE) return;
-        lastRenderHash = computeStateHash(activeBE);
-        if (activeBE.type === "minecraft:chest") renderChestUI(activeBE);
-        else if (activeBE.type === "minecraft:furnace") renderFurnaceUI(activeBE);
+        const nextItemsHash = computeItemsHash(activeBE);
+        const changed = nextItemsHash !== lastItemsHash;
+        lastItemsHash = nextItemsHash;
+        lastProgressHash = computeProgressHash(activeBE);
+
+        if (activeBE.type === "minecraft:chest") {
+            syncChestDOM(activeBE);
+        } else if (activeBE.type === "minecraft:furnace") {
+            syncFurnaceSlotsDOM(activeBE);
+            syncFurnaceProgressDOM(activeBE);
+        }
+        if (changed && typeof onContainerModified === "function") {
+            onContainerModified(activeBE);
+        }
     }
 
     function open(be) {
         if (!be) return;
+        if (isOpen && activeBE && activeBE !== be && typeof onOpenChanged === "function") {
+            onOpenChanged(false, activeBE);
+        }
         activeBE = be;
         isOpen = true;
         backdrop.style.display = "flex";
-        forceRedraw();
-        if (typeof onOpenChanged === "function") onOpenChanged(true);
+        lastItemsHash = computeItemsHash(be);
+        lastProgressHash = computeProgressHash(be);
+        if (be.type === "minecraft:chest") buildChestUI(be);
+        else if (be.type === "minecraft:furnace") buildFurnaceUI(be);
+        if (typeof onOpenChanged === "function") onOpenChanged(true, activeBE);
     }
 
     function close() {
         if (!isOpen) return;
+        const closedBE = activeBE;
         isOpen = false;
         activeBE = null;
-        lastRenderHash = "";
+        chestRefs = null;
+        furnaceRefs = null;
+        hotbarSlotEls = [];
+        lastHotbarSig = "";
+        lastItemsHash = "";
+        lastProgressHash = "";
         backdrop.style.display = "none";
-        if (typeof onOpenChanged === "function") onOpenChanged(false);
+        if (typeof onOpenChanged === "function") onOpenChanged(false, closedBE);
     }
 
     function refreshIfOpen() {
         if (!isOpen || !activeBE) return;
-        const hash = computeStateHash(activeBE);
-        if (hash !== lastRenderHash) {
-            forceRedraw();
+
+        if (activeBE.type === "minecraft:furnace") {
+            const pHash = computeProgressHash(activeBE);
+            if (pHash !== lastProgressHash) {
+                lastProgressHash = pHash;
+                syncFurnaceProgressDOM(activeBE);
+            }
+            const iHash = computeItemsHash(activeBE);
+            if (iHash !== lastItemsHash) {
+                lastItemsHash = iHash;
+                syncFurnaceSlotsDOM(activeBE);
+            }
+            return;
+        }
+
+        const iHash = computeItemsHash(activeBE);
+        if (iHash !== lastItemsHash) {
+            lastItemsHash = iHash;
+            syncChestDOM(activeBE);
         }
     }
 

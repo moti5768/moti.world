@@ -55,16 +55,25 @@ export function createPistonAnimator(deps) {
         listOut.push({ key, x: wx, y: wy, z: wz });
     }
 
-    function markCoordChunksDirty(wx, wz) {
+    function markCoordChunksDirty(wx, wy, wz) {
         const cx = wx >> 4;
         const cz = wz >> 4;
         const lx = wx & 15;
         const lz = wz & 15;
-        requestChunkUpdate(cx, cz);
-        if (lx === 0) requestChunkUpdate(cx - 1, cz);
-        else if (lx === 15) requestChunkUpdate(cx + 1, cz);
-        if (lz === 0) requestChunkUpdate(cx, cz - 1);
-        else if (lz === 15) requestChunkUpdate(cx, cz + 1);
+        const sy = wy >> 4;
+        const ly = wy & 15;
+
+        const emit = (tcx, tcz) => {
+            requestChunkUpdate(tcx, tcz, sy);
+            if (ly === 0 && sy > 0) requestChunkUpdate(tcx, tcz, sy - 1);
+            else if (ly === 15 && sy < 15) requestChunkUpdate(tcx, tcz, sy + 1);
+        };
+
+        emit(cx, cz);
+        if (lx === 0) emit(cx - 1, cz);
+        else if (lx === 15) emit(cx + 1, cz);
+        if (lz === 0) emit(cx, cz - 1);
+        else if (lz === 15) emit(cx, cz + 1);
     }
 
     /**
@@ -206,7 +215,7 @@ export function createPistonAnimator(deps) {
             else hiddenCoordRefCount.set(hc.key, cur - 1);
 
             if (requestRebuild) {
-                markCoordChunksDirty(hc.x, hc.z);
+                markCoordChunksDirty(hc.x, hc.y, hc.z);
             }
         }
         rec.hiddenCoords.length = 0;
@@ -338,7 +347,7 @@ export function createPistonAnimator(deps) {
         });
 
         for (let i = 0; i < hiddenCoords.length; i++) {
-            markCoordChunksDirty(hiddenCoords[i].x, hiddenCoords[i].z);
+            markCoordChunksDirty(hiddenCoords[i].x, hiddenCoords[i].y, hiddenCoords[i].z);
         }
     }
 

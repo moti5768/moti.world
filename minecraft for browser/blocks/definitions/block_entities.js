@@ -29,18 +29,19 @@ defineBlocks({
         blockEntityType: "minecraft:chest",
         properties: { facing: FACING_VALUES },
         placementRule: "facing_horizontal",
-        fallbackTexture: "textures/blocks/planks_oak.png",
+        shapeMode: "static",
+        geometryType: "chest",
+        selectionPreset: "chest",
+        redstoneConductive: false,
+        transparent: true,
+        lightOpacity: 0,
+        cullAdjacentFaces: false,
+        screenFill: false,
+        fallbackTexture: "textures/entity/chest/normal.png",
         textures: {
-            top: "textures/blocks/planks_oak.png",
-            bottom: "textures/blocks/planks_oak.png",
-            side: "textures/blocks/planks_oak.png"
+            all: "textures/entity/chest/normal.png"
         },
-        stateVariants: buildDirectionalFaceVariants(
-            "textures/blocks/chest_front.png",
-            "textures/blocks/planks_oak.png",
-            "textures/blocks/planks_oak.png",
-            "textures/blocks/planks_oak.png"
-        ),
+        previewOptions: { rotation: { x: 0, y: 90, z: 0 }, scale: 2.3 },
         hardness: 2.5,
         onInteract: ({ blockEntity, openContainer }) => {
             if (blockEntity && typeof openContainer === "function") {
@@ -57,18 +58,19 @@ defineBlocks({
             facing: FACING_VALUES,
             lit: false
         },
+        previewState: { facing: 'south', lit: false },
         placementRule: "facing_horizontal",
-        fallbackTexture: "textures/blocks/cobblestone.png",
+        fallbackTexture: "textures/blocks/furnace_side.png",
         textures: {
-            top: "textures/blocks/stone.png",
-            bottom: "textures/blocks/stone.png",
-            side: "textures/blocks/cobblestone.png"
+            top: "textures/blocks/furnace_top.png",
+            bottom: "textures/blocks/furnace_top.png",
+            side: "textures/blocks/furnace_side.png"
         },
         stateVariants: buildDirectionalFaceVariants(
             "textures/blocks/furnace_front_off.png",
-            "textures/blocks/cobblestone.png",
-            "textures/blocks/stone.png",
-            "textures/blocks/stone.png",
+            "textures/blocks/furnace_side.png",
+            "textures/blocks/furnace_top.png",
+            "textures/blocks/furnace_top.png",
             "textures/blocks/furnace_front_on.png",
             13
         ),
