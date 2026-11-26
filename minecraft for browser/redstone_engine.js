@@ -76,6 +76,7 @@ export function createRedstoneEngine(deps) {
     const _deviceCoordsY = new Int32Array(512);
     const _deviceCoordsZ = new Int32Array(512);
     const _deviceVisited = new Set();
+    const _pistonWaveVisited = new Set();
 
     // 外部モジュール・新ブロック向けのカスタムロール拡張レジストリ
     const customRoles = new Map();
@@ -686,13 +687,12 @@ export function createRedstoneEngine(deps) {
         let wireCount = 0;
         let devCount = 0;
 
-        // allowPiston=false の広域探索ではピストンを拾わないことで、レッドストーンブロック等による斜め上・2マス上の BUD 待機状態を完全保持する
-        const addDevice = (x, y, z, allowPiston = false) => {
+        // 非ピストンデバイス（リピーター・トーチ・ランプ等）を収集
+        const addDevice = (x, y, z) => {
             if (y < 0 || y >= chunkHeight || devCount >= 512) return;
             const id = getRawBlockId(getRaw(x, y, z));
             const cfg = blockConfigFastArray[id];
-            if (!cfg || !cfg.redstoneDevice) return;
-            if (!allowPiston && cfg.redstoneRole === "piston") return;
+            if (!cfg || !cfg.redstoneDevice || cfg.redstoneRole === "piston") return;
 
             const k = encodeBlockKey(x, y, z);
             if (_deviceVisited.has(k)) return;
@@ -703,22 +703,34 @@ export function createRedstoneEngine(deps) {
             devCount++;
         };
 
-        const notifyPistonsAround = (cx, cy, cz, includeCenter = true) => {
-            if (includeCenter) addDevice(cx, cy, cz, true);
+        // 現在の波面ステップ内でピストン（本体・ヘッド）を重複なく即時評価
+        const evalPistonAt = (x, y, z) => {
+            if (y < 0 || y >= chunkHeight) return;
+            const id = getRawBlockId(getRaw(x, y, z));
+            const cfg = blockConfigFastArray[id];
+            if (!cfg || !cfg.redstoneDevice || cfg.redstoneRole !== "piston") return;
+            const k = encodeBlockKey(x, y, z);
+            if (_pistonWaveVisited.has(k)) return;
+            _pistonWaveVisited.add(k);
+            evaluateDevice(x, y, z);
+        };
+
+        const evalPistonsAround = (cx, cy, cz, includeCenter = true) => {
+            if (includeCenter) evalPistonAt(cx, cy, cz);
             for (let i = 0; i < 6; i++) {
-                addDevice(cx + DIR6_DX[i], cy + DIR6_DY[i], cz + DIR6_DZ[i], true);
+                evalPistonAt(cx + DIR6_DX[i], cy + DIR6_DY[i], cz + DIR6_DZ[i]);
             }
         };
 
-        const notifyPistonsDist2 = (cx, cy, cz) => {
-            notifyPistonsAround(cx, cy, cz);
+        const evalPistonsDist2 = (cx, cy, cz) => {
+            evalPistonsAround(cx, cy, cz, true);
             for (let i = 0; i < 6; i++) {
-                notifyPistonsAround(cx + DIR6_DX[i], cy + DIR6_DY[i], cz + DIR6_DZ[i]);
+                evalPistonsAround(cx + DIR6_DX[i], cy + DIR6_DY[i], cz + DIR6_DZ[i], true);
             }
         };
 
         // Java Edition 各ブロックの updateNeighborsAt 範囲に 100% 準拠したピストン通知
-        const notifyPistonsByRole = (bx, by, bz, raw) => {
+        const evalPistonsByRole = (bx, by, bz, raw) => {
             const rId = getRawBlockId(raw);
             const rCfg = blockConfigFastArray[rId];
             if (!rCfg) return;
@@ -726,23 +738,24 @@ export function createRedstoneEngine(deps) {
             const rMeta = getRawLocalState(raw);
 
             if (role === "torch" || role === "wire") {
-                // RedstoneTorchBlock / RedStoneWireBlock 準拠: 全6隣接のさらに6隣接（距離2）を無条件通知
-                notifyPistonsDist2(bx, by, bz);
+                evalPistonsDist2(bx, by, bz);
             } else if (role === "lever" || role === "button") {
                 const mount = Math.min(getBlockStateRawProp(rId, rMeta, "mount"), 4);
-                notifyPistonsAround(
+                evalPistonsAround(
                     bx + MOUNT_SUPPORT_DX[mount],
                     by + MOUNT_SUPPORT_DY[mount],
-                    bz + MOUNT_SUPPORT_DZ[mount]
+                    bz + MOUNT_SUPPORT_DZ[mount],
+                    true
                 );
             } else if (role === "pressure_plate") {
-                notifyPistonsAround(bx, by - 1, bz);
+                evalPistonsAround(bx, by - 1, bz, true);
             } else if (role === "repeater") {
                 const rot = getBlockStateRawProp(rId, rMeta, "facing");
-                notifyPistonsAround(
+                evalPistonsAround(
                     bx + REPEATER_OUT_DX[rot],
                     by,
-                    bz + REPEATER_OUT_DZ[rot]
+                    bz + REPEATER_OUT_DZ[rot],
+                    true
                 );
             }
         };
@@ -765,23 +778,13 @@ export function createRedstoneEngine(deps) {
             return idx;
         };
 
-        // 1. 変化元の周囲6隣接にあるピストンを通知（Java Edition updateNeighborsAt 準拠: 変化元自身へは跳ね返さない）
-        notifyPistonsAround(originX, originY, originZ, false);
-
-        // 2. 変化後・変化前(破壊時)双方のブロック種別に応じて距離2・強励起先ピストンへ通知
-        const curRaw = getRaw(originX, originY, originZ);
-        notifyPistonsByRole(originX, originY, originZ, curRaw);
-        if (prevRaw > 0 && prevRaw !== curRaw) {
-            notifyPistonsByRole(originX, originY, originZ, prevRaw);
-        }
-
         for (let dx = -2; dx <= 2; dx++) {
             for (let dy = -2; dy <= 2; dy++) {
                 for (let dz = -2; dz <= 2; dz++) {
                     if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > 3) continue;
                     const x = originX + dx, y = originY + dy, z = originZ + dz;
                     addWire(x, y, z);
-                    addDevice(x, y, z, false);
+                    addDevice(x, y, z);
                 }
             }
         }
@@ -831,24 +834,28 @@ export function createRedstoneEngine(deps) {
                 const nx = wx + RS_HORIZ_DX[d];
                 const nz = wz + RS_HORIZ_DZ[d];
                 relax(nx, wy, nz);
-                // 上り (wy -> wy+1): 自直上が非導体ならグロウストーン・スラブ上へも登る
                 if (!aboveConductive) relax(nx, wy + 1, nz);
-                // 下り (wy -> wy-1): 自分の足元が導体 かつ 隣(nx,wy,nz)が非導体のときのみ降りる
                 if (belowConductive && !isRedstoneConductor(nx, wy, nz)) relax(nx, wy - 1, nz);
             }
         }
 
+        // フェーズ A: 消灯・電力低下ワイヤーを先に書き換え（電源OFF時の旧電力誤認を防止）
+        let hasFalling = false;
+        let maxRisingP = 0;
+        let minRisingP = 16;
+
         for (let idx = 0; idx < wireCount; idx++) {
             const newP = _wireNewPower[idx];
+            const oldP = _wireOldPower[idx];
             const wx = _wireX[idx], wy = _wireY[idx], wz = _wireZ[idx];
-            const powerChanged = (newP !== _wireOldPower[idx]);
+            const powerChanged = (newP !== oldP);
 
-            if (powerChanged) {
-                const packed = packRawBlock(BLOCK_TYPES.REDSTONE_WIRE, newP & 0xF);
-                setBlockFromWorldTick(wx, wy, wz, packed);
-
-                // Java Edition RedStoneWireBlock 準拠: 電力変化したワイヤーの全6隣接のさらに6隣接（距離2）を無条件通知
-                notifyPistonsDist2(wx, wy, wz);
+            if (newP < oldP) {
+                setBlockFromWorldTick(wx, wy, wz, packRawBlock(BLOCK_TYPES.REDSTONE_WIRE, newP & 0xF));
+                hasFalling = true;
+            } else if (newP > oldP) {
+                if (newP > maxRisingP) maxRisingP = newP;
+                if (newP < minRisingP) minRisingP = newP;
             }
 
             const nearOrigin = (Math.abs(wx - originX) + Math.abs(wy - originY) + Math.abs(wz - originZ)) <= 2;
@@ -857,7 +864,7 @@ export function createRedstoneEngine(deps) {
                     for (let dy = -2; dy <= 2; dy++) {
                         for (let dz = -2; dz <= 2; dz++) {
                             if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) <= 2) {
-                                addDevice(wx + dx, wy + dy, wz + dz, false);
+                                addDevice(wx + dx, wy + dy, wz + dz);
                             }
                         }
                     }
@@ -865,6 +872,45 @@ export function createRedstoneEngine(deps) {
             }
         }
 
+        // フェーズ B: 変化元および消灯ワイヤーのピストン評価（まだ新規点灯ワイヤーは未反映）
+        _pistonWaveVisited.clear();
+        evalPistonsAround(originX, originY, originZ, false);
+        const curRaw = getRaw(originX, originY, originZ);
+        evalPistonsByRole(originX, originY, originZ, curRaw);
+        if (prevRaw > 0 && prevRaw !== curRaw) {
+            evalPistonsByRole(originX, originY, originZ, prevRaw);
+        }
+        if (hasFalling) {
+            for (let idx = 0; idx < wireCount; idx++) {
+                if (_wireNewPower[idx] < _wireOldPower[idx]) {
+                    evalPistonsDist2(_wireX[idx], _wireY[idx], _wireZ[idx]);
+                }
+            }
+        }
+
+        // フェーズ C: 点灯・上昇ワイヤーを電力の強い源流側 (15 -> 1) から波面順に書き換え＆ピストン評価
+        // これにより上流ワイヤーからの通知が下流ワイヤーの最終電力を先読みするのを防ぐ
+        if (maxRisingP >= minRisingP) {
+            for (let p = maxRisingP; p >= minRisingP; p--) {
+                let anyAtLevel = false;
+                for (let idx = 0; idx < wireCount; idx++) {
+                    if (_wireNewPower[idx] === p && _wireNewPower[idx] > _wireOldPower[idx]) {
+                        setBlockFromWorldTick(_wireX[idx], _wireY[idx], _wireZ[idx], packRawBlock(BLOCK_TYPES.REDSTONE_WIRE, p & 0xF));
+                        anyAtLevel = true;
+                    }
+                }
+                if (!anyAtLevel) continue;
+
+                _pistonWaveVisited.clear();
+                for (let idx = 0; idx < wireCount; idx++) {
+                    if (_wireNewPower[idx] === p && _wireNewPower[idx] > _wireOldPower[idx]) {
+                        evalPistonsDist2(_wireX[idx], _wireY[idx], _wireZ[idx]);
+                    }
+                }
+            }
+        }
+
+        // フェーズ D: リピーター・トーチ・ランプ等の非ピストンデバイスを一括評価
         for (let i = 0; i < devCount; i++) {
             evaluateDevice(_deviceCoordsX[i], _deviceCoordsY[i], _deviceCoordsZ[i]);
         }

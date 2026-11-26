@@ -124,6 +124,7 @@ function applySeed(seedInput) {
     _seedNoiseOffsets.rivX = nextRand() * 256;
     _seedNoiseOffsets.rivZ = nextRand() * 256;
 
+    terrainHeightCache.clear();
     return currentSeed;
 }
 
@@ -143,9 +144,9 @@ const grad2D = (hash, x, y) => {
 };
 
 const perlinNoise2D = (x, y) => {
-    // 負の数でも正しく動作する高速な座標取得 (Math.floorを排除)[cite: 4]
-    const xi = x > 0 ? x | 0 : (x | 0) - 1;
-    const yi = y > 0 ? y | 0 : (y | 0) - 1;
+    // 0・負の整数境界でも正確に床関数と一致する高速座標取得
+    const xi = x >= 0 ? (x | 0) : (x === (x | 0) ? (x | 0) : (x | 0) - 1);
+    const yi = y >= 0 ? (y | 0) : (y === (y | 0) ? (y | 0) : (y | 0) - 1);
 
     let X = xi & 255;
     let Y = yi & 255;
@@ -909,6 +910,10 @@ export const ChunkSaveManager = {
         if (wy < 0 || wy >= CHUNK_HEIGHT) return;
         const cx = wx >> 4;
         const cz = wz >> 4;
+        const key = encodeChunkKey(cx, cz);
+        // 遠方チャンク回収→再訪問時に、隣接するプレイヤー編集済み・読込済みチャンクへ木が上書き復活するのを防止
+        if (this.playerModifiedKeys.has(key)) return;
+
         const lx = wx & 15;
         const lz = wz & 15;
 
@@ -1132,8 +1137,8 @@ const BEDROCK_LEVEL = 0;
 const spawnX = 0;
 const spawnZ = 0;
 
-// 本来の地表の高さ + 余裕を持たせた2ブロック上
-const spawnY = Math.max(getTerrainHeight(spawnX, spawnZ), SEA_LEVEL + 5) + 2;
+// 起動前仮高度（実高度は applySeed 後の prewarmSpawnChunks で実ボクセルから確定）
+const spawnY = SEA_LEVEL + 7;
 
 let jumpCooldown = 0;
 // プレイヤーデータ
@@ -1572,10 +1577,7 @@ function getTerrainHeight(worldX, worldZ) {
 }
 
 function getVoxelHash(x, y, z) {
-    const ox = (x + 512 | 0) & 0x3FF;
-    const oz = (z + 512 | 0) & 0x3FF;
-    const oy = (y | 0) & 0xFFF;
-    return (ox << 21) | (oz << 11) | oy;
+    return encodeWorldBlockKey(x | 0, y | 0, z | 0);
 }
 
 // --- 関数の外側に配置 (読み取りキャッシュ用：1チャンク128KBのため上限64件=最大8MBに厳格制限) ---
@@ -2045,10 +2047,11 @@ function isOnLadder() {
                 if (getRawBlockId(voxel) !== ladderId) continue;
 
                 const meta = getRawLocalState(voxel);
+                const tMeta = getTransformMeta(ladderId, meta);
                 for (let i = 0; i < ladderBoxes.length; i++) {
                     let box = ladderBoxes[i];
-                    if (meta !== 0) {
-                        applyRotationToCollisionBox(box, meta, _ladderRotBox);
+                    if (tMeta !== 0) {
+                        applyRotationToCollisionBox(box, tMeta, _ladderRotBox);
                         box = _ladderRotBox;
                     }
                     if (
@@ -2332,35 +2335,29 @@ function decodeChunkKey(key, out = _sharedChunkCoord) {
 // 更新要求用のバッチセットと処理（最適化完全版）
 // ───────────────────────────────
 
-// 内部管理用：Setを併用してキュー内の重複チェックを O(1) にする
+// 内部管理用：Setを併用してキュー内の重複チェックを O(1) にする（メインループ統合管理）
 let pendingChunkUpdates = new Set();
 let chunkUpdateQueue = [];
 let chunkUpdateLookup = new Set();
-let chunkUpdateRunning = false;
-
-// 静的定数・キャッシュ
-const CHUNK_MAX_FRAME_TIME = 8;
+let chunkUpdateIdx = 0;
 
 /**
- * チャンク更新要求
+ * チャンク更新要求（メインループ animate() の描画直前バジェットで消化）
  */
 function requestChunkUpdate(cx, cz) {
     const key = encodeChunkKey(cx, cz);
 
     if (!chunkUpdateLookup.has(key)) {
         chunkUpdateLookup.add(key);
-        chunkUpdateQueue.push(key); // 🌟 配列ではなく整数キーをそのまま保存しGC発生を回避
+        chunkUpdateQueue.push(key);
     }
-    scheduleChunkUpdate();
 }
 
 /**
- * requestAnimationFrameから呼ばれるステップ実行
- * 既存の(function step(){...})()による毎回の関数生成を回避
+ * メインループ(animate)から呼ばれる差分チャンク再構築（回路・ピストン・流体優先）
  */
-let chunkUpdateIdx = 0; // 外部スコープに保持
-
-function stepChunkUpdate() {
+function processChunkUpdateQueue(budgetMs = 6.0) {
+    if (chunkUpdateIdx >= chunkUpdateQueue.length) return;
     const start = performance.now();
 
     while (chunkUpdateIdx < chunkUpdateQueue.length) {
@@ -2376,23 +2373,13 @@ function stepChunkUpdate() {
         const cz = (key << 16) >> 16;
         refreshChunkAt(cx, cz);
 
-        if (performance.now() - start > CHUNK_MAX_FRAME_TIME) break;
+        if ((performance.now() - start) >= budgetMs) break;
     }
 
-    // 終わったらリセット、残っていたら次回へ
     if (chunkUpdateIdx >= chunkUpdateQueue.length) {
         chunkUpdateQueue.length = 0;
         chunkUpdateIdx = 0;
-        chunkUpdateRunning = false;
-    } else {
-        requestAnimationFrame(stepChunkUpdate);
     }
-}
-
-function scheduleChunkUpdate() {
-    if (chunkUpdateRunning) return;
-    chunkUpdateRunning = true;
-    requestAnimationFrame(stepChunkUpdate);
 }
 
 // ==========================================
@@ -4951,7 +4938,7 @@ const _cascadeQueueX = new Int32Array(_CASCADE_MAX_NODES);
 const _cascadeQueueY = new Int32Array(_CASCADE_MAX_NODES);
 const _cascadeQueueZ = new Int32Array(_CASCADE_MAX_NODES);
 const _cascadeVisited = new Set();
-const _extraUpdateCoords = [];
+const _EMPTY_EXTRA_COORDS = Object.freeze([]);
 const _particleCenterTmp = new THREE.Vector3();
 
 function _getBlockIdForPlacement(wx, wy, wz) {
@@ -5207,7 +5194,8 @@ function setWorldBlock(wx, wy, wz, newRaw, options = null) {
     if (notifyNC && _blockUpdateDepth < MAX_BLOCK_UPDATE_DEPTH) {
         _blockUpdateDepth++;
         try {
-            const extraCoords = updateNeighborBlockStates(bx, by, bz);
+            const extraCoords = updateNeighborBlockStates(bx, by, bz, _cascadeLightDirtySet);
+            flushCascadeLightUpdates();
             notifyNeighborsNC(bx, by, bz);
 
             if (notifyRedstone) RedstoneEngine.onBlockChanged(bx, by, bz, oldRaw);
@@ -5217,7 +5205,7 @@ function setWorldBlock(wx, wy, wz, newRaw, options = null) {
                 const pos = extraCoords[i];
                 TickScheduler.cancelAt(pos.x, pos.y, pos.z);
                 notifyNeighborsNC(pos.x, pos.y, pos.z);
-                if (notifyRedstone) RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z);
+                if (notifyRedstone) RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z, pos.oldRaw || 0);
                 if (notifyFluid) FluidEngine.onBlockChanged(pos.x, pos.y, pos.z);
                 requestChunkUpdate(pos.x >> 4, pos.z >> 4);
             }
@@ -5249,7 +5237,8 @@ function notifyWorldBlockChanged(wx, wy, wz, oldRaw = 0, newRaw = null) {
     if (_blockUpdateDepth < MAX_BLOCK_UPDATE_DEPTH) {
         _blockUpdateDepth++;
         try {
-            const extraCoords = updateNeighborBlockStates(bx, by, bz);
+            const extraCoords = updateNeighborBlockStates(bx, by, bz, _cascadeLightDirtySet);
+            flushCascadeLightUpdates();
             notifyNeighborsNC(bx, by, bz);
             RedstoneEngine.onBlockChanged(bx, by, bz, oldRaw);
             FluidEngine.onBlockChanged(bx, by, bz);
@@ -5258,7 +5247,7 @@ function notifyWorldBlockChanged(wx, wy, wz, oldRaw = 0, newRaw = null) {
                 const pos = extraCoords[i];
                 TickScheduler.cancelAt(pos.x, pos.y, pos.z);
                 notifyNeighborsNC(pos.x, pos.y, pos.z);
-                RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z);
+                RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z, pos.oldRaw || 0);
                 FluidEngine.onBlockChanged(pos.x, pos.y, pos.z);
                 requestChunkUpdate(pos.x >> 4, pos.z >> 4);
             }
@@ -5272,9 +5261,23 @@ function notifyWorldBlockChanged(wx, wy, wz, oldRaw = 0, newRaw = null) {
  * ブロック設置・破壊後に自身および周囲6近傍の接続同期・支持チェック・宣言的 onNeighborChange を一括処理する
  * @returns {Array<{x: number, y: number, z: number}>} 追加でチャンク更新が必要になった座標リスト
  */
-function updateNeighborBlockStates(originX, originY, originZ) {
+const _cascadeLightDirtySet = new Set();
+const _cascadeLightCoordTmp = { cx: 0, cz: 0 };
+
+function flushCascadeLightUpdates() {
+    if (_cascadeLightDirtySet.size === 0) return;
+    for (const dKey of _cascadeLightDirtySet) {
+        if (loadedChunks.has(dKey)) {
+            decodeChunkKey(dKey, _cascadeLightCoordTmp);
+            requestChunkUpdate(_cascadeLightCoordTmp.cx, _cascadeLightCoordTmp.cz);
+        }
+    }
+    _cascadeLightDirtySet.clear();
+}
+
+function updateNeighborBlockStates(originX, originY, originZ, outLightDirty = _lightDirtySet) {
     _cascadeVisited.clear();
-    _extraUpdateCoords.length = 0;
+    let extraCoords = null;
 
     let head = 0;
     let tail = 0;
@@ -5318,7 +5321,8 @@ function updateNeighborBlockStates(originX, originY, originZ) {
                 const cz = wz >> 4;
                 ChunkSaveManager.setBlock(cx, cz, wx & 15, wy, wz & 15, packRawBlock(id, newMask));
                 if (wx !== originX || wy !== originY || wz !== originZ) {
-                    _extraUpdateCoords.push({ x: wx, y: wy, z: wz });
+                    if (!extraCoords) extraCoords = [];
+                    extraCoords.push({ x: wx, y: wy, z: wz, oldRaw: raw });
                 }
             }
             continue;
@@ -5332,10 +5336,11 @@ function updateNeighborBlockStates(originX, originY, originZ) {
             createMinecraftBreakParticles(_particleCenterTmp, id, 0.8);
             BlockEntityManager.remove(wx, wy, wz);
             ChunkSaveManager.setBlock(cx, cz, wx & 15, wy, wz & 15, BLOCK_TYPES.SKY);
-            updateLightAtBlockChange(wx, wy, wz, raw, BLOCK_TYPES.SKY, _lightDirtySet);
+            updateLightAtBlockChange(wx, wy, wz, raw, BLOCK_TYPES.SKY, outLightDirty);
 
             if (wx !== originX || wy !== originY || wz !== originZ) {
-                _extraUpdateCoords.push({ x: wx, y: wy, z: wz });
+                if (!extraCoords) extraCoords = [];
+                extraCoords.push({ x: wx, y: wy, z: wz, oldRaw: raw });
             }
 
             for (let i = 0; i < 6; i++) {
@@ -5366,10 +5371,11 @@ function updateNeighborBlockStates(originX, originY, originZ) {
                 const cx = wx >> 4;
                 const cz = wz >> 4;
                 ChunkSaveManager.setBlock(cx, cz, wx & 15, wy, wz & 15, nextRaw);
-                updateLightAtBlockChange(wx, wy, wz, raw, nextRaw, _lightDirtySet);
+                updateLightAtBlockChange(wx, wy, wz, raw, nextRaw, outLightDirty);
 
                 if (wx !== originX || wy !== originY || wz !== originZ) {
-                    _extraUpdateCoords.push({ x: wx, y: wy, z: wz });
+                    if (!extraCoords) extraCoords = [];
+                    extraCoords.push({ x: wx, y: wy, z: wz, oldRaw: raw });
                 }
 
                 for (let i = 0; i < 6; i++) {
@@ -5379,7 +5385,7 @@ function updateNeighborBlockStates(originX, originY, originZ) {
         }
     }
 
-    return _extraUpdateCoords;
+    return extraCoords || _EMPTY_EXTRA_COORDS;
 }
 
 const _updatedChunkSetTmp = new Set();
@@ -5654,7 +5660,7 @@ function interactWithBlock(action) {
         const pos = extraCoords[i];
         TickScheduler.cancelAt(pos.x, pos.y, pos.z);
         notifyNeighborsNC(pos.x, pos.y, pos.z);
-        RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z);
+        RedstoneEngine.onBlockChanged(pos.x, pos.y, pos.z, pos.oldRaw || 0);
         FluidEngine.onBlockChanged(pos.x, pos.y, pos.z);
         const eKey = encodeChunkKey(pos.x >> 4, pos.z >> 4);
         if (!_updatedChunkSetTmp.has(eKey)) {
@@ -7004,6 +7010,7 @@ let physicsStepCounter = 0;
 let worldTickAccumulator = 0;
 let worldTickCount = 0;
 let isInsideWorldTick = false;
+let isHandlingScheduledTicks = false;
 let ticksInSecond = 0;
 let measuredTps = WORLD_TPS;
 
@@ -7423,7 +7430,9 @@ PistonEngine.init({
     getRaw: _getWorldRawLoaded,
     setBlock: setWorldBlock,
     notifyBlock: notifyWorldBlockChanged,
-    getEngine: () => RedstoneEngine
+    getEngine: () => RedstoneEngine,
+    getCurrentTick: () => worldTickCount,
+    isHandlingScheduledTicks: () => isHandlingScheduledTicks
 });
 
 /* ======================================================
@@ -7720,7 +7729,12 @@ function runWorldTick(pCx, pCz) {
         EntityManager.tick();
         BlockEntityManager.tick();
         processEntityBlockSteps();
-        TickScheduler.processTick(worldTickCount);      // Phase 1: リピーター・トーチ・ボタン
+        isHandlingScheduledTicks = true;
+        try {
+            TickScheduler.processTick(worldTickCount);  // Phase 1: リピーター・トーチ・ボタン
+        } finally {
+            isHandlingScheduledTicks = false;
+        }
         PistonEngine.runBlockEvents(worldTickCount);    // Phase 2: ピストン BlockEvent 実行
         PistonEngine.tickMovingBlocks(worldTickCount);  // Phase 3: 移動中ブロック(2gt)の到着確定
         processRandomTicks(pCx, pCz);
@@ -7883,14 +7897,22 @@ function animate() {
         lastFpsTime = now;
     }
 
-    // 4. -------- チャンク生成・アンロード & メッシュ再構築 --------
+    // 4. -------- チャンク生成・アンロード & メッシュ再構築（1フレーム統合時間予算管理） --------
     updateChunks();
+    const chunkPhaseStart = performance.now();
+    // 回路・ピストン・流体など視界内の動的変化を最優先で反映
+    processChunkUpdateQueue(6.0);
     processChunkUnloadQueue();
-    processChunkQueue(false);
+    if ((performance.now() - chunkPhaseStart) < 8.0) {
+        processChunkQueue(false);
+    }
     updateChunkFadeIns(now);
     chunkUpdateFrameTimer += delta;
     if (chunkUpdateFrameTimer > 0.016) {
-        if (pendingChunkUpdates.size > 0) processPendingChunkUpdates(4);
+        const remPending = 10.0 - (performance.now() - chunkPhaseStart);
+        if (pendingChunkUpdates.size > 0 && remPending > 1.0) {
+            processPendingChunkUpdates(Math.min(4.0, remPending));
+        }
         chunkUpdateFrameTimer = 0;
     }
     chunkCacheEvictTimer += delta;
@@ -8253,6 +8275,13 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     applySeed(seed);
     chunkLightCache.clear();
     chunkReadOnlyCache.clear();
+    pendingChunkUpdates.clear();
+    chunkUpdateQueue.length = 0;
+    chunkUpdateIdx = 0;
+    chunkUpdateLookup.clear();
+    chunkQueue.length = 0;
+    chunkUnloadQueue.length = 0;
+    chunkUnloadLookup.clear();
     _vC0_key = null; _vC0_data = null;
     _vC1_key = null; _vC1_data = null;
 
