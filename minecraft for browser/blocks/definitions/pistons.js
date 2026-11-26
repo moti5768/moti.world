@@ -30,7 +30,9 @@ let _deps = {
     getRaw: null,
     setBlock: null,
     notifyBlock: null,
-    getEngine: null
+    getEngine: null,
+    getCurrentTick: null,
+    isHandlingScheduledTicks: null
 };
 
 // 座標ごとの独立 MovingBlock（Java Edition の PistonMovingBlockEntity 相当）
@@ -190,11 +192,16 @@ function checkPistonIfExtend(x, y, z) {
             queueBlockEvent(bx, by, bz, ACTION_EXTEND, facingIdx);
         }
     } else if (!powered && extended) {
+        const currentTick = _deps.getCurrentTick ? _deps.getCurrentTick() : 0;
+        const isHandlingScheduled = _deps.isHandlingScheduledTicks ? !!_deps.isHandlingScheduledTicks() : false;
         const b2x = bx + dx * 2, b2y = by + dy * 2, b2z = bz + dz * 2;
         const mb2 = _movingBlocks.get(pistonCoordKey(b2x, b2y, b2z));
+        // Java Edition PistonBaseBlock.checkIfExtend 完全準拠:
+        // progressO < 0.5 (0gt/1gt) || lastTicked === currentTick || Phase 1(ScheduledTick実行中) なら ACTION_DROP
         const isSpit = !!(
             mb2 && !mb2.finished && mb2.extending &&
-            mb2.dx === dx && mb2.dy === dy && mb2.dz === dz
+            mb2.dx === dx && mb2.dy === dy && mb2.dz === dz &&
+            (mb2.progressO < 0.5 || mb2.lastTicked === currentTick || isHandlingScheduled)
         );
         queueBlockEvent(bx, by, bz, isSpit ? ACTION_DROP : ACTION_CONTRACT, facingIdx);
     }
@@ -239,8 +246,9 @@ function executeExtend(x, y, z, id, meta, facingIdx, dx, dy, dz, currentTick, ge
             extending: true,
             isSourcePiston: false,
             isHead: false,
-            startTick: currentTick,
-            endTick: currentTick + PISTON_MOVE_TICKS,
+            progress: 0.0,
+            progressO: 0.0,
+            lastTicked: 0,
             finished: false
         });
         animatedBlocks.push({
@@ -267,8 +275,9 @@ function executeExtend(x, y, z, id, meta, facingIdx, dx, dy, dz, currentTick, ge
         extending: true,
         isSourcePiston: false,
         isHead: true,
-        startTick: currentTick,
-        endTick: currentTick + PISTON_MOVE_TICKS,
+        progress: 0.0,
+        progressO: 0.0,
+        lastTicked: 0,
         finished: false
     });
 
@@ -346,8 +355,9 @@ function executeRetract(x, y, z, id, meta, facingIdx, dx, dy, dz, action, curren
         extending: false,
         isSourcePiston: true,
         isHead: false,
-        startTick: currentTick,
-        endTick: currentTick + PISTON_MOVE_TICKS,
+        progress: 0.0,
+        progressO: 0.0,
+        lastTicked: 0,
         finished: false
     });
 
@@ -385,8 +395,9 @@ function executeRetract(x, y, z, id, meta, facingIdx, dx, dy, dz, action, curren
                     extending: false,
                     isSourcePiston: false,
                     isHead: false,
-                    startTick: currentTick,
-                    endTick: currentTick + PISTON_MOVE_TICKS,
+                    progress: 0.0,
+                    progressO: 0.0,
+                    lastTicked: 0,
                     finished: false
                 });
                 animatedBlocks.push({
@@ -461,11 +472,15 @@ function executeBlockEvent(x, y, z, action, expectedFacingIdx, currentTick) {
     const dz = PISTON_DZ[facingIdx];
     const extended = getBlockStateProp(id, meta, "extended");
 
+    // Java Edition PistonBaseBlock.triggerEvent 準拠: 実行直前の実信号を再確認
+    const engine = _deps.getEngine ? _deps.getEngine() : null;
+    const powered = !!(engine && engine.getPistonSignalAt(x, y, z, dx, dy, dz) > 0);
+
     if (action === ACTION_EXTEND) {
-        if (extended) return;
+        if (extended || !powered) return;
         executeExtend(x, y, z, id, meta, facingIdx, dx, dy, dz, currentTick, getRaw, setBlock, notifyBlock);
     } else if (action === ACTION_CONTRACT || action === ACTION_DROP) {
-        if (!extended) return;
+        if (!extended || powered) return;
         executeRetract(x, y, z, id, meta, facingIdx, dx, dy, dz, action, currentTick, getRaw, setBlock, notifyBlock);
     }
 }
@@ -520,7 +535,7 @@ export const PistonEngine = {
     },
 
     /**
-     * Phase 3 (Java Edition PistonMovingBlockEntity.tick 準拠: 2gt 経過した各 MovingBlock を到着確定)
+     * Phase 3 (Java Edition PistonMovingBlockEntity.tick 完全準拠: 0.0 -> 0.5 -> 1.0 で到着確定)
      */
     tickMovingBlocks(currentTick) {
         if (_movingBlocks.size === 0) return;
@@ -529,13 +544,16 @@ export const PistonEngine = {
         const dueKeys = [];
         for (const mb of _movingBlocks.values()) {
             if (mb.finished) continue;
-            // チャンク未ロード中は残Tickを凍結し、ロード完了後に正確なタイミングで到着確定させる
-            if (getRaw && getRaw(mb.x, mb.y, mb.z) < 0) {
-                mb.endTick++;
-                continue;
-            }
-            if (currentTick >= mb.endTick) {
+            // チャンク未ロード中は進行を凍結し、ロード完了後に正確なタイミングで再開
+            if (getRaw && getRaw(mb.x, mb.y, mb.z) < 0) continue;
+
+            mb.lastTicked = currentTick;
+            mb.progressO = mb.progress;
+            if (mb.progressO >= 1.0) {
                 dueKeys.push(mb.key);
+            } else {
+                mb.progress += 0.5;
+                if (mb.progress > 1.0) mb.progress = 1.0;
             }
         }
         for (let i = 0; i < dueKeys.length; i++) {
@@ -544,7 +562,7 @@ export const PistonEngine = {
     },
 
     /**
-     * ワールド保存用シリアライズ（MovingBlock の残Tick ＋ 未実行 BlockEvent キュー）
+     * ワールド保存用シリアライズ（MovingBlock の progress/progressO ＋ 未実行 BlockEvent キュー）
      */
     exportState(currentTick = 0) {
         const now = currentTick | 0;
@@ -563,7 +581,9 @@ export const PistonEngine = {
                 extending: !!mb.extending,
                 isSourcePiston: !!mb.isSourcePiston,
                 isHead: !!mb.isHead,
-                remainingTicks: Math.max(0, (mb.endTick | 0) - now)
+                progress: mb.progress,
+                progressO: mb.progressO,
+                tickedThisTick: mb.lastTicked === now
             });
         }
 
@@ -582,7 +602,7 @@ export const PistonEngine = {
     },
 
     /**
-     * ワールド読込用復元（PistonEngine.clear() の後に呼ぶ）
+     * ワールド読込用復元（旧セーブの remainingTicks 形式にも後方互換）
      */
     importState(state, currentTick = 0) {
         PistonEngine.clear();
@@ -594,7 +614,13 @@ export const PistonEngine = {
                 const m = state.movingBlocks[i];
                 if (!m) continue;
                 const x = m.x | 0, y = m.y | 0, z = m.z | 0;
-                const rem = Math.max(0, m.remainingTicks | 0);
+                let progress = Number.isFinite(m.progress) ? m.progress : 0.0;
+                let progressO = Number.isFinite(m.progressO) ? m.progressO : 0.0;
+                if (!Number.isFinite(m.progress) && Number.isFinite(m.remainingTicks)) {
+                    const rem = Math.max(0, m.remainingTicks | 0);
+                    progress = rem === 0 ? 1.0 : (rem === 1 ? 0.5 : 0.0);
+                    progressO = rem === 0 ? 1.0 : 0.0;
+                }
                 registerMovingBlock({
                     key: pistonCoordKey(x, y, z),
                     x, y, z,
@@ -606,8 +632,9 @@ export const PistonEngine = {
                     extending: !!m.extending,
                     isSourcePiston: !!m.isSourcePiston,
                     isHead: !!m.isHead,
-                    startTick: now,
-                    endTick: now + rem,
+                    progress,
+                    progressO,
+                    lastTicked: m.tickedThisTick ? now : 0,
                     finished: false
                 });
             }
