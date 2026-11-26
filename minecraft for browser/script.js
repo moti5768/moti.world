@@ -26,12 +26,19 @@ import { createBlockEntityManager } from './blocks/block_entity.js';
 import { createPistonAnimator } from './blocks/piston_animator.js';
 import { createChestAnimator } from './blocks/chest_animator.js';
 import { PistonEngine, registerPistonAnimator } from './blocks/definitions/pistons.js';
+
 import { createContainerUI } from './ui/container_ui.js';
+import { createInventoryUI } from './ui/inventory_ui.js';
+
 import { createMinecraftBreakParticles, updateBlockParticles } from './particles.js';
 import { setMinecraftSky, loadCloudTexture, updateCloudGrid, updateCloudTiles, updateCloudOpacity, adjustCloudLayerDepth } from './cloudsky.js';
 import { determineBiome, BIOME_CONFIG } from './biomes/biomes.js';
 import { Features } from './features.js';
 import { FeatureRules } from './feature_rules.js';
+
+import { generateWorldUid, saveWorldData, loadFullSaveData } from './world/save_manager.js';
+import { TICKS_PER_DAY, getSkyLightFactor, getGameClock, createSkySystem } from './world/sky_system.js';
+import { createInputController, addChatMessage } from './core/input_controller.js';
 
 // ======================================================
 // 【ブロック属性 高速ルックアップテーブル一元管理】(MAX_BLOCK_IDS = 1024)
@@ -46,18 +53,37 @@ const _isCustomGeometryBlock = new Uint8Array(MAX_BLOCK_IDS);
 const _isGreedyCubeBlock = new Uint8Array(MAX_BLOCK_IDS);
 const _cullSameBlock = new Uint8Array(MAX_BLOCK_IDS);
 const _isLogBlock = new Uint8Array(MAX_BLOCK_IDS);
+const _blockLightOpacity = new Uint8Array(MAX_BLOCK_IDS);
+const _blockMayEmitLight = new Uint8Array(MAX_BLOCK_IDS);
 
 function _syncBlockFastEntry(id, cfg) {
     if (id < 0 || id >= MAX_BLOCK_IDS) return;
     _blockConfigFastArray[id] = cfg;
     _blockMaterialsFastArray[id] = null;
-    if (!cfg) return;
+    if (!cfg) {
+        _blockLightOpacity[id] = 0;
+        _blockMayEmitLight[id] = 0;
+        return;
+    }
 
     _isOpaqueBlock[id] = cfg.isOpaqueCube ? 1 : 0;
     _isRedstoneConductive[id] = cfg.redstoneConductive ? 1 : 0;
     _isTransparentBlock[id] = cfg.transparent ? 1 : 0;
     _cullSameBlock[id] = cfg.cullAdjacentFaces === true ? 1 : 0;
     _isLogBlock[id] = cfg.isLog === true ? 1 : 0;
+    _blockLightOpacity[id] = (id === 0)
+        ? 0
+        : (!cfg.transparent ? 15 : (cfg.lightOpacity !== undefined ? cfg.lightOpacity : 1));
+    _blockMayEmitLight[id] = (
+        id !== 0 && (
+            (cfg.lightLevel > 0) ||
+            cfg.isLightSource === true ||
+            cfg.hasStateMaterials === true ||
+            !!cfg.stateVariants ||
+            !!cfg.resolveStateVisual
+        )
+    ) ? 1 : 0;
+
     const isCubeLike = !cfg.customGeometry && (cfg.geometryType === 'cube' || cfg.geometryType === 'leaves');
     _isGreedyCubeBlock[id] = (id !== BLOCK_TYPES.SKY && isCubeLike) ? 1 : 0;
     _isCustomGeometryBlock[id] = (id !== BLOCK_TYPES.SKY && !isCubeLike && cfg.geometryType !== 'none') ? 1 : 0;
@@ -259,287 +285,11 @@ const perlinNoise3D = (x, y, z) => {
 /* ======================================================
    【定数・グローバル変数】
    ====================================================== */
+
 let globalBrightnessMultiplier = 1.0;
 let gameTime = 0;
-const TICKS_PER_DAY = 24000;
 const TIME_SPEED = 1.0;
 
-/* ======================================================
-   【新・昼夜サイクルシステム】
-   ====================================================== */
-let sunMesh, moonMesh;
-const CELESTIAL_ORBIT_RADIUS = 1500; // 描画距離(2500)より内側、雲より外側に配置
-
-/* ======================================================
-   textures/environment/ 内の素材を読み込む初期化関数
-   ====================================================== */
-function initSunMoon() {
-    const loader = new THREE.TextureLoader();
-
-    // --- 太陽の設定 ---
-    const sunTex = loader.load('textures/environment/sun.png');
-    sunTex.magFilter = THREE.NearestFilter; // ドットをクッキリさせる
-    sunTex.minFilter = THREE.NearestFilter;
-
-    const sunMat = new THREE.MeshBasicMaterial({
-        map: sunTex,
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending, // 背景の黒を透過させる
-        // 💡 0xffffff(真っ白)だと昼間に白飛びするので、少しグレーにする
-        color: new THREE.Color(0xbbbbbb),
-        fog: false
-    });
-    sunMesh = new THREE.Mesh(new THREE.PlaneGeometry(450, 450), sunMat);
-    sunMesh.renderOrder = -20;
-    sunMesh.frustumCulled = false;
-    scene.add(sunMesh);
-
-    // --- 月の設定 ---
-    const moonTex = loader.load('textures/environment/moon_phases.png');
-    moonTex.magFilter = THREE.NearestFilter;
-    moonTex.minFilter = THREE.NearestFilter;
-
-    // 💡 moon_phases.png から「満月」の区画だけを表示
-    moonTex.repeat.set(0.25, 0.5);
-    moonTex.offset.set(0, 0.5);
-
-    const moonMat = new THREE.MeshBasicMaterial({
-        map: moonTex,
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        color: new THREE.Color(0xffffff), // 月は夜に映えるので白でOK
-        fog: false
-    });
-    moonMesh = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), moonMat);
-    moonMesh.renderOrder = -20;
-    moonMesh.frustumCulled = false;
-    scene.add(moonMesh);
-}
-
-let starGroup;
-
-function initStars() {
-    starGroup = new THREE.Group();
-
-    // 1. 星の密度を下げ、2種類のサイズと明るさを定義
-    const starConfigs = [
-        { count: 100, size: 3.0, alpha: 1.0 }, // 大きい星 (少なく、明るい)
-        { count: 700, size: 1.5, alpha: 0.6 }  // 小さい星 (多く、少し暗い)
-    ];
-
-    starConfigs.forEach(config => {
-        const positions = new Float32Array(config.count * 3);
-
-        for (let i = 0; i < config.count; i++) {
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.acos((Math.random() * 2) - 1);
-            const r = CELESTIAL_ORBIT_RADIUS * 0.9;
-
-            positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-            positions[i * 3 + 1] = r * Math.cos(phi);
-            positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-        }
-
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-
-        const mat = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: config.size,       // 大小のサイズを適用
-            sizeAttenuation: false,
-            transparent: true,
-            opacity: 0,
-            depthTest: true,
-            depthWrite: false,
-            fog: false
-        });
-
-        // 種類ごとのアルファ値(明るさ)を保存しておく
-        mat.userData = { baseAlpha: config.alpha };
-
-        const mesh = new THREE.Points(geo, mat);
-        mesh.renderOrder = -25;
-        mesh.frustumCulled = false;
-        starGroup.add(mesh);
-    });
-
-    starGroup.renderOrder = -25;
-    scene.add(starGroup);
-}
-
-function updateStars(renderTime = gameTime) {
-    if (!starGroup || !player) return;
-
-    const nightFactor = 1.0 - getSkyLightFactor(renderTime);
-    const twinkle = 0.9 + Math.sin(performance.now() * 0.001) * 0.1;
-    const globalAlpha = 0.65;
-
-    for (let i = 0; i < starGroup.children.length; i++) {
-        const mesh = starGroup.children[i];
-        const typeAlpha = mesh.material.userData.baseAlpha || 1.0;
-        mesh.material.opacity = nightFactor * twinkle * globalAlpha * typeAlpha;
-    }
-
-    const angle = (renderTime / TICKS_PER_DAY) * Math.PI * 2;
-    starGroup.rotation.z = angle;
-    starGroup.position.copy(player.position);
-
-    starGroup.visible = starGroup.children[0].material.opacity > 0.001;
-}
-
-function updateSunMoonPosition(renderTime = gameTime) {
-    if (!sunMesh || !moonMesh || !player) return;
-
-    // 1. 補間済みゲーム時間から角度と向きベクトルを計算（20TPS離散管理＋高FPS滑らか移動）
-    const angle = (renderTime / TICKS_PER_DAY) * Math.PI * 2;
-    _tmpSunDir.set(Math.cos(angle), Math.sin(angle), 0).normalize();
-
-    // 2. プレイヤー位置を基準とした配置
-    const sunX = _tmpSunDir.x * CELESTIAL_ORBIT_RADIUS;
-    const sunY = _tmpSunDir.y * CELESTIAL_ORBIT_RADIUS;
-
-    sunMesh.position.set(player.position.x + sunX, player.position.y + sunY, player.position.z);
-    sunMesh.lookAt(player.position);
-
-    moonMesh.position.set(player.position.x - sunX, player.position.y - sunY, player.position.z);
-    moonMesh.lookAt(player.position);
-
-    // 3. 表示判定
-    sunMesh.visible = (sunY > -150);
-    moonMesh.visible = (sunY < 150);
-
-    // 4. 空の色の更新
-    updateSkyAndFogColor(renderTime, sunY, _tmpSunDir);
-}
-
-// Minecraft準拠の明るさ係数
-function getSkyLightFactor(time) {
-    // 0: 日の出, 6000: 正午, 12000: 日没, 18000: 真夜中
-
-    // --- 昼間 ---
-    if (time >= 0 && time < 11000) return 1.0;
-
-    // --- 日没（夕焼け） ---
-    if (time >= 11000 && time < 13000) {
-        const t = (time - 11000) / 2000;
-        return THREE.MathUtils.lerp(1.0, 0.1, t);
-    }
-
-    // --- 深夜（ここを22800まで延長） ---
-    if (time >= 13000 && time < 22800) return 0.1;
-
-    // --- 朝焼け（22800から日の出の24000にかけて一気に明るくする） ---
-    if (time >= 22800 && time < 24000) {
-        const t = (time - 22800) / 1200; // 期間を短くして変化を急にする
-        return THREE.MathUtils.lerp(0.1, 1.0, t);
-    }
-
-    return 1.0;
-}
-
-/* ======================================================
-   【最新・完全版】空とフォグの色更新システム
-   ====================================================== */
-// --- 関数の外で定義して使い回す（メモリ確保を1回のみにする） ---
-const SKY_COLORS = {
-    DAY: { r: 120, g: 167, b: 255 },
-    SUNSET: { r: 240, g: 160, b: 80 },
-    NIGHT: { r: 10, g: 10, b: 20 },
-    DAWN: { r: 255, g: 180, b: 100 }
-};
-
-const _tmpCamDir = new THREE.Vector3();
-const _tmpSunDir = new THREE.Vector3();
-const _skyColorObj = new THREE.Color();
-
-/**
- * 空と霧の色を更新する（最適化版）
- */
-function updateSkyAndFogColor(time, sunY, sunDir) {
-    let baseR, baseG, baseB;
-
-    // --- A. ベースカラーの決定 (変更なし) ---
-    if (time >= 22000 || time < 2000) {
-        let t;
-        if (time >= 22000) {
-            t = (time - 22000) / 2000;
-            baseR = THREE.MathUtils.lerp(SKY_COLORS.NIGHT.r, SKY_COLORS.DAWN.r, t);
-            baseG = THREE.MathUtils.lerp(SKY_COLORS.NIGHT.g, SKY_COLORS.DAWN.g, t);
-            baseB = THREE.MathUtils.lerp(SKY_COLORS.NIGHT.b, SKY_COLORS.DAWN.b, t);
-        } else {
-            t = time / 2000;
-            baseR = THREE.MathUtils.lerp(SKY_COLORS.DAWN.r, SKY_COLORS.DAY.r, t);
-            baseG = THREE.MathUtils.lerp(SKY_COLORS.DAWN.g, SKY_COLORS.DAY.g, t);
-            baseB = THREE.MathUtils.lerp(SKY_COLORS.DAWN.b, SKY_COLORS.DAY.b, t);
-        }
-    } else if (time >= 2000 && time < 10000) {
-        baseR = SKY_COLORS.DAY.r; baseG = SKY_COLORS.DAY.g; baseB = SKY_COLORS.DAY.b;
-    } else if (time >= 10000 && time < 13000) {
-        let t;
-        if (time < 12000) {
-            t = (time - 10000) / 2000;
-            baseR = THREE.MathUtils.lerp(SKY_COLORS.DAY.r, SKY_COLORS.SUNSET.r, t);
-            baseG = THREE.MathUtils.lerp(SKY_COLORS.DAY.g, SKY_COLORS.SUNSET.g, t);
-            baseB = THREE.MathUtils.lerp(SKY_COLORS.DAY.b, SKY_COLORS.SUNSET.b, t);
-        } else {
-            t = (time - 12000) / 1000;
-            baseR = THREE.MathUtils.lerp(SKY_COLORS.SUNSET.r, SKY_COLORS.NIGHT.r, t);
-            baseG = THREE.MathUtils.lerp(SKY_COLORS.SUNSET.g, SKY_COLORS.NIGHT.g, t);
-            baseB = THREE.MathUtils.lerp(SKY_COLORS.SUNSET.b, SKY_COLORS.NIGHT.b, t);
-        }
-    } else {
-        baseR = SKY_COLORS.NIGHT.r; baseG = SKY_COLORS.NIGHT.g; baseB = SKY_COLORS.NIGHT.b;
-    }
-
-    let r = baseR, g = baseG, b = baseB;
-
-    // --- B. 視線による方向別カラー補正 ---
-    camera.getWorldDirection(_tmpCamDir);
-
-    // ★修正点: 内部での角度再計算(angle = ... normalize())を削除し、引数の sunDir を使う
-    const isSunrise = (time >= 21000 || time < 3000);
-    const isSunset = (time >= 9000 && time < 14000);
-
-    if (isSunrise || isSunset) {
-        const dotSun = _tmpCamDir.dot(sunDir);
-        if (dotSun > 0) {
-            const heightFactor = Math.max(0, 1 - Math.abs(sunDir.y) * 1.5);
-            const glow = Math.pow(dotSun, 3) * 0.8 * heightFactor;
-            const target = isSunrise ? SKY_COLORS.DAWN : SKY_COLORS.SUNSET;
-
-            r = THREE.MathUtils.lerp(r, target.r, glow);
-            g = THREE.MathUtils.lerp(g, target.g, glow);
-            b = THREE.MathUtils.lerp(b, target.b, glow);
-        }
-    }
-
-    // --- C. 太陽直視時の眩しさ ---
-    if (sunY > 0) {
-        const lookAtSunFactor = _tmpCamDir.dot(sunDir);
-        if (lookAtSunFactor > 0.92) {
-            const intensity = Math.pow(lookAtSunFactor, 25) * 35 * Math.max(0, sunDir.y);
-            r += intensity; g += intensity * 0.9; b += intensity * 0.7;
-        }
-    }
-
-    // --- D. 最終適用 ---
-    const m = globalBrightnessMultiplier / 255;
-    _skyColorObj.setRGB(
-        Math.max(0, Math.min(1, r * m)),
-        Math.max(0, Math.min(1, g * m)),
-        Math.max(0, Math.min(1, b * m))
-    );
-
-    renderer.setClearColor(_skyColorObj);
-    if (scene.fog) {
-        scene.fog.color.copy(_skyColorObj);
-    }
-    updateGlobalSkyLight(time);
-}
 /* ======================================================
    【新・チャンク保存管理システム (クラスなし版) - 極限最適化版】
    ====================================================== */
@@ -1200,6 +950,15 @@ export const camera = new THREE.PerspectiveCamera(
 );
 camera.rotation.order = "YXZ";
 
+const SkySystem = createSkySystem({
+    scene,
+    camera,
+    getRenderer: () => renderer,
+    getPlayer: () => player,
+    getBrightnessMultiplier: () => globalBrightnessMultiplier,
+    sharedSkyUniform: SHARED_SKY_UNIFORM
+});
+
 let renderer;
 const MAX_RENDER_PIXEL_RATIO = 2;
 
@@ -1221,11 +980,12 @@ function initCanvas() {
 
     // 3. 各種イベントの紐付け（生成直後に行う）
 
-    // --- A. マウス・クリック系 ---
-    renderer.domElement.addEventListener("mousedown", onCanvasMouseDown, false);
+    // --- A. マウス・クリック・タッチ系 ---
+    renderer.domElement.addEventListener("mousedown", InputController.onCanvasMouseDown, false);
+    InputController.bindCanvasTouchControls();
 
     renderer.domElement.addEventListener("click", (e) => {
-        if (isInventoryOpen || isContainerOpen || pointerLocked || (inventoryContainer && inventoryContainer.contains(e.target))) return;
+        if (isInventoryOpen || isContainerOpen || InputController.pointerLocked || InventoryUI.containsTarget(e.target)) return;
         if (e.target === renderer.domElement && !("ontouchstart" in window)) {
             renderer.domElement.requestPointerLock();
         }
@@ -2005,11 +1765,11 @@ const _vDesired = new THREE.Vector3();
 const _vUp = new THREE.Vector3(0, 1, 0);
 
 function getDesiredHorizontalVelocity(multiplier = 1) {
-    camera.getWorldDirection(_vForward);
-    _vForward.y = 0;
-    _vForward.normalize();
-
-    _vRight.crossVectors(_vForward, _vUp).normalize();
+    // pitch = ±90°（真上・真下）でも破綻しないよう yaw から水平基底を直接計算
+    const sinY = Math.sin(yaw);
+    const cosY = Math.cos(yaw);
+    _vForward.set(-sinY, 0, -cosY);
+    _vRight.set(cosY, 0, -sinY);
 
     _vDesired.set(0, 0, 0);
     if (keys["w"] || keys["arrowup"]) _vDesired.add(_vForward);
@@ -2675,16 +2435,33 @@ const TerrainWorkerPool = (() => {
         },
 
         /**
-         * 指定チャンクを最優先で Worker へ投入し、周囲 4 近傍も同時プリフェッチ（木の越境同期生成を抑制）
-         */
+          * 指定チャンクと周囲 3x3 (8近傍) のベース地形を Worker へ投入（木・構造物の越境による同期生成を完全防止）
+          */
         request(cx, cz) {
             if (!available) return false;
             dispatchOne(cx, cz, true);
-            if (inFlight.size < 48) {
-                dispatchOne(cx + 1, cz, false);
-                dispatchOne(cx - 1, cz, false);
-                dispatchOne(cx, cz + 1, false);
-                dispatchOne(cx, cz - 1, false);
+            if (inFlight.size < 64) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dz = -1; dz <= 1; dz++) {
+                        if (dx === 0 && dz === 0) continue;
+                        dispatchOne(cx + dx, cz + dz, false);
+                    }
+                }
+            }
+            return true;
+        },
+
+        /**
+         * 指定チャンクおよび周囲 3x3 のベース地形がすべてメモリ上（modifiedChunks / workerBaseCache）に揃っているか判定
+         */
+        isAreaBaseReady(cx, cz) {
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    const k = encodeChunkKey(cx + dx, cz + dz);
+                    if (!ChunkSaveManager.modifiedChunks.has(k) && !ChunkSaveManager.workerBaseCache.has(k)) {
+                        return false;
+                    }
+                }
             }
             return true;
         }
@@ -2692,10 +2469,10 @@ const TerrainWorkerPool = (() => {
 })();
 
 function processChunkQueue(isInitialBoost = false) {
-    if (chunkQueue.length === 0) return;
+    if (chunkQueue.length === 0) return 0;
 
-    const MAX_CHUNKS_PER_FRAME = isInitialBoost ? 4 : 2;
-    const FRAME_TIME_BUDGET = isInitialBoost ? 12.0 : 6.0;
+    const MAX_CHUNKS_PER_FRAME = isInitialBoost ? 4 : 1;
+    const FRAME_TIME_BUDGET = isInitialBoost ? 12.0 : 4.0;
     const startTime = performance.now();
     let tasksProcessed = 0;
     let workerDispatches = 0;
@@ -2723,15 +2500,22 @@ function processChunkQueue(isInitialBoost = false) {
         if (!isChunkWithinRenderDistance(cx, cz, pCx, pCz)) continue;
         if (loadedChunks.has(key)) continue;
 
-        // ベース地形が未生成ならメインスレッドを止めず Web Worker へ委譲
-        if (
-            useWorker &&
-            !ChunkSaveManager.modifiedChunks.has(key) &&
-            !ChunkSaveManager.workerBaseCache.has(key)
-        ) {
+        // 本体または周囲 3x3 のベース地形が未生成ならメインスレッドを止めず Web Worker へ委譲
+        if (useWorker && !TerrainWorkerPool.isAreaBaseReady(cx, cz)) {
             TerrainWorkerPool.request(cx, cz);
             if (++workerDispatches >= MAX_WORKER_DISPATCH_PER_FRAME) break;
             continue;
+        }
+
+        // 通常プレイ時は「デコレーション＋ライト計算」と「メッシュ生成」を別フレームへ分散しスパイクを半減
+        if (!isInitialBoost && (!ChunkSaveManager.decoratedChunks.has(key) || !chunkLightCache.has(key))) {
+            const vData = ChunkSaveManager.captureBaseChunkData(cx, cz);
+            if (vData && !chunkLightCache.has(key)) {
+                generateChunkLightMap(key, vData);
+            }
+            chunkQueue.push(key); // 次フレームで即メッシュ化されるよう先頭（末尾pop位置）へ戻す
+            tasksProcessed++;
+            break;
         }
 
         const mesh = generateChunkMeshMultiTexture(cx, cz, false, useFade);
@@ -2763,6 +2547,7 @@ function processChunkQueue(isInitialBoost = false) {
 
         tasksProcessed++;
     }
+    return tasksProcessed;
 }
 
 function checkNeighborUpdate(ncx, ncz, oppositeBit) {
@@ -2799,11 +2584,12 @@ function updateGlobalSkyLight(time = gameTime) {
    ====================================================== */
 const _pendingCoordTmp = { cx: 0, cz: 0 };
 
-function processPendingChunkUpdates(budgetMs = 4.0) {
+function processPendingChunkUpdates(budgetMs = 3.0) {
     if (pendingChunkUpdates.size === 0) return;
 
     const startTime = performance.now();
     const FRAME_BUDGET = budgetMs;
+    let processed = 0;
 
     for (const key of pendingChunkUpdates) {
         pendingChunkUpdates.delete(key);
@@ -2825,8 +2611,9 @@ function processPendingChunkUpdates(budgetMs = 4.0) {
         }
 
         refreshChunkAt(cx, cz);
+        processed++;
 
-        if ((performance.now() - startTime) > FRAME_BUDGET) {
+        if (processed >= 1 || (performance.now() - startTime) > FRAME_BUDGET) {
             break;
         }
     }
@@ -2889,8 +2676,8 @@ function unloadChunkByKey(hashKey) {
 function processChunkUnloadQueue() {
     if (chunkUnloadQueue.length === 0) return;
 
-    const MAX_UNLOADS_PER_FRAME = 6;
-    const UNLOAD_TIME_BUDGET = 3.0;
+    const MAX_UNLOADS_PER_FRAME = 2;
+    const UNLOAD_TIME_BUDGET = 1.5;
     const startTime = performance.now();
     const pCx = getChunkCoord(player.position.x);
     const pCz = getChunkCoord(player.position.z);
@@ -3107,14 +2894,11 @@ function _markLightDirty(outDirty, key, wy) {
 
 // ブロックIDごとの遮光度(0..15, 不透明=15)および発光量(0..15)の高速取得
 function getBlockLightOpacity(blockId) {
-    if (blockId === 0) return 0;
-    const cfg = _blockConfigFastArray[blockId];
-    if (!cfg || !cfg.transparent) return 15;
-    return cfg.lightOpacity !== undefined ? cfg.lightOpacity : 1;
+    return _blockLightOpacity[blockId];
 }
 
 function getBlockLightEmission(blockId, meta = 0) {
-    if (blockId === 0) return 0;
+    if (_blockMayEmitLight[blockId] === 0) return 0;
     return getBlockLightEmissionForState(blockId, meta);
 }
 
@@ -6048,670 +5832,64 @@ function resetLastPlacedIfOnGround() {
     }
 }
 
-// --- 選択管理 ---
+// --- 選択管理・インベントリ・ホットバー・プレビュー（./ui/inventory_ui.js へ分離済） ---
 let activeBlockType = 0;
 let selectedHotbarIndex = 0;
 
-// --- 画像キャッシュ＆読み込み ---
-const imageCache = new Map();
-const loadImage = src => imageCache.has(src)
-    ? Promise.resolve(imageCache.get(src))
-    : new Promise((res, rej) => {
-        const img = new Image();
-        img.onload = () => (imageCache.set(src, img), res(img));
-        img.onerror = rej;
-        img.src = src;
-    });
-
-// --- Canvas作成 ---
-const createCanvas = size => Object.assign(document.createElement("canvas"), { width: size, height: size });
-
-
-/* ======================================================
-   【プレビューキャッシュ用ハッシュ関数（文字列廃止）】
-   ====================================================== */
-const previewCache = new Map();
-
-// ID(0~65535)、サイズ(0~255)、タイプ(0:2D / 1:3D) を1つの数値(32bit)にパック
-function getPreviewHash(id, size, type) {
-    return (id << 16) | (size << 8) | type;
-}
-
-// --- 2Dプレビュー ---
-const create2DPreview = ({ id, textures = {}, previewTexture = null, previewOptions = {} }, size) => {
-    const hashKey = getPreviewHash(id, size, 0); // 0 = 2D
-
-    if (previewCache.has(hashKey)) {
-        const cached = previewCache.get(hashKey);
-        const clone = createCanvas(size);
-        clone.getContext("2d").drawImage(cached, 0, 0);
-        return clone;
-    }
-
-    const canvas = createCanvas(size);
-    canvas.style.imageRendering = "pixelated";
-    const ctx = canvas.getContext("2d");
-    ctx.imageSmoothingEnabled = false;
-
-    // --- 💡 共通のエラー描画処理 ---
-    const drawErrorPattern = (context, s) => {
-        const half = s / 2;
-        context.fillStyle = "#FF00FF"; // マゼンタ
-        context.fillRect(0, 0, half, half);
-        context.fillRect(half, half, half, half);
-        context.fillStyle = "#000000"; // ブラック
-        context.fillRect(half, 0, half, half);
-        context.fillRect(0, half, half, half);
-    };
-
-    const src = previewTexture || textures.all || textures.side || textures.top;
-
-    // 1. テクスチャ指定自体がない場合
-    if (!src) {
-        console.warn(`テクスチャ定義なし block: ${id}`);
-        drawErrorPattern(ctx, size);
-        // エラー状態もキャッシュに保存（毎フレームの警告を防ぐ）
-        const cacheCanvas = createCanvas(size);
-        cacheCanvas.getContext("2d").drawImage(canvas, 0, 0);
-        previewCache.set(hashKey, cacheCanvas);
-        return canvas;
-    }
-
-    // 2. テクスチャがある場合（非同期読み込み＋BlockStateティント色乗算対応）
-    loadImage(src).then(img => {
-        const { x = 0, y = 0 } = previewOptions.offset || {};
-        ctx.clearRect(0, 0, size, size);
-        ctx.drawImage(img, x, y, size, size);
-
-        const cfg = getBlockConfiguration(id);
-        const pMeta = (cfg && cfg.previewState !== null && cfg.previewState !== undefined) ? cfg.previewState : (cfg?.defaultState ?? 0);
-        const variant = cfg && cfg._compiledVariants ? cfg._compiledVariants[pMeta & (cfg.stateMask ?? 0xFFF)] : null;
-        const tintHex = (variant && variant.defaultColor !== undefined) ? variant.defaultColor : (cfg?.defaultColor ?? 0xffffff);
-
-        if (tintHex !== 0xffffff) {
-            const tr = (tintHex >> 16) & 255;
-            const tg = (tintHex >> 8) & 255;
-            const tb = tintHex & 255;
-            const imgData = ctx.getImageData(0, 0, size, size);
-            const d = imgData.data;
-            for (let p = 0; p < d.length; p += 4) {
-                if (d[p + 3] === 0) continue;
-                d[p] = (d[p] * tr) / 255;
-                d[p + 1] = (d[p + 1] * tg) / 255;
-                d[p + 2] = (d[p + 2] * tb) / 255;
-            }
-            ctx.putImageData(imgData, 0, 0);
-        }
-
-        // キャッシュ保存
-        const cacheCanvas = createCanvas(size);
-        cacheCanvas.getContext("2d").drawImage(canvas, 0, 0);
-        previewCache.set(hashKey, cacheCanvas);
-    }).catch(e => {
-        console.error(`画像読み込み失敗 block: ${id}`, e);
-        // 読み込み失敗時もエラーパターンを描画してキャッシュ
-        drawErrorPattern(ctx, size);
-        const cacheCanvas = createCanvas(size);
-        cacheCanvas.getContext("2d").drawImage(canvas, 0, 0);
-        previewCache.set(hashKey, cacheCanvas);
-    });
-
-    // 読み込み中も「透明」ではなく「エラー柄」を仮に返しておくと
-    // ユーザーにロード中または異常であることが伝わりやすくなります
-    drawErrorPattern(ctx, size);
-
-    return canvas;
-};
-
-// --- 3Dプレビュー ---
-const shared3DCanvas = createCanvas(64);
-shared3DCanvas.style.display = "none";
-document.body.appendChild(shared3DCanvas);
-
-const sharedRenderer = new THREE.WebGLRenderer({
-    canvas: shared3DCanvas,
-    alpha: true,
-    antialias: false,
-    stencil: false,
-    powerPreference: "low-power"
-});
-sharedRenderer.debug.checkShaderErrors = false;
-sharedRenderer.setSize(64, 64);
-sharedRenderer.setClearColor(0x000000, 0);
-
-const sharedScene = new THREE.Scene();
-sharedScene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const light = new THREE.DirectionalLight(0xffffff, 0.8);
-light.position.set(5, 5, 5);
-sharedScene.add(light);
-
-const sharedCamera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
-sharedCamera.position.set(2, 2, 2);
-sharedCamera.lookAt(0, 0, 0);
-
-// 3Dプレビュー計算用再利用オブジェクト（GC削減・共有リソース保護）
-const _previewBox = new THREE.Box3();
-const _previewCenter = new THREE.Vector3();
-const _previewOrigin = new THREE.Vector3(0, 0, 0);
-
-// 3Dプレビュー作成（共有ジオメトリ・共有テクスチャを絶対に dispose しない安全版）
-const create3DPreview = async ({ id, previewOptions = {}, geometryType }, size) => {
-    const hashKey = getPreviewHash(id, size, 1);
-
-    if (previewCache.has(hashKey)) {
-        const cached = previewCache.get(hashKey);
-        const clone = createCanvas(size);
-        clone.getContext("2d").drawImage(cached, 0, 0);
-        return clone;
-    }
-
-    const previewCanvas = createCanvas(size);
-    previewCanvas.style.imageRendering = "pixelated";
-
-    if (sharedRenderer.domElement.width !== size || sharedRenderer.domElement.height !== size) {
-        sharedRenderer.setSize(size, size);
-    }
-
-    const cfg = getBlockConfiguration(id);
-    if (!cfg) return previewCanvas;
-
-    const previewMeta = (cfg.previewState !== null && cfg.previewState !== undefined)
-        ? cfg.previewState
-        : (cfg.defaultState ?? 0);
-    const maskedMeta = previewMeta & (cfg.stateMask ?? 0xFFF);
-    const sharedGeom = getBlockGeometry(cfg.geometryType, cfg, maskedMeta);
-    const sharedMats = getBlockMaterialsFast(id, maskedMeta);
-    if (!sharedGeom || !sharedMats) {
-        console.error(`プレビュー素材取得失敗 id: ${id}`);
-        return previewCanvas;
-    }
-
-    const originalMaterials = Array.isArray(sharedMats) ? sharedMats : [sharedMats];
-    const previewMaterials = originalMaterials.map(m => new THREE.MeshBasicMaterial({
-        map: m.map || null,
-        color: m.color ? m.color.clone() : 0xffffff,
-        side: THREE.FrontSide,
-        transparent: m.transparent || false,
-        opacity: m.opacity !== undefined ? m.opacity : 1,
-        alphaTest: m.alphaTest || 0
-    }));
-
-    const mesh = new THREE.Mesh(
-        sharedGeom,
-        Array.isArray(sharedMats) ? previewMaterials : previewMaterials[0]
-    );
-    mesh.position.copy(_previewOrigin);
-
-    try {
-        const loadPromises = previewMaterials
-            .map(m => m.map)
-            .filter(map => map && !(map.image && map.image.complete))
-            .map(map => new Promise(resolve => {
-                let waited = 0;
-                const checkLoaded = () => {
-                    if ((map.image && map.image.complete) || waited > 3000) resolve();
-                    else {
-                        waited += 10;
-                        setTimeout(checkLoaded, 10);
-                    }
-                };
-                checkLoaded();
-            }));
-        await Promise.all(loadPromises);
-
-        for (let i = 0; i < previewMaterials.length; i++) {
-            const map = previewMaterials[i].map;
-            if (map) {
-                map.magFilter = THREE.NearestFilter;
-                map.minFilter = THREE.NearestMipmapNearestFilter;
-                map.generateMipmaps = true;
-                map.needsUpdate = true;
+const InventoryUI = createInventoryUI({
+    BLOCK_CONFIG,
+    BLOCK_TYPES,
+    getBlockConfiguration,
+    getBlockGeometry,
+    getBlockMaterialsFast,
+    idToKey,
+    keyToId,
+    onActiveBlockChanged: (blockId, slotIdx) => {
+        activeBlockType = blockId;
+        selectedHotbarIndex = slotIdx;
+    },
+    onOpenChanged: (opened) => {
+        isInventoryOpen = opened;
+        if (opened) {
+            releaseAllActiveInputs();
+            if (document.pointerLockElement && document.exitPointerLock) {
+                document.exitPointerLock();
             }
         }
-
-        light.position.set(10, 10, 10);
-        light.intensity = 0.8;
-        sharedCamera.position.set(2, 2, 2);
-        sharedCamera.lookAt(0, 0, 0);
-        sharedCamera.updateProjectionMatrix();
-
-        sharedScene.add(mesh);
-
-        const rot = previewOptions.rotation || { x: 0, y: 0, z: 0 };
-        mesh.rotation.set(
-            THREE.MathUtils.degToRad(rot.x),
-            THREE.MathUtils.degToRad(rot.y),
-            THREE.MathUtils.degToRad(rot.z)
-        );
-
-        mesh.scale.setScalar(previewOptions.scale || 1);
-        if (geometryType === "stairs") {
-            mesh.scale.x *= -1;
-        }
-
-        // 回転・拡大を適用した後の実ワールドAABBから中央へ正確にセンタリング
-        mesh.position.set(0, 0, 0);
-        mesh.updateMatrixWorld(true);
-        _previewBox.setFromObject(mesh);
-        _previewBox.getCenter(_previewCenter);
-        mesh.position.sub(_previewCenter);
-
-        if (previewOptions.offset) {
-            mesh.position.x += previewOptions.offset.x || 0;
-            mesh.position.y += previewOptions.offset.y || 0;
-            mesh.position.z += previewOptions.offset.z || 0;
-        }
-
-        sharedRenderer.render(sharedScene, sharedCamera);
-
-        const cacheCanvas = createCanvas(size);
-        cacheCanvas.getContext("2d").drawImage(shared3DCanvas, 0, 0, size, size);
-        previewCache.set(hashKey, cacheCanvas);
-
-        const resultCanvas = createCanvas(size);
-        resultCanvas.getContext("2d").drawImage(cacheCanvas, 0, 0);
-        return resultCanvas;
-    } finally {
-        // 描画直後にシーンから外し、一時生成した previewMaterials のみ確実に破棄（共有ジオメトリ・共有テクスチャは保護）
-        sharedScene.remove(mesh);
-        mesh.geometry = null;
-        mesh.material = null;
-        for (let i = 0; i < previewMaterials.length; i++) {
-            previewMaterials[i].dispose();
-        }
-    }
-};
-
-// --- 専用 2D アイテムアイコンプレビュー（実態は3D・アイテム表示のみ別2D画像を使用） ---
-const createItemIconPreview = async (config, size) => {
-    const rawIcon = config.itemIcon;
-    if (!rawIcon) return null;
-
-    const iconCfg = (typeof rawIcon === "string") ? { texture: rawIcon } : rawIcon;
-    if (!iconCfg || !iconCfg.texture) return null;
-
-    const hashKey = getPreviewHash(config.id, size, 2); // 2 = itemIcon (2D)
-    if (previewCache.has(hashKey)) {
-        const cached = previewCache.get(hashKey);
-        const clone = createCanvas(size);
-        clone.getContext("2d").drawImage(cached, 0, 0);
-        return clone;
-    }
-
-    try {
-        const img = await loadImage(iconCfg.texture);
-        const canvas = createCanvas(size);
-        canvas.style.imageRendering = "pixelated";
-        const ctx = canvas.getContext("2d");
-        ctx.imageSmoothingEnabled = false;
-
-        const { x = 0, y = 0 } = iconCfg.offset || {};
-        ctx.clearRect(0, 0, size, size);
-        ctx.drawImage(img, x, y, size, size);
-
-        // 専用アイテム画像にはデフォルトでブロックステート色乗算を掛けない（tint: true 指定時のみ適用）
-        if (iconCfg.tint === true) {
-            const pMeta = (config.previewState !== null && config.previewState !== undefined)
-                ? config.previewState
-                : (config.defaultState ?? 0);
-            const variant = config._compiledVariants
-                ? config._compiledVariants[pMeta & (config.stateMask ?? 0xFFF)]
-                : null;
-            const tintHex = (variant && variant.defaultColor !== undefined)
-                ? variant.defaultColor
-                : (config.defaultColor ?? 0xffffff);
-
-            if (tintHex !== 0xffffff) {
-                const tr = (tintHex >> 16) & 255;
-                const tg = (tintHex >> 8) & 255;
-                const tb = tintHex & 255;
-                const imgData = ctx.getImageData(0, 0, size, size);
-                const d = imgData.data;
-                for (let p = 0; p < d.length; p += 4) {
-                    if (d[p + 3] === 0) continue;
-                    d[p] = (d[p] * tr) / 255;
-                    d[p + 1] = (d[p + 1] * tg) / 255;
-                    d[p + 2] = (d[p + 2] * tb) / 255;
-                }
-                ctx.putImageData(imgData, 0, 0);
-            }
-        }
-
-        const cacheCanvas = createCanvas(size);
-        cacheCanvas.getContext("2d").drawImage(canvas, 0, 0);
-        previewCache.set(hashKey, cacheCanvas);
-        return canvas;
-    } catch (e) {
-        console.warn(`[ItemIcon] 2Dアイテム画像未配置のため通常プレビューへフォールバック (${config.name}): ${iconCfg.texture}`);
-        return null;
-    }
-};
-
-// --- プレビュー選択（itemIcon 優先 -> 未配置時は既存の 2D/3D プレビューへ自動フォールバック） ---
-const createItemPreview = async (blockConfig, size) => {
-    const config = getBlockConfiguration(blockConfig.id);
-    if (!config) return createCanvas(size);
-
-    if (config.itemIcon) {
-        const iconCanvas = await createItemIconPreview(config, size);
-        if (iconCanvas) return iconCanvas;
-    }
-    return config.previewType === "2D"
-        ? create2DPreview(config, size)
-        : await create3DPreview(config, size);
-};
-
-const createInventoryItemPreview = async blockConfig => createItemPreview(blockConfig, 40);
-const createHotbarItemPreview = async blockConfig => createItemPreview(blockConfig, 64);
-
-const INVENTORY_TABS = [
-    { id: "all", label: "すべて" },
-    { id: "building", label: "建築" },
-    { id: "natural", label: "自然" },
-    { id: "redstone", label: "レッドストーン" },
-    { id: "functional", label: "機能" }
-];
-
-const NATURAL_BLOCK_NAMES = new Set([
-    "grass_block", "dirt", "sand", "sandstone", "snow", "gravel"
-]);
-
-let activeInventoryTab = "all";
-const _inventoryEntries = [];
-
-/**
- * ブロック定義の creativeTab（明示指定）または属性から所属タブ配列を自動解決する
- */
-function resolveBlockCreativeTabs(cfg) {
-    if (cfg.creativeTab) {
-        return Array.isArray(cfg.creativeTab) ? cfg.creativeTab : [cfg.creativeTab];
-    }
-
-    const tabs = [];
-    const name = cfg.name || "";
-    const gType = cfg.geometryType || "cube";
-
-    // 1. レッドストーン系（デフォルト値 "none" を除外し厳密判定）
-    const hasRedstoneRole = typeof cfg.redstoneRole === "string" &&
-        cfg.redstoneRole.length > 0 &&
-        cfg.redstoneRole !== "none";
-
-    if (
-        hasRedstoneRole ||
-        cfg.redstoneDevice === true ||
-        cfg.redstonePowerOutput > 0 ||
-        cfg.isStickyPiston === true
-    ) {
-        tabs.push("redstone");
-    }
-
-    // 2. 機能・装飾系（ドア・トラップドアはレッドストーンと機能の両方に表示）
-    if (
-        cfg.blockEntityType ||
-        cfg.isLadder === true ||
-        name === "torch" ||
-        name === "glowstone" ||
-        cfg.redstoneRole === "door" ||
-        cfg.redstoneRole === "trapdoor"
-    ) {
-        tabs.push("functional");
-    }
-
-    // 3. 自然系
-    if (
-        gType === "cross" ||
-        gType === "water" ||
-        gType === "leaves" ||
-        cfg.isLog === true ||
-        NATURAL_BLOCK_NAMES.has(name) ||
-        name.endsWith("_ore")
-    ) {
-        tabs.push("natural");
-    }
-
-    // 4. 建築系（上記以外の建築ブロック＋砂岩・グロウストーン）
-    if (tabs.length === 0 || name === "sandstone" || name === "glowstone") {
-        tabs.push("building");
-    }
-
-    return tabs;
-}
-
-function setActiveInventoryTab(tabId) {
-    activeInventoryTab = tabId;
-
-    const tabBtns = document.querySelectorAll("#inventory-tabs .inv-tab");
-    for (let i = 0; i < tabBtns.length; i++) {
-        tabBtns[i].classList.toggle("active", tabBtns[i].dataset.tab === tabId);
-    }
-
-    for (let i = 0; i < _inventoryEntries.length; i++) {
-        const entry = _inventoryEntries[i];
-        const visible = (tabId === "all") || entry.tabs.includes(tabId);
-        entry.el.style.display = visible ? "" : "none";
-    }
-
-    const inventoryEl = document.getElementById("inventory");
-    if (inventoryEl) inventoryEl.scrollTop = 0;
-}
-
-async function itemspreview() {
-    const inventoryEl = document.getElementById("inventory");
-    const tabsEl = document.getElementById("inventory-tabs");
-    if (!inventoryEl) return;
-
-    inventoryEl.innerHTML = "";
-    _inventoryEntries.length = 0;
-
-    // タブバー構築
-    if (tabsEl) {
-        tabsEl.innerHTML = "";
-        for (let i = 0; i < INVENTORY_TABS.length; i++) {
-            const tab = INVENTORY_TABS[i];
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "inv-tab" + (tab.id === activeInventoryTab ? " active" : "");
-            btn.dataset.tab = tab.id;
-            btn.setAttribute("role", "tab");
-            btn.textContent = tab.label;
-            btn.addEventListener("click", (e) => {
-                e.stopPropagation();
-                setActiveInventoryTab(tab.id);
-            });
-            tabsEl.appendChild(btn);
-        }
-    }
-
-    const promises = Object.values(BLOCK_CONFIG).map(async blockConfig => {
-        if (!blockConfig.itemdisplay) return null;
-        const item = document.createElement("div");
-        item.className = "inventory-item";
-        const blockId = Number(blockConfig.id);
-        item.dataset.blocktype = blockId;
-
-        attachTooltip(item, blockId);
-
-        const preview = await createInventoryItemPreview(blockConfig);
-        preview.style.width = preview.style.height = "38px";
-        item.appendChild(preview);
-
-        item.addEventListener("click", async (e) => {
-            e.stopPropagation();
-            document.querySelectorAll(".inventory-item.active").forEach(el => el.classList.remove("active"));
-            item.classList.add("active");
-
-            activeBlockType = Number(blockConfig.id);
-
-            const hotbarSlot = _hotbarSlotEls[selectedHotbarIndex];
-            if (!hotbarSlot) return;
-            hotbarSlot.innerHTML = "";
-            hotbarSlot.dataset.blocktype = blockConfig.id;
-
-            const hotbarPreview = await createHotbarItemPreview(blockConfig);
-            hotbarPreview.style.width = hotbarPreview.style.height = "34px";
-            hotbarSlot.appendChild(hotbarPreview);
-        });
-
-        return { el: item, tabs: resolveBlockCreativeTabs(blockConfig) };
-    });
-
-    const entries = (await Promise.all(promises)).filter(Boolean);
-    for (let i = 0; i < entries.length; i++) {
-        _inventoryEntries.push(entries[i]);
-        inventoryEl.appendChild(entries[i].el);
-    }
-
-    setActiveInventoryTab(activeInventoryTab);
-}
-
-// --- グローバル変数 ---
-let tooltip;
-let lastMouseX = 0; // マウスの現在位置を常に記録
-let lastMouseY = 0;
-
-/**
- * マウス座標にある要素を判定してツールチップを更新する共通関数
- */
-function updateTooltipInstant() {
-    if (!tooltip || !isInventoryOpen) return;
-
-    // 現在のマウス座標にあるDOM要素を取得
-    const targetEl = document.elementFromPoint(lastMouseX, lastMouseY);
-    // その要素自体、または親要素に .inventory-item があるか探す
-    const itemEl = targetEl?.closest(".inventory-item");
-
-    if (itemEl) {
-        const blockId = itemEl.dataset.blocktype;
-        const cfg = getBlockConfiguration(blockId);
-        tooltip.textContent = cfg?.name || "Unknown";
-        tooltip.style.display = "block";
-
-        // 座標も即座に更新
-        updateTooltipPosition(lastMouseX, lastMouseY);
-    } else {
-        tooltip.style.display = "none";
-    }
-}
-
-/**
- * ツールチップの位置を計算・表示する補助関数
- */
-function updateTooltipPosition(clientX, clientY) {
-    if (!tooltip) return;
-    const gap = 12;
-    let x = clientX + gap;
-    let y = clientY + gap;
-
-    // 画面右端での折り返し
-    const tooltipWidth = tooltip.offsetWidth;
-    if (x + tooltipWidth > window.innerWidth) {
-        x = clientX - tooltipWidth - gap;
-    }
-
-    tooltip.style.left = x + "px";
-    tooltip.style.top = y + "px";
-}
-
-/**
- * アイテム要素にイベントを登録
- */
-function attachTooltip(element, blockId) {
-    element.addEventListener("mouseenter", () => {
-        if (!tooltip) return;
-        const cfg = getBlockConfiguration(blockId);
-        tooltip.textContent = cfg?.name || "Unknown";
-        tooltip.style.display = "block";
-    });
-
-    element.addEventListener("mouseleave", () => {
-        if (!tooltip) return;
-        tooltip.style.display = "none";
-    });
-}
-
-/**
- * ツールチップの初期化
- */
-async function initTooltip() {
-    tooltip = document.createElement("div");
-    tooltip.style.position = "fixed";
-    tooltip.style.pointerEvents = "none";
-    tooltip.style.padding = "4px 8px";
-    tooltip.style.background = "rgba(0,0,0,0.85)"; // 少し不透明度を調整
-    tooltip.style.color = "#fff";
-    tooltip.style.fontSize = "12px";
-    tooltip.style.borderRadius = "4px";
-    tooltip.style.whiteSpace = "nowrap";
-    tooltip.style.zIndex = "9999";
-    tooltip.style.display = "none";
-    tooltip.style.border = "1px solid #555"; // 縁取りを追加（Minecraft風）
-    document.body.appendChild(tooltip);
-
-    document.addEventListener("mousemove", (e) => {
-        // マウス位置を常に保存
-        lastMouseX = e.clientX;
-        lastMouseY = e.clientY;
-
-        if (tooltip.style.display === "none") return;
-        updateTooltipPosition(e.clientX, e.clientY);
-    });
-}
-
-// --- ホットバー初期化（DOM要素キャッシュ配列＋単一イベント委譲） ---
-const hotbarEl = document.getElementById("hotbar");
-const _hotbarSlotEls = new Array(9);
-hotbarEl.innerHTML = "";
-
-for (let i = 0; i < 9; i++) {
-    const item = document.createElement("div");
-    item.className = "hotbar-item";
-    if (i === 0) item.classList.add("active");
-    item.dataset.blocktype = "";
-    item.dataset.slotIndex = String(i);
-    hotbarEl.appendChild(item);
-    _hotbarSlotEls[i] = item;
-}
-
-hotbarEl.addEventListener("click", (e) => {
-    const slotEl = e.target.closest(".hotbar-item");
-    if (!slotEl) return;
-    const idx = Number(slotEl.dataset.slotIndex);
-    if (Number.isInteger(idx) && idx >= 0 && idx < 9) {
-        selectedHotbarIndex = idx;
-        updateHotbarSelection();
     }
 });
 
-// --- ホットバー選択更新（querySelectorAll ゼロ） ---
-function updateHotbarSelection() {
-    for (let i = 0; i < 9; i++) {
-        const el = _hotbarSlotEls[i];
-        if (!el) continue;
-        if (i === selectedHotbarIndex) {
-            el.classList.add("active");
-            activeBlockType = Number(el.dataset.blocktype || 0);
-        } else {
-            el.classList.remove("active");
-        }
-    }
-}
-
-// --- インベントリ表示制御 ---
-const inventoryContainer = document.getElementById("inventory-container");
-inventoryContainer.style.display = "none";
-
 /* ======================================================
-   【ウィンドウのリサイズ対応】
+   【ウィンドウのリサイズ・スマホ画面回転対応】
    ====================================================== */
-window.addEventListener('resize', () => {
-    // 1. カメラのアスペクト比を現在の画面サイズに更新
-    camera.aspect = window.innerWidth / window.innerHeight;
+function syncViewportSize() {
+    const vv = window.visualViewport;
+    const width = Math.max(1, Math.round(vv ? vv.width : window.innerWidth));
+    const height = Math.max(1, Math.round(vv ? vv.height : window.innerHeight));
+
+    // 回転時に残るブラウザの意図しないスクロールオフセットをリセット
+    if (window.scrollX !== 0 || window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+    }
+
+    camera.aspect = width / height;
     camera.updateProjectionMatrix();
     if (!renderer) return;
-    // 2. レンダラーの描画サイズを更新（DPR上限を初期化時と統一）
-    renderer.setSize(window.innerWidth, window.innerHeight);
+
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_RENDER_PIXEL_RATIO));
+    renderer.setSize(width, height, true);
+}
+
+window.addEventListener('resize', syncViewportSize);
+window.addEventListener('orientationchange', () => {
+    syncViewportSize();
+    // モバイルブラウザは回転アニメーション完了後に最終サイズが確定するため遅延再同期
+    setTimeout(syncViewportSize, 120);
+    setTimeout(syncViewportSize, 350);
 });
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncViewportSize);
+}
 
 /* ======================================================
    【超軽量化・チャンク境界表示システム（全6面格子付き）】
@@ -7308,14 +6486,14 @@ function updateUnderwaterPhysics(delta) {
 
     const effectiveSpeed = dashActive ? TARGET_SWIM_SPEED * DASH_MULTIPLIER : TARGET_SWIM_SPEED;
 
-    // 1. 水平方向（XZ）の基準になる「前」を取得
+    // 1. 水平方向（XZ）の基準になる「前・右」を yaw から直接計算（真下向きバグ防止）
+    const sinY = Math.sin(yaw);
+    const cosY = Math.cos(yaw);
     const forward = globalTempVec3;
-    camera.getWorldDirection(forward);
-    forward.y = 0;
-    forward.normalize();
+    forward.set(-sinY, 0, -cosY);
 
     const right = globalTempVec3b;
-    right.crossVectors(forward, _VEC_UP).normalize();
+    right.set(cosY, 0, -sinY);
 
     const swimVel = globalTempVec3c;
     swimVel.set(0, 0, 0);
@@ -7696,28 +6874,9 @@ const ContainerUI = createContainerUI({
     getBlockConfiguration,
     keyToId,
     idToKey,
-    createPreview: (cfg) => createInventoryItemPreview(cfg),
-    getHotbarKeys: () => {
-        const out = new Array(9).fill("");
-        for (let i = 0; i < 9; i++) {
-            const rawId = Number(_hotbarSlotEls[i]?.dataset.blocktype || 0);
-            out[i] = rawId > 0 ? idToKey(rawId & 0xFFF) : "";
-        }
-        return out;
-    },
-    setHotbarSlotKey: async (slotIdx, key) => {
-        const slotEl = _hotbarSlotEls[slotIdx];
-        if (!slotEl || !key) return;
-        const bid = keyToId(key);
-        const cfg = getBlockConfiguration(bid);
-        if (!cfg) return;
-        slotEl.innerHTML = "";
-        slotEl.dataset.blocktype = String(bid);
-        const preview = await createHotbarItemPreview(cfg);
-        preview.style.width = preview.style.height = "55px";
-        slotEl.appendChild(preview);
-        updateHotbarSelection();
-    },
+    createPreview: (cfg) => InventoryUI.createInventoryItemPreview(cfg),
+    getHotbarKeys: () => InventoryUI.getHotbarKeys(),
+    setHotbarSlotKey: (slotIdx, key) => InventoryUI.setHotbarSlotKey(slotIdx, key),
     onOpenChanged: (opened, be) => {
         isContainerOpen = opened;
         if (be && be.type === "minecraft:chest") {
@@ -8189,8 +7348,7 @@ function animate() {
             }
             player.prevPosition.copy(player.position);
             player.spawnFixed = true;
-            updateSunMoonPosition(gameTime);
-            updateStars(gameTime);
+            SkySystem.update(gameTime);
         } else {
             player.velocity.y = 0;
             updateChunks();
@@ -8243,9 +7401,7 @@ function animate() {
     const worldTickAlpha = isPaused ? 0 : (worldTickAccumulator * WORLD_TPS);
     const renderGameTime = (gameTime + worldTickAlpha * TIME_SPEED) % TICKS_PER_DAY;
     EntityManager.updateRenderInterpolation(isPaused ? 1.0 : worldTickAlpha);
-    updateSunMoonPosition(renderGameTime);
-    updateStars(renderGameTime);
-    const currentSkyFactor = getSkyLightFactor(renderGameTime);
+    const currentSkyFactor = SkySystem.update(renderGameTime);
 
     const curPCx = getChunkCoord(player.position.x);
     const curPCz = getChunkCoord(player.position.z);
@@ -8303,17 +7459,18 @@ function animate() {
     updateChunks();
     const chunkPhaseStart = performance.now();
     // 回路・ピストン・流体など視界内の動的変化を最優先で反映
-    processChunkUpdateQueue(6.0);
+    processChunkUpdateQueue(4.0);
     processChunkUnloadQueue();
-    if ((performance.now() - chunkPhaseStart) < 8.0) {
-        processChunkQueue(false);
+    let builtChunksThisFrame = 0;
+    if ((performance.now() - chunkPhaseStart) < 5.0) {
+        builtChunksThisFrame = processChunkQueue(false);
     }
     updateChunkFadeIns(now);
     chunkUpdateFrameTimer += delta;
     if (chunkUpdateFrameTimer > 0.016) {
-        const remPending = 10.0 - (performance.now() - chunkPhaseStart);
-        if (pendingChunkUpdates.size > 0 && remPending > 1.0) {
-            processPendingChunkUpdates(Math.min(4.0, remPending));
+        const remPending = 6.0 - (performance.now() - chunkPhaseStart);
+        if (builtChunksThisFrame === 0 && pendingChunkUpdates.size > 0 && remPending > 1.5) {
+            processPendingChunkUpdates(Math.min(3.0, remPending));
         }
         chunkUpdateFrameTimer = 0;
     }
@@ -8372,17 +7529,6 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-/**
- * ゲーム内時間を HH:mm 形式に変換
- */
-function getGameClock(ticks) {
-    // 1000 ticks = 1時間, 0 ticks = 6:00
-    const totalHours = (ticks / 1000 + 6) % 24;
-    const hours = Math.floor(totalHours);
-    const minutes = Math.floor((totalHours % 1) * 60);
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-}
-
 /* ======================================================
    【UIイベント】タイトル画面からの起動
    ====================================================== */
@@ -8428,41 +7574,7 @@ function sanitizeSavedPosition(rawPos) {
  * 保存されたホットバー9スロット・選択スロット・飛行状態をUIとゲーム状態へ復元する
  */
 async function restorePlayerSaveState(savedPlayerState) {
-    const hotbarItems = document.querySelectorAll(".hotbar-item");
-    const hotbarKeys = Array.isArray(savedPlayerState?.hotbarKeys) ? savedPlayerState.hotbarKeys : [];
-
-    for (let i = 0; i < hotbarItems.length; i++) {
-        const slot = hotbarItems[i];
-        slot.innerHTML = "";
-        slot.dataset.blocktype = "";
-        slot.classList.remove("active");
-
-        const key = hotbarKeys[i];
-        if (!key || typeof key !== "string") continue;
-
-        const blockId = keyToId(key);
-        if (!blockId || blockId === BLOCK_TYPES.SKY) continue;
-
-        const cfg = getBlockConfiguration(blockId);
-        if (!cfg || cfg.itemdisplay === false) continue;
-
-        slot.dataset.blocktype = String(blockId);
-        const preview = await createHotbarItemPreview(cfg);
-        preview.style.width = preview.style.height = "55px";
-        slot.appendChild(preview);
-    }
-
-    const rawSlot = Number(savedPlayerState?.selectedHotbarIndex);
-    selectedHotbarIndex = Number.isInteger(rawSlot) ? Math.max(0, Math.min(8, rawSlot)) : 0;
-    updateHotbarSelection();
-
-    // インベントリ側の選択ハイライトもホットバーと同期
-    document.querySelectorAll(".inventory-item.active").forEach(el => el.classList.remove("active"));
-    if (activeBlockType > 0) {
-        const invMatch = document.querySelector(`.inventory-item[data-blocktype="${activeBlockType}"]`);
-        if (invMatch) invMatch.classList.add("active");
-    }
-
+    await InventoryUI.restoreHotbarState(savedPlayerState);
     if (typeof savedPlayerState?.flightMode === "boolean") {
         flightMode = savedPlayerState.flightMode;
     }
@@ -8638,10 +7750,6 @@ document.getElementById('btn-load-saved').onclick = async () => {
 let currentWorldUid = null;
 let isWorldSavedToDB = false;
 
-function generateWorldUid() {
-    return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
 async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0, savedWorldUid = null, savedPlayerState = null, savedSimulationState = null, savedWorldEntitiesState = null) {
     const fill = document.getElementById('loading-fill');
 
@@ -8655,8 +7763,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     await updateProgress(10);
 
     initCanvas();
-    initSunMoon();
-    initStars();
+    SkySystem.init();
 
     // Java Edition 準拠の JSON モデル＆BlockState アセットを並列ロードし高速テーブルを再同期
     const jsonUpdatedBlocks = await loadBlockAssets();
@@ -8743,10 +7850,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     await updateProgress(50);
 
     // --- 3. アイテムプレビュー生成＆ホットバー・プレイヤー状態復元 ---
-    if (typeof itemspreview === 'function') {
-        await itemspreview();
-        await initTooltip();
-    }
+    await InventoryUI.init();
     await restorePlayerSaveState(savedPlayerState);
 
     // 70%：UI・ホットバー復元完了
@@ -8781,8 +7885,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     await prewarmSpawnChunks(updateProgress, 70, 95);
 
     // --- 5. 天体・カメラ初期同期 ---
-    updateSunMoonPosition();
-    updateStars();
+    SkySystem.update(gameTime);
     camera.position.set(
         player.position.x,
         player.position.y + getCurrentPlayerHeight() - (flightMode ? 0.15 : 0),
@@ -8804,53 +7907,17 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
 
 
 /* ======================================================
-   【中断・ポーズシステム】修正版
+   【中断・ポーズシステム】（./core/input_controller.js へ分離済）
    ====================================================== */
 let isPaused = false;
-const pauseMenu = document.getElementById("pause-menu");
-const mainMenu = document.getElementById("main-menu");
 
-/**
- * ポーズ移行・タブ非表示時に入力キーと長押し破壊/設置を安全解除する（キー張り付き防止）
- */
 function releaseAllActiveInputs() {
-    for (const k in keys) {
-        keys[k] = false;
-    }
-    dashActive = false;
-    sneakActive = false;
-    jumpRequest = false;
-    f3Pressed = false;
-    stopInteraction("left");
-    stopInteraction("right");
-    stopInteraction("touch");
+    InputController.releaseAllActiveInputs();
 }
 
-// ポーズ状態を画面に反映させる関数
-function updatePauseUI() {
-    if (isPaused) {
-        releaseAllActiveInputs();
-        pauseMenu.style.display = "flex";
-    } else {
-        clock.getDelta(); // ポーズ中の経過時間を捨てて再開時の時間飛びを防止
-        pauseMenu.style.display = "none";
-    }
+function stopInteraction(key = "default") {
+    InputController.stopInteraction(key);
 }
-
-// タブ切り替え・最小化時のキー張り付きおよび自動ポーズ保護
-document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-        releaseAllActiveInputs();
-        physicsAccumulator = 0;
-        worldTickAccumulator = 0;
-        if (renderer && mainMenu && mainMenu.style.display === "none" && !isPaused) {
-            isPaused = true;
-            updatePauseUI();
-        }
-    } else {
-        clock.getDelta();
-    }
-});
 
 /* ======================================================
    保存してタイトルへ戻る
@@ -8861,15 +7928,10 @@ let isSavingWorld = false;
  * ホットバー構成（文字列ブロックキー配列）・選択スロット・飛行状態を収集
  */
 function collectPlayerSaveState() {
-    const hotbarItems = document.querySelectorAll(".hotbar-item");
-    const hotbarKeys = new Array(9).fill("");
-    for (let i = 0; i < 9 && i < hotbarItems.length; i++) {
-        const rawId = Number(hotbarItems[i].dataset.blocktype || 0);
-        hotbarKeys[i] = rawId > 0 ? idToKey(rawId & 0xFFF) : "";
-    }
+    const hotbarState = InventoryUI.exportHotbarState();
     return {
-        hotbarKeys,
-        selectedHotbarIndex,
+        hotbarKeys: hotbarState.hotbarKeys,
+        selectedHotbarIndex: hotbarState.selectedHotbarIndex,
         flightMode: !!flightMode
     };
 }
@@ -8908,10 +7970,20 @@ async function saveCurrentWorld() {
             blockEntities: BlockEntityManager.exportState(),
             entities: EntityManager.exportState()
         };
-        const result = await saveWorldData(
-            s, pPos, ChunkSaveManager, gameTime, currentWorldUid,
-            playerState, simulationState, worldEntitiesState
-        );
+        const result = await saveWorldData({
+            seed: s,
+            playerPos: pPos,
+            chunkManager: ChunkSaveManager,
+            gameTime,
+            worldUid: currentWorldUid,
+            isAlreadySaved: isWorldSavedToDB,
+            playerState,
+            simulationState,
+            worldEntitiesState
+        });
+
+        currentWorldUid = result.worldUid;
+        isWorldSavedToDB = true;
 
         console.log(
             `[Save] 完了 (${result.mode}): ${result.savedChunks} チャンク / ` +
@@ -8963,162 +8035,88 @@ if (btn_noSaveAndQuit) {
     };
 }
 
-/* ======================================================
-   【チャットログシステム】
-   ====================================================== */
-const chatContainer = document.getElementById("chat-container");
-const MAX_CHAT_LOGS = 50; // 最大ログ保持数
-
-/**
- * チャット画面にメッセージを追加する
- * @param {string} text - メッセージ内容
- * @param {string} color - 文字色 (オプション。標準は白色)
- * @param {number} duration - フェードアウトまでの時間（ミリ秒。標準は6秒）
- */
-function addChatMessage(text, color = "#ffffff", duration = 6000) {
-    if (!chatContainer) return;
-
-    // ログが多すぎる場合は古いものを削除
-    while (chatContainer.children.length >= MAX_CHAT_LOGS) {
-        chatContainer.removeChild(chatContainer.firstChild);
-    }
-
-    const messageEl = document.createElement("div");
-    messageEl.className = "chat-message";
-    messageEl.innerText = text;
-    messageEl.style.color = color;
-
-    chatContainer.appendChild(messageEl);
-
-    // 最新ログが見えるように自動スクロール
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-
-    // 一定時間後にフェードアウトして消す
-    setTimeout(() => {
-        messageEl.style.opacity = "0";
-        setTimeout(() => {
-            if (messageEl.parentNode === chatContainer) {
-                chatContainer.removeChild(messageEl);
-            }
-        }, 1000); // transitionの1秒に合わせる
-    }, duration);
-}
-
-// グローバルでどこからでも呼べるように window に露出
-window.addChatMessage = addChatMessage;
 addChatMessage("Minecraft test 0.0.1", "#ffff55");
 
-
-
-// ==========================================
-// 1. グローバル変数の定義と初期設定
-// ==========================================
 const keys = {};
-let f3Pressed = false;
 let isInventoryOpen = false;
-let pointerLocked = false;
 
-// インターバルID管理（連続破壊・設置用）
-const interactIntervalIds = {
-    left: null,
-    right: null,
-    touch: null,
-};
+function applyRenderDistance(val) {
+    if (isNaN(val) || val < 0 || val > 32) return;
+    CHUNK_VISIBLE_DISTANCE = val;
 
-// モバイル判定
-const touchpad_controls = {
-    leftcontrols: document.getElementById("left-controls"),
-    rightcontrols: document.getElementById("right-controls")
-};
-const ua = navigator.userAgent.toLowerCase();
-if (ua.includes("mobile") || ua.indexOf("ipad") > -1 || (ua.indexOf("macintosh") > -1 && "ontouchend" in document)) {
-    touchpad_controls.leftcontrols.style.display = "block";
-    touchpad_controls.rightcontrols.style.display = "block";
-} else {
-    touchpad_controls.leftcontrols.style.display = "none";
-    touchpad_controls.rightcontrols.style.display = "none";
-}
+    const rangeEl = document.getElementById("range-render-dist");
+    const labelEl = document.getElementById("renderDistVal");
+    const debugEl = document.getElementById("chunkDistance");
+    if (rangeEl) rangeEl.value = val;
+    if (labelEl) labelEl.innerText = val;
+    if (debugEl) debugEl.value = val;
 
-// ==========================================
-// 2. ユーティリティ関数
-// ==========================================
-const INTERACT_SPEED = 150;
+    offsets = null;
+    chunkQueue = [];
+    lastChunk.x = null;
+    lastChunk.z = null;
 
-function isGameplayInputActive() {
-    return !!renderer && !isPaused && !isInventoryOpen && !isContainerOpen && mainMenu && mainMenu.style.display === "none";
-}
-
-function startInteraction(action, key = "default") {
-    if (!isGameplayInputActive()) return;
-    if (interactIntervalIds[key] != null) {
-        clearInterval(interactIntervalIds[key]);
-    }
-    interactWithBlock(action);
-    interactIntervalIds[key] = setInterval(() => {
-        if (!isGameplayInputActive()) {
-            stopInteraction(key);
-            return;
+    if (typeof scene !== "undefined" && scene.fog) {
+        const safeLimit = Math.max(16, val * 16);
+        if (scene.fog.isFogExp2) {
+            scene.fog.density = 0.8 / safeLimit;
+        } else {
+            scene.fog.near = Math.max(0, (val - 2) * 16);
+            scene.fog.far = Math.max(safeLimit, scene.fog.near + 16);
         }
-        interactWithBlock(action);
-    }, INTERACT_SPEED);
+    }
+
+    if (typeof updateChunks === "function") updateChunks();
 }
 
-function stopInteraction(key = "default") {
-    if (interactIntervalIds[key] != null) {
-        clearInterval(interactIntervalIds[key]);
-        interactIntervalIds[key] = null;
-    }
+function applyBrightnessSetting(val) {
+    const clamped = Math.max(0, Math.min(100, Number.isFinite(val) ? val : 50));
+    const labelEl = document.getElementById("brightnessVal");
+    if (labelEl) labelEl.innerText = clamped;
+    globalBrightnessMultiplier = clamped / 50;
+    SHARED_BRIGHTNESS_UNIFORM.value = globalBrightnessMultiplier;
 }
 
-// 物理キーコード(e.code) -> 論理操作キー変換（日本語IMEオン時も確実に動作）
-const CODE_TO_LOGICAL_KEY = {
-    KeyW: "w",
-    KeyA: "a",
-    KeyS: "s",
-    KeyD: "d",
-    ArrowUp: "arrowup",
-    ArrowDown: "arrowdown",
-    ArrowLeft: "arrowleft",
-    ArrowRight: "arrowright",
-    Space: " ",
-    ShiftLeft: "shift",
-    ShiftRight: "shift"
+window.updateGlobalBrightnessFromUI = function () {
+    const slider = document.getElementById("brightnessSlider");
+    if (!slider) return;
+    applyBrightnessSetting(parseInt(slider.value, 10));
 };
 
-const CODE_TO_HOTBAR_SLOT = {
-    Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4,
-    Digit6: 5, Digit7: 6, Digit8: 7, Digit9: 8,
-    Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3, Numpad5: 4,
-    Numpad6: 5, Numpad7: 6, Numpad8: 7, Numpad9: 8
-};
-
-// ==========================================
-// 3. キーボード入力 (e.code ベース正規化)
-// ==========================================
-window.addEventListener('keydown', (e) => {
-    if (!renderer) return;
-    const code = e.code;
-
-    // --- A. F3キー関連 (デバッグ表示・チャンク境界) ---
-    if (code === "F3") {
-        e.preventDefault();
-        f3Pressed = true;
-        return;
-    }
-    if (f3Pressed && code === "KeyG") {
-        e.preventDefault();
+const InputController = createInputController({
+    keys,
+    getRenderer: () => renderer,
+    getInventoryUI: () => InventoryUI,
+    getContainerUI: () => ContainerUI,
+    getIsPaused: () => isPaused,
+    setIsPaused: (v) => { isPaused = v; },
+    getIsInventoryOpen: () => isInventoryOpen,
+    getIsContainerOpen: () => isContainerOpen,
+    getCanFly: () => PlayerData.data.abilities.mayfly,
+    getFlightMode: () => flightMode,
+    setFlightMode: (v) => { flightMode = v; },
+    setDashActive: (v) => { dashActive = v; },
+    setSneakActive: (v) => { sneakActive = v; },
+    setJumpRequest: (v) => { jumpRequest = v; },
+    addLookDelta: (dyaw, dpitch) => {
+        yaw += dyaw;
+        pitch = Math.min(Math.max(pitch + dpitch, -Math.PI / 2), Math.PI / 2);
+    },
+    onInteractBlock: (action) => interactWithBlock(action),
+    onResumeClock: () => { clock.getDelta(); },
+    onResetAccumulators: () => {
+        physicsAccumulator = 0;
+        worldTickAccumulator = 0;
+    },
+    onToggleChunkBorders: () => {
         showChunkBorders = !showChunkBorders;
         if (chunkBorderMesh) chunkBorderMesh.visible = showChunkBorders;
-        if (typeof addChatMessage === "function") {
-            addChatMessage(
-                showChunkBorders ? "チャンク境界を表示しました" : "チャンク境界を非表示にしました",
-                "#55ff55"
-            );
-        }
-        return;
-    }
-    if (f3Pressed && code === "KeyM") {
-        e.preventDefault();
+        addChatMessage(
+            showChunkBorders ? "チャンク境界を表示しました" : "チャンク境界を非表示にしました",
+            "#55ff55"
+        );
+    },
+    onSpawnDebugMob: () => {
         const hit = getTargetBlockByDDA(12);
         const sx = hit ? (hit.x + hit.normal.x + 0.5) : (player.position.x + 2);
         const sy = hit ? (hit.y + hit.normal.y) : (player.position.y + 0.5);
@@ -9127,16 +8125,12 @@ window.addEventListener('keydown', (e) => {
         const chosen = types[(Math.random() * types.length) | 0];
         const ent = EntityManager.spawn(chosen, sx, sy, sz);
         if (ent) addChatMessage(`モブを召喚しました: ${ent.def.name} (計 ${EntityManager.count} 体)`, "#55ffff");
-        return;
-    }
-    if (f3Pressed && code === "KeyK") {
-        e.preventDefault();
+    },
+    onClearMobs: () => {
         EntityManager.clear();
         addChatMessage("全モブを削除しました", "#ff8888");
-        return;
-    }
-    if (f3Pressed && code === "KeyN") {
-        e.preventDefault();
+    },
+    onToggleGameMode: () => {
         const nextMode = (PlayerData.data.gameMode === GAME_MODES.CREATIVE)
             ? GAME_MODES.SURVIVAL
             : GAME_MODES.CREATIVE;
@@ -9150,945 +8144,10 @@ window.addEventListener('keydown', (e) => {
             `ゲームモードを ${nextMode === GAME_MODES.SURVIVAL ? "サバイバル" : "クリエイティブ"} に変更しました`,
             "#55ff55"
         );
-        return;
-    }
-
-    // --- B. Eキー (コンテナ閉じ / インベントリ開閉) ---
-    if (code === "KeyE") {
-        if (isPaused || mainMenu.style.display !== "none") return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-
-        if (isContainerOpen) {
-            ContainerUI.close();
-            return;
-        }
-
-        if (isInventoryOpen) {
-            isInventoryOpen = false;
-            inventoryContainer.style.display = "none";
-            if (tooltip) tooltip.style.display = "none";
-            if (!isPaused && renderer.domElement.requestPointerLock) {
-                renderer.domElement.requestPointerLock();
-            }
-        } else {
-            releaseAllActiveInputs();
-            isInventoryOpen = true;
-            inventoryContainer.style.display = "block";
-            if (document.pointerLockElement && document.exitPointerLock) {
-                document.exitPointerLock();
-            }
-            setTimeout(() => {
-                if (typeof updateTooltipInstant === "function") {
-                    updateTooltipInstant();
-                }
-            }, 10);
-        }
-        return;
-    }
-
-    // --- C. ESCキー (コンテナ閉じ / インベントリ閉じ / ポーズ遷移の単一経路化) ---
-    if (code === "Escape") {
-        if (isContainerOpen) {
-            ContainerUI.close();
-            return;
-        }
-        if (isInventoryOpen) {
-            isInventoryOpen = false;
-            inventoryContainer.style.display = "none";
-            if (tooltip) tooltip.style.display = "none";
-            return;
-        }
-        if (mainMenu.style.display === "none" && !isPaused) {
-            if (document.pointerLockElement === renderer.domElement && document.exitPointerLock) {
-                // pointerlockchange 側で一元的に isPaused = true へ遷移（二重呼び出し防止）
-                document.exitPointerLock();
-            } else {
-                isPaused = true;
-                updatePauseUI();
-            }
-        }
-        return;
-    }
-
-    // --- D. ゲームプレイ中以外は以降の操作を無効化 ---
-    if (!isGameplayInputActive()) return;
-
-    // 数字キー (1-9 / テンキー 1-9)
-    if (CODE_TO_HOTBAR_SLOT[code] !== undefined) {
-        selectedHotbarIndex = CODE_TO_HOTBAR_SLOT[code];
-        updateHotbarSelection();
-        return;
-    }
-
-    // スペースキー (ジャンプ / 飛行切替)
-    if (code === "Space") {
-        e.preventDefault();
-        if (e.repeat) return;
-        const now = performance.now();
-        if (PlayerData.data.abilities.mayfly && now - lastSpaceTime < doubleTapThreshold) {
-            flightMode = !flightMode;
-            jumpRequest = false;
-        }
-        lastSpaceTime = now;
-        keys[" "] = true;
-        return;
-    }
-
-    // Wキー (ダブルタップダッシュ判定)
-    if (code === "KeyW" && !e.repeat) {
-        const now = performance.now();
-        if (now - lastWPressTime < doubleTapThreshold) dashActive = true;
-        lastWPressTime = now;
-    }
-
-    // Shiftキー (スニーク / 飛行下降)
-    if (code === "ShiftLeft" || code === "ShiftRight") {
-        sneakActive = true;
-        if (!flightMode) dashActive = false;
-    }
-
-    const logical = CODE_TO_LOGICAL_KEY[code];
-    if (logical) {
-        keys[logical] = true;
-    }
+    },
+    onApplyRenderDistance: applyRenderDistance,
+    onApplyBrightness: applyBrightnessSetting
 });
-
-document.addEventListener("keyup", (e) => {
-    const code = e.code;
-    if (code === "F3") f3Pressed = false;
-    if (code === "KeyW") dashActive = false;
-    if (code === "ShiftLeft" || code === "ShiftRight") sneakActive = false;
-
-    const logical = CODE_TO_LOGICAL_KEY[code];
-    if (logical) {
-        keys[logical] = false;
-    }
-});
-
-// ==========================================
-// 4. マウス・ホイール操作
-// ==========================================
-window.addEventListener("wheel", (e) => {
-    if (!isGameplayInputActive() || e.deltaY === 0) return;
-    selectedHotbarIndex = (selectedHotbarIndex + (e.deltaY > 0 ? 1 : 8)) % 9;
-    updateHotbarSelection();
-}, { passive: true });
-
-function onCanvasMouseDown(event) {
-    if (!isGameplayInputActive() || document.pointerLockElement !== renderer.domElement) return;
-
-    let action = null;
-    let buttonKey = null;
-    if (event.button === 0) { action = "destroy"; buttonKey = "left"; }
-    else if (event.button === 2) { action = "place"; buttonKey = "right"; }
-
-    if (action && buttonKey) startInteraction(action, buttonKey);
-}
-
-document.addEventListener("mouseup", (event) => {
-    if (event.button === 0) stopInteraction("left");
-    else if (event.button === 2) stopInteraction("right");
-}, false);
-
-// ウィンドウフォーカス喪失時に全入力・長押しタイマーを即時安全解除
-window.addEventListener("blur", () => {
-    releaseAllActiveInputs();
-});
-
-// ==========================================
-// 5. ポインターロック管理
-// ==========================================
-function onMouseMove(e) {
-    if (!pointerLocked || !isGameplayInputActive()) return;
-    yaw -= e.movementX * mouseSensitivity;
-    pitch = Math.min(Math.max(pitch - e.movementY * mouseSensitivity, -Math.PI / 2), Math.PI / 2);
-}
-
-window.addEventListener("mousemove", onMouseMove);
-
-document.addEventListener('pointerlockchange', () => {
-    pointerLocked = !!(renderer && document.pointerLockElement === renderer.domElement);
-
-    if (pointerLocked) {
-        isPaused = false;
-        updatePauseUI();
-    } else if (!isInventoryOpen && !isContainerOpen && mainMenu && mainMenu.style.display === "none") {
-        isPaused = true;
-        updatePauseUI();
-    }
-});
-
-const btnResume = document.getElementById("btn-resume");
-if (btnResume) {
-    btnResume.addEventListener("click", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        btnResume.blur();
-        isPaused = false;
-        updatePauseUI();
-
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        if (!isPaused && !isInventoryOpen && !isContainerOpen && renderer && renderer.domElement) {
-            renderer.domElement.requestPointerLock();
-        }
-    });
-}
-
-document.getElementById('btn-quit').addEventListener('click', () => {
-    window.close();
-
-    setTimeout(() => {
-        if (!window.closed) {
-            alert("ブラウザのセキュリティ制限により自動で閉じられませんでした。タブを直接閉じてください。");
-        }
-    }, 500);
-});
-
-// ==========================================
-// 7. タッチUI・マルチタッチ統合管理 (二重登録・長押し無限継続・touchcancel対策済)
-// ==========================================
-let _touchControlsInitialized = false;
-
-function setupTouchControls() {
-    if (_touchControlsInitialized) return;
-    if (typeof renderer === 'undefined' || !renderer || !renderer.domElement) {
-        setTimeout(setupTouchControls, 100);
-        return;
-    }
-    _touchControlsInitialized = true;
-
-    const canvas = renderer.domElement;
-
-    let lastForwardTapTime = 0;
-    let lastJumpTime = 0;
-    let lastSneakTime = 0;
-    let sneakToggled = false;
-    const TAP_THRESHOLD = 300;
-
-    let lookTouchId = null;
-    let lastTouchX = 0, lastTouchY = 0;
-    let touchStartTime = 0;
-    let isLongPress = false;
-    let hasMovedSinceTouchStart = false;
-    let longPressTimer = null;
-    const TOUCH_SENSITIVITY = 0.005;
-
-    const resetLookTouchState = () => {
-        lookTouchId = null;
-        isLongPress = false;
-        hasMovedSinceTouchStart = false;
-        if (longPressTimer !== null) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-        }
-        stopInteraction("touch");
-    };
-
-    const bindButton = (id, key, onStart, onEnd) => {
-        const btn = document.getElementById(id);
-        if (!btn) return;
-
-        const start = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (!isGameplayInputActive()) return;
-            if (onStart) onStart();
-            keys[key] = true;
-        };
-        const end = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (onEnd) onEnd();
-            keys[key] = false;
-        };
-
-        btn.addEventListener("touchstart", start, { passive: false });
-        btn.addEventListener("touchend", end, { passive: false });
-        btn.addEventListener("touchcancel", end, { passive: false });
-        btn.addEventListener("mousedown", start);
-        btn.addEventListener("mouseup", end);
-    };
-
-    // --- 1. 移動・ジャンプ・スニーク ---
-    bindButton("dpad-up", "w", () => {
-        const now = performance.now();
-        if (now - lastForwardTapTime < TAP_THRESHOLD) dashActive = true;
-        lastForwardTapTime = now;
-    }, () => { dashActive = false; });
-    bindButton("dpad-down", "s");
-    bindButton("dpad-left", "a");
-    bindButton("dpad-right", "d");
-
-    const btnJump = document.getElementById("btn-jump");
-    if (btnJump) {
-        const onJumpStart = (e) => {
-            e.preventDefault(); e.stopPropagation();
-            if (!isGameplayInputActive()) return;
-            const now = performance.now();
-            if (now - lastJumpTime < TAP_THRESHOLD) { flightMode = !flightMode; jumpRequest = false; }
-            else { if (flightMode) keys[" "] = true; else jumpRequest = true; }
-            lastJumpTime = now;
-        };
-        const onJumpEnd = (e) => {
-            e.preventDefault(); e.stopPropagation();
-            if (flightMode) keys[" "] = false;
-        };
-        btnJump.addEventListener("touchstart", onJumpStart, { passive: false });
-        btnJump.addEventListener("touchend", onJumpEnd, { passive: false });
-        btnJump.addEventListener("touchcancel", onJumpEnd, { passive: false });
-    }
-
-    const btnSneak = document.getElementById("btn-sneak");
-    if (btnSneak) {
-        const onSneakStart = (e) => {
-            e.preventDefault(); e.stopPropagation();
-            if (!isGameplayInputActive()) return;
-            const now = performance.now();
-            if (now - lastSneakTime < TAP_THRESHOLD) {
-                sneakToggled = !sneakToggled; keys["shift"] = sneakToggled; sneakActive = sneakToggled;
-            } else { keys["shift"] = true; sneakActive = true; }
-            lastSneakTime = now;
-        };
-        const onSneakEnd = (e) => {
-            e.preventDefault(); e.stopPropagation();
-            if (!sneakToggled) { keys["shift"] = false; sneakActive = false; }
-        };
-        btnSneak.addEventListener("touchstart", onSneakStart, { passive: false });
-        btnSneak.addEventListener("touchend", onSneakEnd, { passive: false });
-        btnSneak.addEventListener("touchcancel", onSneakEnd, { passive: false });
-    }
-
-    // --- 2. インベントリの開閉制御 ---
-    const updateInvUI = () => {
-        const container = document.getElementById("inventory-container");
-        if (container) container.style.display = isInventoryOpen ? "block" : "none";
-        if (isInventoryOpen) {
-            resetLookTouchState();
-        }
-    };
-
-    const btnInvOpen = document.getElementById("btn-inventory");
-    if (btnInvOpen) {
-        const openInv = (e) => {
-            e.preventDefault(); e.stopPropagation();
-            if (isPaused || mainMenu.style.display !== "none") return;
-            isInventoryOpen = true;
-            updateInvUI();
-        };
-        btnInvOpen.addEventListener("touchstart", openInv, { passive: false });
-        btnInvOpen.addEventListener("mousedown", openInv);
-    }
-
-    const btnInvClose = document.getElementById("btn-inventory-close");
-    if (btnInvClose) {
-        const closeInv = (e) => {
-            e.preventDefault(); e.stopPropagation();
-            isInventoryOpen = false;
-            updateInvUI();
-        };
-        btnInvClose.addEventListener("touchstart", closeInv, { passive: false });
-        btnInvClose.addEventListener("mousedown", closeInv);
-    }
-
-    // --- 2.5 ポーズメニューの制御 ---
-    const btnPause = document.getElementById("btn-pause");
-    if (btnPause) {
-        const togglePause = (e) => {
-            if (isInventoryOpen || mainMenu.style.display !== "none") return;
-            e.preventDefault();
-            e.stopPropagation();
-
-            isPaused = !isPaused;
-            updatePauseUI();
-
-            if (isPaused) {
-                resetLookTouchState();
-                if (document.pointerLockElement && document.exitPointerLock) {
-                    document.exitPointerLock();
-                }
-            }
-        };
-
-        btnPause.addEventListener("touchstart", togglePause, { passive: false });
-        btnPause.addEventListener("mousedown", togglePause);
-    }
-
-    // --- 3. 視点移動 ＆ タップ設置 / 長押し破壊（単一統合） ---
-    canvas.addEventListener('touchstart', (e) => {
-        if (!isGameplayInputActive()) return;
-
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            const touch = e.changedTouches[i];
-            if (lookTouchId === null) {
-                lookTouchId = touch.identifier;
-                lastTouchX = touch.clientX;
-                lastTouchY = touch.clientY;
-                touchStartTime = performance.now();
-                isLongPress = false;
-                hasMovedSinceTouchStart = false;
-
-                longPressTimer = setTimeout(() => {
-                    isLongPress = true;
-                    startInteraction("destroy", "touch");
-                }, 450);
-                break;
-            }
-        }
-    }, { passive: false });
-
-    canvas.addEventListener('touchmove', (e) => {
-        if (!isGameplayInputActive()) return;
-
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            const touch = e.changedTouches[i];
-            if (touch.identifier === lookTouchId) {
-                const dx = touch.clientX - lastTouchX;
-                const dy = touch.clientY - lastTouchY;
-
-                yaw -= dx * TOUCH_SENSITIVITY;
-                pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch - dy * TOUCH_SENSITIVITY));
-
-                lastTouchX = touch.clientX;
-                lastTouchY = touch.clientY;
-
-                if (!hasMovedSinceTouchStart && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
-                    hasMovedSinceTouchStart = true;
-                    if (!isLongPress && longPressTimer !== null) {
-                        clearTimeout(longPressTimer);
-                        longPressTimer = null;
-                    }
-                }
-                break;
-            }
-        }
-    }, { passive: false });
-
-    const handleTouchEndOrCancel = (e, isCancel) => {
-        for (let i = 0; i < e.changedTouches.length; i++) {
-            const touch = e.changedTouches[i];
-            if (touch.identifier === lookTouchId) {
-                const wasLong = isLongPress;
-                const moved = hasMovedSinceTouchStart;
-                const duration = performance.now() - touchStartTime;
-                resetLookTouchState();
-
-                if (!isCancel && isGameplayInputActive() && !wasLong && !moved && duration < 300) {
-                    interactWithBlock("place");
-                }
-                break;
-            }
-        }
-    };
-
-    canvas.addEventListener('touchend', (e) => handleTouchEndOrCancel(e, false), { passive: false });
-    canvas.addEventListener('touchcancel', (e) => handleTouchEndOrCancel(e, true), { passive: false });
-}
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setupTouchControls);
-} else {
-    setupTouchControls();
-}
-
-/* ======================================================
-   【1. 設定関連のグローバル変数・DOM取得】
-   ====================================================== */
-
-const settingsMenu = document.getElementById('settings-menu');
-const btnOpenSettings = document.getElementById('btn-open-settings');
-const btnOpenSettingsPause = document.getElementById('btn-open-settings-pause');
-const btnSettingsBack = document.getElementById('btn-settings-back');
-const btnSettingsReset = document.getElementById('btn-settings-reset');
-
-const rangeRenderDist = document.getElementById('range-render-dist');
-const renderDistValLabel = document.getElementById('renderDistVal');
-const brightnessSlider = document.getElementById('brightnessSlider');
-const brightnessValLabel = document.getElementById('brightnessVal');
-const debugChunkInput = document.getElementById('chunkDistance');
-
-let isOpenedFromPause = false;
-
-// 遅延実行用のタイマー変数
-let renderDistanceTimeout = null;
-
-/* ======================================================
-   【2. 画面遷移の制御】
-   ====================================================== */
-const toggleMenu = (showSettings, fromPause = false) => {
-    settingsMenu.style.display = showSettings ? 'flex' : 'none';
-    if (showSettings) {
-        if (typeof mainMenu !== 'undefined') mainMenu.style.display = 'none';
-        if (typeof pauseMenu !== 'undefined') pauseMenu.style.display = 'none';
-        isOpenedFromPause = fromPause;
-    } else {
-        if (isOpenedFromPause) {
-            if (typeof pauseMenu !== 'undefined') pauseMenu.style.display = 'flex';
-        } else {
-            if (typeof mainMenu !== 'undefined') mainMenu.style.display = 'flex';
-        }
-    }
-};
-
-if (btnOpenSettings) btnOpenSettings.addEventListener('click', () => toggleMenu(true, false));
-if (btnOpenSettingsPause) btnOpenSettingsPause.addEventListener('click', () => toggleMenu(true, true));
-if (btnSettingsBack) btnSettingsBack.addEventListener('click', () => toggleMenu(false));
-
-/* ======================================================
-   【3. コアロジック：描画距離 (Render Distance) の更新】
-   ====================================================== */
-function applyRenderDistance(val) {
-    if (isNaN(val) || val < 0 || val > 32) return;
-
-    // 1. チャンクの描画距離変数のみを更新
-    CHUNK_VISIBLE_DISTANCE = val;
-
-    // UIの同期
-    if (rangeRenderDist) rangeRenderDist.value = val;
-    if (renderDistValLabel) renderDistValLabel.innerText = val;
-    if (debugChunkInput) debugChunkInput.value = val;
-
-    // 内部システムのリセット（チャンク再生成用）
-    offsets = null;
-    chunkQueue = [];
-    lastChunk.x = null;
-    lastChunk.z = null;
-
-    if (typeof scene !== 'undefined' && scene.fog) {
-        // 1. 最低でも16マス(1チャンク)分の視界を計算上の最小値として確保する
-        const safeLimit = Math.max(16, val * 16);
-
-        if (scene.fog.isFogExp2) {
-            // 指数フォグ: 密度が濃くなりすぎないよう safeLimit で割る
-            scene.fog.density = 0.8 / safeLimit;
-        } else {
-            // 線形フォグ: nearがfar(safeLimit)を超えないように調整
-            // valが小さい時は足元(0)から霧を始め、遠くはsafeLimitに固定
-            scene.fog.near = Math.max(0, (val - 2) * 16);
-            scene.fog.far = Math.max(safeLimit, scene.fog.near + 16);
-        }
-    }
-
-    // 3. 【重要】カメラと雲の設定には一切触れない
-    // camera.far を変更してしまうと、cloudsky.js で描画している遠くの雲が切れてしまうため、
-    // ここでは camera.far の更新（短縮）を行いません。
-    // ※初期化時に camera.far = 2000〜3000 程度に設定されている前提を維持します。
-
-    // 4. チャンク更新をリクエスト
-    if (typeof updateChunks === 'function') {
-        updateChunks();
-    }
-}
-
-/* ======================================================
-   【4. コアロジック：明るさ (Brightness) の更新】
-   ====================================================== */
-function applyBrightnessSetting(val) {
-    const clamped = Math.max(0, Math.min(100, Number.isFinite(val) ? val : 50));
-    if (brightnessValLabel) brightnessValLabel.innerText = clamped;
-    globalBrightnessMultiplier = clamped / 50;
-    // O(1) 単一 Uniform 更新により、チャンク再構築ゼロで全ブロックへ即座に反映
-    SHARED_BRIGHTNESS_UNIFORM.value = globalBrightnessMultiplier;
-}
-
-window.updateGlobalBrightnessFromUI = function () {
-    const slider = document.getElementById("brightnessSlider");
-    if (!slider) return;
-    applyBrightnessSetting(parseInt(slider.value, 10));
-};
-
-/* ======================================================
-   【5. UIイベントリスナーの設定（最適化版）】
-   ====================================================== */
-
-// 描画距離スライダー：デバウンス処理
-if (rangeRenderDist) {
-    rangeRenderDist.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        if (renderDistValLabel) renderDistValLabel.innerText = val;
-
-        clearTimeout(renderDistanceTimeout);
-        renderDistanceTimeout = setTimeout(() => {
-            applyRenderDistance(val);
-        }, 300);
-    });
-}
-
-// 明るさスライダー（ドラッグ中にリアルタイム O(1) 反映、重い全チャンクリビルド不要）
-if (brightnessSlider) {
-    brightnessSlider.addEventListener('input', () => {
-        applyBrightnessSetting(parseInt(brightnessSlider.value, 10));
-    });
-}
-
-/* ======================================================
-   【6. 設定のリセット機能】
-   ====================================================== */
-const resetSettings = () => {
-    const DEFAULTS = {
-        renderDist: 6,
-        brightness: 50
-    };
-
-    if (rangeRenderDist) {
-        rangeRenderDist.value = DEFAULTS.renderDist;
-        applyRenderDistance(DEFAULTS.renderDist);
-    }
-
-    if (brightnessSlider) {
-        brightnessSlider.value = DEFAULTS.brightness;
-        applyBrightnessSetting(DEFAULTS.brightness);
-    }
-
-    console.log("Settings have been reset to default.");
-};
-
-// リセットボタンにイベントを登録
-if (btnSettingsReset) {
-    btnSettingsReset.addEventListener('click', resetSettings);
-}
-
-/* ======================================================
-   【保存システム】IndexedDB Manager (高速パレット結合版)
-   ====================================================== */
-const DB_CONFIG = { name: "MinecraftJS_Save", version: 1 };
-const SAVE_FORMAT_VERSION = 2;
-
-let _cachedDBPromise = null;
-
-/**
- * DB接続をキャッシュ付きで取得する（接続リーク防止＆バージョン変更時の自動再接続）
- */
-async function getDB() {
-    if (_cachedDBPromise) return _cachedDBPromise;
-
-    _cachedDBPromise = new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_CONFIG.name, DB_CONFIG.version);
-
-        request.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains("world_meta")) {
-                db.createObjectStore("world_meta");
-            }
-            if (!db.objectStoreNames.contains("chunks")) {
-                db.createObjectStore("chunks");
-            }
-        };
-
-        request.onsuccess = (e) => {
-            const db = e.target.result;
-            db.onversionchange = () => {
-                db.close();
-                _cachedDBPromise = null;
-            };
-            db.onclose = () => {
-                _cachedDBPromise = null;
-            };
-            resolve(db);
-        };
-
-        request.onerror = () => {
-            _cachedDBPromise = null;
-            reject(request.error || new Error("IndexedDBのオープンに失敗しました"));
-        };
-    });
-
-    return _cachedDBPromise;
-}
-
-// --- ゼロGC パレット＋RLE バイナリエンコーダ用再利用バッファ ---
-const _rleValToPal = new Int32Array(65536).fill(-1);
-const _rleUsedVals = new Uint16Array(4096);
-const _rleScratch = new Uint16Array(TOTAL_CELLS * 2);
-
-/**
- * チャンク Uint16Array(65536) を「文字列キーパレット配列 + Uint16Array RLE」へ高速圧縮する
- * - blocks.js のID順変更に対する耐性を100%維持（パレット内は "KEY:meta" 文字列）
- * - 容量を従来の約 500KB -> 約 6〜14KB（約 97% 削減）へ圧縮
- */
-function encodeChunkPaletteRLE(dataArray) {
-    const len = dataArray.length;
-    const palette = [];
-    let palCount = 0;
-    let rlePtr = 0;
-
-    let i = 0;
-    while (i < len) {
-        const val = dataArray[i];
-        let palIdx = _rleValToPal[val];
-        if (palIdx === -1) {
-            palIdx = palCount++;
-            _rleValToPal[val] = palIdx;
-            if (palIdx < _rleUsedVals.length) {
-                _rleUsedVals[palIdx] = val;
-            }
-            const id = getRawBlockId(val);
-            const meta = getRawLocalState(val);
-            palette.push(idToKey(id) + ":" + meta);
-        }
-
-        // Uint16 上限(65535)を超えない範囲で同一ブロック状態の連続長を集約
-        let runLen = 1;
-        while (i + runLen < len && runLen < 65535 && dataArray[i + runLen] === val) {
-            runLen++;
-        }
-
-        _rleScratch[rlePtr++] = palIdx;
-        _rleScratch[rlePtr++] = runLen;
-        i += runLen;
-    }
-
-    // 使用済みインデックスのみ -1 に戻す（O(ユニークブロック状態数)）
-    if (palCount <= _rleUsedVals.length) {
-        for (let k = 0; k < palCount; k++) {
-            _rleValToPal[_rleUsedVals[k]] = -1;
-        }
-    } else {
-        _rleValToPal.fill(-1);
-    }
-
-    return {
-        v: SAVE_FORMAT_VERSION,
-        len,
-        palette,
-        rle: _rleScratch.slice(0, rlePtr)
-    };
-}
-
-/**
- * DB上の現在の world_uid を読み取り、全量クリア置換か差分更新かを安全に判定する
- */
-async function readStoredWorldUid(db) {
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(["world_meta"], "readonly");
-        const req = tx.objectStore("world_meta").get("world_uid");
-        req.onsuccess = () => resolve(req.result ?? null);
-        req.onerror = () => reject(req.error);
-    });
-}
-
-/**
- * ワールドデータの保存（パレット＋RLEバイナリ圧縮・編集チャンク限定・差分セーブ・アトミック置換）
- */
-async function saveWorldData(seed, playerPos, chunkManager, gameTime, worldUid = null, playerState = null, simulationState = null, worldEntitiesState = null) {
-    const startTime = performance.now();
-    const db = await getDB();
-    const activeWorldUid = worldUid || generateWorldUid();
-
-    // 1. DB上のワールドIDと照合し、新規ワールド（別ID）なら旧チャンクをクリアして全量保存、同一IDなら差分のみ保存
-    const storedUid = await readStoredWorldUid(db);
-    const isFullReplace = !isWorldSavedToDB || (storedUid !== activeWorldUid);
-
-    const targetKeys = isFullReplace
-        ? chunkManager.playerModifiedKeys
-        : chunkManager.dirtySaveKeys;
-
-    // 2. IndexedDB トランザクション開始前に CPU エンコードを全件完了（ロック時間を最小化）
-    const encodedEntries = [];
-    let totalBytes = 0;
-
-    if (chunkManager && targetKeys && targetKeys.size > 0) {
-        for (const key of targetKeys) {
-            const dataArray = chunkManager.modifiedChunks.get(key);
-            if (!dataArray) continue;
-
-            const payload = encodeChunkPaletteRLE(dataArray);
-            encodedEntries.push({ keyStr: key.toString(), payload });
-            totalBytes += payload.rle.byteLength + payload.palette.length * 16;
-        }
-    }
-
-    // 3. 単一 readwrite トランザクション内でメタ＋チャンクをアトミック保存
-    await new Promise((resolve, reject) => {
-        const tx = db.transaction(["world_meta", "chunks"], "readwrite");
-        const metaStore = tx.objectStore("world_meta");
-        const chunkStore = tx.objectStore("chunks");
-
-        if (isFullReplace) {
-            // 新規ワールド保存時は前ワールドの古いチャンクを同一トランザクション内で一掃
-            chunkStore.clear();
-        }
-
-        metaStore.put(SAVE_FORMAT_VERSION, "save_version");
-        metaStore.put(activeWorldUid, "world_uid");
-        metaStore.put(seed, "last_seed");
-        metaStore.put(playerPos, "player_pos");
-        metaStore.put(gameTime, "game_time");
-        metaStore.put(Date.now(), "saved_at");
-        if (playerState) {
-            metaStore.put(playerState, "player_state");
-        }
-        if (simulationState) {
-            metaStore.put(simulationState, "simulation_state");
-        }
-        if (worldEntitiesState) {
-            metaStore.put(worldEntitiesState, "world_entities_state");
-        }
-
-        for (let i = 0; i < encodedEntries.length; i++) {
-            const entry = encodedEntries[i];
-            chunkStore.put(entry.payload, entry.keyStr);
-        }
-
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error || new Error("IndexedDBトランザクションエラー"));
-        tx.onabort = () => reject(tx.error || new Error("IndexedDBトランザクションが中断されました"));
-    });
-
-    // 4. コミット成功確定後に差分セットをクリアし、DB同期済みフラグを立てる
-    currentWorldUid = activeWorldUid;
-    isWorldSavedToDB = true;
-    if (chunkManager && chunkManager.dirtySaveKeys) {
-        chunkManager.dirtySaveKeys.clear();
-    }
-
-    return {
-        mode: isFullReplace ? "FullReplace/v2-RLE" : "IncrementalDiff/v2-RLE",
-        savedChunks: encodedEntries.length,
-        totalBytes,
-        elapsedMs: performance.now() - startTime
-    };
-}
-
-/**
- * ワールドデータの読み込み
- * 保存時の文字列キーを現在の最新IDにマッピングし直す
- */
-async function loadFullSaveData() {
-    const db = await getDB();
-
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(["world_meta", "chunks"], "readonly");
-        const metaStore = tx.objectStore("world_meta");
-        const chunkStore = tx.objectStore("chunks");
-
-        const reqSeed = metaStore.get("last_seed");
-        const reqPos = metaStore.get("player_pos");
-        const reqTime = metaStore.get("game_time");
-        const reqWorldUid = metaStore.get("world_uid");
-        const reqPlayerState = metaStore.get("player_state");
-        const reqSimState = metaStore.get("simulation_state");
-        const reqWorldEntitiesState = metaStore.get("world_entities_state");
-        const reqKeys = chunkStore.getAllKeys();
-        const reqValues = chunkStore.getAll();
-
-        tx.oncomplete = () => {
-            if (reqSeed.result === undefined) {
-                resolve(null);
-                return;
-            }
-
-            const chunks = new Map();
-            const keys = reqKeys.result || [];
-            const values = reqValues.result || [];
-            const _keyToId = keyToId;
-
-            for (let i = 0, len = keys.length; i < len; i++) {
-                const chunkKey = Number(keys[i]);
-                if (!Number.isFinite(chunkKey)) continue;
-
-                const chunkData = values[i];
-                if (!chunkData) continue;
-
-                // 常に TOTAL_CELLS (65536) 要素の Uint16Array に正規化し、不完全チャンクによる描画異常を防ぐ
-                const numericBlocks = new Uint16Array(TOTAL_CELLS);
-                let hasValidData = false;
-
-                // 0. v2 パレット＋RLEバイナリ圧縮形式 ({ v: 2, len, palette, rle })
-                if (chunkData.v === 2 && Array.isArray(chunkData.palette) && chunkData.rle) {
-                    const pal = chunkData.palette;
-                    const palLen = pal.length;
-                    const palPacked = new Uint16Array(palLen);
-                    for (let p = 0; p < palLen; p++) {
-                        const entry = String(pal[p] || "");
-                        const parts = entry.split(":");
-                        const id = _keyToId(parts[0]);
-                        const meta = parseInt(parts[1], 10) || 0;
-                        palPacked[p] = packRawBlock(id, meta);
-                    }
-
-                    const rle = chunkData.rle;
-                    const rLen = rle.length & ~1; // 偶数ペア長に安全丸め
-                    let dst = 0;
-                    for (let r = 0; r < rLen && dst < TOTAL_CELLS; r += 2) {
-                        const palIdx = rle[r];
-                        const count = rle[r + 1];
-                        if (count <= 0) continue;
-                        const packedVal = (palIdx >= 0 && palIdx < palLen) ? palPacked[palIdx] : 0;
-                        const end = (dst + count <= TOTAL_CELLS) ? (dst + count) : TOTAL_CELLS;
-                        numericBlocks.fill(packedVal, dst, end);
-                        dst = end;
-                    }
-                    hasValidData = true;
-                }
-                // 1. 旧・文字列パレット形式 ({ s: "stone:0,..." })
-                else if (typeof chunkData.s === "string") {
-                    const blockStrings = chunkData.s.split(",");
-                    const bLen = Math.min(blockStrings.length, TOTAL_CELLS);
-
-                    for (let j = 0; j < bLen; j++) {
-                        const parts = blockStrings[j].split(":");
-                        const id = _keyToId(parts[0]);
-                        const meta = parseInt(parts[1], 10) || 0;
-                        numericBlocks[j] = packRawBlock(id, meta);
-                    }
-                    hasValidData = true;
-                }
-                // 2. 旧・オブジェクト配列形式 ({ blocks: [{k,m}, ...] })
-                else if (Array.isArray(chunkData.blocks)) {
-                    const blocks = chunkData.blocks;
-                    const bLen = Math.min(blocks.length, TOTAL_CELLS);
-
-                    if (bLen > 0) {
-                        const firstItem = blocks[0];
-                        const isObjMode = (firstItem !== null && typeof firstItem === 'object');
-
-                        for (let j = 0; j < bLen; j++) {
-                            const item = blocks[j];
-                            if (isObjMode && item) {
-                                const id = _keyToId(item.k);
-                                const meta = item.m ?? 0;
-                                numericBlocks[j] = packRawBlock(id, meta);
-                            } else {
-                                numericBlocks[j] = packRawBlock(_keyToId(item), 0);
-                            }
-                        }
-                    }
-                    hasValidData = true;
-                }
-                // 3. 旧・直接Uint16Array形式（旧4bit形式から16bitグローバル状態へ自動変換）
-                else if (chunkData instanceof Uint16Array) {
-                    const bLen = Math.min(chunkData.length, TOTAL_CELLS);
-                    for (let j = 0; j < bLen; j++) {
-                        const oldVal = chunkData[j];
-                        numericBlocks[j] = packRawBlock(oldVal & 0xFFF, (oldVal >> 12) & 0xF);
-                    }
-                    hasValidData = true;
-                }
-
-                if (hasValidData) {
-                    chunks.set(chunkKey, numericBlocks);
-                }
-            }
-
-            resolve({
-                seed: reqSeed.result,
-                pos: reqPos.result ?? null,
-                gameTime: reqTime.result ?? 6000,
-                worldUid: reqWorldUid.result ?? null,
-                playerState: reqPlayerState.result ?? null,
-                simulationState: reqSimState.result ?? null,
-                worldEntitiesState: reqWorldEntitiesState.result ?? null,
-                chunks: chunks
-            });
-        };
-
-        tx.onerror = () => reject(tx.error || new Error("セーブデータの読み込みに失敗しました"));
-        tx.onabort = () => reject(tx.error || new Error("セーブデータの読み込みが中断されました"));
-    });
-}
 
 /* ======================================================
    【外部プラグイン・デバッグ診断用 統一ファサード】

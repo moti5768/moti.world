@@ -1,13 +1,18 @@
 html,
 body {
     margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    position: fixed;
+    inset: 0;
     overflow: hidden;
     background-color: #333;
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
-    touch-action: manipulation;
+    touch-action: none;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
 }
@@ -54,6 +59,14 @@ body {
 
 canvas {
     display: block;
+}
+
+body>canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
 }
 
 /* FPS表示（Font Boosting による突然の拡大を完全防止） */
