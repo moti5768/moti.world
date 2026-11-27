@@ -37,6 +37,8 @@ defineBlocks({
 
     GRASS: {
         name: "grass_block",
+        biomeTint: "grass",
+        sideOverlay: "textures/blocks/grass_side_overlay.png",
         properties: { snowy: false },
         textures: {
             top: "textures/blocks/grass_top.png",
@@ -45,6 +47,8 @@ defineBlocks({
         },
         stateVariants: {
             "snowy=false": {
+                biomeTint: "grass",
+                sideOverlay: "textures/blocks/grass_side_overlay.png",
                 textures: {
                     top: "textures/blocks/grass_top.png",
                     side: "textures/blocks/grass_side.png",
@@ -52,6 +56,8 @@ defineBlocks({
                 }
             },
             "snowy=true": {
+                biomeTint: null,
+                sideOverlay: null,
                 textures: {
                     top: "textures/blocks/snow.png",
                     side: "textures/blocks/grass_side_snowed.png",
@@ -151,6 +157,7 @@ defineBlocks({
 
     LEAVES_OAK: {
         name: "leaves_oak",
+        biomeTint: "foliage",
         textures: { all: "textures/blocks/leaves_oak.png" },
         geometryType: "leaves",
         transparent: true,
@@ -161,7 +168,7 @@ defineBlocks({
 
     FLOWER: plant("flower", "textures/blocks/flower.png", 0.4, 0.3, false),
     FLOWER_ROSE: plant("flower_rose", "textures/blocks/flower_rose.png", 0.4, 0.3, false),
-    TALLGRASS: plant("tallgrass", "textures/blocks/tallgrass.png", 0.8, 0.4, true),
+    TALLGRASS: { ...plant("tallgrass", "textures/blocks/tallgrass.png", 0.8, 0.4, true), biomeTint: "grass" },
     MUSHROOM_RED: plant("mushroom_red", "textures/blocks/mushroom_red.png", 0.5, 0.25, true),
     MUSHROOM_BROWN: plant("mushroom_brown", "textures/blocks/mushroom_brown.png", 0.5, 0.25, true),
     SAPLING_OAK: plant("sapling_oak", "textures/blocks/sapling_oak.png", 0.8, 0.4, false),

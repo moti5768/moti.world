@@ -1,22 +1,27 @@
 "use strict";
 import { BLOCK_TYPES } from '../blocks.js';
+import { BETA18_IDS } from './beta18_genlayer.js';
 
 /**
- * バイオームID定義
- * Zero-GCキャッシュのために数値で管理
+ * バイオームID定義（Minecraft Beta 1.8 全8バイオーム ＋ 既存エイリアス互換）
  */
 export const BIOME_TYPES = {
-    PLAINS: 0,
-    SNOWY_TUNDRA: 1,
-    FOREST: 2,
-    DESERT: 3,
-    MOUNTAINS: 4,
-    RIVER: 5
+    PLAINS: BETA18_IDS.PLAINS,               // 0
+    TAIGA: BETA18_IDS.TAIGA,                 // 1
+    SNOWY_TUNDRA: BETA18_IDS.TAIGA,          // 1 (後方互換エイリアス)
+    FOREST: BETA18_IDS.FOREST,               // 2
+    DESERT: BETA18_IDS.DESERT,               // 3
+    EXTREME_HILLS: BETA18_IDS.EXTREME_HILLS, // 4
+    MOUNTAINS: BETA18_IDS.EXTREME_HILLS,     // 4 (後方互換エイリアス)
+    RIVER: BETA18_IDS.RIVER,                 // 5
+    OCEAN: BETA18_IDS.OCEAN,                 // 6
+    SWAMPLAND: BETA18_IDS.SWAMPLAND          // 7
 };
 
 /**
- * バイオームの設定データ
- * 常に同じ不変オブジェクト参照を返すことでGC負荷をゼロに抑制
+ * Minecraft Beta 1.8 準拠バイオーム設定
+ * - minHeight / maxHeight: Beta 1.8 BiomeGenBase と同等の基準高度・起伏スケール
+ * - grassColor / foliageColor: バイオーム着色＆草オーバーレイ用カラー
  */
 export const BIOME_CONFIG = {
     [BIOME_TYPES.PLAINS]: {
@@ -24,101 +29,120 @@ export const BIOME_CONFIG = {
         name: 'Plains',
         topBlock: BLOCK_TYPES.GRASS,
         fillerBlock: BLOCK_TYPES.DIRT,
-        baseHeight: 64,
-        heightVariation: 6,
-        noiseScale: 0.008
-    },
-    [BIOME_TYPES.SNOWY_TUNDRA]: {
-        id: 1,
-        name: 'Snowy Tundra',
-        topBlock: BLOCK_TYPES.SNOW,
-        fillerBlock: BLOCK_TYPES.DIRT,
+        minHeight: 0.12,
+        maxHeight: 0.22,
         baseHeight: 65,
-        heightVariation: 7,
-        noiseScale: 0.009
+        heightVariation: 4,
+        noiseScale: 0.008,
+        grassColor: 0x91BD59,
+        foliageColor: 0x77AB2F
+    },
+    [BIOME_TYPES.TAIGA]: {
+        id: 1,
+        name: 'Taiga',
+        topBlock: BLOCK_TYPES.GRASS,
+        fillerBlock: BLOCK_TYPES.DIRT,
+        minHeight: 0.20,
+        maxHeight: 0.45,
+        baseHeight: 66,
+        heightVariation: 9,
+        noiseScale: 0.011,
+        grassColor: 0x86B783,
+        foliageColor: 0x68A464
     },
     [BIOME_TYPES.FOREST]: {
         id: 2,
         name: 'Forest',
         topBlock: BLOCK_TYPES.GRASS,
         fillerBlock: BLOCK_TYPES.DIRT,
-        baseHeight: 67,
-        heightVariation: 14,
-        noiseScale: 0.015
+        minHeight: 0.16,
+        maxHeight: 0.40,
+        baseHeight: 66,
+        heightVariation: 8,
+        noiseScale: 0.012,
+        grassColor: 0x79C05A,
+        foliageColor: 0x59AE30
     },
     [BIOME_TYPES.DESERT]: {
         id: 3,
         name: 'Desert',
         topBlock: BLOCK_TYPES.SAND,
-        fillerBlock: BLOCK_TYPES.SANDSTONE,
-        baseHeight: 64,
-        heightVariation: 6,
-        noiseScale: 0.008
+        fillerBlock: BLOCK_TYPES.SAND,
+        minHeight: 0.12,
+        maxHeight: 0.22,
+        baseHeight: 65,
+        heightVariation: 4,
+        noiseScale: 0.008,
+        grassColor: 0xBFB755,
+        foliageColor: 0xAEA42A
     },
-    [BIOME_TYPES.MOUNTAINS]: {
+    [BIOME_TYPES.EXTREME_HILLS]: {
         id: 4,
-        name: 'Mountains',
-        topBlock: BLOCK_TYPES.STONE,
-        fillerBlock: BLOCK_TYPES.STONE,
-        baseHeight: 86,
-        heightVariation: 36,
-        noiseScale: 0.025
+        name: 'Extreme Hills',
+        topBlock: BLOCK_TYPES.GRASS,
+        fillerBlock: BLOCK_TYPES.DIRT,
+        minHeight: 0.48,
+        maxHeight: 1.55,
+        baseHeight: 74,
+        heightVariation: 30,
+        noiseScale: 0.012,
+        grassColor: 0x8AB689,
+        foliageColor: 0x6DA36B
     },
     [BIOME_TYPES.RIVER]: {
         id: 5,
         name: 'River',
         topBlock: BLOCK_TYPES.DIRT,
         fillerBlock: BLOCK_TYPES.DIRT,
-        baseHeight: 56,
+        minHeight: -0.50,
+        maxHeight: 0.08,
+        baseHeight: 55,
         heightVariation: 2,
-        noiseScale: 0.008
+        noiseScale: 0.008,
+        grassColor: 0x8EB971,
+        foliageColor: 0x71A74D
+    },
+    [BIOME_TYPES.OCEAN]: {
+        id: 6,
+        name: 'Ocean',
+        topBlock: BLOCK_TYPES.SAND,
+        fillerBlock: BLOCK_TYPES.DIRT,
+        minHeight: -1.00,
+        maxHeight: 0.30,
+        baseHeight: 46,
+        heightVariation: 6,
+        noiseScale: 0.010,
+        grassColor: 0x8EB971,
+        foliageColor: 0x71A74D
+    },
+    [BIOME_TYPES.SWAMPLAND]: {
+        id: 7,
+        name: 'Swampland',
+        topBlock: BLOCK_TYPES.GRASS,
+        fillerBlock: BLOCK_TYPES.DIRT,
+        minHeight: -0.14,
+        maxHeight: 0.15,
+        baseHeight: 61,
+        heightVariation: 3,
+        noiseScale: 0.010,
+        grassColor: 0x6A7039,
+        foliageColor: 0x6A7039
     }
 };
 
-/**
- * キャッシュからの逆引き用テーブル
- */
 export const BIOME_ID_TO_NAME = {
     0: 'Plains',
-    1: 'Snowy Tundra',
+    1: 'Taiga',
     2: 'Forest',
     3: 'Desert',
-    4: 'Mountains',
-    5: 'River'
+    4: 'Extreme Hills',
+    5: 'River',
+    6: 'Ocean',
+    7: 'Swampland'
 };
 
-/**
- * 気温(0..1)・湿度(0..1)・大陸度/起伏(0..1)・川ノイズ(0..1)に基づいてバイオームを決定する
- * 循環依存(標高入力)を廃止し、大陸度パラメータにより山岳バイオームを確実に連続生成する
- */
-export function determineBiome(temp, humidity, continentalness = 0.5, riverValue = 0.5) {
-    // 1. 河川判定（中心 0.5 から ±0.042 の帯、高地山岳の頂上付近は渓谷化しすぎないよう緩和）
-    const riverDist = riverValue >= 0.5 ? (riverValue - 0.5) : (0.5 - riverValue);
-    if (riverDist < 0.042 && continentalness < 0.72) {
-        return BIOME_CONFIG[BIOME_TYPES.RIVER];
-    }
+export const BIOME_COUNT = 8;
 
-    // 2. 山岳判定（大陸度・隆起度による連続エリア形成）
-    if (continentalness > 0.66) {
-        return BIOME_CONFIG[BIOME_TYPES.MOUNTAINS];
-    }
-
-    // 3. 気温と湿度による気候帯判定
-    // --- 寒冷地 ---
-    if (temp < 0.32) {
-        return BIOME_CONFIG[BIOME_TYPES.SNOWY_TUNDRA];
-    }
-
-    // --- 乾燥帯 ---
-    if (temp > 0.64 && humidity < 0.38) {
-        return BIOME_CONFIG[BIOME_TYPES.DESERT];
-    }
-
-    // --- 温帯・湿潤 ---
-    if (humidity > 0.52) {
-        return BIOME_CONFIG[BIOME_TYPES.FOREST];
-    }
-
-    // デフォルト（温帯草原）
+export function determineBiome() {
     return BIOME_CONFIG[BIOME_TYPES.PLAINS];
 }

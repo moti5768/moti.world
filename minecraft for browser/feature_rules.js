@@ -1,74 +1,93 @@
 import { BIOME_TYPES } from './biomes/biomes.js';
 
 /**
- * バイオームごとの生成ルール定義
- * ※各バイオームの rules 内の chance 合計は必ず 1.0 以下に収め、全ルールが正しく抽選されるようにする
+ * Minecraft Beta 1.8 BiomeDecorator 準拠のバイオーム別生成ルール
+ * ※各バイオームの rules 内 chance 合計は必ず 1.0 以下
  */
 export const FeatureRules = {
+    // 海洋 (Ocean): 植生なし
+    [BIOME_TYPES.OCEAN]: {
+        attempts: 0,
+        rules: []
+    },
 
-    // 川 (River): attempts 0 により生成ループを完全にバイパス
+    // 川 (River): 植生なし
     [BIOME_TYPES.RIVER]: {
         attempts: 0,
         rules: []
     },
 
-    // 森林 (Forest): 木・下草・花・キノコをバランス良く配置（合計 chance = 0.80 <= 1.0）
-    [BIOME_TYPES.FOREST]: {
-        attempts: 360,
-        rules: [
-            { feature: 'OAK_TREE', chance: 0.045, isStructure: true },
-            { feature: 'GRASS', chance: 0.68, isStructure: false },
-            { feature: 'FLOWER', chance: 0.03, isStructure: false },
-            { feature: 'FLOWER_ROSE', chance: 0.025, isStructure: false },
-            { feature: 'MUSHROOM_BROWN', chance: 0.01, isStructure: false },
-            { feature: 'MUSHROOM_RED', chance: 0.01, isStructure: false }
-        ]
-    },
-
-    // 平原 (Plains): 広がる草花と点在するオーク・キャンプテント（合計 chance = 0.253 <= 1.0）
+    // 平原 (Plains): 木はほぼ無く、広大な背の高い草の群生と花畑（Beta 1.8: trees=-999, grass=10, flowers=4）
     [BIOME_TYPES.PLAINS]: {
-        attempts: 140,
+        attempts: 18,
         rules: [
-            { feature: 'OAK_TREE', chance: 0.002, isStructure: true },
-            { feature: 'CUSTOM_TENT', chance: 0.0015, isStructure: true },
-            { feature: 'GRASS', chance: 0.19, isStructure: false },
-            { feature: 'FLOWER', chance: 0.04, isStructure: false },
-            { feature: 'FLOWER_ROSE', chance: 0.02, isStructure: false }
+            { feature: 'GRASS_PATCH', chance: 0.62, isStructure: false },
+            { feature: 'FLOWER_PATCH', chance: 0.16, isStructure: false },
+            { feature: 'ROSE_PATCH', chance: 0.08, isStructure: false }
         ]
     },
 
-    // 雪原 (Snowy Tundra): 疎らなオーク木と枯れ草（合計 chance = 0.12 <= 1.0）
-    [BIOME_TYPES.SNOWY_TUNDRA]: {
-        attempts: 25,
+    // 森林 (Forest): 高密度のオーク林 ＋ ほどよい下草と花・キノコ（Beta 1.8: trees=10, grass=2）
+    [BIOME_TYPES.FOREST]: {
+        attempts: 36,
         rules: [
-            { feature: 'OAK_TREE', chance: 0.04, isStructure: true },
+            { feature: 'OAK_TREE', chance: 0.42, isStructure: true },
+            { feature: 'GRASS_PATCH', chance: 0.22, isStructure: false },
+            { feature: 'FLOWER_PATCH', chance: 0.06, isStructure: false },
+            { feature: 'ROSE_PATCH', chance: 0.04, isStructure: false },
+            { feature: 'MUSHROOM_BROWN_PATCH', chance: 0.03, isStructure: false },
+            { feature: 'MUSHROOM_RED_PATCH', chance: 0.02, isStructure: false }
+        ]
+    },
+
+    // タイガ (Taiga): 高密度の針葉樹林 ＋ 下草（Beta 1.8: trees=10, grass=1）
+    [BIOME_TYPES.TAIGA]: {
+        attempts: 34,
+        rules: [
+            { feature: 'TAIGA_TREE', chance: 0.44, isStructure: true },
+            { feature: 'GRASS_PATCH', chance: 0.14, isStructure: false },
+            { feature: 'FLOWER_PATCH', chance: 0.03, isStructure: false },
+            { feature: 'MUSHROOM_BROWN_PATCH', chance: 0.03, isStructure: false }
+        ]
+    },
+
+    // 湿地 (Swampland): 幅広な沼地の木 ＋ 豊富なキノコ ＋ 下草 ＋ 枯れ木（Beta 1.8: trees=2, mushrooms=8, deadBush=1）
+    [BIOME_TYPES.SWAMPLAND]: {
+        attempts: 24,
+        rules: [
+            { feature: 'SWAMP_TREE', chance: 0.14, isStructure: true },
+            { feature: 'MUSHROOM_BROWN_PATCH', chance: 0.22, isStructure: false },
+            { feature: 'MUSHROOM_RED_PATCH', chance: 0.14, isStructure: false },
+            { feature: 'GRASS_PATCH', chance: 0.18, isStructure: false },
             { feature: 'DEADBUSH', chance: 0.08, isStructure: false }
         ]
     },
 
-    // 山岳 (Mountains): 高地の草パッチと枯れ木（合計 chance = 0.12 <= 1.0）
-    [BIOME_TYPES.MOUNTAINS]: {
-        attempts: 60,
+    // 山岳丘陵 (Extreme Hills): 疎らなオークと点在する草・花（Beta 1.8: trees=0〜1, grass=1）
+    [BIOME_TYPES.EXTREME_HILLS]: {
+        attempts: 14,
         rules: [
-            { feature: 'GRASS', chance: 0.10, isStructure: false },
-            { feature: 'DEADBUSH', chance: 0.02, isStructure: false }
+            { feature: 'OAK_TREE', chance: 0.05, isStructure: true },
+            { feature: 'GRASS_PATCH', chance: 0.28, isStructure: false },
+            { feature: 'FLOWER_PATCH', chance: 0.06, isStructure: false },
+            { feature: 'ROSE_PATCH', chance: 0.03, isStructure: false }
         ]
     },
 
-    // 砂漠 (Desert): 枯れ木のみ（合計 chance = 0.06 <= 1.0）
+    // 砂漠 (Desert): 枯れ木のみ（Beta 1.8: trees=-999, deadBush=2）
     [BIOME_TYPES.DESERT]: {
-        attempts: 30,
+        attempts: 10,
         rules: [
-            { feature: 'DEADBUSH', chance: 0.06, isStructure: false }
+            { feature: 'DEADBUSH_PATCH', chance: 0.22, isStructure: false }
         ]
     },
 
     // フォールバック
     Default: {
-        attempts: 50,
+        attempts: 12,
         rules: [
-            { feature: 'GRASS', chance: 0.15, isStructure: false },
-            { feature: 'FLOWER', chance: 0.02, isStructure: false }
+            { feature: 'GRASS_PATCH', chance: 0.25, isStructure: false },
+            { feature: 'FLOWER_PATCH', chance: 0.05, isStructure: false }
         ]
     }
 };

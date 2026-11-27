@@ -32,13 +32,26 @@ import { createInventoryUI } from './ui/inventory_ui.js';
 
 import { createMinecraftBreakParticles, updateBlockParticles } from './particles.js';
 import { setMinecraftSky, loadCloudTexture, updateCloudGrid, updateCloudTiles, updateCloudOpacity, adjustCloudLayerDepth } from './cloudsky.js';
-import { determineBiome, BIOME_CONFIG } from './biomes/biomes.js';
+
+import { BIOME_CONFIG, BIOME_COUNT } from './biomes/biomes.js';
+import { createBeta18TerrainEngine } from './world/beta18_terrain.js';
+
 import { Features } from './features.js';
 import { FeatureRules } from './feature_rules.js';
 
 import { generateWorldUid, saveWorldData, loadFullSaveData } from './world/save_manager.js';
 import { TICKS_PER_DAY, getSkyLightFactor, getGameClock, createSkySystem } from './world/sky_system.js';
+import { createLightingEngine, LIGHT_LEVEL_FACTORS } from './world/lighting_engine.js';
+import {
+    createChunkMesher,
+    NEIGHBOR_BIT_PX, NEIGHBOR_BIT_NX, NEIGHBOR_BIT_PZ, NEIGHBOR_BIT_NZ
+} from './world/chunk_mesher.js';
+import { createOcclusionCuller } from './world/occlusion_culler.js';
 import { createInputController, addChatMessage } from './core/input_controller.js';
+import {
+    createPhysicsEngine,
+    COLLISION_MARGIN, PLAYER_RADIUS, PLAYER_HEIGHT, SNEAK_HEIGHT
+} from './core/physics_engine.js';
 
 // ======================================================
 // 【ブロック属性 高速ルックアップテーブル一元管理】(MAX_BLOCK_IDS = 1024)
@@ -53,6 +66,7 @@ const _isCustomGeometryBlock = new Uint8Array(MAX_BLOCK_IDS);
 const _isGreedyCubeBlock = new Uint8Array(MAX_BLOCK_IDS);
 const _cullSameBlock = new Uint8Array(MAX_BLOCK_IDS);
 const _isLogBlock = new Uint8Array(MAX_BLOCK_IDS);
+const _isLeavesBlock = new Uint8Array(MAX_BLOCK_IDS);
 const _blockLightOpacity = new Uint8Array(MAX_BLOCK_IDS);
 const _blockMayEmitLight = new Uint8Array(MAX_BLOCK_IDS);
 
@@ -61,6 +75,7 @@ function _syncBlockFastEntry(id, cfg) {
     _blockConfigFastArray[id] = cfg;
     _blockMaterialsFastArray[id] = null;
     if (!cfg) {
+        _isLeavesBlock[id] = 0;
         _blockLightOpacity[id] = 0;
         _blockMayEmitLight[id] = 0;
         return;
@@ -71,6 +86,7 @@ function _syncBlockFastEntry(id, cfg) {
     _isTransparentBlock[id] = cfg.transparent ? 1 : 0;
     _cullSameBlock[id] = cfg.cullAdjacentFaces === true ? 1 : 0;
     _isLogBlock[id] = cfg.isLog === true ? 1 : 0;
+    _isLeavesBlock[id] = (cfg.geometryType === 'leaves') ? 1 : 0;
     _blockLightOpacity[id] = (id === 0)
         ? 0
         : (!cfg.transparent ? 15 : (cfg.lightOpacity !== undefined ? cfg.lightOpacity : 1));
@@ -151,6 +167,7 @@ function applySeed(seedInput) {
     _seedNoiseOffsets.rivX = nextRand() * 256;
     _seedNoiseOffsets.rivZ = nextRand() * 256;
 
+    Beta18Terrain.setSeed(currentSeed);
     terrainHeightCache.clear();
     return currentSeed;
 }
@@ -318,62 +335,17 @@ function _smoothstep(edge0, edge1, x) {
 }
 
 /**
- * 統一されたバイオーム・地形パラメータ計算（循環依存を排除し全6バイオームを自然に分布）
+ * Minecraft Beta 1.8 準拠 GenLayer バイオーム＆高度算出
  */
-const _biomeSampleOut = { biome: null, continentalness: 0.5, riverValue: 0.5 };
-
-function _sampleBiomeAndParams(wx, wz, out = _biomeSampleOut) {
-    // フラクタルノイズの実効振幅を 1.35 倍に伸張し、雪原・砂漠・森林・平原をバランス良く分布させる
-    const nTemp = fractalNoise2D(wx * 0.0006 + _seedNoiseOffsets.tempX, wz * 0.0006 + _seedNoiseOffsets.tempZ, 3);
-    const nHum = fractalNoise2D(wx * 0.0006 + _seedNoiseOffsets.humX, wz * 0.0006 + _seedNoiseOffsets.humZ, 3);
-    const nCont = fractalNoise2D(wx * 0.0008 + _seedNoiseOffsets.contX, wz * 0.0008 + _seedNoiseOffsets.contZ, 3);
-    const nRiv = fractalNoise2D(wx * 0.0035 + _seedNoiseOffsets.rivX, wz * 0.0035 + _seedNoiseOffsets.rivZ, 2);
-
-    const temp = _clamp01(0.5 + nTemp * 1.35);
-    const humidity = _clamp01(0.5 + nHum * 1.35);
-    const continentalness = _clamp01(0.5 + nCont * 1.35);
-    const riverValue = _clamp01(0.5 + nRiv * 1.25);
-
-    out.biome = determineBiome(temp, humidity, continentalness, riverValue);
-    out.continentalness = continentalness;
-    out.riverValue = riverValue;
-    return out;
-}
+const Beta18Terrain = createBeta18TerrainEngine();
 
 const _getBiomeAt = (wx, wz) => {
-    return _sampleBiomeAndParams(wx, wz).biome;
+    const bId = Beta18Terrain.getBiomeIdAt(wx, wz);
+    return BIOME_CONFIG[bId] || BIOME_CONFIG[0];
 };
 
-/**
- * バイオーム基準高度＋山岳隆起カーブ＋U字型河川カービングを含む連続生高度の算出
- */
-function _computeRawHeightFromSample(wx, wz, biome, continentalness, riverValue) {
-    const nNoise = fractalNoise2D(wx * biome.noiseScale, wz * biome.noiseScale, 5);
-    let h = biome.baseHeight + (nNoise * biome.heightVariation);
-
-    // 1. 山岳エリア（continentalness > 0.62）の滑らかな隆起ブースター
-    if (continentalness > 0.62) {
-        const mFactor = _smoothstep(0.62, 0.92, continentalness);
-        h += mFactor * 26.0;
-    }
-
-    // 2. 河川のU字型連続カービング（川岸の垂直段差を防ぎ、浅瀬から川底へ滑らかに彫り込む）
-    if (continentalness < 0.72) {
-        const riverDist = Math.abs(riverValue - 0.5);
-        if (riverDist < 0.085) {
-            // 中心(0.0)で 0.0、川岸外側(0.085)で 1.0 になる滑らか曲線
-            const bankBlend = _smoothstep(0.018, 0.085, riverDist);
-            const riverBedY = 55.5 + nNoise * 1.5;
-            h = riverBedY + (h - riverBedY) * bankBlend;
-        }
-    }
-
-    return h;
-}
-
 const _getRawHeightAt = (wx, wz) => {
-    const s = _sampleBiomeAndParams(wx, wz);
-    return _computeRawHeightFromSample(wx, wz, s.biome, s.continentalness, s.riverValue);
+    return Beta18Terrain.getApproxHeightAt(wx, wz, BIOME_CONFIG);
 };
 
 export const ChunkSaveManager = {
@@ -486,163 +458,16 @@ export const ChunkSaveManager = {
         return dataArray[idx];
     },
 
-    // 1. 純粋な基本地形の生成（石・土・砂・雪・水・洞窟・岩盤凹凸・7種鉱石/砂利ポケット）
+    // 1. Beta 1.8 準拠 3D密度地形の生成（terrain_worker.js と100%共有）
     generateBaseTerrain: function (cx, cz) {
-        const data = this._sharedDataBuffer;
-        data.fill(0);
-        const baseX = (cx << 4) | 0;
-        const baseZ = (cz << 4) | 0;
-
-        const {
-            SKY, STONE, DIRT, WATER, LAVA, BEDROCK, GRAVEL,
-            COAL_ORE, IRON_ORE, GOLD_ORE, REDSTONE_ORE, LAPIS_ORE, EMERALD_ORE
-        } = BLOCK_TYPES;
-        const MOUNTAINS_ID = 4;
-        const seaLevel = SEA_LEVEL | 0;
-
-        const heightMap = this._sharedHeightMap;
-        const biomeMap = this._sharedBiomeMap;
-        // BLEND_RADIUS = 4 -> 24 x 24 = 576 セル（従来の484以上へ拡張）
-        if (this._sharedPaddedBiomeMap.length < 576) {
-            this._sharedPaddedBiomeMap = new Uint8Array(576);
-            this._sharedPaddedHeightNoiseMap = new Float32Array(576);
-        }
-        const paddedBiomeMap = this._sharedPaddedBiomeMap;
-        const paddedHMap = this._sharedPaddedHeightNoiseMap;
-
-        const blendRadius = BLEND_RADIUS | 0; // 4
-        const paddedSize = 24 | 0;
-
-        // バイオーム割当 & 生高度事前計算
-        const start = -blendRadius;
-        const end = 16 + blendRadius;
-        const zBaseOffset = blendRadius;
-
-        for (let x = start, xOff = 0; x < end; x++, xOff += paddedSize) {
-            const worldX = (baseX + x) | 0;
-
-            for (let z = start; z < end; z++) {
-                const worldZ = (baseZ + z) | 0;
-                const localIdx = (xOff + (z + zBaseOffset)) | 0;
-
-                const s = _sampleBiomeAndParams(worldX, worldZ);
-                paddedBiomeMap[localIdx] = s.biome.id;
-                paddedHMap[localIdx] = _computeRawHeightFromSample(
-                    worldX, worldZ, s.biome, s.continentalness, s.riverValue
-                );
-            }
-        }
-
-        // 地形・洞窟・岩盤凹凸・鉱石・表土の一括生成
-        const surfaceHeights = this._sharedSurfaceHeights;
-        surfaceHeights.fill(0);
-
-        const scaleXZ = CAVE_SCALE_XZ;
-        const scaleY = CAVE_SCALE_Y;
-        const seedMix = currentSeed | 0;
-
-        for (let x = 0; x < 16; x = (x + 1) | 0) {
-            const worldX = (baseX + x) | 0;
-            const nx = worldX * scaleXZ;
-            const xOff = (x << 12) | 0;
-            const xMapIdx = (x << 4) | 0;
-
-            for (let z = 0; z < 16; z = (z + 1) | 0) {
-                const worldZ = (baseZ + z) | 0;
-                const nz = worldZ * scaleXZ;
-                const xzOff = (xOff | (z << 8)) | 0;
-                const mapIdx = (xMapIdx | z) | 0;
-
-                const currentBiomeId = paddedBiomeMap[(x + blendRadius) * paddedSize + (z + blendRadius)];
-                biomeMap[mapIdx] = currentBiomeId;
-                const biome = BIOME_CONFIG[currentBiomeId];
-                const isMountainBiome = (currentBiomeId === MOUNTAINS_ID);
-
-                // 9x9 広域ガウス風ブレンディングによる滑らかな地表高度計算
-                let totalHeight = 0.0;
-                let weightIdx = 0;
-                for (let dx = -blendRadius; dx <= blendRadius; dx = (dx + 1) | 0) {
-                    const xShift = ((x + dx + blendRadius) * paddedSize) | 0;
-                    for (let dz = -blendRadius; dz <= blendRadius; dz = (dz + 1) | 0) {
-                        totalHeight += paddedHMap[xShift + (z + dz + blendRadius) | 0] * BLEND_WEIGHTS[weightIdx++];
-                    }
-                }
-                const sHeight = (totalHeight * INV_TOTAL_WEIGHT) | 0;
-                heightMap[mapIdx] = sHeight;
-                surfaceHeights[mapIdx] = sHeight;
-
-                // 表土レイヤーの計算
-                const filler = biome.fillerBlock | 0;
-                const top = biome.topBlock | 0;
-                const dirtEnd = (sHeight - 1) | 0;
-                let stoneEnd = (sHeight - 4) | 0;
-                if (stoneEnd < 1) stoneEnd = 1;
-
-                // Y=0 は必ず岩盤（破壊不能最下層）
-                data[xzOff] = BEDROCK;
-
-                // 列固有ハッシュ（岩盤凹凸Y=1..4と鉱石サンプリングの高速化）
-                let colHash = (Math.imul(worldX, 374761393) ^ Math.imul(worldZ, 668265263) ^ seedMix) | 0;
-                colHash = (Math.imul(colHash ^ (colHash >>> 13), 1274126177)) >>> 0;
-                const bedrockTopY = 1 + (colHash & 3); // Y=1〜4 まで本家準拠のランダム岩盤層
-
-                const maxY = sHeight > seaLevel ? sHeight : seaLevel;
-
-                for (let y = 1; y <= maxY; y = (y + 1) | 0) {
-                    const idx = (xzOff + y) | 0;
-
-                    if (y < sHeight) {
-                        // 岩盤層 (Y=1..4)
-                        if (y <= bedrockTopY) {
-                            data[idx] = BEDROCK;
-                            continue;
-                        }
-
-                        // 洞窟判定 (Y=5以上。川底・海底では水面下の遮水層3マスを保護し水底の穴あき黒ずみを防止)
-                        const caveMaxY = (sHeight <= seaLevel) ? (sHeight - 3) : sHeight;
-                        if (y >= 5 && y < caveMaxY && isCave(worldX, y, worldZ, sHeight, nx, y * scaleY, nz)) {
-                            data[idx] = (y <= 11) ? LAVA : SKY;
-                            continue;
-                        }
-
-                        // 表土レイヤー判定（水面下では top を filler へ置換）
-                        if (y >= stoneEnd) {
-                            data[idx] = (y === dirtEnd && dirtEnd >= seaLevel) ? top : filler;
-                            continue;
-                        }
-
-                        // 地下石層の鉱石・砂利ポケット生成（3D空間決定論ハッシュ＋塊連続判定）
-                        let h3 = (colHash ^ Math.imul(y, 2246822519)) | 0;
-                        h3 = (Math.imul(h3 ^ (h3 >>> 16), 3266489917)) >>> 0;
-                        const roll = h3 & 1023; // 0..1023 の高速一様乱数
-
-                        let blockToPlace = STONE;
-                        if (y <= 16 && roll < 10) {
-                            blockToPlace = REDSTONE_ORE;
-                        } else if (y <= 32 && roll >= 10 && roll < 16) {
-                            blockToPlace = GOLD_ORE;
-                        } else if (y >= 10 && y <= 32 && roll >= 16 && roll < 21) {
-                            blockToPlace = LAPIS_ORE;
-                        } else if (isMountainBiome && y <= 32 && roll >= 21 && roll < 25) {
-                            blockToPlace = EMERALD_ORE;
-                        } else if (y <= 64 && roll >= 25 && roll < 43) {
-                            blockToPlace = IRON_ORE;
-                        } else if (y <= 128 && roll >= 43 && roll < 67) {
-                            blockToPlace = COAL_ORE;
-                        } else if (y <= 60 && roll >= 67 && roll < 83) {
-                            blockToPlace = GRAVEL;
-                        }
-
-                        data[idx] = blockToPlace;
-
-                    } else if (y >= sHeight && y <= seaLevel) {
-                        data[idx] = WATER;
-                    }
-                }
-            }
-        }
-
-        return data;
+        return Beta18Terrain.generateChunkBaseTerrain(
+            cx,
+            cz,
+            this._sharedDataBuffer,
+            SEA_LEVEL,
+            BLOCK_TYPES,
+            BIOME_CONFIG
+        );
     },
 
     // 1. ベース地形（デコレーション無し）のみを安全に確保・取得する
@@ -848,49 +673,14 @@ const SECTIONS_PER_CHUNK = CHUNK_HEIGHT >> 4; // 16 セクション (sy: 0..15)
 
 let CHUNK_VISIBLE_DISTANCE = 6;
 
-const COLLISION_MARGIN = 0.005;
-const PLAYER_RADIUS = 0.3;
-const PLAYER_HEIGHT = 1.8;
-const SNEAK_HEIGHT = 1.65;
-
-const JUMP_INITIAL_SPEED = 0.2;
-const UP_DECEL = 0.018;
-const DOWN_ACCEL = 0.007;
-const MAX_FALL_SPEED = -1;
-
-const flightSpeed = 0.225;
-const doubleTapThreshold = 300;
 let flightMode = false;
-let lastSpaceTime = 0;
 let wasUnderwater = false;
 
 let lastFpsTime = performance.now();
 let frameCount = 0;
 const fpsCounter = document.getElementById("fpsCounter");
 
-// ======================================================
-// Vector3 / Box3 Object Pool (改良版)
-// ======================================================
-const _vecPool = [];
 const POOL_MAX = 1024;
-
-function allocVec() {
-    return _vecPool.length ? _vecPool.pop() : new THREE.Vector3();
-}
-
-function freeVec(v) {
-    if (!v) return;
-    v.set(0, 0, 0);
-    if (_vecPool.length < POOL_MAX) _vecPool.push(v);
-}
-
-const globalTempVec3 = new THREE.Vector3();
-const globalTempVec3b = new THREE.Vector3();
-const globalTempVec3c = new THREE.Vector3();
-
-const lastCamPos = new THREE.Vector3();
-const lastCamRot = new THREE.Euler();
-
 const BEDROCK_LEVEL = 0;
 
 // ----- スポーン位置の動的設定 -----
@@ -900,7 +690,6 @@ const spawnZ = 0;
 // 起動前仮高度（実高度は applySeed 後の prewarmSpawnChunks で実ボクセルから確定）
 const spawnY = SEA_LEVEL + 7;
 
-let jumpCooldown = 0;
 // プレイヤーデータ
 const player = {
     position: new THREE.Vector3(spawnX, spawnY, spawnZ),
@@ -911,22 +700,11 @@ const player = {
     spawnFixed: false
 };
 
+const keys = {};
 let jumpRequest = false;
 let dashActive = false;
-let lastWPressTime = 0;
-
-const normalDashMultiplier = 0.130;
-const flightDashMultiplier = 0.350;
-
-let yaw = 0, pitch = 0;
-const mouseSensitivity = 0.002;
-
-const dt = 1;
-
 let sneakActive = false;
-function getCurrentPlayerHeight() {
-    return sneakActive ? SNEAK_HEIGHT : PLAYER_HEIGHT;
-}
+let yaw = 0, pitch = 0;
 
 /* ======================================================
    【シーン・カメラ・レンダラー設定】
@@ -958,6 +736,38 @@ const SkySystem = createSkySystem({
     getBrightnessMultiplier: () => globalBrightnessMultiplier,
     sharedSkyUniform: SHARED_SKY_UNIFORM
 });
+
+const PhysicsEngine = createPhysicsEngine({
+    CHUNK_HEIGHT,
+    BLOCK_TYPES,
+    player,
+    camera,
+    keys,
+    blockConfigFastArray: _blockConfigFastArray,
+    getVoxelAtWorld,
+    getChunkBlock: (cx, cz, lx, ly, lz) => ChunkSaveManager.getBlock(cx, cz, lx, ly, lz),
+    getChunkCoord,
+    getYaw: () => yaw,
+    getSneakActive: () => sneakActive,
+    getDashActive: () => dashActive,
+    getFlightMode: () => flightMode,
+    getWasUnderwater: () => wasUnderwater,
+    getJumpRequest: () => jumpRequest,
+    setJumpRequest: (v) => { jumpRequest = v; }
+});
+
+const getCurrentPlayerHeight = PhysicsEngine.getCurrentPlayerHeight;
+const getPlayerAABB = PhysicsEngine.getPlayerAABB;
+const getPlayerAABBAt = PhysicsEngine.getPlayerAABB;
+const checkAABBCollision = PhysicsEngine.checkAABBCollision;
+const resolvePlayerCollision = PhysicsEngine.resolvePlayerCollision;
+const updateNormalPhysics = PhysicsEngine.updateNormalPhysics;
+const updateFlightPhysics = PhysicsEngine.updateFlightPhysics;
+const updateOnGround = PhysicsEngine.updateOnGround;
+const isPlayerEntireBodyInWater = PhysicsEngine.isPlayerEntireBodyInWater;
+const updateUnderwaterPhysics = PhysicsEngine.updateUnderwaterPhysics;
+const raycastVoxel = PhysicsEngine.raycastVoxel;
+const getTargetBlockByDDA = PhysicsEngine.getTargetBlockByDDA;
 
 let renderer;
 const MAX_RENDER_PIXEL_RATIO = 2;
@@ -1012,41 +822,8 @@ scene.add(selectionGroup);
 
 
 /* ======================================================
-   【プレイヤーAABB・衝突判定関連】最新最適化版
+   【衝突判定キャッシュ（particles.js 互換）＆選択枠用 Box3 プール】
    ====================================================== */
-
-// --- 外部変数の定義（GC防止用の再利用オブジェクト） ---
-const _tempAABB = new THREE.Box3();
-
-function getPlayerAABB(pos = player.position, size = null) {
-    const h = (size !== null) ? size.h : (sneakActive ? SNEAK_HEIGHT : PLAYER_HEIGHT);
-    const r = (size !== null) ? size.r : (PLAYER_RADIUS - COLLISION_MARGIN);
-
-    let feetY = pos.y;
-    if (player.positionIsCenter === true) {
-        feetY -= (h * 0.5);
-    }
-
-    const min = _tempAABB.min;
-    const max = _tempAABB.max;
-
-    min.x = pos.x - r;
-    min.y = feetY;
-    min.z = pos.z - r;
-
-    max.x = pos.x + r;
-    max.y = feetY + h;
-    max.z = pos.z + r;
-
-    return _tempAABB;
-}
-
-const getPlayerAABBAt = getPlayerAABB;
-
-/* ======================================================
-   【衝突判定キャッシュ＆ゼロGCブロードフェーズ収集バッファ】
-   ====================================================== */
-
 export const blockCollisionBoxCache = new Map();
 const pooledBoxArray = [];
 
@@ -1065,258 +842,6 @@ function releasePooledBox(b) {
     if (!b) return;
     b.makeEmpty();
     if (pooledBoxArray.length < POOL_MAX) pooledBoxArray.push(b);
-}
-
-// 1フレームの移動領域内にある衝突ボックスを連続メモリへ格納する再利用バッファ [minX,minY,minZ,maxX,maxY,maxZ]
-const MAX_COLL_BOXES = 512;
-const _collBoxes = new Float64Array(MAX_COLL_BOXES * 6);
-const _collRotBox = new THREE.Box3();
-
-const COLL_OVERLAP_EPS = 1e-6;
-const COLL_SNAP_EPS = 1e-4;
-
-/**
- * 指定ワールド範囲と交差し得る全衝突ボックスを _collBoxes へ一括収集する（ゼロGC）
- * @returns {number} 収集したボックス数
- */
-function collectCollisionBoxes(sMinX, sMinY, sMinZ, sMaxX, sMaxY, sMaxZ) {
-    const ix0 = Math.floor(sMinX) | 0;
-    const ix1 = Math.floor(sMaxX) | 0;
-    // 下段にある高さ1.5ブロック（フェンス）を取りこぼさないよう -0.55 下から走査
-    const iy0 = Math.floor(sMinY - 0.55) | 0;
-    const iy1 = Math.floor(sMaxY) | 0;
-    const iz0 = Math.floor(sMinZ) | 0;
-    const iz1 = Math.floor(sMaxZ) | 0;
-
-    let count = 0;
-    let ptr = 0;
-
-    for (let y = iy0; y <= iy1; y = (y + 1) | 0) {
-        if (y < 0 || y >= CHUNK_HEIGHT) continue;
-        for (let x = ix0; x <= ix1; x = (x + 1) | 0) {
-            for (let z = iz0; z <= iz1; z = (z + 1) | 0) {
-                const rawVoxel = getVoxelAtWorld(x, y, z, true) | 0;
-                if (rawVoxel <= 0) continue;
-
-                const id = getRawBlockId(rawVoxel);
-                const cfg = _blockConfigFastArray[id];
-                if (!cfg || cfg.collision === false) continue;
-
-                const gType = cfg.geometryType;
-
-                // 高速パス: フルキューブ（世界の大部分）は回転・キャッシュ参照なしで直書き
-                if (!gType || gType === "cube" || gType === "leaves") {
-                    if (count >= MAX_COLL_BOXES) return count;
-                    _collBoxes[ptr] = x;
-                    _collBoxes[ptr + 1] = y;
-                    _collBoxes[ptr + 2] = z;
-                    _collBoxes[ptr + 3] = x + 1;
-                    _collBoxes[ptr + 4] = y + 1;
-                    _collBoxes[ptr + 5] = z + 1;
-                    ptr += 6;
-                    count++;
-                    continue;
-                }
-
-                const meta = getRawLocalState(rawVoxel);
-                const relBoxes = getCollisionBoxesReadOnly(gType, meta);
-                const tMeta = getTransformMeta(id, meta);
-
-                for (let j = 0, len = relBoxes.length; j < len; j++) {
-                    if (count >= MAX_COLL_BOXES) return count;
-                    let src = relBoxes[j];
-                    if (tMeta !== 0) {
-                        applyRotationToCollisionBox(src, tMeta, _collRotBox);
-                        src = _collRotBox;
-                    }
-                    _collBoxes[ptr] = x + src.min.x;
-                    _collBoxes[ptr + 1] = y + src.min.y;
-                    _collBoxes[ptr + 2] = z + src.min.z;
-                    _collBoxes[ptr + 3] = x + src.max.x;
-                    _collBoxes[ptr + 4] = y + src.max.y;
-                    _collBoxes[ptr + 5] = z + src.max.z;
-                    ptr += 6;
-                    count++;
-                }
-            }
-        }
-    }
-
-    return count;
-}
-
-/**
- * 解析的Y軸オフセット解決（Minecraft Java Edition VoxelShape.collide 準拠）
- */
-function clipAxisY(aMinX, aMinY, aMinZ, aMaxX, aMaxY, aMaxZ, dy, boxCount) {
-    if (dy === 0 || boxCount === 0) return dy;
-
-    for (let i = 0, ptr = 0; i < boxCount; i++, ptr += 6) {
-        if (
-            aMaxX <= _collBoxes[ptr] + COLL_OVERLAP_EPS ||
-            aMinX >= _collBoxes[ptr + 3] - COLL_OVERLAP_EPS ||
-            aMaxZ <= _collBoxes[ptr + 2] + COLL_OVERLAP_EPS ||
-            aMinZ >= _collBoxes[ptr + 5] - COLL_OVERLAP_EPS
-        ) continue;
-
-        if (dy > 0) {
-            const bMinY = _collBoxes[ptr + 1];
-            if (bMinY >= aMaxY - COLL_SNAP_EPS) {
-                const diff = bMinY - aMaxY;
-                if (diff < dy) dy = diff > 0 ? diff : 0;
-            }
-        } else {
-            const bMaxY = _collBoxes[ptr + 4];
-            if (bMaxY <= aMinY + COLL_SNAP_EPS) {
-                const diff = bMaxY - aMinY;
-                if (diff > dy) dy = diff < 0 ? diff : 0;
-            }
-        }
-    }
-    return dy;
-}
-
-/**
- * 解析的X軸オフセット解決（Minecraft Java Edition VoxelShape.collide 準拠）
- */
-function clipAxisX(aMinX, aMinY, aMinZ, aMaxX, aMaxY, aMaxZ, dx, boxCount) {
-    if (dx === 0 || boxCount === 0) return dx;
-
-    for (let i = 0, ptr = 0; i < boxCount; i++, ptr += 6) {
-        if (
-            aMaxY <= _collBoxes[ptr + 1] + COLL_OVERLAP_EPS ||
-            aMinY >= _collBoxes[ptr + 4] - COLL_OVERLAP_EPS ||
-            aMaxZ <= _collBoxes[ptr + 2] + COLL_OVERLAP_EPS ||
-            aMinZ >= _collBoxes[ptr + 5] - COLL_OVERLAP_EPS
-        ) continue;
-
-        if (dx > 0) {
-            const bMinX = _collBoxes[ptr];
-            if (bMinX >= aMaxX - COLL_SNAP_EPS) {
-                const diff = bMinX - aMaxX;
-                if (diff < dx) dx = diff > 0 ? diff : 0;
-            }
-        } else {
-            const bMaxX = _collBoxes[ptr + 3];
-            if (bMaxX <= aMinX + COLL_SNAP_EPS) {
-                const diff = bMaxX - aMinX;
-                if (diff > dx) dx = diff < 0 ? diff : 0;
-            }
-        }
-    }
-    return dx;
-}
-
-/**
- * 解析的Z軸オフセット解決（Minecraft Java Edition VoxelShape.collide 準拠）
- */
-function clipAxisZ(aMinX, aMinY, aMinZ, aMaxX, aMaxY, aMaxZ, dz, boxCount) {
-    if (dz === 0 || boxCount === 0) return dz;
-
-    for (let i = 0, ptr = 0; i < boxCount; i++, ptr += 6) {
-        if (
-            aMaxX <= _collBoxes[ptr] + COLL_OVERLAP_EPS ||
-            aMinX >= _collBoxes[ptr + 3] - COLL_OVERLAP_EPS ||
-            aMaxY <= _collBoxes[ptr + 1] + COLL_OVERLAP_EPS ||
-            aMinY >= _collBoxes[ptr + 4] - COLL_OVERLAP_EPS
-        ) continue;
-
-        if (dz > 0) {
-            const bMinZ = _collBoxes[ptr + 2];
-            if (bMinZ >= aMaxZ - COLL_SNAP_EPS) {
-                const diff = bMinZ - aMaxZ;
-                if (diff < dz) dz = diff > 0 ? diff : 0;
-            }
-        } else {
-            const bMaxZ = _collBoxes[ptr + 5];
-            if (bMaxZ <= aMinZ + COLL_SNAP_EPS) {
-                const diff = bMaxZ - aMinZ;
-                if (diff > dz) dz = diff < 0 ? diff : 0;
-            }
-        }
-    }
-    return dz;
-}
-
-/**
- * 収集済み _collBoxes 内に指定AABBと重なるボックスが存在するか高速判定（スニークエッジ判定用）
- */
-function hasOverlapInBuffer(minX, minY, minZ, maxX, maxY, maxZ, boxCount) {
-    for (let i = 0, ptr = 0; i < boxCount; i++, ptr += 6) {
-        if (
-            maxX > _collBoxes[ptr] + COLL_OVERLAP_EPS &&
-            minX < _collBoxes[ptr + 3] - COLL_OVERLAP_EPS &&
-            maxY > _collBoxes[ptr + 1] + COLL_OVERLAP_EPS &&
-            minY < _collBoxes[ptr + 4] - COLL_OVERLAP_EPS &&
-            maxZ > _collBoxes[ptr + 2] + COLL_OVERLAP_EPS &&
-            minZ < _collBoxes[ptr + 5] - COLL_OVERLAP_EPS
-        ) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/* ======================================================
-   【極限最適化版】静的AABB交差判定（ゼロGC・フルキューブ高速パス）
-   ====================================================== */
-function checkAABBCollision(aabb) {
-    const aMinX = aabb.min.x, aMinY = aabb.min.y, aMinZ = aabb.min.z;
-    const aMaxX = aabb.max.x, aMaxY = aabb.max.y, aMaxZ = aabb.max.z;
-
-    const ix0 = Math.floor(aMinX) | 0;
-    const ix1 = Math.floor(aMaxX) | 0;
-    const iy0 = Math.floor(aMinY - 0.55) | 0;
-    const iy1 = Math.floor(aMaxY) | 0;
-    const iz0 = Math.floor(aMinZ) | 0;
-    const iz1 = Math.floor(aMaxZ) | 0;
-
-    for (let y = iy0; y <= iy1; y = (y + 1) | 0) {
-        if (y < 0 || y >= CHUNK_HEIGHT) continue;
-        for (let x = ix0; x <= ix1; x = (x + 1) | 0) {
-            for (let z = iz0; z <= iz1; z = (z + 1) | 0) {
-                const rawVoxel = getVoxelAtWorld(x, y, z, true) | 0;
-                if (rawVoxel <= 0) continue;
-
-                const id = getRawBlockId(rawVoxel);
-                const cfg = _blockConfigFastArray[id];
-                if (!cfg || cfg.collision === false) continue;
-
-                const gType = cfg.geometryType;
-                if (!gType || gType === "cube" || gType === "leaves") {
-                    if (
-                        aMaxX > x + COLL_OVERLAP_EPS && aMinX < x + 1 - COLL_OVERLAP_EPS &&
-                        aMaxY > y + COLL_OVERLAP_EPS && aMinY < y + 1 - COLL_OVERLAP_EPS &&
-                        aMaxZ > z + COLL_OVERLAP_EPS && aMinZ < z + 1 - COLL_OVERLAP_EPS
-                    ) {
-                        return true;
-                    }
-                    continue;
-                }
-
-                const meta = getRawLocalState(rawVoxel);
-                const relBoxes = getCollisionBoxesReadOnly(gType, meta);
-                const tMeta = getTransformMeta(id, meta);
-
-                for (let j = 0, len = relBoxes.length; j < len; j++) {
-                    let src = relBoxes[j];
-                    if (tMeta !== 0) {
-                        applyRotationToCollisionBox(src, tMeta, _collRotBox);
-                        src = _collRotBox;
-                    }
-                    if (
-                        aMaxX > x + src.min.x + COLL_OVERLAP_EPS && aMinX < x + src.max.x - COLL_OVERLAP_EPS &&
-                        aMaxY > y + src.min.y + COLL_OVERLAP_EPS && aMinY < y + src.max.y - COLL_OVERLAP_EPS &&
-                        aMaxZ > z + src.min.z + COLL_OVERLAP_EPS && aMinZ < z + src.max.z - COLL_OVERLAP_EPS
-                    ) {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    return false;
 }
 
 function getTerrainHeight(worldX, worldZ) {
@@ -1547,426 +1072,7 @@ function updateScreenOverlay() {
     }
 }
 
-/* ======================================================
-   【Swept AABB 衝突検出】
-   ====================================================== */
-/* ======================================================
-   【解析的軸別スイープ衝突解決】（Minecraft Java Edition Entity.collide 準拠）
-   ====================================================== */
 
-const MAX_STEP_HEIGHT = 0.6;
-const SNEAK_BACKOFF_STEP = 0.05;
-
-const COLLISION_DIRECTIONS = [
-    new THREE.Vector3(0, 1, 0),
-    new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
-    new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1),
-    new THREE.Vector3(0, -1, 0)
-];
-const _moveTempVec = new THREE.Vector3();
-const _playerSizeTmp = { h: PLAYER_HEIGHT, r: PLAYER_RADIUS - COLLISION_MARGIN };
-
-/**
- * プレイヤーの移動衝突解決 ＋ 異常めり込み時の安全脱出（ゼロGC）
- */
-function resolvePlayerCollision() {
-    axisSeparatedCollisionResolve(dt);
-
-    _playerSizeTmp.h = getCurrentPlayerHeight();
-    _playerSizeTmp.r = PLAYER_RADIUS - COLLISION_MARGIN;
-
-    if (!checkAABBCollision(getPlayerAABB(player.position, _playerSizeTmp))) return;
-
-    let bestDir = null;
-    let bestDist = Infinity;
-
-    for (let i = 0; i < COLLISION_DIRECTIONS.length; i++) {
-        const dir = COLLISION_DIRECTIONS[i];
-        let low = 0, high = 1.0;
-        let foundDist = null;
-
-        for (let j = 0; j < 8; j++) {
-            const mid = (low + high) * 0.5;
-            _moveTempVec.copy(player.position).addScaledVector(dir, mid);
-
-            if (!checkAABBCollision(getPlayerAABB(_moveTempVec, _playerSizeTmp))) {
-                foundDist = mid;
-                high = mid;
-            } else {
-                low = mid;
-            }
-        }
-
-        if (foundDist !== null && foundDist < bestDist) {
-            bestDist = foundDist;
-            bestDir = dir;
-            if (bestDist < 0.01) break;
-        }
-    }
-
-    if (bestDir) {
-        player.position.addScaledVector(bestDir, bestDist);
-    } else if (!wasUnderwater && !flightMode) {
-        player.position.y += 0.1;
-    }
-}
-
-/**
- * スニーク中の足場エッジ落下防止（Minecraft Java Edition Player.maybeBackOffFromEdge 準拠）
- * 収集済み _collBoxes を再利用するため追加のボクセル取得ゼロ
- */
-const _backoffOut = { dx: 0, dz: 0 };
-
-function backOffFromEdge(aMinX, aMinY, aMinZ, aMaxX, aMaxZ, dx, dz, boxCount) {
-    const checkMinY = aMinY - MAX_STEP_HEIGHT;
-    const checkMaxY = aMinY - 1e-4;
-
-    // 1. X軸方向の落下防止
-    while (dx !== 0 && !hasOverlapInBuffer(aMinX + dx, checkMinY, aMinZ, aMaxX + dx, checkMaxY, aMaxZ, boxCount)) {
-        if (dx < SNEAK_BACKOFF_STEP && dx >= -SNEAK_BACKOFF_STEP) dx = 0;
-        else if (dx > 0) dx -= SNEAK_BACKOFF_STEP;
-        else dx += SNEAK_BACKOFF_STEP;
-    }
-
-    // 2. Z軸方向の落下防止
-    while (dz !== 0 && !hasOverlapInBuffer(aMinX, checkMinY, aMinZ + dz, aMaxX, checkMaxY, aMaxZ + dz, boxCount)) {
-        if (dz < SNEAK_BACKOFF_STEP && dz >= -SNEAK_BACKOFF_STEP) dz = 0;
-        else if (dz > 0) dz -= SNEAK_BACKOFF_STEP;
-        else dz += SNEAK_BACKOFF_STEP;
-    }
-
-    // 3. 斜め角方向の落下防止
-    while (dx !== 0 && dz !== 0 && !hasOverlapInBuffer(aMinX + dx, checkMinY, aMinZ + dz, aMaxX + dx, checkMaxY, aMaxZ + dz, boxCount)) {
-        if (dx < SNEAK_BACKOFF_STEP && dx >= -SNEAK_BACKOFF_STEP) dx = 0;
-        else if (dx > 0) dx -= SNEAK_BACKOFF_STEP;
-        else dx += SNEAK_BACKOFF_STEP;
-
-        if (dz < SNEAK_BACKOFF_STEP && dz >= -SNEAK_BACKOFF_STEP) dz = 0;
-        else if (dz > 0) dz -= SNEAK_BACKOFF_STEP;
-        else dz += SNEAK_BACKOFF_STEP;
-    }
-
-    _backoffOut.dx = dx;
-    _backoffOut.dz = dz;
-    return _backoffOut;
-}
-
-function axisSeparatedCollisionResolve(dt) {
-    const pos = player.position;
-    const vel = player.velocity;
-
-    let dx = vel.x * dt;
-    let dy = vel.y * dt;
-    let dz = vel.z * dt;
-
-    if (dx === 0 && dy === 0 && dz === 0) return;
-
-    const aabb = getPlayerAABB(pos);
-    const oMinX = aabb.min.x, oMinY = aabb.min.y, oMinZ = aabb.min.z;
-    const oMaxX = aabb.max.x, oMaxY = aabb.max.y, oMaxZ = aabb.max.z;
-
-    const allowStep = !flightMode;
-    const allowSneakGuard = sneakActive && !flightMode && player.onGround;
-
-    // 1. 移動領域全体（段差登り上側＋スニーク下側余裕込み）の衝突ボックスを1回だけ収集
-    const sMinX = (dx < 0 ? oMinX + dx : oMinX) - 0.05;
-    const sMaxX = (dx > 0 ? oMaxX + dx : oMaxX) + 0.05;
-    const sMinY = (dy < 0 ? oMinY + dy : oMinY) - (allowSneakGuard ? MAX_STEP_HEIGHT : 0) - 0.05;
-    const sMaxY = (dy > 0 ? oMaxY + dy : oMaxY) + (allowStep ? MAX_STEP_HEIGHT : 0) + 0.05;
-    const sMinZ = (dz < 0 ? oMinZ + dz : oMinZ) - 0.05;
-    const sMaxZ = (dz > 0 ? oMaxZ + dz : oMaxZ) + 0.05;
-
-    const boxCount = collectCollisionBoxes(sMinX, sMinY, sMinZ, sMaxX, sMaxY, sMaxZ);
-
-    // 2. スニーク中の足場エッジ落下防止（エッジぎりぎりまで滑らかに詰める）
-    if (allowSneakGuard && (dx !== 0 || dz !== 0)) {
-        const backed = backOffFromEdge(oMinX, oMinY, oMinZ, oMaxX, oMaxZ, dx, dz, boxCount);
-        if (backed.dx !== dx) { dx = backed.dx; vel.x = 0; }
-        if (backed.dz !== dz) { dz = backed.dz; vel.z = 0; }
-    }
-
-    // 3. 通常スイープ解決（Y -> 大きい水平軸 -> 小さい水平軸 の順で解析的クリップ）
-    let resY = clipAxisY(oMinX, oMinY, oMinZ, oMaxX, oMaxY, oMaxZ, dy, boxCount);
-    const yMinY = oMinY + resY;
-    const yMaxY = oMaxY + resY;
-
-    const zFirst = Math.abs(dz) > Math.abs(dx);
-    let resX, resZ;
-
-    if (zFirst) {
-        resZ = clipAxisZ(oMinX, yMinY, oMinZ, oMaxX, yMaxY, oMaxZ, dz, boxCount);
-        resX = clipAxisX(oMinX, yMinY, oMinZ + resZ, oMaxX, yMaxY, oMaxZ + resZ, dx, boxCount);
-    } else {
-        resX = clipAxisX(oMinX, yMinY, oMinZ, oMaxX, yMaxY, oMaxZ, dx, boxCount);
-        resZ = clipAxisZ(oMinX + resX, yMinY, oMinZ, oMaxX + resX, yMaxY, oMaxZ, dz, boxCount);
-    }
-
-    const hitGround = (dy < 0 && Math.abs(dy - resY) > 1e-6);
-    const hitCeiling = (dy > 0 && Math.abs(dy - resY) > 1e-6);
-    let hitX = Math.abs(dx - resX) > 1e-6;
-    let hitZ = Math.abs(dz - resZ) > 1e-6;
-
-    // 4. 解析的段差登り（Minecraft Java Edition Entity.collide 準拠・水中での段差乗り上げ対応）
-    let steppedUp = false;
-    if (allowStep && (player.onGround || hitGround || wasUnderwater) && (hitX || hitZ)) {
-        // 4-A. 元の位置から最大 MAX_STEP_HEIGHT(0.6) まで上昇（低い天井があれば自動で手前停止）
-        const upY = clipAxisY(oMinX, oMinY, oMinZ, oMaxX, oMaxY, oMaxZ, MAX_STEP_HEIGHT, boxCount);
-        if (upY > 1e-4) {
-            const upMinY = oMinY + upY;
-            const upMaxY = oMaxY + upY;
-
-            // 4-B. 上げた高さで元の水平移動 (dx, dz) を試行
-            let stepX, stepZ;
-            if (zFirst) {
-                stepZ = clipAxisZ(oMinX, upMinY, oMinZ, oMaxX, upMaxY, oMaxZ, dz, boxCount);
-                stepX = clipAxisX(oMinX, upMinY, oMinZ + stepZ, oMaxX, upMaxY, oMaxZ + stepZ, dx, boxCount);
-            } else {
-                stepX = clipAxisX(oMinX, upMinY, oMinZ, oMaxX, upMaxY, oMaxZ, dx, boxCount);
-                stepZ = clipAxisZ(oMinX + stepX, upMinY, oMinZ, oMaxX + stepX, upMaxY, oMaxZ, dz, boxCount);
-            }
-
-            // 4-C. 通常移動より遠くへ進める場合のみ段差登りを採用し、段差上面へピッタリ降ろす
-            if ((stepX * stepX + stepZ * stepZ) > (resX * resX + resZ * resZ) + 1e-8) {
-                const downTarget = (dy < 0 ? dy : 0) - upY;
-                const downY = clipAxisY(
-                    oMinX + stepX, upMinY, oMinZ + stepZ,
-                    oMaxX + stepX, upMaxY, oMaxZ + stepZ,
-                    downTarget, boxCount
-                );
-                resX = stepX;
-                resZ = stepZ;
-                resY = upY + downY;
-                hitX = Math.abs(dx - resX) > 1e-6;
-                hitZ = Math.abs(dz - resZ) > 1e-6;
-                steppedUp = true;
-            }
-        }
-    }
-
-    // 5. 位置・速度・接地状態の一括反映
-    pos.x += resX;
-    pos.y += resY;
-    pos.z += resZ;
-
-    if (hitX) vel.x = 0;
-    if (hitZ) vel.z = 0;
-    if (hitGround || hitCeiling || (steppedUp && !wasUnderwater)) vel.y = 0;
-    else if (steppedUp && wasUnderwater && vel.y < 0) vel.y = 0;
-    if (hitGround || steppedUp) player.onGround = true;
-}
-
-/* ======================================================
-   【物理更新：通常モード用】（重力・ジャンプ・水平慣性）
-   ====================================================== */
-// 再利用ベクトルをグローバルに1回だけ作成
-const _vForward = new THREE.Vector3();
-const _vRight = new THREE.Vector3();
-const _vDesired = new THREE.Vector3();
-const _vUp = new THREE.Vector3(0, 1, 0);
-
-function getDesiredHorizontalVelocity(multiplier = 1) {
-    // pitch = ±90°（真上・真下）でも破綻しないよう yaw から水平基底を直接計算
-    const sinY = Math.sin(yaw);
-    const cosY = Math.cos(yaw);
-    _vForward.set(-sinY, 0, -cosY);
-    _vRight.set(cosY, 0, -sinY);
-
-    _vDesired.set(0, 0, 0);
-    if (keys["w"] || keys["arrowup"]) _vDesired.add(_vForward);
-    if (keys["s"] || keys["arrowdown"]) _vDesired.addScaledVector(_vForward, -1);
-    if (keys["a"] || keys["arrowleft"]) _vDesired.addScaledVector(_vRight, -1);
-    if (keys["d"] || keys["arrowright"]) _vDesired.add(_vRight);
-
-    if (_vDesired.lengthSq() > 0) {
-        // 💡 lengthSq()の判定は残しつつ、無駄な再計算を避けてスマートに
-        _vDesired.normalize().multiplyScalar(multiplier);
-    }
-    // else で .set(0,0,0) を呼ぶ必要はありません（すでに set(0,0,0) から始まっているため）
-
-    return _vDesired; // 常に同じ参照を使い回す
-}
-
-
-const _ladderSizeTmp = { h: PLAYER_HEIGHT, r: PLAYER_RADIUS };
-const _ladderRotBox = new THREE.Box3();
-
-function isOnLadder() {
-    _ladderSizeTmp.h = getCurrentPlayerHeight();
-    _ladderSizeTmp.r = PLAYER_RADIUS;
-
-    const aabb = getPlayerAABB(player.position, _ladderSizeTmp);
-    // 壁越し掴まりを防ぐため拡張幅を 0.05 ブロックに抑制
-    const pMinX = aabb.min.x - 0.05, pMaxX = aabb.max.x + 0.05;
-    const pMinY = aabb.min.y, pMaxY = aabb.max.y;
-    const pMinZ = aabb.min.z - 0.05, pMaxZ = aabb.max.z + 0.05;
-
-    const minX = Math.floor(pMinX) | 0;
-    const maxX = Math.floor(pMaxX) | 0;
-    const minY = Math.floor(pMinY) | 0;
-    const maxY = Math.floor(pMaxY) | 0;
-    const minZ = Math.floor(pMinZ) | 0;
-    const maxZ = Math.floor(pMaxZ) | 0;
-
-    const ladderId = BLOCK_TYPES.LADDER;
-    const ladderBoxes = getCollisionBoxesReadOnly("ladder", 0);
-
-    for (let y = minY; y <= maxY; y = (y + 1) | 0) {
-        if (y < 0 || y >= CHUNK_HEIGHT) continue;
-        for (let x = minX; x <= maxX; x = (x + 1) | 0) {
-            for (let z = minZ; z <= maxZ; z = (z + 1) | 0) {
-                const voxel = getVoxelAtWorld(x, y, z, true) | 0;
-                if (getRawBlockId(voxel) !== ladderId) continue;
-
-                const meta = getRawLocalState(voxel);
-                const tMeta = getTransformMeta(ladderId, meta);
-                for (let i = 0; i < ladderBoxes.length; i++) {
-                    let box = ladderBoxes[i];
-                    if (tMeta !== 0) {
-                        applyRotationToCollisionBox(box, tMeta, _ladderRotBox);
-                        box = _ladderRotBox;
-                    }
-                    if (
-                        pMaxX > x + box.min.x && pMinX < x + box.max.x &&
-                        pMaxY > y + box.min.y && pMinY < y + box.max.y &&
-                        pMaxZ > z + box.min.z && pMinZ < z + box.max.z
-                    ) {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-    return false;
-}
-
-
-// === 再利用ベクトル（スコープ外で1回だけ確保） ===
-const _tmpDesiredVel = new THREE.Vector3();
-
-/* ======================================================
-   【物理更新：updateNormalPhysics】
-   ====================================================== */
-function updateNormalPhysics() {
-    // 1. 基本スピードの決定
-    let speed = dashActive ? normalDashMultiplier : playerSpeed();
-    if (sneakActive) speed *= 0.3;
-
-    // 2. 視点方向に基づいた「目標速度」を取得
-    getDesiredHorizontalVelocity(speed);
-    _tmpDesiredVel.copy(_vDesired);
-
-    // 3. 加速感と方向転換のバランス調整
-    // 地上ではレスポンスを重視（0.2）、空中ではダッシュの慣性を維持（0.05）
-    let lerpFactor = player.onGround ? 0.2 : 0.05;
-
-    // 4. 水平速度の更新（線形補間アルゴリズム）
-    // 古い慣性を残しつつ、視点移動による新しい入力方向へスムーズに切り替える
-    player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * lerpFactor;
-    player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * lerpFactor;
-
-    // 5. 微小速度のゼロクランプ
-    if (Math.abs(player.velocity.x) < 0.001) player.velocity.x = 0;
-    if (Math.abs(player.velocity.z) < 0.001) player.velocity.z = 0;
-
-    // 6. ハシゴの判定
-    const onLadder = isOnLadder();
-
-    if (onLadder) {
-        player.velocity.y = 0; // 重力を相殺
-        if (keys["w"] || keys["arrowup"] || keys[" "]) {
-            player.velocity.y = 0.05;  // 上る
-        } else if (keys["s"] || keys["arrowdown"]) {
-            player.velocity.y = -0.05; // 下る
-        } else if (sneakActive) {
-            player.velocity.y = 0;    // スニーク停止
-        } else {
-            player.velocity.y = -0.05; // 緩やかな滑り落ち
-        }
-        jumpRequest = false; // ハシゴ中はジャンプ無効
-
-    } else if (!flightMode) {
-        // 7. 通常時の重力計算
-        if (player.velocity.y >= 0) {
-            player.velocity.y -= UP_DECEL;
-        } else {
-            player.velocity.y -= DOWN_ACCEL;
-            if (player.velocity.y < MAX_FALL_SPEED) {
-                player.velocity.y = MAX_FALL_SPEED;
-            }
-        }
-    }
-
-    // 8. ジャンプのクールダウンと実行
-    if (jumpCooldown > 0) jumpCooldown--;
-
-    if (jumpRequest && player.onGround && !flightMode && !wasUnderwater && jumpCooldown === 0 && !onLadder) {
-        // 🌟 ダッシュジャンプの瞬間：
-        // 水平速度に微量のボーナスを乗せ、空中の lerpFactor (0.05) でその勢いを維持
-        if (dashActive) {
-            player.velocity.x *= 1.1;
-            player.velocity.z *= 1.1;
-        }
-
-        player.velocity.y = JUMP_INITIAL_SPEED;
-        player.onGround = false;
-        jumpRequest = false;
-        jumpCooldown = 10;
-    }
-}
-
-function playerSpeed() {
-    return 0.08;
-}
-
-/* ======================================================
-   【物理更新：飛行モード用】（重力無視・一定速度移動）
-   ====================================================== */
-function updateFlightPhysics() {
-    // 1. 基本速度の設定
-    let baseSpeed = playerSpeed();
-    if (flightMode && !dashActive) {
-        baseSpeed = 0.15; // 飛行中の巡航速度
-    }
-    const speed = dashActive ? flightDashMultiplier : baseSpeed;
-
-    // 2. 水平方向の移動（初期版の 0.05 を維持して「ヌルッ」とさせる）
-    const accel = flightMode ? 0.05 : 0.5;
-
-    const desiredVel = getDesiredHorizontalVelocity(speed);
-    _tmpDesiredVel.copy(desiredVel);
-
-    player.velocity.x += (_tmpDesiredVel.x - player.velocity.x) * accel;
-    player.velocity.z += (_tmpDesiredVel.z - player.velocity.z) * accel;
-
-    // --- 3. 垂直移動（上下の速さを抑え、滑らかな余韻を出す） ---
-    let targetVertical = 0;
-    if (keys[" "] || keys["spacebar"]) {
-        // flightSpeedに0.75を掛けて、上昇・下降の最高速度を少し制限
-        targetVertical = flightSpeed * 0.75;
-    } else if (keys["shift"] && flightMode) {
-        targetVertical = -flightSpeed * 0.75;
-    }
-
-    // 加速度（Lerp係数）の動的切り替え
-    // 停止時 (0.06): 水平移動(0.05)に近い、心地よい余韻で止まる
-    // 入力時 (0.3): 出だしが速すぎず、かつモタつかないバランス
-    const verticalAccel = (targetVertical === 0) ? 0.06 : 0.3;
-
-    player.velocity.y += (targetVertical - player.velocity.y) * verticalAccel;
-}
-
-/* ======================================================
-   【onGround 判定】
-   ====================================================== */
-const _groundProbeBox = new THREE.Box3();
-
-function updateOnGround() {
-    const aabb = getPlayerAABB(player.position);
-    // 足元直下 0.002 ブロック（2mm）の薄いスライスのみを検査し、空中での誤接地を防止
-    _groundProbeBox.min.set(aabb.min.x, aabb.min.y - 0.002, aabb.min.z);
-    _groundProbeBox.max.set(aabb.max.x, aabb.min.y + 0.001, aabb.max.z);
-    player.onGround = checkAABBCollision(_groundProbeBox);
-}
 
 function disposeMesh(mesh) {
     if (!mesh) return;
@@ -2057,36 +1163,6 @@ function finalizeChunkFadeImmediately(container) {
     }
 }
 
-function recomputeChunkBoundingBox(container) {
-    const baseX = container.userData.cx * CH_S;
-    const baseZ = container.userData.cz * CH_S;
-    const sections = container.userData.sections;
-
-    let minY = CH_H;
-    let maxY = -1;
-    if (sections) {
-        for (let sy = 0; sy < SECTIONS_PER_CHUNK; sy++) {
-            const sec = sections[sy];
-            if (!sec || !sec.userData.boundingBox) continue;
-            const sb = sec.userData.boundingBox;
-            if (sb.min.y < minY) minY = sb.min.y;
-            if (sb.max.y > maxY) maxY = sb.max.y;
-        }
-    }
-
-    if (maxY < minY) {
-        container.userData.boundingBox = null;
-    } else if (container.userData.boundingBox) {
-        container.userData.boundingBox.min.set(baseX, minY, baseZ);
-        container.userData.boundingBox.max.set(baseX + CH_S, maxY, baseZ + CH_S);
-    } else {
-        container.userData.boundingBox = new THREE.Box3(
-            new THREE.Vector3(baseX, minY, baseZ),
-            new THREE.Vector3(baseX + CH_S, maxY, baseZ + CH_S)
-        );
-    }
-}
-
 /**
  * 指定チャンク内の対象 16x16x16 セクション (syMask のビットが立っている層) のみを高速再構築する
  */
@@ -2123,12 +1199,20 @@ function refreshChunkSections(cx, cz, syMask) {
         lightMap = generateChunkLightMap(key, voxelData);
     }
 
-    container.userData.missingNeighborMask = populateChunkBoundaryView(cx, cz, voxelData, lightMap);
+    const prevMissingMask = container.userData.missingNeighborMask | 0;
+    const nextMissingMask = populateChunkBoundaryView(cx, cz, voxelData, lightMap);
+    // 全16セクション更新時のみフラグを上書きし、部分更新時は未更新層の欠損ビットを保持する
+    container.userData.missingNeighborMask = (mask === 0xFFFF) ? nextMissingMask : (prevMissingMask | nextMissingMask);
     const sections = container.userData.sections;
+    if (!container.userData.sectionVis) {
+        container.userData.sectionVis = new Uint16Array(SECTIONS_PER_CHUNK);
+    }
+    const sectionVis = container.userData.sectionVis;
 
     for (let sy = 0; sy < SECTIONS_PER_CHUNK; sy++) {
         if (((mask >> sy) & 1) === 0) continue;
 
+        sectionVis[sy] = computeSectionVisibility(voxelData, sy);
         const oldSec = sections[sy];
         const newSec = buildChunkSectionMesh(cx, cz, sy, voxelData, lightMap, false, false);
         if (newSec) {
@@ -2310,12 +1394,14 @@ const TerrainWorkerPool = (() => {
 
     function buildInitPayload(seed) {
         const biomes = [];
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < BIOME_COUNT; i++) {
             const b = BIOME_CONFIG[i];
             biomes.push({
                 id: b.id,
                 topBlock: b.topBlock,
                 fillerBlock: b.fillerBlock,
+                minHeight: b.minHeight,
+                maxHeight: b.maxHeight,
                 baseHeight: b.baseHeight,
                 heightVariation: b.heightVariation,
                 noiseScale: b.noiseScale
@@ -2329,6 +1415,9 @@ const TerrainWorkerPool = (() => {
             blockIds: {
                 SKY: BLOCK_TYPES.SKY,
                 STONE: BLOCK_TYPES.STONE,
+                DIRT: BLOCK_TYPES.DIRT,
+                SAND: BLOCK_TYPES.SAND,
+                SANDSTONE: BLOCK_TYPES.SANDSTONE,
                 WATER: BLOCK_TYPES.WATER,
                 LAVA: BLOCK_TYPES.LAVA,
                 BEDROCK: BLOCK_TYPES.BEDROCK,
@@ -2381,7 +1470,7 @@ const TerrainWorkerPool = (() => {
         const count = Math.min(3, Math.max(1, (navigator.hardwareConcurrency || 2) - 1));
         try {
             for (let i = 0; i < count; i++) {
-                const w = new Worker("./terrain_worker.js");
+                const w = new Worker("./terrain_worker.js", { type: "module" });
                 w.onmessage = onWorkerMessage;
                 w.onerror = (err) => {
                     console.warn("[TerrainWorker] エラー発生のため同期フォールバックへ切替:", err.message || err);
@@ -2468,6 +1557,140 @@ const TerrainWorkerPool = (() => {
     };
 })();
 
+// ==========================================
+// 新規チャンク初期ライト計算 Web Worker プール（最大 2 並列・ゼロコピー転送・自動フォールバック）
+// ==========================================
+const LightWorkerPool = (() => {
+    const workers = [];
+    const inFlight = new Set();
+    let nextWorkerIdx = 0;
+    let generation = 0;
+    let reqSeq = 0;
+    let initialized = false;
+    let available = false;
+
+    function buildOpticalTables() {
+        const opacityByRaw = new Uint8Array(65536);
+        const emissionByRaw = new Uint8Array(65536);
+        for (let raw = 1; raw < 65536; raw++) {
+            const id = getRawBlockId(raw) | 0;
+            if (id <= 0 || id >= MAX_BLOCK_IDS) continue;
+            opacityByRaw[raw] = _blockLightOpacity[id];
+            if (_blockMayEmitLight[id] !== 0) {
+                emissionByRaw[raw] = getBlockLightEmissionForState(id, getRawLocalState(raw)) & 15;
+            }
+        }
+        return { opacityByRaw, emissionByRaw };
+    }
+
+    function onWorkerMessage(e) {
+        const msg = e.data;
+        if (!msg || msg.type !== "light") return;
+        if (msg.gen !== generation) return;
+
+        const key = msg.key;
+        inFlight.delete(key);
+
+        // 待機中にメインスレッド側で同期ライト構築・編集済みなら上書きしない
+        if (chunkLightCache.has(key)) return;
+
+        const pCx = getChunkCoord(player.position.x);
+        const pCz = getChunkCoord(player.position.z);
+        if (!isChunkWithinDataRetainDistance(msg.cx, msg.cz, pCx, pCz)) {
+            return;
+        }
+
+        const voxelData = ChunkSaveManager.modifiedChunks.get(key);
+        if (!voxelData) return;
+
+        const lightData = new Uint8Array(msg.buffer);
+        chunkLightCache.set(key, lightData);
+
+        // 隣接4チャンクと双方向境界同期し、光が流出した既ロード隣接セクションを即座に更新予約
+        _lightDirtySet.clear();
+        syncBorderLightFromNeighbors(key, voxelData, _lightDirtySet);
+        for (const [dKey, dMask] of _lightDirtySet.entries()) {
+            if (dKey !== key && loadedChunks.has(dKey)) {
+                requestChunkUpdateMaskByKey(dKey, dMask);
+            }
+        }
+        _lightDirtySet.clear();
+
+        // 描画範囲内かつ未メッシュ化ならメッシュ化キューへ即戻す
+        if (isChunkWithinRenderDistance(msg.cx, msg.cz, pCx, pCz) && !loadedChunks.has(key)) {
+            chunkQueue.push(key);
+        }
+    }
+
+    function ensureWorkers() {
+        if (initialized) return;
+        initialized = true;
+        if (typeof Worker === "undefined") return;
+
+        const count = Math.min(2, Math.max(1, (navigator.hardwareConcurrency || 2) - 1));
+        try {
+            for (let i = 0; i < count; i++) {
+                const w = new Worker("./world/light_worker.js");
+                w.onmessage = onWorkerMessage;
+                w.onerror = (err) => {
+                    console.warn("[LightWorker] エラー発生のため同期フォールバックへ切替:", err.message || err);
+                    available = false;
+                    inFlight.clear();
+                };
+                workers.push(w);
+            }
+            available = workers.length > 0;
+        } catch (err) {
+            console.warn("[LightWorker] 初期化スキップ（同期計算を使用）:", err);
+            available = false;
+        }
+    }
+
+    return {
+        reset() {
+            generation++;
+            inFlight.clear();
+            ensureWorkers();
+            if (!available) return;
+
+            const { opacityByRaw, emissionByRaw } = buildOpticalTables();
+            for (let i = 0; i < workers.length; i++) {
+                const opCopy = new Uint8Array(opacityByRaw);
+                const emCopy = new Uint8Array(emissionByRaw);
+                workers[i].postMessage(
+                    { type: "init", opacityByRaw: opCopy.buffer, emissionByRaw: emCopy.buffer },
+                    [opCopy.buffer, emCopy.buffer]
+                );
+            }
+        },
+
+        isAvailable() {
+            return available;
+        },
+
+        get pendingCount() {
+            return inFlight.size;
+        },
+
+        request(cx, cz, voxelData) {
+            if (!available || !voxelData) return false;
+            const key = encodeChunkKey(cx, cz);
+            if (inFlight.has(key) || chunkLightCache.has(key)) return false;
+
+            inFlight.add(key);
+            // メインスレッドの voxelData 本体を保護するためコピーをゼロコピー転送
+            const copy = new Uint16Array(voxelData);
+            const w = workers[nextWorkerIdx];
+            nextWorkerIdx = (nextWorkerIdx + 1) % workers.length;
+            w.postMessage(
+                { type: "compute", gen: generation, reqId: ++reqSeq, key, cx, cz, voxelBuffer: copy.buffer },
+                [copy.buffer]
+            );
+            return true;
+        }
+    };
+})();
+
 function processChunkQueue(isInitialBoost = false) {
     if (chunkQueue.length === 0) return 0;
 
@@ -2476,7 +1699,9 @@ function processChunkQueue(isInitialBoost = false) {
     const startTime = performance.now();
     let tasksProcessed = 0;
     let workerDispatches = 0;
+    let lightDispatches = 0;
     const MAX_WORKER_DISPATCH_PER_FRAME = 12;
+    const MAX_LIGHT_DISPATCH_PER_FRAME = 3;
 
     const pCx = getChunkCoord(player.position.x);
     const pCz = getChunkCoord(player.position.z);
@@ -2484,6 +1709,7 @@ function processChunkQueue(isInitialBoost = false) {
     // 描画距離0または初期スポーン待機中はフェードなしで即表示
     const useFade = !isInitialBoost && CHUNK_VISIBLE_DISTANCE > 0;
     const useWorker = !isInitialBoost && TerrainWorkerPool.isAvailable();
+    const useLightWorker = !isInitialBoost && LightWorkerPool.isAvailable();
 
     while (
         chunkQueue.length > 0 &&
@@ -2507,13 +1733,18 @@ function processChunkQueue(isInitialBoost = false) {
             continue;
         }
 
-        // 通常プレイ時は「デコレーション＋ライト計算」と「メッシュ生成」を別フレームへ分散しスパイクを半減
+        // 通常プレイ時はデコレーション後に初期ライト計算を Web Worker へ委譲（フォールバック時は次フレームへ分散）
         if (!isInitialBoost && (!ChunkSaveManager.decoratedChunks.has(key) || !chunkLightCache.has(key))) {
             const vData = ChunkSaveManager.captureBaseChunkData(cx, cz);
             if (vData && !chunkLightCache.has(key)) {
+                if (useLightWorker) {
+                    LightWorkerPool.request(cx, cz, vData);
+                    if (++lightDispatches >= MAX_LIGHT_DISPATCH_PER_FRAME) break;
+                    continue;
+                }
                 generateChunkLightMap(key, vData);
             }
-            chunkQueue.push(key); // 次フレームで即メッシュ化されるよう先頭（末尾pop位置）へ戻す
+            chunkQueue.push(key); // 同期フォールバック時は次フレームで即メッシュ化されるよう戻す
             tasksProcessed++;
             break;
         }
@@ -2836,71 +2067,10 @@ function updateChunkFadeIns(now) {
 }
 
 /* ======================================================
-   【新・15段階 マイクラ準拠 ライティングエンジン (SkyLight)】
+   【新・15段階 マイクラ準拠 ライティングエンジン】（./world/lighting_engine.js へ分離済）
    ====================================================== */
-const LIGHT_LEVEL_FACTORS = new Float32Array(16);
-const brightness = 0.5; // マイクラの設定「明るさ: 50%」に相当
-for (let i = 0; i <= 15; i++) {
-    const f = Math.pow(0.8, 15 - i);
-    const level = f / (f * (1.0 - brightness) + brightness);
-    LIGHT_LEVEL_FACTORS[i] = Math.max(0.03, level);
-}
-
-const chunkLightCache = new Map();
-const CS = CHUNK_SIZE;
-const CH = CHUNK_HEIGHT;
-const CS_CH = CS * CH; // 4096
-const TOTAL_CELLS = CS * CH * CS; // 65536
-const _localLightCoord = { cx: 0, cz: 0 };
-// 1次元配列上のオフセット [+X, -X, +Y, -Y, +Z, -Z]
-const MOVE_OFFSETS = new Int32Array([CS_CH, -CS_CH, 1, -1, CH, -CH]);
-const LIGHT_DIR_DX = new Int8Array([1, -1, 0, 0, 0, 0]);
-const LIGHT_DIR_DY = new Int8Array([0, 0, 1, -1, 0, 0]);
-const LIGHT_DIR_DZ = new Int8Array([0, 0, 0, 0, 1, -1]);
-
-// オーバーフローを構造的に防ぐリングバッファ（初期ライト構築用: 131072）
-const LIGHT_RING_SIZE = 131072;
-const LIGHT_RING_MASK = LIGHT_RING_SIZE - 1;
-const _sharedQueue = new Int32Array(LIGHT_RING_SIZE);
-// Phase 1-A 走査中に同時に拾う発光ブロック一時リスト（Phase 2-A の 65536 全走査を廃止）
-const _blockSeedIndices = new Int32Array(4096);
-const _blockSeedLevels = new Uint8Array(4096);
-
-// 2フェーズ インクリメンタル光源エンジン用リングバッファ（ワールド座標ベース: 32768）
-const INC_RING_SIZE = 32768;
-const INC_RING_MASK = INC_RING_SIZE - 1;
-const _incRemX = new Int32Array(INC_RING_SIZE);
-const _incRemY = new Int32Array(INC_RING_SIZE);
-const _incRemZ = new Int32Array(INC_RING_SIZE);
-const _incRemV = new Uint8Array(INC_RING_SIZE);
-const _incAddX = new Int32Array(INC_RING_SIZE);
-const _incAddY = new Int32Array(INC_RING_SIZE);
-const _incAddZ = new Int32Array(INC_RING_SIZE);
-
 // ブロック編集1回あたりに影響を受けたチャンクキーごとの 16bit セクションマスクを集約する再利用Map
 const _lightDirtySet = new Map();
-
-function _markLightDirty(outDirty, key, wy) {
-    if (!outDirty) return;
-    if (outDirty instanceof Map) {
-        const mask = getSectionMaskForY(wy);
-        if (mask !== 0) {
-            outDirty.set(key, (outDirty.get(key) || 0) | mask);
-        }
-    } else {
-        outDirty.add(key);
-    }
-}
-
-// ブロックIDごとの遮光度(0..15, 不透明=15)および発光量(0..15)の高速取得
-function getBlockLightOpacity(blockId) {
-    return _blockLightOpacity[blockId];
-}
-
-function getBlockLightEmission(blockId, meta = 0) {
-    if (_blockMayEmitLight[blockId] === 0) return 0;
-    return getBlockLightEmissionForState(blockId, meta);
-}
 
 // 読み込み済みチャンクからのみ参照（未ロードチャンクの同期生成を厳禁）
 function _getLoadedVoxelData(cx, cz) {
@@ -2908,16 +2078,8 @@ function _getLoadedVoxelData(cx, cz) {
     return ChunkSaveManager.modifiedChunks.get(key) || chunkReadOnlyCache.get(key) || null;
 }
 
-function _getWorldLightCell(wx, wy, wz) {
-    if (wy < 0) return 0;
-    if (wy >= CH) return 0xF0;
-    const lMap = chunkLightCache.get(encodeChunkKey(wx >> 4, wz >> 4));
-    if (!lMap) return -1;
-    return lMap[wy | ((wz & 15) << 8) | ((wx & 15) << 12)];
-}
-
 function _getWorldRawLoaded(wx, wy, wz) {
-    if (wy < 0 || wy >= CH) return 0;
+    if (wy < 0 || wy >= CHUNK_HEIGHT) return 0;
     const vData = _getLoadedVoxelData(wx >> 4, wz >> 4);
     if (!vData) return -1;
     return vData[wy | ((wz & 15) << 8) | ((wx & 15) << 12)];
@@ -2928,841 +2090,34 @@ function _getWorldBlockIdLoaded(wx, wy, wz) {
     return raw < 0 ? -1 : getRawBlockId(raw);
 }
 
-function _setWorldSkyLight(wx, wy, wz, val, outDirtyChunks) {
-    if (wy < 0 || wy >= CH) return;
-    const key = encodeChunkKey(wx >> 4, wz >> 4);
-    const lMap = chunkLightCache.get(key);
-    if (!lMap) return;
-    const idx = wy | ((wz & 15) << 8) | ((wx & 15) << 12);
-    const prev = lMap[idx];
-    const next = ((val & 15) << 4) | (prev & 15);
-    if (prev !== next) {
-        lMap[idx] = next;
-        _markLightDirty(outDirtyChunks, key, wy);
-    }
-}
-
-function _setWorldBlockLight(wx, wy, wz, val, outDirtyChunks) {
-    if (wy < 0 || wy >= CH) return;
-    const key = encodeChunkKey(wx >> 4, wz >> 4);
-    const lMap = chunkLightCache.get(key);
-    if (!lMap) return;
-    const idx = wy | ((wz & 15) << 8) | ((wx & 15) << 12);
-    const prev = lMap[idx];
-    const next = (prev & 0xF0) | (val & 15);
-    if (prev !== next) {
-        lMap[idx] = next;
-        _markLightDirty(outDirtyChunks, key, wy);
-    }
-}
-
-/**
- * ワールド座標ベース 加算BFS（ブロック光・チャンク跨ぎ対応）
- */
-function _runBlockLightAddBFS(addHead, addTail, outDirtyChunks) {
-    while (addHead !== addTail) {
-        const x = _incAddX[addHead];
-        const y = _incAddY[addHead];
-        const z = _incAddZ[addHead];
-        addHead = (addHead + 1) & INC_RING_MASK;
-
-        const cell = _getWorldLightCell(x, y, z);
-        if (cell < 0) continue;
-        const val = cell & 15;
-        if (val <= 1) continue;
-
-        for (let i = 0; i < 6; i++) {
-            const nx = x + LIGHT_DIR_DX[i];
-            const ny = y + LIGHT_DIR_DY[i];
-            const nz = z + LIGHT_DIR_DZ[i];
-            if (ny < 0 || ny >= CH) continue;
-
-            const nBlockId = _getWorldBlockIdLoaded(nx, ny, nz);
-            if (nBlockId < 0) continue;
-            const nOpacity = getBlockLightOpacity(nBlockId);
-            if (nOpacity >= 15) continue;
-
-            const decay = nOpacity > 1 ? nOpacity : 1;
-            const nextVal = val - decay;
-            if (nextVal <= 0) continue;
-
-            const nCell = _getWorldLightCell(nx, ny, nz);
-            if (nCell < 0) continue;
-            if (nextVal > (nCell & 15)) {
-                _setWorldBlockLight(nx, ny, nz, nextVal, outDirtyChunks);
-                const nextTail = (addTail + 1) & INC_RING_MASK;
-                if (nextTail !== addHead) {
-                    _incAddX[addTail] = nx;
-                    _incAddY[addTail] = ny;
-                    _incAddZ[addTail] = nz;
-                    addTail = nextTail;
-                }
-            }
-        }
-    }
-}
-
-/**
- * ワールド座標ベース 加算BFS（天空光・直射15減衰0ルール＋チャンク跨ぎ対応）
- */
-function _runSkyLightAddBFS(addHead, addTail, outDirtyChunks) {
-    while (addHead !== addTail) {
-        const x = _incAddX[addHead];
-        const y = _incAddY[addHead];
-        const z = _incAddZ[addHead];
-        addHead = (addHead + 1) & INC_RING_MASK;
-
-        const cell = _getWorldLightCell(x, y, z);
-        if (cell < 0) continue;
-        const val = (cell >> 4) & 15;
-        if (val <= 1) continue;
-
-        for (let i = 0; i < 6; i++) {
-            const nx = x + LIGHT_DIR_DX[i];
-            const ny = y + LIGHT_DIR_DY[i];
-            const nz = z + LIGHT_DIR_DZ[i];
-            if (ny < 0 || ny >= CH) continue;
-
-            const nBlockId = _getWorldBlockIdLoaded(nx, ny, nz);
-            if (nBlockId < 0) continue;
-            const nOpacity = getBlockLightOpacity(nBlockId);
-            if (nOpacity >= 15) continue;
-
-            // Minecraft Java Edition準拠: 直射日光15の真下(-Y)かつ遮光0のときのみ減衰0
-            let nextVal;
-            if (i === 3 && val === 15) {
-                nextVal = 15 - nOpacity;
-            } else {
-                const decay = nOpacity > 1 ? nOpacity : 1;
-                nextVal = val - decay;
-            }
-            if (nextVal <= 0) continue;
-
-            const nCell = _getWorldLightCell(nx, ny, nz);
-            if (nCell < 0) continue;
-            if (nextVal > ((nCell >> 4) & 15)) {
-                _setWorldSkyLight(nx, ny, nz, nextVal, outDirtyChunks);
-                const nextTail = (addTail + 1) & INC_RING_MASK;
-                if (nextTail !== addHead) {
-                    _incAddX[addTail] = nx;
-                    _incAddY[addTail] = ny;
-                    _incAddZ[addTail] = nz;
-                    addTail = nextTail;
-                }
-            }
-        }
-    }
-}
-
-/**
- * 【2フェーズ インクリメンタル光源更新エンジン】
- * ブロック1個の変更に対して「削除BFS -> 加算BFS」をチャンク境界越しに実行し、
- * ゴーストライトを完全防止しつつ影響チャンクのみを outDirtyChunks へ収集する。
- */
-function updateLightAtBlockChange(wx, wy, wz, oldRaw, newRaw, outDirtyChunks) {
-    if (wy < 0 || wy >= CH) return;
-
-    const oldId = getRawBlockId(oldRaw);
-    const newId = getRawBlockId(newRaw);
-    const oldOpacity = getBlockLightOpacity(oldId);
-    const newOpacity = getBlockLightOpacity(newId);
-    const oldEmit = getBlockLightEmission(oldId, getRawLocalState(oldRaw));
-    const newEmit = getBlockLightEmission(newId, getRawLocalState(newRaw));
-
-    // 光学特性が完全に同一ならライト再計算不要（石->土、階段回転変更など）
-    if (oldOpacity === newOpacity && oldEmit === newEmit) return;
-
-    const centerKey = encodeChunkKey(wx >> 4, wz >> 4);
-    const centerMap = chunkLightCache.get(centerKey);
-    if (!centerMap) return;
-
-    const centerIdx = wy | ((wz & 15) << 8) | ((wx & 15) << 12);
-    const currentCell = centerMap[centerIdx];
-    const currentSky = (currentCell >> 4) & 15;
-    const currentBlock = currentCell & 15;
-
-    // ======================================================
-    // 1. ブロック光 (BlockLight): 削除BFS -> 加算BFS
-    // ======================================================
-    {
-        let remHead = 0, remTail = 0;
-        let addHead = 0, addTail = 0;
-
-        const pushRem = (x, y, z, v) => {
-            const nt = (remTail + 1) & INC_RING_MASK;
-            if (nt === remHead) return;
-            _incRemX[remTail] = x; _incRemY[remTail] = y; _incRemZ[remTail] = z; _incRemV[remTail] = v;
-            remTail = nt;
-        };
-        const pushAdd = (x, y, z) => {
-            const nt = (addTail + 1) & INC_RING_MASK;
-            if (nt === addHead) return;
-            _incAddX[addTail] = x; _incAddY[addTail] = y; _incAddZ[addTail] = z;
-            addTail = nt;
-        };
-
-        // 1-A. 光源破壊または遮蔽でブロック光が減少するケース -> 削除BFS開始
-        if (currentBlock > newEmit && (oldEmit > newEmit || newOpacity > oldOpacity)) {
-            _setWorldBlockLight(wx, wy, wz, 0, outDirtyChunks);
-            pushRem(wx, wy, wz, currentBlock);
-
-            while (remHead !== remTail) {
-                const x = _incRemX[remHead], y = _incRemY[remHead], z = _incRemZ[remHead], oldVal = _incRemV[remHead];
-                remHead = (remHead + 1) & INC_RING_MASK;
-
-                for (let i = 0; i < 6; i++) {
-                    const nx = x + LIGHT_DIR_DX[i], ny = y + LIGHT_DIR_DY[i], nz = z + LIGHT_DIR_DZ[i];
-                    if (ny < 0 || ny >= CH) continue;
-
-                    const nCell = _getWorldLightCell(nx, ny, nz);
-                    if (nCell < 0) continue;
-                    const nVal = nCell & 15;
-                    if (nVal === 0) continue;
-
-                    const nRaw = _getWorldRawLoaded(nx, ny, nz);
-                    const nEmit = nRaw >= 0 ? getBlockLightEmission(getRawBlockId(nRaw), getRawLocalState(nRaw)) : 0;
-
-                    if (nVal < oldVal) {
-                        if (nEmit > 0) {
-                            // 別光源自体は消さず再充填シードへ戻す
-                            pushAdd(nx, ny, nz);
-                        } else {
-                            _setWorldBlockLight(nx, ny, nz, 0, outDirtyChunks);
-                            pushRem(nx, ny, nz, nVal);
-                        }
-                    } else if (nVal >= oldVal) {
-                        // 別光源から供給されている強い光を境界シードとして再充填
-                        pushAdd(nx, ny, nz);
-                    }
-                }
-            }
-        }
-
-        // 1-B. 新規発光・または壁破壊による周囲からの光流入 -> 加算BFS
-        if (newEmit > 0) {
-            _setWorldBlockLight(wx, wy, wz, newEmit, outDirtyChunks);
-            pushAdd(wx, wy, wz);
-        } else if (newOpacity < 15) {
-            for (let i = 0; i < 6; i++) {
-                const nx = wx + LIGHT_DIR_DX[i], ny = wy + LIGHT_DIR_DY[i], nz = wz + LIGHT_DIR_DZ[i];
-                const nCell = _getWorldLightCell(nx, ny, nz);
-                if (nCell >= 0 && (nCell & 15) > 1) {
-                    pushAdd(nx, ny, nz);
-                }
-            }
-        }
-
-        _runBlockLightAddBFS(addHead, addTail, outDirtyChunks);
-    }
-
-    // ======================================================
-    // 2. 天空光 (SkyLight): 垂直直射処理 -> 削除BFS -> 加算BFS
-    // ======================================================
-    {
-        let remHead = 0, remTail = 0;
-        let addHead = 0, addTail = 0;
-
-        const pushRem = (x, y, z, v) => {
-            const nt = (remTail + 1) & INC_RING_MASK;
-            if (nt === remHead) return;
-            _incRemX[remTail] = x; _incRemY[remTail] = y; _incRemZ[remTail] = z; _incRemV[remTail] = v;
-            remTail = nt;
-        };
-        const pushAdd = (x, y, z) => {
-            const nt = (addTail + 1) & INC_RING_MASK;
-            if (nt === addHead) return;
-            _incAddX[addTail] = x; _incAddY[addTail] = y; _incAddZ[addTail] = z;
-            addTail = nt;
-        };
-
-        const aboveCell = (wy < CH - 1) ? _getWorldLightCell(wx, wy + 1, wz) : 0xF0;
-        const aboveSky = aboveCell >= 0 ? ((aboveCell >> 4) & 15) : 15;
-        const expectedDirectSky = (newOpacity >= 15) ? 0 : (aboveSky === 15 ? (15 - newOpacity) : 0);
-
-        // 2-A. 遮光が増えた（蓋をした・葉/水を置いた）-> 垂直柱と周囲を削除BFS
-        if (newOpacity > oldOpacity && currentSky > 0) {
-            _setWorldSkyLight(wx, wy, wz, 0, outDirtyChunks);
-            pushRem(wx, wy, wz, currentSky);
-
-            // 直射日光15の柱を塞いだ場合、真下の直射柱(sky===15)を一括で削除キューへ積む
-            if (currentSky === 15 && expectedDirectSky < 15) {
-                for (let y = wy - 1; y >= 0; y--) {
-                    const c = _getWorldLightCell(wx, y, wz);
-                    if (c < 0) break;
-                    const s = (c >> 4) & 15;
-                    if (s === 15) {
-                        _setWorldSkyLight(wx, y, wz, 0, outDirtyChunks);
-                        pushRem(wx, y, wz, 15);
-                    } else {
-                        break;
-                    }
-                }
-            }
-
-            while (remHead !== remTail) {
-                const x = _incRemX[remHead], y = _incRemY[remHead], z = _incRemZ[remHead], oldVal = _incRemV[remHead];
-                remHead = (remHead + 1) & INC_RING_MASK;
-
-                for (let i = 0; i < 6; i++) {
-                    const nx = x + LIGHT_DIR_DX[i], ny = y + LIGHT_DIR_DY[i], nz = z + LIGHT_DIR_DZ[i];
-                    if (ny < 0 || ny >= CH) continue;
-
-                    const nCell = _getWorldLightCell(nx, ny, nz);
-                    if (nCell < 0) continue;
-                    const nVal = (nCell >> 4) & 15;
-                    if (nVal === 0) continue;
-
-                    // 真下への直射15連鎖、または自分より暗い従属光を消去
-                    if ((i === 3 && oldVal === 15 && nVal === 15) || nVal < oldVal) {
-                        _setWorldSkyLight(nx, ny, nz, 0, outDirtyChunks);
-                        pushRem(nx, ny, nz, nVal);
-                    } else if (nVal >= oldVal) {
-                        pushAdd(nx, ny, nz);
-                    }
-                }
-            }
-        }
-
-        // 2-B. 透過が増えた（天井・横壁を壊した）-> 直射柱の貫通＆周囲からの再流入
-        if (newOpacity < 15) {
-            if (expectedDirectSky === 15) {
-                // 真下へ遮光0が続く限り15を貫通させて加算キューへ
-                for (let y = wy; y >= 0; y--) {
-                    const bid = _getWorldBlockIdLoaded(wx, y, wz);
-                    if (bid < 0) break;
-                    const op = getBlockLightOpacity(bid);
-                    if (op >= 15) break;
-                    if (op === 0) {
-                        _setWorldSkyLight(wx, y, wz, 15, outDirtyChunks);
-                        pushAdd(wx, y, wz);
-                    } else {
-                        const atten = 15 - op;
-                        const c = _getWorldLightCell(wx, y, wz);
-                        if (c >= 0 && atten > ((c >> 4) & 15)) {
-                            _setWorldSkyLight(wx, y, wz, atten, outDirtyChunks);
-                            pushAdd(wx, y, wz);
-                        }
-                        break;
-                    }
-                }
-            } else if (expectedDirectSky > 0) {
-                const c = _getWorldLightCell(wx, wy, wz);
-                if (c >= 0 && expectedDirectSky > ((c >> 4) & 15)) {
-                    _setWorldSkyLight(wx, wy, wz, expectedDirectSky, outDirtyChunks);
-                    pushAdd(wx, wy, wz);
-                }
-            }
-
-            // 6近傍に明るいセルがあれば流入種として追加
-            for (let i = 0; i < 6; i++) {
-                const nx = wx + LIGHT_DIR_DX[i], ny = wy + LIGHT_DIR_DY[i], nz = wz + LIGHT_DIR_DZ[i];
-                const nCell = _getWorldLightCell(nx, ny, nz);
-                if (nCell >= 0 && ((nCell >> 4) & 15) > 1) {
-                    pushAdd(nx, ny, nz);
-                }
-            }
-        }
-
-        _runSkyLightAddBFS(addHead, addTail, outDirtyChunks);
-    }
-}
-
-/**
- * 新規隣接チャンク到着時に、境界16x256面のみから差分光を取り込んで内部へ伝播する（全再計算ゼロ）
- */
-function syncBorderLightFromNeighbors(chunkKey, voxelData) {
-    const lightData = chunkLightCache.get(chunkKey);
-    if (!lightData || !voxelData) return;
-
-    decodeChunkKey(chunkKey, _localLightCoord);
-    const cx = _localLightCoord.cx | 0;
-    const cz = _localLightCoord.cz | 0;
-    const baseX = cx << 4;
-    const baseZ = cz << 4;
-
-    const nMaps = [
-        chunkLightCache.get(encodeChunkKey(cx + 1, cz)) || null,
-        chunkLightCache.get(encodeChunkKey(cx - 1, cz)) || null,
-        null, null,
-        chunkLightCache.get(encodeChunkKey(cx, cz + 1)) || null,
-        chunkLightCache.get(encodeChunkKey(cx, cz - 1)) || null
-    ];
-
-    let skyTail = 0;
-    let blkTail = 0;
-
-    // 1. 境界4面から自チャンクへ流入する天空光・ブロック光を検出
-    for (let i = 0; i < 6; i++) {
-        const nm = nMaps[i];
-        if (!nm) continue;
-
-        for (let s = 0; s < 16; s++) {
-            let x = 0, z = 0, nLx = 0, nLz = 0;
-            if (i === 0) { x = 15; z = s; nLx = 0; nLz = s; }
-            else if (i === 1) { x = 0; z = s; nLx = 15; nLz = s; }
-            else if (i === 4) { x = s; z = 15; nLx = s; nLz = 0; }
-            else if (i === 5) { x = s; z = 0; nLx = s; nLz = 15; }
-
-            const myCol = (z << 8) | (x << 12);
-            const nCol = (nLz << 8) | (nLx << 12);
-
-            for (let y = 0; y < CH; y++) {
-                const idx = myCol | y;
-                const nVal = nm[nCol | y];
-                if (nVal === 0) continue;
-
-                const myType = getRawBlockId(voxelData[idx]);
-                const opacity = getBlockLightOpacity(myType);
-                if (opacity >= 15) continue;
-
-                const decay = opacity > 1 ? opacity : 1;
-                const cur = lightData[idx];
-
-                const nSky = (nVal >> 4) & 15;
-                if (nSky > 1) {
-                    const nextSky = nSky - decay;
-                    if (nextSky > ((cur >> 4) & 15)) {
-                        lightData[idx] = (nextSky << 4) | (cur & 15);
-                        if (skyTail < INC_RING_MASK) {
-                            _incAddX[skyTail] = baseX + x;
-                            _incAddY[skyTail] = y;
-                            _incAddZ[skyTail] = baseZ + z;
-                            skyTail++;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (skyTail > 0) {
-        _runSkyLightAddBFS(0, skyTail, null);
-    }
-
-    for (let i = 0; i < 6; i++) {
-        const nm = nMaps[i];
-        if (!nm) continue;
-
-        for (let s = 0; s < 16; s++) {
-            let x = 0, z = 0, nLx = 0, nLz = 0;
-            if (i === 0) { x = 15; z = s; nLx = 0; nLz = s; }
-            else if (i === 1) { x = 0; z = s; nLx = 15; nLz = s; }
-            else if (i === 4) { x = s; z = 15; nLx = s; nLz = 0; }
-            else if (i === 5) { x = s; z = 0; nLx = s; nLz = 15; }
-
-            const myCol = (z << 8) | (x << 12);
-            const nCol = (nLz << 8) | (nLx << 12);
-
-            for (let y = 0; y < CH; y++) {
-                const idx = myCol | y;
-                const nBlk = nm[nCol | y] & 15;
-                if (nBlk <= 1) continue;
-
-                const myType = getRawBlockId(voxelData[idx]);
-                const opacity = getBlockLightOpacity(myType);
-                if (opacity >= 15) continue;
-
-                const decay = opacity > 1 ? opacity : 1;
-                const nextBlk = nBlk - decay;
-                if (nextBlk > (lightData[idx] & 15)) {
-                    lightData[idx] = (lightData[idx] & 0xF0) | nextBlk;
-                    if (blkTail < INC_RING_MASK) {
-                        _incAddX[blkTail] = baseX + x;
-                        _incAddY[blkTail] = y;
-                        _incAddZ[blkTail] = baseZ + z;
-                        blkTail++;
-                    }
-                }
-            }
-        }
-    }
-
-    if (blkTail > 0) {
-        _runBlockLightAddBFS(0, blkTail, null);
-    }
-}
-
-/* ======================================================
-   【最適化・初期チャンクライト生成】(リングバッファ＋ハイトマップ境界シード＋Minecraft準拠減衰)
-   ====================================================== */
-function generateChunkLightMap(chunkKey, voxelData) {
-    if (!voxelData || voxelData.length < TOTAL_CELLS) {
-        console.warn("generateChunkLightMap: voxelData is invalid or too small.");
-        return null;
-    }
-
-    let lightData = chunkLightCache.get(chunkKey);
-    if (!lightData) {
-        lightData = new Uint8Array(TOTAL_CELLS);
-        chunkLightCache.set(chunkKey, lightData);
-    } else {
-        lightData.fill(0);
-    }
-
-    const queue = _sharedQueue;
-    let head = 0, tail = 0;
-    const pushLocal = (idx) => {
-        if ((tail - head) < LIGHT_RING_MASK) {
-            queue[tail & LIGHT_RING_MASK] = idx;
-            tail++;
-        }
-    };
-
-    decodeChunkKey(chunkKey, _localLightCoord);
-    const cx = _localLightCoord.cx | 0;
-    const cz = _localLightCoord.cz | 0;
-    const baseX = cx << 4;
-    const baseZ = cz << 4;
-
-    const nMaps = new Array(6);
-    const nVoxels = new Array(6);
-    const nKeys = new Array(6);
-    for (let i = 0; i < 6; i++) {
-        if (i === 2 || i === 3) continue;
-        const ncx = (cx + LIGHT_DIR_DX[i]) | 0;
-        const ncz = (cz + LIGHT_DIR_DZ[i]) | 0;
-        const nk = encodeChunkKey(ncx, ncz);
-        nKeys[i] = nk;
-        nMaps[i] = chunkLightCache.get(nk) || null;
-        nVoxels[i] = _getLoadedVoxelData(ncx, ncz);
-    }
-
-    // ======================================================
-    // 🌞 PHASE 1: 天空光 (SkyLight) ＋ 発光ブロック同時収集
-    // ======================================================
-    let chunkMaxAttenY = -1;
-    let bSeedCount = 0;
-
-    // 1-A: 直射日光15の垂直降下（遮光ブロックに当たった時点で直射を止め、以下はBFSに任せる）
-    for (let x = 0; x < 16; x = (x + 1) | 0) {
-        const xBase = (x << 12) | 0;
-        for (let z = 0; z < 16; z = (z + 1) | 0) {
-            const xzBase = (xBase | (z << 8)) | 0;
-            let directSun = true;
-
-            for (let y = 255; y >= 0; y = (y - 1) | 0) {
-                const idx = (xzBase | y) | 0;
-                const type = getRawBlockId(voxelData[idx]);
-
-                if (type !== 0) {
-                    const emit = getBlockLightEmission(type, getRawLocalState(voxelData[idx]));
-                    if (emit > 0 && bSeedCount < 4096) {
-                        _blockSeedIndices[bSeedCount] = idx;
-                        _blockSeedLevels[bSeedCount] = emit;
-                        bSeedCount++;
-                    }
-                }
-
-                if (directSun) {
-                    const opacity = getBlockLightOpacity(type);
-                    if (opacity === 0) {
-                        lightData[idx] = 0xF0; // 天空光15
-                    } else {
-                        if (y > chunkMaxAttenY) chunkMaxAttenY = y;
-                        directSun = false;
-                        if (opacity < 15) {
-                            const atten = 15 - opacity;
-                            if (atten > 0) {
-                                lightData[idx] = (atten << 4);
-                                pushLocal(idx);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 1-A2: ハイトマップ境界シード抽出（空中の完全直射層を除外し、隣接に暗い透過セルがあるセルのみ投入）
-    const scanMaxY = chunkMaxAttenY < 255 ? (chunkMaxAttenY + 1) : 255;
-    if (scanMaxY >= 0) {
-        for (let x = 0; x < 16; x = (x + 1) | 0) {
-            const xBase = (x << 12) | 0;
-            for (let z = 0; z < 16; z = (z + 1) | 0) {
-                const xzBase = (xBase | (z << 8)) | 0;
-                for (let y = 0; y <= scanMaxY; y = (y + 1) | 0) {
-                    const idx = (xzBase | y) | 0;
-                    const sky = (lightData[idx] >> 4) & 15;
-                    if (sky <= 1) continue;
-
-                    let needSpread = false;
-                    if (x < 15 && ((lightData[idx + CS_CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx + CS_CH])) < 15) needSpread = true;
-                    else if (x > 0 && ((lightData[idx - CS_CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx - CS_CH])) < 15) needSpread = true;
-                    else if (z < 15 && ((lightData[idx + CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx + CH])) < 15) needSpread = true;
-                    else if (z > 0 && ((lightData[idx - CH] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx - CH])) < 15) needSpread = true;
-                    else if (y > 0 && ((lightData[idx - 1] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx - 1])) < 15) needSpread = true;
-                    else if (y < 255 && ((lightData[idx + 1] >> 4) & 15) < sky - 1 && getBlockLightOpacity(getRawBlockId(voxelData[idx + 1])) < 15) needSpread = true;
-
-                    if (needSpread) pushLocal(idx);
-                }
-            }
-        }
-    }
-
-    // 1-B: 隣接4チャンクとの双方向境界シード（流入->自チャンクBFS / 流出->隣接インクリメンタルBFS）
-    let crossSkyTail = 0;
-    for (let i = 0; i < 6; i = (i + 1) | 0) {
-        const nm = nMaps[i];
-        const nv = nVoxels[i];
-        if (!nm) continue;
-
-        for (let s = 0; s < 16; s = (s + 1) | 0) {
-            let x = 0, z = 0, nLx = 0, nLz = 0;
-            if (i === 0) { x = 15; z = s; nLx = 0; nLz = s; }
-            else if (i === 1) { x = 0; z = s; nLx = 15; nLz = s; }
-            else if (i === 4) { x = s; z = 15; nLx = s; nLz = 0; }
-            else if (i === 5) { x = s; z = 0; nLx = s; nLz = 15; }
-
-            const myCol = (z << 8) | (x << 12);
-            const nCol = (nLz << 8) | (nLx << 12);
-            const nWx = baseX + x + LIGHT_DIR_DX[i];
-            const nWz = baseZ + z + LIGHT_DIR_DZ[i];
-
-            for (let y = 0; y < 256; y = (y + 1) | 0) {
-                const idx = myCol | y;
-                const nIdx = nCol | y;
-                const nSky = (nm[nIdx] >> 4) & 15;
-                const mySky = (lightData[idx] >> 4) & 15;
-
-                if (nSky > mySky + 1) {
-                    const myOp = getBlockLightOpacity(getRawBlockId(voxelData[idx]));
-                    if (myOp < 15) {
-                        const nextSky = nSky - (myOp > 1 ? myOp : 1);
-                        if (nextSky > mySky) {
-                            lightData[idx] = (nextSky << 4) | (lightData[idx] & 15);
-                            pushLocal(idx);
-                        }
-                    }
-                } else if (nv && mySky > nSky + 1) {
-                    const nOp = getBlockLightOpacity(getRawBlockId(nv[nIdx]));
-                    if (nOp < 15) {
-                        const nextSky = mySky - (nOp > 1 ? nOp : 1);
-                        if (nextSky > nSky) {
-                            nm[nIdx] = (nextSky << 4) | (nm[nIdx] & 15);
-                            if (crossSkyTail < INC_RING_MASK) {
-                                _incAddX[crossSkyTail] = nWx;
-                                _incAddY[crossSkyTail] = y;
-                                _incAddZ[crossSkyTail] = nWz;
-                                crossSkyTail++;
-                            }
-                            pendingChunkUpdates.add(nKeys[i]);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 1-C: 天空光BFS（リングバッファ・縦横一貫減衰）
-    while (head < tail) {
-        const idx = queue[head & LIGHT_RING_MASK] | 0;
-        head++;
-        const skyLight = (lightData[idx] >> 4) & 15;
-        if (skyLight <= 1) continue;
-
-        const y = idx & 255;
-        const z = (idx >> 8) & 15;
-        const x = idx >> 12;
-
-        for (let i = 0; i < 6; i = (i + 1) | 0) {
-            if ((i === 2 && y === 255) || (i === 3 && y === 0)) continue;
-
-            const isBorder = (i === 0 && x === 15) || (i === 1 && x === 0) || (i === 4 && z === 15) || (i === 5 && z === 0);
-            if (isBorder) {
-                const nm = nMaps[i];
-                const nv = nVoxels[i];
-                if (nm && nv) {
-                    const nx = (i === 0) ? 0 : (i === 1) ? 15 : x;
-                    const nz = (i === 4) ? 0 : (i === 5) ? 15 : z;
-                    const nIdx = (y | (nz << 8) | (nx << 12)) | 0;
-                    const nOp = getBlockLightOpacity(getRawBlockId(nv[nIdx]));
-                    if (nOp < 15) {
-                        const nextSky = skyLight - (nOp > 1 ? nOp : 1);
-                        if (nextSky > ((nm[nIdx] >> 4) & 15)) {
-                            nm[nIdx] = (nextSky << 4) | (nm[nIdx] & 15);
-                            if (crossSkyTail < INC_RING_MASK) {
-                                _incAddX[crossSkyTail] = baseX + x + LIGHT_DIR_DX[i];
-                                _incAddY[crossSkyTail] = y;
-                                _incAddZ[crossSkyTail] = baseZ + z + LIGHT_DIR_DZ[i];
-                                crossSkyTail++;
-                            }
-                            pendingChunkUpdates.add(nKeys[i]);
-                        }
-                    }
-                }
-                continue;
-            }
-
-            const nIdx = (idx + MOVE_OFFSETS[i]) | 0;
-            const nOp = getBlockLightOpacity(getRawBlockId(voxelData[nIdx]));
-            if (nOp < 15) {
-                const nextSky = (i === 3 && skyLight === 15) ? (15 - nOp) : (skyLight - (nOp > 1 ? nOp : 1));
-                if (nextSky > ((lightData[nIdx] >> 4) & 15)) {
-                    lightData[nIdx] = (nextSky << 4) | (lightData[nIdx] & 15);
-                    pushLocal(nIdx);
-                }
-            }
-        }
-    }
-
-    // 隣接チャンクへ漏れ出した天空光を奥まで一括伝播
-    if (crossSkyTail > 0) {
-        _runSkyLightAddBFS(0, crossSkyTail, pendingChunkUpdates);
-    }
-
-    // ======================================================
-    // 🕯️ PHASE 2: ブロック光 (BlockLight)
-    // ======================================================
-    head = 0;
-    tail = 0;
-
-    // 2-A: Phase 1-A で同時収集済みの発光ブロックを直接投入（65536全走査ゼロ）
-    for (let i = 0; i < bSeedCount; i = (i + 1) | 0) {
-        const idx = _blockSeedIndices[i];
-        const lvl = _blockSeedLevels[i];
-        lightData[idx] = (lightData[idx] & 0xF0) | lvl;
-        pushLocal(idx);
-    }
-
-    // 2-B: 隣接4チャンクからのブロック光流入
-    let crossBlkTail = 0;
-    for (let i = 0; i < 6; i = (i + 1) | 0) {
-        const nm = nMaps[i];
-        if (!nm) continue;
-
-        for (let s = 0; s < 16; s = (s + 1) | 0) {
-            let x = 0, z = 0, nLx = 0, nLz = 0;
-            if (i === 0) { x = 15; z = s; nLx = 0; nLz = s; }
-            else if (i === 1) { x = 0; z = s; nLx = 15; nLz = s; }
-            else if (i === 4) { x = s; z = 15; nLx = s; nLz = 0; }
-            else if (i === 5) { x = s; z = 0; nLx = s; nLz = 15; }
-
-            const myCol = (z << 8) | (x << 12);
-            const nCol = (nLz << 8) | (nLx << 12);
-
-            for (let y = 0; y < 256; y = (y + 1) | 0) {
-                const nBlk = nm[nCol | y] & 15;
-                if (nBlk <= 1) continue;
-
-                const idx = myCol | y;
-                const myOp = getBlockLightOpacity(getRawBlockId(voxelData[idx]));
-                if (myOp >= 15) continue;
-
-                const nextBlk = nBlk - (myOp > 1 ? myOp : 1);
-                if (nextBlk > (lightData[idx] & 15)) {
-                    lightData[idx] = (lightData[idx] & 0xF0) | nextBlk;
-                    pushLocal(idx);
-                }
-            }
-        }
-    }
-
-    // 2-C: ブロック光BFS（リングバッファ）
-    while (head < tail) {
-        const idx = queue[head & LIGHT_RING_MASK] | 0;
-        head++;
-        const blockLight = lightData[idx] & 15;
-        if (blockLight <= 1) continue;
-
-        const y = idx & 255;
-        const z = (idx >> 8) & 15;
-        const x = idx >> 12;
-
-        for (let i = 0; i < 6; i = (i + 1) | 0) {
-            if ((i === 2 && y === 255) || (i === 3 && y === 0)) continue;
-
-            const isBorder = (i === 0 && x === 15) || (i === 1 && x === 0) || (i === 4 && z === 15) || (i === 5 && z === 0);
-            if (isBorder) {
-                const nm = nMaps[i];
-                const nv = nVoxels[i];
-                if (nm && nv) {
-                    const nx = (i === 0) ? 0 : (i === 1) ? 15 : x;
-                    const nz = (i === 4) ? 0 : (i === 5) ? 15 : z;
-                    const nIdx = (y | (nz << 8) | (nx << 12)) | 0;
-                    const nOp = getBlockLightOpacity(getRawBlockId(nv[nIdx]));
-                    if (nOp < 15) {
-                        const nextBlk = blockLight - (nOp > 1 ? nOp : 1);
-                        if (nextBlk > (nm[nIdx] & 15)) {
-                            nm[nIdx] = (nm[nIdx] & 0xF0) | nextBlk;
-                            if (crossBlkTail < INC_RING_MASK) {
-                                _incAddX[crossBlkTail] = baseX + x + LIGHT_DIR_DX[i];
-                                _incAddY[crossBlkTail] = y;
-                                _incAddZ[crossBlkTail] = baseZ + z + LIGHT_DIR_DZ[i];
-                                crossBlkTail++;
-                            }
-                            pendingChunkUpdates.add(nKeys[i]);
-                        }
-                    }
-                }
-                continue;
-            }
-
-            const nIdx = (idx + MOVE_OFFSETS[i]) | 0;
-            const nOp = getBlockLightOpacity(getRawBlockId(voxelData[nIdx]));
-            if (nOp < 15) {
-                const nextBlk = blockLight - (nOp > 1 ? nOp : 1);
-                if (nextBlk > (lightData[nIdx] & 15)) {
-                    lightData[nIdx] = (lightData[nIdx] & 0xF0) | nextBlk;
-                    pushLocal(nIdx);
-                }
-            }
-        }
-    }
-
-    if (crossBlkTail > 0) {
-        _runBlockLightAddBFS(0, crossBlkTail, pendingChunkUpdates);
-    }
-
-    return lightData;
-}
+const LightingEngine = createLightingEngine({
+    CHUNK_SIZE,
+    CHUNK_HEIGHT,
+    encodeChunkKey,
+    decodeChunkKey,
+    getSectionMaskForY,
+    getLoadedVoxelData: _getLoadedVoxelData,
+    blockLightOpacity: _blockLightOpacity,
+    blockMayEmitLight: _blockMayEmitLight,
+    pendingChunkUpdates
+});
+
+const chunkLightCache = LightingEngine.chunkLightCache;
+const getBlockLightOpacity = LightingEngine.getBlockLightOpacity;
+const getBlockLightEmission = LightingEngine.getBlockLightEmission;
+const _getWorldLightCell = LightingEngine.getWorldLightCell;
+const updateLightAtBlockChange = LightingEngine.updateLightAtBlockChange;
+const syncBorderLightFromNeighbors = LightingEngine.syncBorderLightFromNeighbors;
+const generateChunkLightMap = LightingEngine.generateChunkLightMap;
 
 // =======================================================
-// 【チャンクメッシュ生成用 高速定数・属性ルックアップ・スクラッチプール】
+// 【チャンクメッシャー】（./world/chunk_mesher.js へ分離済）
 // =======================================================
-const FACE_FW = new Float32Array([0.8, 0.8, 1.0, 0.5, 0.65, 0.65]);
-
-const CUBE_VERTICES = new Int8Array([
-    1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 1, // 0: px
-    0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, // 1: nx
-    0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, // 2: py
-    0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, // 3: ny
-    0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, // 4: pz
-    1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0  // 5: nz
-]);
-
-const CUBE_NORMALS = new Int8Array([
-    1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0,   // 0: px
-    -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, // 1: nx
-    0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,   // 2: py
-    0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, // 3: ny
-    0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,   // 4: pz
-    0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1  // 5: nz
-]);
-
-const CUBE_UVS = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
-
 // 実行時に registerCustomBlock で追加された新ブロックを先頭定義の全高速配列＆名称表へ自動同期
 onBlockRegistered((key, cfg) => {
     _syncBlockFastEntry(cfg.id, cfg);
     BLOCK_NAMES[cfg.id] = key.charAt(0) + key.slice(1).toLowerCase();
 });
-
-/**
- * 宣言的 shapeMode からカスタムジオメトリ生成用 shapeMeta(0..15) を統一解決する（ハードコード分岐排除）
- */
-function resolveDynamicShapeMeta(type, cfg, meta, x, y, z, aboveType, getFn, getRawFn) {
-    const mode = cfg.shapeMode;
-    if (!mode || mode === "static") return 0;
-    if (mode === "raw") return meta;
-    if (mode === "connect_fence") return getConnectionMaskLocal(x, y, z, "fence", getFn);
-    if (mode === "connect_pane") return getConnectionMaskLocal(x, y, z, "pane", getFn);
-    if (mode === "connect_wire") return RedstoneEngine.getWireConnectionMask(x, y, z, getRawFn);
-    if (mode === "liquid") return (aboveType === type) ? 8 : (meta & 0xF);
-    if (mode.startsWith("propRaw:")) {
-        return getBlockStateRawProp(type, meta, mode.slice(8));
-    }
-    return meta;
-}
 
 function getBlockMaterialsFast(type, meta = 0) {
     const cfg = _blockConfigFastArray[type];
@@ -3777,1098 +2132,106 @@ function getBlockMaterialsFast(type, meta = 0) {
     return mats;
 }
 
-// --- [最適化用] 関数の外で再利用する一時オブジェクト ---
-const _v1 = new THREE.Vector3();
-const _n1 = new THREE.Vector3();
-const _m1 = new THREE.Matrix4();
-const _r1 = new THREE.Matrix4();
-const _dirVectors = [
-    new THREE.Vector3(1, 0, 0),  // 0: px
-    new THREE.Vector3(-1, 0, 0), // 1: nx
-    new THREE.Vector3(0, 1, 0),  // 2: py
-    new THREE.Vector3(0, -1, 0), // 3: ny
-    new THREE.Vector3(0, 0, 1),  // 4: pz
-    new THREE.Vector3(0, 0, -1)  // 5: nz
-];
-const CH_H = CHUNK_HEIGHT;
-const CH_S = CHUNK_SIZE;
-const STRIDE_Z = CH_H;
-const STRIDE_X = CH_H * CH_S;
-const SKY = BLOCK_TYPES.SKY;
-const _mTemp = new THREE.Matrix4();
-
-// --- 再利用スクラッチバッチプール（毎チャンク176KB使い捨て割り当てを完全ゼロ化） ---
-const _meshBatchPool = [];
-const _opaqueBatchMap = new Map();
-const _waterBatchMap = new Map();
-
-// MeshBasicMaterial は normal 属性を参照しないため撤去し、color は 8bit 正規化(Uint8Array)で 44B -> 23B/頂点へ圧縮
-function acquireMeshBatch() {
-    if (_meshBatchPool.length > 0) {
-        const b = _meshBatchPool.pop();
-        b.vCount = 0;
-        b.iCount = 0;
-        return b;
-    }
-    const initV = 256;
-    const initI = 384;
-    return {
-        pos: new Float32Array(initV * 3),
-        col: new Uint8Array(initV * 3),
-        uv: new Float32Array(initV * 2),
-        idx: new Uint32Array(initI),
-        vCap: initV,
-        iCap: initI,
-        vCount: 0,
-        iCount: 0
-    };
+// バイオーム別 RGB パレット事前計算（0..7）
+const _biomeGrassPalette = new Uint8Array(BIOME_COUNT * 3);
+const _biomeFoliagePalette = new Uint8Array(BIOME_COUNT * 3);
+for (let i = 0; i < BIOME_COUNT; i++) {
+    const b = BIOME_CONFIG[i] || BIOME_CONFIG[0];
+    const gc = b.grassColor ?? 0x91BD59;
+    const fc = b.foliageColor ?? 0x77AB2F;
+    _biomeGrassPalette[i * 3] = (gc >> 16) & 255;
+    _biomeGrassPalette[i * 3 + 1] = (gc >> 8) & 255;
+    _biomeGrassPalette[i * 3 + 2] = gc & 255;
+    _biomeFoliagePalette[i * 3] = (fc >> 16) & 255;
+    _biomeFoliagePalette[i * 3 + 1] = (fc >> 8) & 255;
+    _biomeFoliagePalette[i * 3 + 2] = fc & 255;
 }
 
-function ensureBatchCapacity(batch, addVerts, addIndices) {
-    const needV = batch.vCount + addVerts;
-    if (needV > batch.vCap) {
-        let nextV = batch.vCap;
-        while (nextV < needV) nextV <<= 1;
-        const nPos = new Float32Array(nextV * 3);
-        const nCol = new Uint8Array(nextV * 3);
-        const nUv = new Float32Array(nextV * 2);
-        const curV3 = batch.vCount * 3;
-        const curV2 = batch.vCount * 2;
-        if (curV3 > 0) {
-            nPos.set(batch.pos.subarray(0, curV3));
-            nCol.set(batch.col.subarray(0, curV3));
-            nUv.set(batch.uv.subarray(0, curV2));
-        }
-        batch.pos = nPos;
-        batch.col = nCol;
-        batch.uv = nUv;
-        batch.vCap = nextV;
-    }
-
-    const needI = batch.iCount + addIndices;
-    if (needI > batch.iCap) {
-        let nextI = batch.iCap;
-        while (nextI < needI) nextI <<= 1;
-        const nIdx = new Uint32Array(nextI);
-        if (batch.iCount > 0) {
-            nIdx.set(batch.idx.subarray(0, batch.iCount));
-        }
-        batch.idx = nIdx;
-        batch.iCap = nextI;
-    }
-}
-
-function getOrAcquireBatch(batchMap, mat) {
-    let b = batchMap.get(mat);
-    if (b === undefined) {
-        b = acquireMeshBatch();
-        batchMap.set(mat, b);
-    }
-    return b;
-}
-
-const MAX_MESH_BATCH_POOL = 24;
-const MAX_POOLED_BATCH_VERTS = 8192;
-
-function releaseBatchMap(batchMap) {
-    for (const batch of batchMap.values()) {
-        batch.vCount = 0;
-        batch.iCount = 0;
-        if (_meshBatchPool.length < MAX_MESH_BATCH_POOL && batch.vCap <= MAX_POOLED_BATCH_VERTS) {
-            _meshBatchPool.push(batch);
-        }
-    }
-    batchMap.clear();
-}
-
-// --- 2D Greedy Meshing 用再利用バッファ（ゼロGC） ---
-const _chunkColMaxY = new Int16Array(256);
-const _greedyMaskPos = new Int32Array(16 * CH_H); // +X / +Y / +Z 面用
-const _greedyMaskNeg = new Int32Array(16 * CH_H); // -X / -Y / -Z 面用
-const _greedyMatToId = new Map();
-const _greedyIdToMat = [null]; // 1-based（0 は「面なし」予約）
-
-function getGreedyMatId(mat) {
-    let id = _greedyMatToId.get(mat);
-    if (id === undefined) {
-        id = _greedyIdToMat.length;
-        _greedyIdToMat.push(mat);
-        _greedyMatToId.set(mat, id);
-    }
-    return id;
-}
-
-// --- カスタム形状テンプレート事前ベイクキャッシュ（ブロックごとの BufferGeometry / applyMatrix4 を完全撲滅） ---
-const _bakedCustomTemplateCache = new Map();
-
-// three.js r128 公式最適化: WebGL バッファ転送完了直後に JS 側 TypedArray を解放し二重メモリ常駐をゼロ化
-function releaseUploadedTypedArray() {
-    this.array = null;
-}
-
-function getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta) {
-    // 12bit shapeMeta（多状態ブロック・ワイヤー8bit等）を32bitオーバーフローなしでキャッシュ
-    const key = type * 65536 + ((shapeMeta & 0xFFF) << 4) + (transformMeta & 0xF);
-    const cached = _bakedCustomTemplateCache.get(key);
-    if (cached !== undefined) return cached;
-
-    const srcGeom = getBlockGeometry(cfg.geometryType, cfg, shapeMeta);
-    if (!srcGeom) {
-        _bakedCustomTemplateCache.set(key, null);
-        return null;
-    }
-
-    const posAttr = srcGeom.getAttribute('position');
-    const normAttr = srcGeom.getAttribute('normal');
-    const uvAttr = srcGeom.getAttribute('uv');
-    const indexAttr = srcGeom.index;
-    const totalIdxCount = indexAttr ? indexAttr.count : posAttr.count;
-    const groups = (srcGeom.groups && srcGeom.groups.length > 0)
-        ? srcGeom.groups
-        : [{ start: 0, count: totalIdxCount, materialIndex: 0 }];
-
-    getCustomGeometryMatrix(transformMeta, _m1, _r1, _mTemp);
-    _mTemp.makeTranslation(0.5, 0.5, 0.5);
-    _m1.premultiply(_mTemp);
-
-    const isUpsideDown = ((transformMeta >> 2) & 1) !== 0;
-    const isCross = (cfg.geometryType === "cross");
-    const useSelfLight = isCross || (cfg.isLadder === true);
-    const bakedGroups = [];
-
-    for (let g = 0; g < groups.length; g++) {
-        const grp = groups[g];
-        const start = grp.start;
-        const end = Math.min(start + grp.count, totalIdxCount);
-        const idxCount = end - start;
-        if (idxCount <= 0) continue;
-
-        const vertRemap = new Map();
-        const localIndices = new Uint16Array(idxCount);
-        const origVertIndices = [];
-
-        for (let k = 0; k < idxCount; k++) {
-            const oldIdx = indexAttr ? indexAttr.array[start + k] : (start + k);
-            let newIdx = vertRemap.get(oldIdx);
-            if (newIdx === undefined) {
-                newIdx = origVertIndices.length;
-                vertRemap.set(oldIdx, newIdx);
-                origVertIndices.push(oldIdx);
-            }
-            localIndices[k] = newIdx;
-        }
-
-        const vertCount = origVertIndices.length;
-        const bPos = new Float32Array(vertCount * 3);
-        const bUv = new Float32Array(vertCount * 2);
-
-        const firstOld = origVertIndices[0] * 3;
-        const fnx = normAttr ? normAttr.array[firstOld] : 0;
-        const fny = normAttr ? normAttr.array[firstOld + 1] : 1;
-        const fnz = normAttr ? normAttr.array[firstOld + 2] : 0;
-        const ax = Math.abs(fnx), ay = Math.abs(fny), az = Math.abs(fnz);
-        let dir;
-        if (ax >= ay && ax >= az) dir = fnx > 0 ? 0 : 1;
-        else if (ay >= ax && ay >= az) dir = fny > 0 ? 2 : 3;
-        else dir = fnz > 0 ? 4 : 5;
-
-        _v1.copy(_dirVectors[dir]).applyMatrix4(_r1);
-        const wdx = Math.round(_v1.x);
-        const wdy = Math.round(_v1.y);
-        const wdz = Math.round(_v1.z);
-
-        let fw = 1.0;
-        if (!isCross) {
-            if (wdy > 0.5) fw = 1.0;
-            else if (wdy < -0.5) fw = 0.5;
-            else if (Math.abs(wdz) > 0.5) fw = 0.65;
-            else fw = 0.8;
-        }
-
-        for (let vi = 0; vi < vertCount; vi++) {
-            const oi = origVertIndices[vi];
-            const o3 = oi * 3;
-            const o2 = oi * 2;
-            const d3 = vi * 3;
-            const d2 = vi * 2;
-
-            _v1.set(posAttr.array[o3], posAttr.array[o3 + 1], posAttr.array[o3 + 2]).applyMatrix4(_m1);
-            bPos[d3] = _v1.x;
-            bPos[d3 + 1] = _v1.y;
-            bPos[d3 + 2] = _v1.z;
-
-            const ony = normAttr ? normAttr.array[o3 + 1] : 1;
-            let u = uvAttr ? uvAttr.array[o2] : 0;
-            let v = uvAttr ? uvAttr.array[o2 + 1] : 0;
-            if (isUpsideDown && Math.abs(ony) < 0.1) {
-                u = 1.0 - u;
-                v = 1.0 - v;
-            }
-            bUv[d2] = u;
-            bUv[d2 + 1] = v;
-        }
-
-        bakedGroups.push({
-            pos: bPos,
-            uv: bUv,
-            idx: localIndices,
-            vertCount,
-            idxCount,
-            matIdx: grp.materialIndex,
-            dir,
-            wdx,
-            wdy,
-            wdz,
-            fw255: fw * 255.0,
-            useSelfLight
-        });
-    }
-
-    _bakedCustomTemplateCache.set(key, bakedGroups);
-    return bakedGroups;
-}
-
-// フェード終了時の共有 originMat 復帰（単一・配列マテリアル両対応、クロージャ生成ゼロ）
-function finalizeChunkMeshFade() {
-    if (!this.material) return;
-    if (Array.isArray(this.material)) {
-        for (let i = 0; i < this.material.length; i++) {
-            const m = this.material[i];
-            const o = m && m.userData && m.userData.originMat;
-            if (o) {
-                m.dispose();
-                this.material[i] = o;
-            }
-        }
-    } else {
-        const o = this.material.userData && this.material.userData.originMat;
-        if (o) {
-            this.material.dispose();
-            this.material = o;
-        }
-    }
-}
-
-function createFadeCloneMaterial(originMat) {
-    const fadeMat = originMat.clone();
-    fadeMat.vertexColors = true;
-    fadeMat.transparent = true;
-    fadeMat.opacity = 0;
-    fadeMat.depthWrite = false;
-    if (fadeMat.color && originMat.color) fadeMat.color.copy(originMat.color);
-    fadeMat.userData = {
-        originMat,
-        realOpacity: originMat.opacity !== undefined ? originMat.opacity : 1.0,
-        shaderUniforms: originMat.userData ? originMat.userData.shaderUniforms : null
-    };
-    if (originMat.customProgramCacheKey) fadeMat.customProgramCacheKey = originMat.customProgramCacheKey;
-    if (originMat.onBeforeCompile) fadeMat.onBeforeCompile = originMat.onBeforeCompile;
-    return fadeMat;
-}
-
-/**
- * スクラッチバッチ群から単一統合 BufferGeometry を構築（23B/頂点・Uint8正規化カラー・onUpload即解放）
- */
-function buildCombinedMeshFromBatches(batchMap, renderOrder, useFadeIn, baseX, baseZ, maxY, minY = 0) {
-    let totalVerts = 0;
-    let totalIndices = 0;
-
-    for (const batch of batchMap.values()) {
-        if (batch.vCount > 0 && batch.iCount > 0) {
-            totalVerts += batch.vCount;
-            totalIndices += batch.iCount;
-        }
-    }
-
-    if (totalVerts === 0 || totalIndices === 0) return null;
-
-    const finalPos = new Float32Array(totalVerts * 3);
-    const finalCol = new Uint8Array(totalVerts * 3);
-    const finalUv = new Float32Array(totalVerts * 2);
-    const finalIdx = (totalVerts <= 65535)
-        ? new Uint16Array(totalIndices)
-        : new Uint32Array(totalIndices);
-
-    const geom = new THREE.BufferGeometry();
-    const materials = [];
-
-    let vOffset = 0;
-    let iOffset = 0;
-
-    for (const [originMat, batch] of batchMap.entries()) {
-        const vc = batch.vCount;
-        const ic = batch.iCount;
-        if (vc === 0 || ic === 0) continue;
-
-        const v3 = vc * 3;
-        const v2 = vc * 2;
-        finalPos.set(batch.pos.subarray(0, v3), vOffset * 3);
-        finalCol.set(batch.col.subarray(0, v3), vOffset * 3);
-        finalUv.set(batch.uv.subarray(0, v2), vOffset * 2);
-
-        const srcIdx = batch.idx;
-        for (let k = 0; k < ic; k++) {
-            finalIdx[iOffset + k] = srcIdx[k] + vOffset;
-        }
-
-        const matIndex = materials.length;
-        materials.push(useFadeIn ? createFadeCloneMaterial(originMat) : originMat);
-        geom.addGroup(iOffset, ic, matIndex);
-
-        vOffset += vc;
-        iOffset += ic;
-    }
-
-    // GPU アップロード完了直後に JS 側配列参照を解放（boundingBox/Sphere 事前確定済みのため安全）
-    geom.setAttribute('position', new THREE.BufferAttribute(finalPos, 3).onUpload(releaseUploadedTypedArray));
-    geom.setAttribute('color', new THREE.BufferAttribute(finalCol, 3, true).onUpload(releaseUploadedTypedArray));
-    geom.setAttribute('uv', new THREE.BufferAttribute(finalUv, 2).onUpload(releaseUploadedTypedArray));
-    geom.setIndex(new THREE.BufferAttribute(finalIdx, 1).onUpload(releaseUploadedTypedArray));
-
-    const boxMinY = BEDROCK_LEVEL + minY;
-    const boxMaxY = BEDROCK_LEVEL + ((maxY + 1) < CH_H ? (maxY + 1) : CH_H);
-    const cxS = baseX + 8.0;
-    const cyS = (boxMinY + boxMaxY) * 0.5;
-    const czS = baseZ + 8.0;
-    const halfH = (boxMaxY - boxMinY) * 0.5;
-    const radius = Math.sqrt(64.0 + halfH * halfH + 64.0);
-    geom.boundingBox = new THREE.Box3(
-        new THREE.Vector3(baseX, boxMinY, baseZ),
-        new THREE.Vector3(baseX + CH_S, boxMaxY, baseZ + CH_S)
-    );
-    geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(cxS, cyS, czS), radius);
-
-    const meshMat = (materials.length === 1) ? materials[0] : materials;
-    const mesh = new THREE.Mesh(geom, meshMat);
-    mesh.renderOrder = renderOrder;
-    mesh.frustumCulled = false;
-    mesh.matrixAutoUpdate = false;
-    mesh.updateMatrix();
-    if (useFadeIn) {
-        mesh.userData.finalizeFade = finalizeChunkMeshFade;
-    }
-    return mesh;
-}
-
-// 4近傍の未ロード／ライト未計算状態を表すビットマスク定数
-const NEIGHBOR_BIT_PX = 1 << 0; // +X (cx + 1, cz)
-const NEIGHBOR_BIT_NX = 1 << 1; // -X (cx - 1, cz)
-const NEIGHBOR_BIT_PZ = 1 << 2; // +Z (cx, cz + 1)
-const NEIGHBOR_BIT_NZ = 1 << 3; // -Z (cx, cz - 1)
-
-// 3x3 隣接チャンク参照用再利用バッファ（index = (dx + 1) * 3 + (dz + 1)、中央は 4）
-const _boundaryVoxelGrid = new Array(9).fill(null);
-const _boundaryLightGrid = new Array(9).fill(null);
-
-function populateChunkBoundaryView(cx, cz, centerVoxelData, centerLightMap) {
-    let missingNeighborMask = 0;
-
-    for (let dx = -1; dx <= 1; dx++) {
-        for (let dz = -1; dz <= 1; dz++) {
-            const gridIdx = (dx + 1) * 3 + (dz + 1);
-            if (dx === 0 && dz === 0) {
-                _boundaryVoxelGrid[4] = centerVoxelData;
-                _boundaryLightGrid[4] = centerLightMap;
-                continue;
-            }
-
-            const nKey = encodeChunkKey(cx + dx, cz + dz);
-            // 読み込み済みデータのみ参照し、メッシュ生成中の同期連鎖生成を防ぐ
-            const nVoxel = ChunkSaveManager.modifiedChunks.get(nKey) || chunkReadOnlyCache.get(nKey) || null;
-            const nLight = chunkLightCache.get(nKey) || null;
-
-            _boundaryVoxelGrid[gridIdx] = nVoxel;
-            _boundaryLightGrid[gridIdx] = nLight;
-
-            if (!nVoxel || !nLight) {
-                if (dx === 1 && dz === 0) missingNeighborMask |= NEIGHBOR_BIT_PX;
-                else if (dx === -1 && dz === 0) missingNeighborMask |= NEIGHBOR_BIT_NX;
-                else if (dx === 0 && dz === 1) missingNeighborMask |= NEIGHBOR_BIT_PZ;
-                else if (dx === 0 && dz === -1) missingNeighborMask |= NEIGHBOR_BIT_NZ;
-            }
-        }
-    }
-
-    return missingNeighborMask;
-}
-
-const _CONN_OFFSETS_DX = [0, 0, 1, -1];
-const _CONN_OFFSETS_DZ = [-1, 1, 0, 0];
-const _CONN_BITS = [3, 2, 1, 0]; // 北(3), 南(2), 東(1), 西(0)
-
-function getConnectionMaskLocal(lx, ly, lz, targetGeometryType, getFn) {
-    let mask = 0;
-    for (let i = 0; i < 4; i++) {
-        const neighborId = getFn(lx + _CONN_OFFSETS_DX[i], ly, lz + _CONN_OFFSETS_DZ[i]);
-        if (neighborId === 0) continue;
-
-        if (_isOpaqueBlock[neighborId] === 1) {
-            mask |= (1 << _CONN_BITS[i]);
-            continue;
-        }
-        const cfg = _blockConfigFastArray[neighborId];
-        if (cfg && cfg.geometryType === targetGeometryType) {
-            mask |= (1 << _CONN_BITS[i]);
-        }
-    }
-    return mask;
-}
-
-const _secColMinY = new Int16Array(256);
-const _secColMaxY = new Int16Array(256);
-
-/**
- * 16x16x16 サブチャンク (sy = 0..15) 単体のメッシュを生成する
- * ※呼び出し前に populateChunkBoundaryView(cx, cz, voxelData, lightMap) を実行済みであること
- */
-function buildChunkSectionMesh(cx, cz, sy, voxelData, lightMap, useInstancing = false, useFadeIn = false) {
-    const baseX = cx * CH_S;
-    const baseZ = cz * CH_S;
-    const yStart = sy << 4;
-    const yEnd = yStart + SECTION_HEIGHT - 1;
-
-    // 1. この 16x16x16 セクション内の実非空気範囲を高速スキャン（完全空気セクションは即 return null）
-    let secMinY = CH_H;
-    let secMaxY = -1;
-    for (let x = 0; x < CH_S; x = (x + 1) | 0) {
-        const xOff = x << 12;
-        const xCol = x << 4;
-        for (let z = 0; z < CH_S; z = (z + 1) | 0) {
-            const colBase = xOff | (z << 8);
-            let yMax = yEnd;
-            while (yMax >= yStart && voxelData[colBase | yMax] === 0) yMax--;
-            if (yMax < yStart) {
-                _secColMinY[xCol | z] = CH_H;
-                _secColMaxY[xCol | z] = -1;
-                continue;
-            }
-            let yMin = yStart;
-            while (yMin < yMax && voxelData[colBase | yMin] === 0) yMin++;
-            _secColMinY[xCol | z] = yMin;
-            _secColMaxY[xCol | z] = yMax;
-            if (yMin < secMinY) secMinY = yMin;
-            if (yMax > secMaxY) secMaxY = yMax;
-        }
-    }
-    if (secMaxY < 0) return null;
-
-    const hasPistonAnim = PistonAnimator.hasActiveAnimations() || ChestAnimator.hasActiveAnimations();
-    const isHiddenAnim = (wx, wy, wz) => PistonAnimator.isCoordHidden(wx, wy, wz) || ChestAnimator.isCoordHidden(wx, wy, wz);
-
-    function getRawLocal(x, y, z) {
-        if (y < 0 || y >= CH_H) return 0;
-        if (hasPistonAnim && isHiddenAnim(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) return 0;
-
-        if (((x | z) & ~15) === 0) {
-            return voxelData[y | (z << 8) | (x << 12)];
-        }
-
-        const dx = (x >> 4) + 1;
-        const dz = (z >> 4) + 1;
-        if (dx < 0 || dx > 2 || dz < 0 || dz > 2) return 0;
-
-        const nData = _boundaryVoxelGrid[dx * 3 + dz];
-        if (!nData) return 0;
-
-        return nData[y | ((z & 15) << 8) | ((x & 15) << 12)];
-    }
-
-    function get(x, y, z) {
-        return getRawBlockId(getRawLocal(x, y, z));
-    }
-
-    function getLightLevel(lx, ly, lz) {
-        if (ly < 0) return 0;
-        if (ly >= CH_H) return 0xF0;
-
-        if (((lx | lz) & ~15) === 0) {
-            return lightMap[ly | (lz << 8) | (lx << 12)];
-        }
-
-        const dx = (lx >> 4) + 1;
-        const dz = (lz >> 4) + 1;
-        if (dx >= 0 && dx <= 2 && dz >= 0 && dz <= 2) {
-            const nlMap = _boundaryLightGrid[dx * 3 + dz];
-            if (nlMap) {
-                return nlMap[ly | ((lz & 15) << 8) | ((lx & 15) << 12)];
-            }
-        }
-
-        const clampedX = lx < 0 ? 0 : (lx > 15 ? 15 : lx);
-        const clampedZ = lz < 0 ? 0 : (lz > 15 ? 15 : lz);
-        return lightMap[ly | (clampedZ << 8) | (clampedX << 12)];
-    }
-
-    function shouldShowFace(myType, myOpaque, myCullSame, nType) {
-        if (nType === 0) return true;
-        if (_isOpaqueBlock[nType] === 1) return false;
-        if (myOpaque === 1) return true;
-        if (myCullSame === 1) return nType !== myType;
-        return true;
-    }
-
-    releaseBatchMap(_opaqueBatchMap);
-    releaseBatchMap(_waterBatchMap);
-    _greedyMatToId.clear();
-    _greedyIdToMat.length = 1;
-
-    function emitGreedyQuad(faceIdx, key, x0, y0, z0, w, h) {
-        const mat = _greedyIdToMat[key >>> 8];
-        if (!mat) return;
-
-        const batch = getOrAcquireBatch(_opaqueBatchMap, mat);
-        ensureBatchCapacity(batch, 4, 6);
-
-        const light = key & 0xFF;
-        const fw255 = FACE_FW[faceIdx] * 255.0;
-        let sByte = (LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * fw255 + 0.5) | 0;
-        let bByte = (LIGHT_LEVEL_FACTORS[light & 15] * fw255 + 0.5) | 0;
-        if (sByte > 255) sByte = 255;
-        if (bByte > 255) bByte = 255;
-
-        const vBase = batch.vCount;
-        const p0 = vBase * 3;
-        const u0 = vBase * 2;
-        const i0 = batch.iCount;
-        const pos = batch.pos;
-        const col = batch.col;
-        const uv = batch.uv;
-        const idx = batch.idx;
-
-        if (faceIdx === 2) {
-            const yTop = y0 + 1;
-            pos[p0] = x0; pos[p0 + 1] = yTop; pos[p0 + 2] = z0 + h;
-            pos[p0 + 3] = x0 + w; pos[p0 + 4] = yTop; pos[p0 + 5] = z0 + h;
-            pos[p0 + 6] = x0 + w; pos[p0 + 7] = yTop; pos[p0 + 8] = z0;
-            pos[p0 + 9] = x0; pos[p0 + 10] = yTop; pos[p0 + 11] = z0;
-        } else if (faceIdx === 3) {
-            pos[p0] = x0; pos[p0 + 1] = y0; pos[p0 + 2] = z0;
-            pos[p0 + 3] = x0 + w; pos[p0 + 4] = y0; pos[p0 + 5] = z0;
-            pos[p0 + 6] = x0 + w; pos[p0 + 7] = y0; pos[p0 + 8] = z0 + h;
-            pos[p0 + 9] = x0; pos[p0 + 10] = y0; pos[p0 + 11] = z0 + h;
-        } else if (faceIdx === 0) {
-            const xRight = x0 + 1;
-            pos[p0] = xRight; pos[p0 + 1] = y0; pos[p0 + 2] = z0 + w;
-            pos[p0 + 3] = xRight; pos[p0 + 4] = y0; pos[p0 + 5] = z0;
-            pos[p0 + 6] = xRight; pos[p0 + 7] = y0 + h; pos[p0 + 8] = z0;
-            pos[p0 + 9] = xRight; pos[p0 + 10] = y0 + h; pos[p0 + 11] = z0 + w;
-        } else if (faceIdx === 1) {
-            pos[p0] = x0; pos[p0 + 1] = y0; pos[p0 + 2] = z0;
-            pos[p0 + 3] = x0; pos[p0 + 4] = y0; pos[p0 + 5] = z0 + w;
-            pos[p0 + 6] = x0; pos[p0 + 7] = y0 + h; pos[p0 + 8] = z0 + w;
-            pos[p0 + 9] = x0; pos[p0 + 10] = y0 + h; pos[p0 + 11] = z0;
-        } else if (faceIdx === 4) {
-            const zFront = z0 + 1;
-            pos[p0] = x0; pos[p0 + 1] = y0; pos[p0 + 2] = zFront;
-            pos[p0 + 3] = x0 + w; pos[p0 + 4] = y0; pos[p0 + 5] = zFront;
-            pos[p0 + 6] = x0 + w; pos[p0 + 7] = y0 + h; pos[p0 + 8] = zFront;
-            pos[p0 + 9] = x0; pos[p0 + 10] = y0 + h; pos[p0 + 11] = zFront;
-        } else {
-            pos[p0] = x0 + w; pos[p0 + 1] = y0; pos[p0 + 2] = z0;
-            pos[p0 + 3] = x0; pos[p0 + 4] = y0; pos[p0 + 5] = z0;
-            pos[p0 + 6] = x0; pos[p0 + 7] = y0 + h; pos[p0 + 8] = z0;
-            pos[p0 + 9] = x0 + w; pos[p0 + 10] = y0 + h; pos[p0 + 11] = z0;
-        }
-
-        col[p0] = sByte; col[p0 + 1] = bByte; col[p0 + 2] = 0;
-        col[p0 + 3] = sByte; col[p0 + 4] = bByte; col[p0 + 5] = 0;
-        col[p0 + 6] = sByte; col[p0 + 7] = bByte; col[p0 + 8] = 0;
-        col[p0 + 9] = sByte; col[p0 + 10] = bByte; col[p0 + 11] = 0;
-
-        uv[u0] = 0; uv[u0 + 1] = 0;
-        uv[u0 + 2] = w; uv[u0 + 3] = 0;
-        uv[u0 + 4] = w; uv[u0 + 5] = h;
-        uv[u0 + 6] = 0; uv[u0 + 7] = h;
-
-        idx[i0] = vBase;
-        idx[i0 + 1] = vBase + 1;
-        idx[i0 + 2] = vBase + 2;
-        idx[i0 + 3] = vBase;
-        idx[i0 + 4] = vBase + 2;
-        idx[i0 + 5] = vBase + 3;
-
-        batch.vCount = vBase + 4;
-        batch.iCount = i0 + 6;
-    }
-
-    function runGreedySlice(mask, uSize, vSize, faceIdx, fixedAxisVal, yOffset = 0) {
-        for (let v = 0; v < vSize; v = (v + 1) | 0) {
-            const rowOff = v * uSize;
-            for (let u = 0; u < uSize;) {
-                const key = mask[rowOff + u];
-                if (key === 0) { u++; continue; }
-
-                let w = 1;
-                while (u + w < uSize && mask[rowOff + u + w] === key) w++;
-
-                let h = 1;
-                outer: while (v + h < vSize) {
-                    const nextRow = (v + h) * uSize + u;
-                    for (let k = 0; k < w; k++) {
-                        if (mask[nextRow + k] !== key) break outer;
-                    }
-                    h++;
-                }
-
-                for (let dv = 0; dv < h; dv++) {
-                    const clrRow = (v + dv) * uSize + u;
-                    for (let du = 0; du < w; du++) {
-                        mask[clrRow + du] = 0;
-                    }
-                }
-
-                if (faceIdx === 2 || faceIdx === 3) {
-                    emitGreedyQuad(faceIdx, key, baseX + u, BEDROCK_LEVEL + fixedAxisVal, baseZ + v, w, h);
-                } else if (faceIdx === 0 || faceIdx === 1) {
-                    emitGreedyQuad(faceIdx, key, baseX + fixedAxisVal, BEDROCK_LEVEL + yOffset + v, baseZ + u, w, h);
-                } else {
-                    emitGreedyQuad(faceIdx, key, baseX + u, BEDROCK_LEVEL + yOffset + v, baseZ + fixedAxisVal, w, h);
-                }
-
-                u += w;
-            }
-        }
-    }
-
-    // PASS 1: 3軸 2D Greedy Meshing（このセクション secMinY..secMaxY のみ最大 16 層）
-    if (!useInstancing) {
-        const H_MAX = CH_H - 1;
-
-        // 1-A. Y軸スライス
-        for (let y = secMinY; y <= secMaxY; y = (y + 1) | 0) {
-            let hasPos = false;
-            let hasNeg = false;
-
-            for (let z = 0; z < CH_S; z = (z + 1) | 0) {
-                const rowOff = z << 4;
-                const zShift = z << 8;
-                for (let x = 0; x < CH_S; x = (x + 1) | 0) {
-                    const cellIdx = rowOff | x;
-                    const vIdx = y | zShift | (x << 12);
-                    const raw = (hasPistonAnim && isHiddenAnim(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) ? 0 : voxelData[vIdx];
-                    const type = getRawBlockId(raw);
-                    const meta = getRawLocalState(raw);
-
-                    if (type === 0 || _isGreedyCubeBlock[type] === 0 || (_isLogBlock[type] === 1 && meta !== 0)) {
-                        _greedyMaskPos[cellIdx] = 0;
-                        _greedyMaskNeg[cellIdx] = 0;
-                        continue;
-                    }
-
-                    const myOp = _isOpaqueBlock[type];
-                    const myCs = _cullSameBlock[type];
-                    const mats = getBlockMaterialsFast(type, meta);
-
-                    const upType = hasPistonAnim ? get(x, y + 1, z) : ((y < H_MAX) ? getRawBlockId(voxelData[vIdx + 1]) : 0);
-                    if (shouldShowFace(type, myOp, myCs, upType) && mats) {
-                        const m = mats[2] || mats[0];
-                        _greedyMaskPos[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x, y + 1, z);
-                        hasPos = true;
-                    } else {
-                        _greedyMaskPos[cellIdx] = 0;
-                    }
-
-                    const dnType = hasPistonAnim ? get(x, y - 1, z) : ((y > 0) ? getRawBlockId(voxelData[vIdx - 1]) : 0);
-                    if (shouldShowFace(type, myOp, myCs, dnType) && mats) {
-                        const m = mats[3] || mats[0];
-                        _greedyMaskNeg[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x, y - 1, z);
-                        hasNeg = true;
-                    } else {
-                        _greedyMaskNeg[cellIdx] = 0;
-                    }
+const _chunkBiomeColorBuf = {
+    ids: new Uint8Array(256),
+    grassCell: new Uint8Array(256 * 3),
+    foliageCell: new Uint8Array(256 * 3),
+    grassPalette: _biomeGrassPalette,
+    foliagePalette: _biomeFoliagePalette
+};
+
+function getChunkBiomeColors(cx, cz) {
+    const area = Beta18Terrain.getBiomeArea((cx << 4) - 1, (cz << 4) - 1, 18, 18);
+    for (let z = 0; z < 16; z++) {
+        for (let x = 0; x < 16; x++) {
+            const cId = area[(z + 1) * 18 + (x + 1)] | 0;
+            const idx = (z << 4) | x;
+            _chunkBiomeColorBuf.ids[idx] = cId;
+
+            // 3x3 平均ブレンドで境界の草花色を滑らかにグラデーション
+            let gr = 0, gg = 0, gb = 0, fr = 0, fg = 0, fb = 0;
+            for (let dz = 0; dz < 3; dz++) {
+                const row = (z + dz) * 18 + x;
+                for (let dx = 0; dx < 3; dx++) {
+                    const nb = (area[row + dx] | 0) * 3;
+                    gr += _biomeGrassPalette[nb];
+                    gg += _biomeGrassPalette[nb + 1];
+                    gb += _biomeGrassPalette[nb + 2];
+                    fr += _biomeFoliagePalette[nb];
+                    fg += _biomeFoliagePalette[nb + 1];
+                    fb += _biomeFoliagePalette[nb + 2];
                 }
             }
-
-            if (hasPos) runGreedySlice(_greedyMaskPos, CH_S, CH_S, 2, y, 0);
-            if (hasNeg) runGreedySlice(_greedyMaskNeg, CH_S, CH_S, 3, y, 0);
-        }
-
-        // 1-B. X軸スライス
-        const vSizeXZ = secMaxY - secMinY + 1;
-        for (let x = 0; x < CH_S; x = (x + 1) | 0) {
-            let hasPos = false;
-            let hasNeg = false;
-            const xShift = x << 12;
-
-            for (let ly = 0; ly < vSizeXZ; ly = (ly + 1) | 0) {
-                const y = secMinY + ly;
-                const rowOff = ly << 4;
-                for (let z = 0; z < CH_S; z = (z + 1) | 0) {
-                    const cellIdx = rowOff | z;
-                    const vIdx = y | (z << 8) | xShift;
-                    const raw = (hasPistonAnim && isHiddenAnim(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) ? 0 : voxelData[vIdx];
-                    const type = getRawBlockId(raw);
-                    const meta = getRawLocalState(raw);
-
-                    if (type === 0 || _isGreedyCubeBlock[type] === 0 || (_isLogBlock[type] === 1 && meta !== 0)) {
-                        _greedyMaskPos[cellIdx] = 0;
-                        _greedyMaskNeg[cellIdx] = 0;
-                        continue;
-                    }
-
-                    const myOp = _isOpaqueBlock[type];
-                    const myCs = _cullSameBlock[type];
-                    const mats = getBlockMaterialsFast(type, meta);
-
-                    const pxType = hasPistonAnim ? get(x + 1, y, z) : ((x < 15) ? getRawBlockId(voxelData[vIdx + STRIDE_X]) : get(x + 1, y, z));
-                    if (shouldShowFace(type, myOp, myCs, pxType) && mats) {
-                        const m = mats[0];
-                        _greedyMaskPos[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x + 1, y, z);
-                        hasPos = true;
-                    } else {
-                        _greedyMaskPos[cellIdx] = 0;
-                    }
-
-                    const nxType = hasPistonAnim ? get(x - 1, y, z) : ((x > 0) ? getRawBlockId(voxelData[vIdx - STRIDE_X]) : get(x - 1, y, z));
-                    if (shouldShowFace(type, myOp, myCs, nxType) && mats) {
-                        const m = mats[1] || mats[0];
-                        _greedyMaskNeg[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x - 1, y, z);
-                        hasNeg = true;
-                    } else {
-                        _greedyMaskNeg[cellIdx] = 0;
-                    }
-                }
-            }
-
-            if (hasPos) runGreedySlice(_greedyMaskPos, CH_S, vSizeXZ, 0, x, secMinY);
-            if (hasNeg) runGreedySlice(_greedyMaskNeg, CH_S, vSizeXZ, 1, x, secMinY);
-        }
-
-        // 1-C. Z軸スライス
-        for (let z = 0; z < CH_S; z = (z + 1) | 0) {
-            let hasPos = false;
-            let hasNeg = false;
-            const zShift = z << 8;
-
-            for (let ly = 0; ly < vSizeXZ; ly = (ly + 1) | 0) {
-                const y = secMinY + ly;
-                const rowOff = ly << 4;
-                for (let x = 0; x < CH_S; x = (x + 1) | 0) {
-                    const cellIdx = rowOff | x;
-                    const vIdx = y | zShift | (x << 12);
-                    const raw = (hasPistonAnim && isHiddenAnim(baseX + x, BEDROCK_LEVEL + y, baseZ + z)) ? 0 : voxelData[vIdx];
-                    const type = getRawBlockId(raw);
-                    const meta = getRawLocalState(raw);
-
-                    if (type === 0 || _isGreedyCubeBlock[type] === 0 || (_isLogBlock[type] === 1 && meta !== 0)) {
-                        _greedyMaskPos[cellIdx] = 0;
-                        _greedyMaskNeg[cellIdx] = 0;
-                        continue;
-                    }
-
-                    const myOp = _isOpaqueBlock[type];
-                    const myCs = _cullSameBlock[type];
-                    const mats = getBlockMaterialsFast(type, meta);
-
-                    const pzType = hasPistonAnim ? get(x, y, z + 1) : ((z < 15) ? getRawBlockId(voxelData[vIdx + STRIDE_Z]) : get(x, y, z + 1));
-                    if (shouldShowFace(type, myOp, myCs, pzType) && mats) {
-                        const m = mats[4] || mats[0];
-                        _greedyMaskPos[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x, y, z + 1);
-                        hasPos = true;
-                    } else {
-                        _greedyMaskPos[cellIdx] = 0;
-                    }
-
-                    const nzType = hasPistonAnim ? get(x, y, z - 1) : ((z > 0) ? getRawBlockId(voxelData[vIdx - STRIDE_Z]) : get(x, y, z - 1));
-                    if (shouldShowFace(type, myOp, myCs, nzType) && mats) {
-                        const m = mats[5] || mats[0];
-                        _greedyMaskNeg[cellIdx] = (getGreedyMatId(m) << 8) | getLightLevel(x, y, z - 1);
-                        hasNeg = true;
-                    } else {
-                        _greedyMaskNeg[cellIdx] = 0;
-                    }
-                }
-            }
-
-            if (hasPos) runGreedySlice(_greedyMaskPos, CH_S, vSizeXZ, 4, z, secMinY);
-            if (hasNeg) runGreedySlice(_greedyMaskNeg, CH_S, vSizeXZ, 5, z, secMinY);
+            const c3 = idx * 3;
+            _chunkBiomeColorBuf.grassCell[c3] = (gr / 9) | 0;
+            _chunkBiomeColorBuf.grassCell[c3 + 1] = (gg / 9) | 0;
+            _chunkBiomeColorBuf.grassCell[c3 + 2] = (gb / 9) | 0;
+            _chunkBiomeColorBuf.foliageCell[c3] = (fr / 9) | 0;
+            _chunkBiomeColorBuf.foliageCell[c3 + 1] = (fg / 9) | 0;
+            _chunkBiomeColorBuf.foliageCell[c3 + 2] = (fb / 9) | 0;
         }
     }
-
-    // PASS 2: カスタム形状＆横向き原木（このセクション内のみ）
-    for (let x = 0; x < CH_S; x = (x + 1) | 0) {
-        const wx = baseX + x;
-        const xOff = x << 12;
-        const xCol = x << 4;
-
-        for (let z = 0; z < CH_S; z = (z + 1) | 0) {
-            const colMax = _secColMaxY[xCol | z];
-            if (colMax < 0) continue;
-            const colMin = _secColMinY[xCol | z];
-
-            const wz = baseZ + z;
-            const colBase = xOff | (z << 8);
-
-            for (let y = colMin; y <= colMax; y = (y + 1) | 0) {
-                const vIdx = colBase | y;
-                const raw = (hasPistonAnim && isHiddenAnim(wx, BEDROCK_LEVEL + y, wz)) ? 0 : voxelData[vIdx];
-                if (raw === 0) continue;
-
-                const type = getRawBlockId(raw);
-                const meta = getRawLocalState(raw);
-
-                if (_isCustomGeometryBlock[type] === 1) {
-                    const cfg = _blockConfigFastArray[type];
-                    if (!cfg) continue;
-
-                    const gType = cfg.geometryType;
-                    const isLiquid = (gType === "water");
-                    const cullAdj = cfg.cullAdjacentFaces !== false;
-                    const aboveType = (y < 255) ? getRawBlockId(voxelData[vIdx + 1]) : 0;
-                    let visMask = 63;
-
-                    if (cullAdj) {
-                        const myOp = _isOpaqueBlock[type];
-                        const myCs = _cullSameBlock[type];
-                        const myLiquidRank = isLiquid
-                            ? ((aboveType === type || ((meta >> 3) & 1) !== 0) ? 9 : (8 - (meta & 7)))
-                            : 0;
-
-                        const showHorizFace = (nx, nz, nRaw) => {
-                            const nType = getRawBlockId(nRaw);
-                            if (isLiquid && nType === type) {
-                                const nMeta = getRawLocalState(nRaw);
-                                const nAboveType = (y < 255) ? get(nx, y + 1, nz) : 0;
-                                const nRank = (nAboveType === type || ((nMeta >> 3) & 1) !== 0) ? 9 : (8 - (nMeta & 7));
-                                return myLiquidRank > nRank;
-                            }
-                            return shouldShowFace(type, myOp, myCs, nType);
-                        };
-
-                        visMask = 0;
-
-                        if (x < 15) {
-                            if (showHorizFace(x + 1, z, voxelData[vIdx + STRIDE_X])) visMask |= 1;
-                        } else if (!isLiquid || _boundaryVoxelGrid[7] !== null) {
-                            if (showHorizFace(16, z, getRawLocal(16, y, z))) visMask |= 1;
-                        }
-
-                        if (x > 0) {
-                            if (showHorizFace(x - 1, z, voxelData[vIdx - STRIDE_X])) visMask |= 2;
-                        } else if (!isLiquid || _boundaryVoxelGrid[1] !== null) {
-                            if (showHorizFace(-1, z, getRawLocal(-1, y, z))) visMask |= 2;
-                        }
-
-                        if (shouldShowFace(type, myOp, myCs, aboveType)) visMask |= 4;
-                        if (shouldShowFace(type, myOp, myCs, (y > 0) ? getRawBlockId(voxelData[vIdx - 1]) : 0)) visMask |= 8;
-
-                        if (z < 15) {
-                            if (showHorizFace(x, z + 1, voxelData[vIdx + STRIDE_Z])) visMask |= 16;
-                        } else if (!isLiquid || _boundaryVoxelGrid[5] !== null) {
-                            if (showHorizFace(x, 16, getRawLocal(x, y, 16))) visMask |= 16;
-                        }
-
-                        if (z > 0) {
-                            if (showHorizFace(x, z - 1, voxelData[vIdx - STRIDE_Z])) visMask |= 32;
-                        } else if (!isLiquid || _boundaryVoxelGrid[3] !== null) {
-                            if (showHorizFace(x, -1, getRawLocal(x, y, -1))) visMask |= 32;
-                        }
-
-                        if (visMask === 0) continue;
-                    }
-
-                    const shapeMeta = resolveDynamicShapeMeta(type, cfg, meta, x, y, z, aboveType, get, getRawLocal);
-                    const transformMeta = getTransformMeta(type, meta);
-                    const bakedGroups = getBakedCustomTemplate(type, cfg, shapeMeta, transformMeta);
-                    if (!bakedGroups || bakedGroups.length === 0) continue;
-
-                    const allMats = getBlockMaterialsFast(type, meta);
-                    if (!allMats) continue;
-
-                    const isWaterBlock = (type === BLOCK_TYPES.WATER || cfg.isWater === true);
-                    const targetBatchMap = isWaterBlock ? _waterBatchMap : _opaqueBatchMap;
-                    const wy = BEDROCK_LEVEL + y;
-
-                    for (let g = 0, gLen = bakedGroups.length; g < gLen; g++) {
-                        const grp = bakedGroups[g];
-                        if (cullAdj && !cfg.isLadder && ((visMask >> grp.dir) & 1) === 0) continue;
-
-                        const targetMat = allMats[grp.matIdx] || allMats[0];
-                        if (!targetMat) continue;
-
-                        const batch = getOrAcquireBatch(targetBatchMap, targetMat);
-                        const vc = grp.vertCount;
-                        const ic = grp.idxCount;
-                        ensureBatchCapacity(batch, vc, ic);
-
-                        const light = grp.useSelfLight
-                            ? getLightLevel(x, y, z)
-                            : getLightLevel(x + grp.wdx, y + grp.wdy, z + grp.wdz);
-                        const fw255 = grp.fw255;
-                        let sByte = (LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * fw255 + 0.5) | 0;
-                        let bByte = (LIGHT_LEVEL_FACTORS[light & 15] * fw255 + 0.5) | 0;
-                        if (sByte > 255) sByte = 255;
-                        if (bByte > 255) bByte = 255;
-
-                        const vBase = batch.vCount;
-                        const bPos = batch.pos;
-                        const bCol = batch.col;
-                        const bUv = batch.uv;
-                        const bIdx = batch.idx;
-                        const gPos = grp.pos;
-
-                        let p = vBase * 3;
-                        for (let o = 0, len3 = vc * 3; o < len3; o += 3) {
-                            bPos[p] = gPos[o] + wx;
-                            bPos[p + 1] = gPos[o + 1] + wy;
-                            bPos[p + 2] = gPos[o + 2] + wz;
-                            bCol[p] = sByte;
-                            bCol[p + 1] = bByte;
-                            bCol[p + 2] = 0;
-                            p += 3;
-                        }
-
-                        bUv.set(grp.uv, vBase * 2);
-
-                        const gIdx = grp.idx;
-                        let ip = batch.iCount;
-                        for (let k = 0; k < ic; k++) {
-                            bIdx[ip++] = vBase + gIdx[k];
-                        }
-
-                        batch.vCount = vBase + vc;
-                        batch.iCount = ip;
-                    }
-                    continue;
-                }
-
-                if (_isLogBlock[type] === 1 && meta !== 0 && !useInstancing) {
-                    const myOp = _isOpaqueBlock[type];
-                    const myCs = _cullSameBlock[type];
-                    let visMask = 0;
-                    if (shouldShowFace(type, myOp, myCs, (x < 15) ? getRawBlockId(voxelData[vIdx + STRIDE_X]) : get(x + 1, y, z))) visMask |= 1;
-                    if (shouldShowFace(type, myOp, myCs, (x > 0) ? getRawBlockId(voxelData[vIdx - STRIDE_X]) : get(x - 1, y, z))) visMask |= 2;
-                    if (shouldShowFace(type, myOp, myCs, (y < 255) ? getRawBlockId(voxelData[vIdx + 1]) : 0)) visMask |= 4;
-                    if (shouldShowFace(type, myOp, myCs, (y > 0) ? getRawBlockId(voxelData[vIdx - 1]) : 0)) visMask |= 8;
-                    if (shouldShowFace(type, myOp, myCs, (z < 15) ? getRawBlockId(voxelData[vIdx + STRIDE_Z]) : get(x, y, z + 1))) visMask |= 16;
-                    if (shouldShowFace(type, myOp, myCs, (z > 0) ? getRawBlockId(voxelData[vIdx - STRIDE_Z]) : get(x, y, z - 1))) visMask |= 32;
-                    if (visMask === 0) continue;
-
-                    const logMat = getLogRotationMatrixReadOnly(meta);
-                    _r1.extractRotation(logMat);
-                    const baseMats = getBlockMaterialsFast(type);
-                    if (!baseMats) continue;
-                    const wy = BEDROCK_LEVEL + y;
-
-                    for (let faceIdx = 0; faceIdx < 6; faceIdx++) {
-                        const offset = faceIdx * 12;
-                        _n1.set(CUBE_NORMALS[offset], CUBE_NORMALS[offset + 1], CUBE_NORMALS[offset + 2]).applyMatrix4(_r1);
-                        const wNX = Math.round(_n1.x), wNY = Math.round(_n1.y), wNZ = Math.round(_n1.z);
-                        const wBit = (wNX > 0) ? 0 : (wNX < 0) ? 1 : (wNY > 0) ? 2 : (wNY < 0) ? 3 : (wNZ > 0) ? 4 : 5;
-                        if (((visMask >> wBit) & 1) === 0) continue;
-
-                        const targetMat = baseMats[faceIdx] || baseMats[0];
-                        if (!targetMat) continue;
-
-                        const batch = getOrAcquireBatch(_opaqueBatchMap, targetMat);
-                        ensureBatchCapacity(batch, 4, 6);
-
-                        const fw = (wNY > 0) ? 1.0 : (wNY < 0) ? 0.5 : (Math.abs(wNX) > 0) ? 0.8 : 0.65;
-                        const light = getLightLevel(x + wNX, y + wNY, z + wNZ);
-                        const fw255 = fw * 255.0;
-                        let sByte = (LIGHT_LEVEL_FACTORS[(light >> 4) & 15] * fw255 + 0.5) | 0;
-                        let bByte = (LIGHT_LEVEL_FACTORS[light & 15] * fw255 + 0.5) | 0;
-                        if (sByte > 255) sByte = 255;
-                        if (bByte > 255) bByte = 255;
-
-                        const vBase = batch.vCount;
-                        let p = vBase * 3;
-                        const bPos = batch.pos;
-                        const bCol = batch.col;
-
-                        for (let j = 0; j < 12; j += 3) {
-                            const oj = offset + j;
-                            _v1.set(CUBE_VERTICES[oj], CUBE_VERTICES[oj + 1], CUBE_VERTICES[oj + 2]).applyMatrix4(logMat);
-                            bPos[p] = _v1.x + wx;
-                            bPos[p + 1] = _v1.y + wy;
-                            bPos[p + 2] = _v1.z + wz;
-                            bCol[p] = sByte;
-                            bCol[p + 1] = bByte;
-                            bCol[p + 2] = 0;
-                            p += 3;
-                        }
-
-                        batch.uv.set(CUBE_UVS, vBase * 2);
-                        const i0 = batch.iCount;
-                        batch.idx[i0] = vBase;
-                        batch.idx[i0 + 1] = vBase + 1;
-                        batch.idx[i0 + 2] = vBase + 2;
-                        batch.idx[i0 + 3] = vBase;
-                        batch.idx[i0 + 4] = vBase + 2;
-                        batch.idx[i0 + 5] = vBase + 3;
-
-                        batch.vCount = vBase + 4;
-                        batch.iCount = i0 + 6;
-                    }
-                }
-            }
-        }
-    }
-
-    // PASS 3: セクション統合メッシュ構築
-    const opaqueMesh = buildCombinedMeshFromBatches(_opaqueBatchMap, 0, useFadeIn, baseX, baseZ, secMaxY, secMinY);
-    const waterMesh = buildCombinedMeshFromBatches(_waterBatchMap, 10, useFadeIn, baseX, baseZ, secMaxY, secMinY);
-
-    releaseBatchMap(_opaqueBatchMap);
-    releaseBatchMap(_waterBatchMap);
-
-    if (!opaqueMesh && !waterMesh) return null;
-
-    const secGroup = new THREE.Object3D();
-    secGroup.userData.sy = sy;
-    if (opaqueMesh) secGroup.add(opaqueMesh);
-    if (waterMesh) secGroup.add(waterMesh);
-
-    const boxMinY = BEDROCK_LEVEL + secMinY;
-    const boxMaxY = BEDROCK_LEVEL + ((secMaxY + 1) < CH_H ? (secMaxY + 1) : CH_H);
-    secGroup.userData.boundingBox = new THREE.Box3(
-        new THREE.Vector3(baseX, boxMinY, baseZ),
-        new THREE.Vector3(baseX + CH_S, boxMaxY, baseZ + CH_S)
-    );
-    secGroup.matrixAutoUpdate = false;
-    secGroup.updateMatrix();
-    secGroup.updateMatrixWorld(true);
-    return secGroup;
+    return _chunkBiomeColorBuf;
 }
 
-function generateChunkMeshMultiTexture(cx, cz, useInstancing = false, useFadeIn = false) {
-    const container = new THREE.Object3D();
-    container.userData.cx = cx;
-    container.userData.cz = cz;
-    const sections = new Array(SECTIONS_PER_CHUNK).fill(null);
-    container.userData.sections = sections;
+const ChunkMesher = createChunkMesher({
+    CHUNK_SIZE,
+    CHUNK_HEIGHT,
+    SECTION_HEIGHT,
+    SECTIONS_PER_CHUNK,
+    BEDROCK_LEVEL,
+    BLOCK_TYPES,
+    LIGHT_LEVEL_FACTORS,
+    encodeChunkKey,
+    isOpaqueBlock: _isOpaqueBlock,
+    isGreedyCubeBlock: _isGreedyCubeBlock,
+    isCustomGeometryBlock: _isCustomGeometryBlock,
+    cullSameBlock: _cullSameBlock,
+    isLogBlock: _isLogBlock,
+    isLeavesBlock: _isLeavesBlock,
+    getChunkBiomeColors,
+    blockConfigFastArray: _blockConfigFastArray,
+    getBlockMaterialsFast,
+    getChunkVoxelData: (key) => ChunkSaveManager.modifiedChunks.get(key),
+    getLoadedVoxelData: (key) => ChunkSaveManager.modifiedChunks.get(key) || chunkReadOnlyCache.get(key) || null,
+    isChunkDecorated: (key) => ChunkSaveManager.decoratedChunks.has(key),
+    captureBaseChunkData: (cx, cz) => ChunkSaveManager.captureBaseChunkData(cx, cz),
+    getLightMap: (key) => chunkLightCache.get(key) || null,
+    generateChunkLightMap,
+    getWireConnectionMask: (x, y, z, getRawFn) => RedstoneEngine.getWireConnectionMask(x, y, z, getRawFn),
+    hasActiveBlockAnimations: () => PistonAnimator.hasActiveAnimations() || ChestAnimator.hasActiveAnimations(),
+    isCoordHiddenByAnimation: (wx, wy, wz) => PistonAnimator.isCoordHidden(wx, wy, wz) || ChestAnimator.isCoordHidden(wx, wy, wz),
+    onSectionBuilt: () => { chunkUpdatesInSecond++; }
+});
 
-    const chunkKey = encodeChunkKey(cx, cz);
-    let voxelData = ChunkSaveManager.modifiedChunks.get(chunkKey);
-    let isNewChunk = false;
+const populateChunkBoundaryView = ChunkMesher.populateChunkBoundaryView;
+const recomputeChunkBoundingBox = ChunkMesher.recomputeChunkBoundingBox;
+const computeSectionVisibility = ChunkMesher.computeSectionVisibility;
+const buildChunkSectionMesh = ChunkMesher.buildChunkSectionMesh;
+const generateChunkMeshMultiTexture = ChunkMesher.generateChunkMeshMultiTexture;
 
-    if (!voxelData || !ChunkSaveManager.decoratedChunks.has(chunkKey)) {
-        voxelData = ChunkSaveManager.captureBaseChunkData(cx, cz);
-        isNewChunk = true;
-    }
-
-    let lightMap = chunkLightCache.get(chunkKey);
-    if (!lightMap || isNewChunk) {
-        lightMap = generateChunkLightMap(chunkKey, voxelData);
-    }
-
-    container.userData.missingNeighborMask = populateChunkBoundaryView(cx, cz, voxelData, lightMap);
-
-    for (let sy = 0; sy < SECTIONS_PER_CHUNK; sy++) {
-        const secGroup = buildChunkSectionMesh(cx, cz, sy, voxelData, lightMap, useInstancing, useFadeIn);
-        if (secGroup) {
-            container.add(secGroup);
-            sections[sy] = secGroup;
-            chunkUpdatesInSecond++;
-        }
-    }
-
-    recomputeChunkBoundingBox(container);
-    container.matrixAutoUpdate = false;
-    container.updateMatrix();
-    container.updateMatrixWorld(true);
-    return container;
-}
+const OcclusionCuller = createOcclusionCuller({
+    CHUNK_SIZE,
+    SECTION_HEIGHT,
+    SECTIONS_PER_CHUNK,
+    BEDROCK_LEVEL,
+    encodeChunkKey
+});
 
 /* ======================================================
    【最適化版】事前計算ロジック
@@ -4959,7 +2322,26 @@ function updateAffectedChunks(blockPos, forceImmediate = false, dirtyLightChunks
     const lx = bx & 15;
     const lz = bz & 15;
 
-    const baseSyMask = getSectionMaskForY(by) || 0xFFFF;
+    // 周囲6近傍に葉ブロックがある場合のみ、内側葉コアの透過切替(最大2マス伝播)に合わせて境界マージンを+1拡張
+    const hasNearLeaf = (
+        _isLeavesBlock[getVoxelAtWorld(bx + 1, by, bz, false)] === 1 ||
+        _isLeavesBlock[getVoxelAtWorld(bx - 1, by, bz, false)] === 1 ||
+        _isLeavesBlock[getVoxelAtWorld(bx, by + 1, bz, false)] === 1 ||
+        _isLeavesBlock[getVoxelAtWorld(bx, by - 1, bz, false)] === 1 ||
+        _isLeavesBlock[getVoxelAtWorld(bx, by, bz + 1, false)] === 1 ||
+        _isLeavesBlock[getVoxelAtWorld(bx, by, bz - 1, false)] === 1
+    );
+
+    let baseSyMask = getSectionMaskForY(by) || 0xFFFF;
+    if (hasNearLeaf && by >= 0 && by < CHUNK_HEIGHT) {
+        const sy = by >> 4;
+        const ly = by & 15;
+        if (ly === 1 && sy > 0) baseSyMask |= (1 << (sy - 1));
+        else if (ly === 14 && sy < SECTIONS_PER_CHUNK - 1) baseSyMask |= (1 << (sy + 1));
+    }
+    const edgeLo = hasNearLeaf ? 1 : 0;
+    const edgeHi = hasNearLeaf ? 14 : 15;
+
     const centerKey = encodeChunkKey(cx, cz);
     _refreshedMaskTmp.clear();
 
@@ -4980,8 +2362,8 @@ function updateAffectedChunks(blockPos, forceImmediate = false, dirtyLightChunks
         for (let dz = -1; dz <= 1; dz++) {
             if (dx === 0 && dz === 0) continue;
 
-            const matchX = (dx === 0) || (dx === -1 && lx === 0) || (dx === 1 && lx === 15);
-            const matchZ = (dz === 0) || (dz === -1 && lz === 0) || (dz === 1 && lz === 15);
+            const matchX = (dx === 0) || (dx === -1 && lx <= edgeLo) || (dx === 1 && lx >= edgeHi);
+            const matchZ = (dz === 0) || (dz === -1 && lz <= edgeLo) || (dz === 1 && lz >= edgeHi);
             if (!forceImmediate && !(matchX && matchZ)) continue;
 
             const nCx = cx + dx;
@@ -4998,16 +2380,18 @@ function updateAffectedChunks(blockPos, forceImmediate = false, dirtyLightChunks
         }
     }
 
-    // 3. 光源変化が及んだ他セクションのみを再構築
+    // 3. 光源変化が及んだ他セクションを再構築（近傍4チャンクまでは即時反映で遅延ゼロ）
     if (dirtyLightChunks && dirtyLightChunks.size > 0) {
         if (dirtyLightChunks instanceof Map) {
+            let immediateBudget = forceImmediate ? 64 : 4;
             for (const [dKey, dMask] of dirtyLightChunks.entries()) {
                 if (!loadedChunks.has(dKey)) continue;
                 const remMask = dMask & ~(_refreshedMaskTmp.get(dKey) || 0);
                 if (remMask === 0) continue;
-                if (forceImmediate) {
+                if (immediateBudget > 0) {
                     decodeChunkKey(dKey, _dirtyLightCoordTmp);
                     refreshChunkSections(_dirtyLightCoordTmp.cx, _dirtyLightCoordTmp.cz, remMask);
+                    immediateBudget--;
                 } else {
                     requestChunkUpdateMaskByKey(dKey, remMask);
                 }
@@ -5995,256 +3379,6 @@ const BLOCK_NAMES = Object.keys(BLOCK_TYPES).reduce((names, key) => {
     return names;
 }, {});
 
-/* ======================================================
-   【超軽量・ボクセル視線判定（DDAアルゴリズム ＋ 精密メッシュ判定）】
-   ====================================================== */
-// ======================================================
-// 【統一ゼロGCレイキャストエンジン】NaN安全 3D DDA ＋ 解析的 Slab法 Ray-AABB交差
-// ======================================================
-const _rayDirTmp = new THREE.Vector3();
-const _rayRotatedBoxTmp = new THREE.Box3();
-const _sharedRaycastHit = {
-    hit: false,
-    x: 0,
-    y: 0,
-    z: 0,
-    normal: new THREE.Vector3(),
-    point: new THREE.Vector3(),
-    distance: 0,
-    rawVoxel: 0,
-    blockId: 0,
-    metadata: 0
-};
-
-/**
- * ボクセル内の選択ボックス群（1〜5個）とレイの最近接交点を解析的Slab法で求める（ゼロGC）
- */
-function rayIntersectVoxelBoxes(ox, oy, oz, dx, dy, dz, bx, by, bz, blockId, metadata, maxDistance, stepNx, stepNy, stepNz, outResult) {
-    const boxes = getSelectionBoxesReadOnly(blockId, metadata);
-    const len = boxes.length;
-    const cfg = _blockConfigFastArray[blockId];
-    const gType = cfg ? cfg.geometryType : "cube";
-    const tMeta = getTransformMeta(blockId, metadata);
-
-    const EPS_DIR = 1e-8;
-    let bestT = maxDistance + 1.0;
-    let bestNx = 0, bestNy = 0, bestNz = 0;
-    let found = false;
-
-    for (let i = 0; i < len; i++) {
-        let box = boxes[i];
-        if (tMeta !== 0) {
-            applyRotationToCollisionBox(box, tMeta, _rayRotatedBoxTmp);
-            box = _rayRotatedBoxTmp;
-        }
-
-        const minX = bx + box.min.x, maxX = bx + box.max.x;
-        const minY = by + box.min.y, maxY = by + box.max.y;
-        const minZ = bz + box.min.z, maxZ = bz + box.max.z;
-
-        let tMinX, tMaxX, nxX;
-        if (dx > EPS_DIR || dx < -EPS_DIR) {
-            const invX = 1.0 / dx;
-            const t1 = (minX - ox) * invX;
-            const t2 = (maxX - ox) * invX;
-            if (t1 <= t2) { tMinX = t1; tMaxX = t2; nxX = -1; }
-            else { tMinX = t2; tMaxX = t1; nxX = 1; }
-        } else {
-            if (ox < minX || ox > maxX) continue;
-            tMinX = -Infinity; tMaxX = Infinity; nxX = 0;
-        }
-
-        let tMinY, tMaxY, nyY;
-        if (dy > EPS_DIR || dy < -EPS_DIR) {
-            const invY = 1.0 / dy;
-            const t1 = (minY - oy) * invY;
-            const t2 = (maxY - oy) * invY;
-            if (t1 <= t2) { tMinY = t1; tMaxY = t2; nyY = -1; }
-            else { tMinY = t2; tMaxY = t1; nyY = 1; }
-        } else {
-            if (oy < minY || oy > maxY) continue;
-            tMinY = -Infinity; tMaxY = Infinity; nyY = 0;
-        }
-
-        let tMinZ, tMaxZ, nzZ;
-        if (dz > EPS_DIR || dz < -EPS_DIR) {
-            const invZ = 1.0 / dz;
-            const t1 = (minZ - oz) * invZ;
-            const t2 = (maxZ - oz) * invZ;
-            if (t1 <= t2) { tMinZ = t1; tMaxZ = t2; nzZ = -1; }
-            else { tMinZ = t2; tMaxZ = t1; nzZ = 1; }
-        } else {
-            if (oz < minZ || oz > maxZ) continue;
-            tMinZ = -Infinity; tMaxZ = Infinity; nzZ = 0;
-        }
-
-        // 3軸の共通区間 [tEnter, tExit]
-        let tEnter = tMinX;
-        let hitNx = nxX, hitNy = 0, hitNz = 0;
-        if (tMinY > tEnter) {
-            tEnter = tMinY;
-            hitNx = 0; hitNy = nyY; hitNz = 0;
-        }
-        if (tMinZ > tEnter) {
-            tEnter = tMinZ;
-            hitNx = 0; hitNy = 0; hitNz = nzZ;
-        }
-
-        const tExit = tMaxX < tMaxY ? (tMaxX < tMaxZ ? tMaxX : tMaxZ) : (tMaxY < tMaxZ ? tMaxY : tMaxZ);
-        if (tExit < 0.0 || tEnter > tExit || tEnter > maxDistance) continue;
-
-        // 視点がボックス内部から開始している場合は t = 0 として扱う
-        let tHit = tEnter;
-        if (tHit < 0.0) {
-            tHit = 0.0;
-            if (stepNx !== 0 || stepNy !== 0 || stepNz !== 0) {
-                hitNx = stepNx; hitNy = stepNy; hitNz = stepNz;
-            } else {
-                const ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz);
-                if (ax >= ay && ax >= az) { hitNx = dx > 0 ? -1 : 1; hitNy = 0; hitNz = 0; }
-                else if (ay >= ax && ay >= az) { hitNx = 0; hitNy = dy > 0 ? -1 : 1; hitNz = 0; }
-                else { hitNx = 0; hitNy = 0; hitNz = dz > 0 ? -1 : 1; }
-            }
-        }
-
-        if (tHit < bestT) {
-            bestT = tHit;
-            bestNx = hitNx;
-            bestNy = hitNy;
-            bestNz = hitNz;
-            found = true;
-        }
-    }
-
-    if (!found || bestT > maxDistance) return false;
-
-    outResult.distance = bestT;
-    outResult.normal.set(bestNx, bestNy, bestNz);
-    outResult.point.set(ox + dx * bestT, oy + dy * bestT, oz + dz * bestT);
-    return true;
-}
-
-/**
- * 3D DDA（Amanatides & Woo, NaN安全）＋実形状Slab法による統一ボクセルレイキャスト
- * ※戻り値は再利用オブジェクトのため、呼び出し元で参照を長期保持しないこと
- */
-function raycastVoxel(origin, dir, maxDistance, includeWater = false, outResult = _sharedRaycastHit) {
-    outResult.hit = false;
-
-    const ox = origin.x, oy = origin.y, oz = origin.z;
-    const dx = dir.x, dy = dir.y, dz = dir.z;
-    if ((dx * dx + dy * dy + dz * dz) < 1e-12) return null;
-
-    let x = Math.floor(ox);
-    let y = Math.floor(oy);
-    let z = Math.floor(oz);
-
-    const EPS_DIR = 1e-8;
-    let stepX = 0, tDeltaX = Infinity, tMaxX = Infinity;
-    if (dx > EPS_DIR) {
-        stepX = 1;
-        tDeltaX = 1.0 / dx;
-        tMaxX = (x + 1.0 - ox) * tDeltaX;
-    } else if (dx < -EPS_DIR) {
-        stepX = -1;
-        tDeltaX = -1.0 / dx;
-        tMaxX = (ox - x) * tDeltaX;
-    }
-
-    let stepY = 0, tDeltaY = Infinity, tMaxY = Infinity;
-    if (dy > EPS_DIR) {
-        stepY = 1;
-        tDeltaY = 1.0 / dy;
-        tMaxY = (y + 1.0 - oy) * tDeltaY;
-    } else if (dy < -EPS_DIR) {
-        stepY = -1;
-        tDeltaY = -1.0 / dy;
-        tMaxY = (oy - y) * tDeltaY;
-    }
-
-    let stepZ = 0, tDeltaZ = Infinity, tMaxZ = Infinity;
-    if (dz > EPS_DIR) {
-        stepZ = 1;
-        tDeltaZ = 1.0 / dz;
-        tMaxZ = (z + 1.0 - oz) * tDeltaZ;
-    } else if (dz < -EPS_DIR) {
-        stepZ = -1;
-        tDeltaZ = -1.0 / dz;
-        tMaxZ = (oz - z) * tDeltaZ;
-    }
-
-    let tCurrent = 0.0;
-    let stepNx = 0, stepNy = 0, stepNz = 0;
-    const maxSteps = Math.ceil(maxDistance * 3) + 4;
-
-    for (let step = 0; step < maxSteps; step++) {
-        if (tCurrent > maxDistance) break;
-
-        // ステップ0（カメラ現在セル）を含めてボクセル検査
-        if (y >= 0 && y < CHUNK_HEIGHT) {
-            const rawVoxel = getVoxelAtWorld(x, y, z, true);
-            const blockId = getRawBlockId(rawVoxel);
-
-            if (blockId !== BLOCK_TYPES.SKY) {
-                const conf = _blockConfigFastArray[blockId];
-                const isWaterTarget = includeWater && conf && conf.geometryType === "water";
-
-                if (conf && (conf.targetblock !== false || isWaterTarget)) {
-                    const meta = getRawLocalState(rawVoxel);
-                    if (rayIntersectVoxelBoxes(
-                        ox, oy, oz, dx, dy, dz,
-                        x, y, z, blockId, meta,
-                        maxDistance, stepNx, stepNy, stepNz, outResult
-                    )) {
-                        outResult.hit = true;
-                        outResult.x = x;
-                        outResult.y = y;
-                        outResult.z = z;
-                        outResult.rawVoxel = rawVoxel;
-                        outResult.blockId = blockId;
-                        outResult.metadata = meta;
-                        return outResult;
-                    }
-                }
-            }
-        }
-
-        // 次のボクセル境界へ歩進
-        if (tMaxX < tMaxY) {
-            if (tMaxX < tMaxZ) {
-                tCurrent = tMaxX;
-                x += stepX;
-                tMaxX += tDeltaX;
-                stepNx = -stepX; stepNy = 0; stepNz = 0;
-            } else {
-                tCurrent = tMaxZ;
-                z += stepZ;
-                tMaxZ += tDeltaZ;
-                stepNx = 0; stepNy = 0; stepNz = -stepZ;
-            }
-        } else {
-            if (tMaxY < tMaxZ) {
-                tCurrent = tMaxY;
-                y += stepY;
-                tMaxY += tDeltaY;
-                stepNx = 0; stepNy = -stepY; stepNz = 0;
-            } else {
-                tCurrent = tMaxZ;
-                z += stepZ;
-                tMaxZ += tDeltaZ;
-                stepNx = 0; stepNy = 0; stepNz = -stepZ;
-            }
-        }
-    }
-
-    return null;
-}
-
-function getTargetBlockByDDA(maxDistance, includeWater = false) {
-    camera.getWorldDirection(_rayDirTmp);
-    return raycastVoxel(camera.position, _rayDirTmp, maxDistance, includeWater);
-}
-
 // 選択枠の共有マテリアル・作業用ベクトル・Dirty Checkキャッシュ（リーク＆GC防止）
 const _sharedSelectionLineMaterial = new THREE.LineBasicMaterial({
     color: 0x000000,
@@ -6406,136 +3540,6 @@ function updateHeadBlockInfo() {
     }
 }
 
-/**
- * プレイヤーの AABB（当たり判定）の複数サンプルによる水中判定
- */
-const waterSamplePointsPool = Array.from({ length: 6 }, () => new THREE.Vector3()); // 💡 6点に拡張
-const _waterCellCache = new Map();
-
-function isPlayerEntireBodyInWater() {
-    const { min, max } = getPlayerAABB();
-
-    const midY = (min.y + max.y) / 2; // 足元からお腹（半分）までの高さ
-    const topY = max.y - 0.1;        // 💡 頭上（少し内側に下げて、天井へのめり込み誤判定を防止）
-
-    // 登録する座標（足元4点 + お腹1点 + 頭1点 の計6点）
-    waterSamplePointsPool[0].set(min.x, min.y, min.z); // 足元：左手前
-    waterSamplePointsPool[1].set(max.x, min.y, min.z); // 足元：右手前
-    waterSamplePointsPool[2].set(min.x, min.y, max.z); // 足元：左奥
-    waterSamplePointsPool[3].set(max.x, min.y, max.z); // 足元：右奥
-    waterSamplePointsPool[4].set((min.x + max.x) / 2, midY, (min.z + max.z) / 2); // お腹の中心
-    waterSamplePointsPool[5].set((min.x + max.x) / 2, topY, (min.z + max.z) / 2); // 💡 頭の中心
-
-    let waterCount = 0;
-    let isHeadInWater = false; // 💡 頭の判定用フラグ
-
-    _waterCellCache.clear();
-
-    for (let i = 0; i < 6; i++) { // 💡 6回ループ
-        const point = waterSamplePointsPool[i];
-        const x = Math.floor(point.x);
-        const y = Math.floor(point.y);
-        const z = Math.floor(point.z);
-
-        const ox = x + 30000;
-        const oz = z + 30000;
-        const numericKey = (ox) + (oz) * 100000 + (y + 100) * 10000000000;
-
-        let blockValue = _waterCellCache.get(numericKey);
-        if (blockValue === undefined) {
-            const cx = getChunkCoord(x);
-            const cz = getChunkCoord(z);
-
-            blockValue = ChunkSaveManager.getBlock(cx, cz, x & 15, y, z & 15)
-                ?? getVoxelAtWorld(x, y, z, true);
-
-            _waterCellCache.set(numericKey, blockValue);
-        }
-
-        const blockId = getRawBlockId(blockValue);
-        const isWater = (blockId === BLOCK_TYPES.WATER || blockId === BLOCK_TYPES.LAVA);
-
-        if (i < 5) {
-            // インデックス 0〜4 は下半身の判定用
-            if (isWater) waterCount++;
-        } else {
-            // インデックス 5 は頭の判定用
-            isHeadInWater = isWater;
-        }
-    }
-
-    // 💡 ここを修正：角から入った場合（1点でも触れた場合）も水没とするように「> 0」に変更
-    return (waterCount > 0) || isHeadInWater;
-}
-
-// 関数の外（直上など）に1度だけ定義
-const _VEC_UP = new THREE.Vector3(0, 1, 0); // ✅ 上方向の定数
-
-// ======================================================
-// 【修正版】水中物理アップデート
-// ======================================================
-function updateUnderwaterPhysics(delta) {
-    const TARGET_SWIM_SPEED = 0.08,
-        DASH_MULTIPLIER = 1.6,
-        ACCELERATION = 0.15,
-        WATER_DRAG = 0.08;
-
-    // 🔥 1. 自然な沈降速度を少し強める（-0.05 ➔ -0.09）
-    // これにより、キーを離した時、あるいは水面に顔を出した時にしっかり「深く沈む」ようになります。
-    const NATURAL_SINK_SPEED = -0.10;
-
-    const effectiveSpeed = dashActive ? TARGET_SWIM_SPEED * DASH_MULTIPLIER : TARGET_SWIM_SPEED;
-
-    // 1. 水平方向（XZ）の基準になる「前・右」を yaw から直接計算（真下向きバグ防止）
-    const sinY = Math.sin(yaw);
-    const cosY = Math.cos(yaw);
-    const forward = globalTempVec3;
-    forward.set(-sinY, 0, -cosY);
-
-    const right = globalTempVec3b;
-    right.set(cosY, 0, -sinY);
-
-    const swimVel = globalTempVec3c;
-    swimVel.set(0, 0, 0);
-
-    // 2. キー入力の反映
-    if (keys["w"] || keys["arrowup"]) swimVel.add(forward);
-    if (keys["s"] || keys["arrowdown"]) swimVel.sub(forward);
-    if (keys["d"] || keys["arrowright"]) swimVel.add(right);
-    if (keys["a"] || keys["arrowleft"]) swimVel.sub(right);
-
-    if (swimVel.lengthSq() > 0) {
-        swimVel.normalize().multiplyScalar(effectiveSpeed);
-    }
-
-    // 3. 上下移動の判定（カメラの視線角度 ＋ Space / Shift）
-    const lookDir = allocVec();
-    camera.getWorldDirection(lookDir);
-
-    if (keys["w"] || keys["arrowup"]) {
-        swimVel.y += lookDir.y * effectiveSpeed;
-    }
-    freeVec(lookDir);
-
-    if (keys[" "]) {
-        swimVel.y = effectiveSpeed;
-    } else if (keys["shift"]) {
-        swimVel.y = -effectiveSpeed;
-    } else if (!keys["w"] && !keys["arrowup"]) {
-        swimVel.y = NATURAL_SINK_SPEED;
-    }
-
-    // 4. 速度の線形補間
-    player.velocity.x = THREE.MathUtils.lerp(player.velocity.x, swimVel.x, ACCELERATION);
-    player.velocity.z = THREE.MathUtils.lerp(player.velocity.z, swimVel.z, ACCELERATION);
-
-    // 🔥 2. 沈み込みと浮き上がりのタメのバランスを調整（0.025 ➔ 0.04）
-    // 0.025だと浮き上がりが非常に遅かったので、0.04付近にすることで「ズボッ」と沈んでから「にゅー」っと上がってきます。
-    player.velocity.y = THREE.MathUtils.lerp(player.velocity.y, swimVel.y, 0.04);
-
-    player.velocity.multiplyScalar(1 - WATER_DRAG);
-}
-
 const clock = new THREE.Clock();
 
 /* ======================================================
@@ -6570,8 +3574,6 @@ let blockInfoTimer = 0;
 const _camOffset = new THREE.Vector3();
 const _tempVec3 = new THREE.Vector3();
 const _interpPlayerPos = new THREE.Vector3();
-const _chunkFrustum = new THREE.Frustum();
-const _projScreenMatrix = new THREE.Matrix4();
 const _tickLightDirtySet = new Map();
 const _tickDirtyCoordTmp = { cx: 0, cz: 0 };
 
@@ -7292,29 +4294,10 @@ function runWorldTick(pCx, pCz) {
 }
 
 /**
- * 最新カメラの視錐台（Frustum）と各チャンクの精密 AABB（実最高高度ベース）で一括カリング
+ * Java Edition 準拠 セクション可視グラフ(VisGraph) ＋ 視錐台 BFS オクルージョンカリング
  */
 function updateChunkFrustumCulling() {
-    camera.updateMatrixWorld();
-    _projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    _chunkFrustum.setFromProjectionMatrix(_projScreenMatrix);
-
-    for (const chunk of loadedChunks.values()) {
-        const bbox = chunk.userData.boundingBox;
-        const colVisible = bbox ? _chunkFrustum.intersectsBox(bbox) : false;
-        chunk.visible = colVisible;
-        if (!colVisible) continue;
-
-        const sections = chunk.userData.sections;
-        if (sections) {
-            for (let sy = 0; sy < SECTIONS_PER_CHUNK; sy++) {
-                const sec = sections[sy];
-                if (!sec) continue;
-                const sbox = sec.userData.boundingBox;
-                sec.visible = sbox ? _chunkFrustum.intersectsBox(sbox) : true;
-            }
-        }
-    }
+    OcclusionCuller.update(loadedChunks, camera, CHUNK_VISIBLE_DISTANCE);
 }
 
 function animate() {
@@ -7413,7 +4396,7 @@ function animate() {
         measuredTps = isPaused ? 0 : Math.min(WORLD_TPS, Math.round((ticksInSecond / elapsedSec) * 10) / 10);
 
         measuredChunkUpdates = chunkUpdatesInSecond;
-        const queuedUpdates = pendingChunkUpdates.size + chunkQueue.length + chunkUpdateLookup.size + TerrainWorkerPool.pendingCount;
+        const queuedUpdates = pendingChunkUpdates.size + chunkQueue.length + chunkUpdateLookup.size + TerrainWorkerPool.pendingCount + LightWorkerPool.pendingCount;
         const editedCount = ChunkSaveManager.playerModifiedKeys.size;
         const unsavedCount = ChunkSaveManager.dirtySaveKeys.size;
         const cachedChunkCount = ChunkSaveManager.modifiedChunks.size;
@@ -7437,7 +4420,7 @@ function animate() {
        ${fps} fps, ${measuredTps.toFixed(1)} tps, ${measuredChunkUpdates} chunk updates (${queuedUpdates} queued)<br>
         <b>Draw calls: ${drawCalls}</b> (Tri: ${triangles.toLocaleString()})<br>
         ${editedCount} edited chunks (${unsavedCount} unsaved / ${cachedChunkCount} cached)<br>
-        C: ${loadedChunks.size} loaded. (Quality: ${CHUNK_VISIBLE_DISTANCE})<br>
+        C: ${OcclusionCuller.stats.renderedSections}/${OcclusionCuller.stats.totalSections} sections (${loadedChunks.size} chunks, Quality: ${CHUNK_VISIBLE_DISTANCE})<br>
         Dimension: Overworld<br>
         <b>Biome: ${biomeName}</b><br>
         x: ${pxInt} (C: ${curPCx})<br>
@@ -7502,16 +4485,10 @@ function animate() {
     if (!isPaused) {
         blockInfoTimer += delta;
         if (blockInfoTimer > 0.05) {
-            const hasMoved = camera.position.distanceToSquared(lastCamPos) > 0.0001 ||
-                Math.abs(camera.rotation.y - lastCamRot.y) > 0.0001 ||
-                Math.abs(camera.rotation.x - lastCamRot.x) > 0.0001;
-
-            if (hasMoved) {
-                updateTargetBlockDisplay(false);
-                updateHeadBlockInfo();
-                lastCamPos.copy(camera.position);
-                lastCamRot.copy(camera.rotation);
-            }
+            // カメラ静止中でもピストン・回路・流体・チャンク読込による変化を即時反映
+            // （変化がない場合は updateBlockSelection 内の Dirty Check でジオメトリ再構築をスキップ）
+            updateTargetBlockDisplay(false);
+            updateHeadBlockInfo();
             blockInfoTimer = 0;
         }
     }
@@ -7768,7 +4745,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     // Java Edition 準拠の JSON モデル＆BlockState アセットを並列ロードし高速テーブルを再同期
     const jsonUpdatedBlocks = await loadBlockAssets();
     if (jsonUpdatedBlocks.length > 0) {
-        _bakedCustomTemplateCache.clear();
+        ChunkMesher.clearTemplateCache();
         for (let i = 0; i < jsonUpdatedBlocks.length; i++) {
             const uCfg = jsonUpdatedBlocks[i];
             _syncBlockFastEntry(uCfg.id, uCfg);
@@ -7783,6 +4760,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     // --- 1. シード値とキャッシュ・ワールド所有権・データの適用 ---
     applySeed(seed);
     TerrainWorkerPool.reset(currentSeed);
+    LightWorkerPool.reset();
     chunkLightCache.clear();
     chunkReadOnlyCache.clear();
     pendingChunkUpdates.clear();
@@ -7828,6 +4806,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     ChestAnimator.clear();
     EntityManager.clear();
     PlayerData.reset();
+    PhysicsEngine.reset();
 
     worldTickCount = 0;
     worldTickAccumulator = 0;
@@ -8037,7 +5016,6 @@ if (btn_noSaveAndQuit) {
 
 addChatMessage("Minecraft test 0.0.1", "#ffff55");
 
-const keys = {};
 let isInventoryOpen = false;
 
 function applyRenderDistance(val) {

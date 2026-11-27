@@ -79,46 +79,149 @@ export function cachedLoadTexture(path, fallback = null) {
     return placeholder;
 }
 
+// 草側面オーバーレイ用: 画像が存在しない場合は自動フォールバック（赤黒エラーを出さない）
+const optionalOverlayCache = new Map();
+const EMPTY_OVERLAY_TEX = (() => {
+    const tex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat);
+    tex.needsUpdate = true;
+    return tex;
+})();
+
+function loadOptionalOverlayTexture(path) {
+    if (!path) return null;
+    if (optionalOverlayCache.has(path)) return optionalOverlayCache.get(path);
+
+    const entry = { tex: EMPTY_OVERLAY_TEX, ready: { value: 0.0 } };
+    optionalOverlayCache.set(path, entry);
+
+    textureLoader.load(
+        path,
+        (tex) => {
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestMipmapNearestFilter;
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.generateMipmaps = true;
+            tex.needsUpdate = true;
+            entry.tex = tex;
+            entry.ready.value = 1.0;
+        },
+        undefined,
+        () => {
+            // 未配置時は grass_side.png 緑領域の自動オーバーレイへフォールバック
+            entry.ready.value = 0.0;
+        }
+    );
+    return entry;
+}
+
 // 全ブロックマテリアルで共有する単一 Uniform（昼夜・明るさ変更を O(1) で全チャンクへ即時反映）
 export const SHARED_SKY_UNIFORM = { value: 1.0 };
 export const SHARED_BRIGHTNESS_UNIFORM = { value: 1.0 };
 
+const DEFAULT_GRASS_TINT = new THREE.Color(0x91BD59);
+const DEFAULT_FOLIAGE_TINT = new THREE.Color(0x77AB2F);
+
 function onBeforeCompileBlock(shader, mat) {
     const u = mat.userData && mat.userData.shaderUniforms;
+    const biomeTintMode = (u && u.biomeTintMode) ? u.biomeTintMode : 0; // 0:なし, 1:全面着色, 2:側面オーバーレイ
+    const defaultTint = (u && u.defaultBiomeTint) ? u.defaultBiomeTint : DEFAULT_GRASS_TINT;
+
     shader.uniforms.u_skyFactor = SHARED_SKY_UNIFORM;
     shader.uniforms.u_brightness = SHARED_BRIGHTNESS_UNIFORM;
     shader.uniforms.u_isLightSource = (u && u.u_isLightSource) ? u.u_isLightSource : { value: 0.0 };
 
+    if (biomeTintMode > 0) {
+        shader.uniforms.u_defaultBiomeTint = { value: defaultTint };
+    }
+    if (biomeTintMode === 2 && u && u.overlayEntry) {
+        shader.uniforms.u_overlayMap = { value: u.overlayEntry.tex };
+        shader.uniforms.u_hasOverlayMap = u.overlayEntry.ready;
+    }
+
+    const vertexHeader = `
+        uniform float u_skyFactor;
+        uniform float u_brightness;
+        uniform float u_isLightSource;
+        ${biomeTintMode > 0 ? `
+        attribute vec3 aBiomeColor;
+        uniform vec3 u_defaultBiomeTint;
+        varying vec3 vBiomeTint;
+        ` : ''}
+    `;
+
     const vertexInjection = `
         #include <color_vertex>
-        // vColor.r に空の明るさ(0..1)、vColor.g にブロックの明るさ(0..1)が Uint8 正規化で格納されている
         float skyLight = vColor.r;
         float blockLight = vColor.g;
 
         if (u_isLightSource > 0.5) {
             vColor.rgb = vec3(1.0);
         } else {
-            // 明るい方の光を採用し、明るさ設定を O(1) Uniform で適用
             float lit = max(skyLight * u_skyFactor, blockLight) * u_brightness;
             vColor.rgb = vec3(clamp(lit, 0.04, 1.0));
         }
+        ${biomeTintMode > 0 ? `
+        vBiomeTint = (dot(aBiomeColor, aBiomeColor) > 0.0001) ? aBiomeColor : u_defaultBiomeTint;
+        ` : ''}
     `;
 
-    shader.vertexShader = `
-        uniform float u_skyFactor;
-        uniform float u_brightness;
-        uniform float u_isLightSource;
-        ${shader.vertexShader}
-    `.replace('#include <color_vertex>', vertexInjection);
+    shader.vertexShader = (vertexHeader + shader.vertexShader)
+        .replace('#include <color_vertex>', vertexInjection);
+
+    if (biomeTintMode === 1) {
+        shader.fragmentShader = `
+            varying vec3 vBiomeTint;
+            ${shader.fragmentShader}
+        `.replace(
+            '#include <map_fragment>',
+            `#include <map_fragment>
+            #ifdef USE_MAP
+            float maxC = max(texelColor.r, max(texelColor.g, texelColor.b));
+            float minC = min(texelColor.r, min(texelColor.g, texelColor.b));
+            // グレースケールテクスチャはそのまま乗算、既存緑テクスチャは明度を保ってバイオーム色へ置換
+            float isGray = step(maxC - minC, 0.04);
+            float lum = clamp(dot(texelColor.rgb, vec3(0.32, 0.58, 0.10)) * 1.35, 0.0, 1.0);
+            vec3 tinted = mix(vec3(lum) * vBiomeTint, texelColor.rgb * vBiomeTint, isGray);
+            diffuseColor.rgb = diffuse * tinted;
+            #endif`
+        );
+    } else if (biomeTintMode === 2) {
+        shader.fragmentShader = `
+            varying vec3 vBiomeTint;
+            uniform sampler2D u_overlayMap;
+            uniform float u_hasOverlayMap;
+            ${shader.fragmentShader}
+        `.replace(
+            '#include <map_fragment>',
+            `#include <map_fragment>
+            #ifdef USE_MAP
+            if (u_hasOverlayMap > 0.5) {
+                vec4 ov = texture2D(u_overlayMap, vUv);
+                vec3 ovCol = ov.rgb * vBiomeTint;
+                diffuseColor.rgb = diffuse * mix(texelColor.rgb, ovCol, ov.a);
+            } else {
+                // grass_side_overlay.png 未配置時: 側面の緑フチ領域のみ自動抽出してバイオーム着色
+                float isGreenEdge = step(texelColor.r * 1.06, texelColor.g) * step(texelColor.b * 1.06, texelColor.g);
+                if (isGreenEdge > 0.5) {
+                    float lum = clamp(dot(texelColor.rgb, vec3(0.32, 0.58, 0.10)) * 1.35, 0.0, 1.0);
+                    diffuseColor.rgb = diffuse * (vec3(lum) * vBiomeTint);
+                }
+            }
+            #endif`
+        );
+    }
 }
 
 const BLOCK_MATERIALS_CACHE = new Map();
 const GLOBAL_BLOCK_MATERIAL_POOL = new Map();
 const STATE_MATERIALS_CACHE = new Map();
 const FACE_ORDER = ["east", "west", "top", "bottom", "south", "north"];
-const _blockShaderCacheKey = () => 'mc_block_light_v2';
+const _shaderKeyNone = () => 'mc_block_light_v3_0';
+const _shaderKeyTint = () => 'mc_block_light_v3_1';
+const _shaderKeyOverlay = () => 'mc_block_light_v3_2';
 
-export function getOrCreateSharedBlockMaterial(texPath, config, props, override = null) {
+export function getOrCreateSharedBlockMaterial(texPath, config, props, override = null, faceName = null) {
     const opacity = (override && override.opacity !== undefined) ? override.opacity : (config.opacity ?? 1.0);
     const defaultColor = (override && override.defaultColor !== undefined) ? override.defaultColor : (config.defaultColor ?? 0xffffff);
     const alphaTest = props.isAlphaCutout ? 0.5 : 0;
@@ -130,7 +233,24 @@ export function getOrCreateSharedBlockMaterial(texPath, config, props, override 
             : (config.lightLevel > 0 ? 1 : 0));
     const keyPath = (texPath && texPath !== "none") ? texPath : "__none__";
 
-    const poolKey = `${keyPath}|${props.isBlendTransparent ? 1 : 0}|${opacity}|${alphaTest}|${props.side}|${depthWrite ? 1 : 0}|${isLightSource}|${defaultColor}`;
+    const biomeTintType = (override && override.biomeTint !== undefined) ? override.biomeTint : (config.biomeTint || null);
+    const sideOverlayPath = (override && override.sideOverlay !== undefined) ? override.sideOverlay : (config.sideOverlay || null);
+
+    let biomeTintMode = 0;
+    let overlayEntry = null;
+    if (biomeTintType) {
+        if (sideOverlayPath) {
+            if (faceName === "top") biomeTintMode = 1;
+            else if (faceName !== "bottom") {
+                biomeTintMode = 2;
+                overlayEntry = loadOptionalOverlayTexture(sideOverlayPath);
+            }
+        } else {
+            biomeTintMode = 1;
+        }
+    }
+
+    const poolKey = `${keyPath}|${props.isBlendTransparent ? 1 : 0}|${opacity}|${alphaTest}|${props.side}|${depthWrite ? 1 : 0}|${isLightSource}|${defaultColor}|${biomeTintMode}|${biomeTintType || ""}|${sideOverlayPath || ""}`;
     const existing = GLOBAL_BLOCK_MATERIAL_POOL.get(poolKey);
     if (existing !== undefined) return existing;
 
@@ -148,10 +268,13 @@ export function getOrCreateSharedBlockMaterial(texPath, config, props, override 
     mat.userData.shaderUniforms = {
         u_skyFactor: SHARED_SKY_UNIFORM,
         u_brightness: SHARED_BRIGHTNESS_UNIFORM,
-        u_isLightSource: { value: isLightSource ? 1.0 : 0.0 }
+        u_isLightSource: { value: isLightSource ? 1.0 : 0.0 },
+        biomeTintMode,
+        defaultBiomeTint: (biomeTintType === "foliage") ? DEFAULT_FOLIAGE_TINT : DEFAULT_GRASS_TINT,
+        overlayEntry
     };
     mat.userData.isShared = true;
-    mat.customProgramCacheKey = _blockShaderCacheKey;
+    mat.customProgramCacheKey = (biomeTintMode === 2) ? _shaderKeyOverlay : ((biomeTintMode === 1) ? _shaderKeyTint : _shaderKeyNone);
     mat.onBeforeCompile = (shader) => onBeforeCompileBlock(shader, mat);
 
     GLOBAL_BLOCK_MATERIAL_POOL.set(poolKey, mat);
@@ -205,7 +328,7 @@ export function createMaterialsFromBlockConfig(config, stateOverride = null) {
             ((face !== "top" && face !== "bottom") ? textures?.side : null) ||
             textures?.top || textures?.bottom || config.fallbackTexture;
 
-        result[i] = getOrCreateSharedBlockMaterial(texPath, config, props, stateOverride);
+        result[i] = getOrCreateSharedBlockMaterial(texPath, config, props, stateOverride, face);
     }
     return result;
 }
