@@ -42,7 +42,15 @@ import { createBeta18TerrainEngine } from './world/beta18_terrain.js';
 import { Features } from './features.js';
 import { FeatureRules } from './feature_rules.js';
 
-import { generateWorldUid, saveWorldData, loadFullSaveData } from './world/save_manager.js';
+import {
+    generateWorldUid,
+    saveWorldData,
+    loadWorldData,
+    listWorlds,
+    renameWorld,
+    deleteWorld
+} from './world/save_manager.js';
+
 import { TICKS_PER_DAY, getSkyLightFactor, getGameClock, createSkySystem } from './world/sky_system.js';
 import { createLightingEngine, LIGHT_LEVEL_FACTORS } from './world/lighting_engine.js';
 import {
@@ -4441,8 +4449,13 @@ function animate() {
         const biome = _getBiomeAt(pxInt, pzInt);
         const biomeName = biome ? biome.name : "Unknown";
 
+        const safeWorldName = String(currentWorldName || "新しい世界")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+
         fpsCounter.innerHTML = `
-        <b>Minecraft test 0.0.1</b><br>
+        <b>Minecraft test 0.0.1</b> - ${safeWorldName}<br>
         Seed: ${currentSeed}<br>
         Time: ${getGameClock(gameTime)} (${Math.floor(gameTime)} ticks)<br>
        ${fps} fps, ${measuredTps.toFixed(1)} tps, ${measuredChunkUpdates} chunk updates (${queuedUpdates} queued)<br>
@@ -4535,28 +4548,265 @@ function animate() {
 }
 
 /* ======================================================
-   【UIイベント】タイトル画面からの起動
+   【UIイベント】タイトル画面・複数ワールド選択・名前変更・削除
    ====================================================== */
 const ui = {
     menu: document.getElementById('main-menu'),
     config: document.getElementById('world-config'),
+    worldSelect: document.getElementById('world-select'),
+    worldList: document.getElementById('world-list'),
     loading: document.getElementById('loading-screen'),
-    seedInput: document.getElementById('world-seed')
-};
-
-// 1. 新しい世界へ
-document.getElementById('btn-to-world-config').onclick = () => {
-    ui.menu.style.display = 'none';
-    ui.config.style.display = 'flex';
-};
-
-// 2. 戻る
-document.getElementById('btn-back-to-menu').onclick = () => {
-    ui.config.style.display = 'none';
-    ui.menu.style.display = 'flex';
+    nameInput: document.getElementById('world-name'),
+    seedInput: document.getElementById('world-seed'),
+    btnConfigGameMode: document.getElementById('btn-config-gamemode'),
+    btnPlaySelected: document.getElementById('btn-play-selected'),
+    btnWorldCreateNew: document.getElementById('btn-world-create-new'),
+    btnRenameWorld: document.getElementById('btn-rename-world'),
+    btnDeleteWorld: document.getElementById('btn-delete-world'),
+    btnWorldSelectBack: document.getElementById('btn-world-select-back'),
+    renameModal: document.getElementById('world-rename-modal'),
+    renameInput: document.getElementById('world-rename-input'),
+    btnRenameConfirm: document.getElementById('btn-rename-confirm'),
+    btnRenameCancel: document.getElementById('btn-rename-cancel')
 };
 
 let isLaunchingWorld = false;
+let configSelectedGameMode = GAME_MODES.CREATIVE;
+let configReturnTarget = "menu"; // "menu" | "world-select"
+let cachedWorldList = [];
+let selectedWorldUid = null;
+
+function formatWorldTimestamp(ms) {
+    if (!ms || !Number.isFinite(ms)) return "-";
+    const d = new Date(ms);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${y}/${m}/${day} ${hh}:${mm}`;
+}
+
+function getGameModeLabelJa(mode) {
+    return (mode === GAME_MODES.SURVIVAL) ? "サバイバル" : "クリエイティブ";
+}
+
+function syncConfigGameModeButton() {
+    if (ui.btnConfigGameMode) {
+        ui.btnConfigGameMode.textContent = `ゲームモード: ${getGameModeLabelJa(configSelectedGameMode)}`;
+    }
+}
+
+function openWorldConfigScreen(from = "menu") {
+    configReturnTarget = from;
+    configSelectedGameMode = GAME_MODES.CREATIVE;
+    syncConfigGameModeButton();
+    if (ui.nameInput) ui.nameInput.value = "";
+    if (ui.seedInput) ui.seedInput.value = "";
+
+    ui.menu.style.display = 'none';
+    if (ui.worldSelect) ui.worldSelect.style.display = 'none';
+    ui.config.style.display = 'flex';
+}
+
+function updateWorldSelectButtons() {
+    const hasSelection = !!selectedWorldUid && cachedWorldList.some((w) => w.worldUid === selectedWorldUid);
+    if (!hasSelection) selectedWorldUid = null;
+    if (ui.btnPlaySelected) ui.btnPlaySelected.disabled = !hasSelection;
+    if (ui.btnRenameWorld) ui.btnRenameWorld.disabled = !hasSelection;
+    if (ui.btnDeleteWorld) ui.btnDeleteWorld.disabled = !hasSelection;
+}
+
+function renderWorldListUI() {
+    if (!ui.worldList) return;
+    ui.worldList.innerHTML = "";
+
+    if (cachedWorldList.length === 0) {
+        const emptyEl = document.createElement("div");
+        emptyEl.className = "world-list-empty";
+        emptyEl.textContent = "保存された世界はまだありません。「新しい世界を作成」から始められます。";
+        ui.worldList.appendChild(emptyEl);
+        updateWorldSelectButtons();
+        return;
+    }
+
+    for (let i = 0; i < cachedWorldList.length; i++) {
+        const w = cachedWorldList[i];
+        const card = document.createElement("div");
+        card.className = "world-card" + (w.worldUid === selectedWorldUid ? " selected" : "");
+        card.dataset.uid = w.worldUid;
+
+        const nameEl = document.createElement("div");
+        nameEl.className = "world-card-name";
+        nameEl.textContent = w.name;
+
+        const metaEl = document.createElement("div");
+        metaEl.className = "world-card-meta";
+        metaEl.textContent =
+            `${getGameModeLabelJa(w.gameMode)} | Seed: ${w.seed} | ` +
+            `更新: ${formatWorldTimestamp(w.savedAt)} | 編集チャンク: ${w.chunkCount}`;
+
+        card.appendChild(nameEl);
+        card.appendChild(metaEl);
+
+        card.onclick = () => {
+            selectedWorldUid = w.worldUid;
+            const cards = ui.worldList.querySelectorAll(".world-card");
+            for (let c = 0; c < cards.length; c++) {
+                cards[c].classList.toggle("selected", cards[c].dataset.uid === selectedWorldUid);
+            }
+            updateWorldSelectButtons();
+        };
+
+        card.ondblclick = () => {
+            selectedWorldUid = w.worldUid;
+            launchSelectedWorld();
+        };
+
+        ui.worldList.appendChild(card);
+    }
+
+    updateWorldSelectButtons();
+}
+
+async function refreshWorldList() {
+    cachedWorldList = await listWorlds();
+    if (selectedWorldUid && !cachedWorldList.some((w) => w.worldUid === selectedWorldUid)) {
+        selectedWorldUid = null;
+    }
+    if (!selectedWorldUid && cachedWorldList.length > 0) {
+        selectedWorldUid = cachedWorldList[0].worldUid;
+    }
+    renderWorldListUI();
+}
+
+async function openWorldSelectScreen() {
+    ui.menu.style.display = 'none';
+    ui.config.style.display = 'none';
+    if (ui.worldSelect) ui.worldSelect.style.display = 'flex';
+    if (ui.worldList) {
+        ui.worldList.innerHTML = '<div class="world-list-empty">読み込み中...</div>';
+    }
+    try {
+        await refreshWorldList();
+    } catch (error) {
+        console.error("ワールド一覧の読み込みに失敗しました:", error);
+        if (ui.worldList) {
+            ui.worldList.innerHTML = '<div class="world-list-empty">ワールド一覧の読み込みに失敗しました。</div>';
+        }
+    }
+}
+
+function closeRenameModal() {
+    if (ui.renameModal) ui.renameModal.style.display = 'none';
+}
+
+function openRenameModal() {
+    if (!selectedWorldUid || !ui.renameModal || !ui.renameInput) return;
+    const target = cachedWorldList.find((w) => w.worldUid === selectedWorldUid);
+    if (!target) return;
+
+    ui.renameInput.value = target.name || "";
+    ui.renameModal.style.display = 'flex';
+    ui.renameInput.focus();
+    ui.renameInput.select();
+}
+
+async function confirmRenameWorld() {
+    if (!selectedWorldUid || !ui.renameInput) return;
+    const nextName = ui.renameInput.value.trim();
+    if (!nextName) {
+        alert("ワールド名を入力してください。");
+        ui.renameInput.focus();
+        return;
+    }
+
+    try {
+        await renameWorld(selectedWorldUid, nextName);
+        closeRenameModal();
+        await refreshWorldList();
+    } catch (error) {
+        console.error("ワールド名の変更に失敗しました:", error);
+        alert("ワールド名の変更に失敗しました。");
+    }
+}
+
+async function deleteSelectedWorld() {
+    if (!selectedWorldUid) return;
+    const target = cachedWorldList.find((w) => w.worldUid === selectedWorldUid);
+    if (!target) return;
+
+    const ok = confirm(`ワールド「${target.name}」を完全に削除しますか？\nこの操作は取り消せません。`);
+    if (!ok) return;
+
+    try {
+        await deleteWorld(selectedWorldUid);
+        selectedWorldUid = null;
+        await refreshWorldList();
+    } catch (error) {
+        console.error("ワールドの削除に失敗しました:", error);
+        alert("ワールドの削除に失敗しました。");
+    }
+}
+
+// 1. 新しい世界へ
+document.getElementById('btn-to-world-config').onclick = () => {
+    openWorldConfigScreen("menu");
+};
+
+// 2. 新規作成画面のゲームモード切替
+if (ui.btnConfigGameMode) {
+    ui.btnConfigGameMode.onclick = () => {
+        configSelectedGameMode = (configSelectedGameMode === GAME_MODES.CREATIVE)
+            ? GAME_MODES.SURVIVAL
+            : GAME_MODES.CREATIVE;
+        syncConfigGameModeButton();
+    };
+}
+
+// 3. 新規作成画面のキャンセル
+document.getElementById('btn-back-to-menu').onclick = () => {
+    ui.config.style.display = 'none';
+    if (configReturnTarget === "world-select" && ui.worldSelect) {
+        ui.worldSelect.style.display = 'flex';
+    } else {
+        ui.menu.style.display = 'flex';
+    }
+};
+
+// 4. 世界選択画面の各種ボタン
+if (ui.btnWorldCreateNew) {
+    ui.btnWorldCreateNew.onclick = () => openWorldConfigScreen("world-select");
+}
+if (ui.btnWorldSelectBack) {
+    ui.btnWorldSelectBack.onclick = () => {
+        if (ui.worldSelect) ui.worldSelect.style.display = 'none';
+        ui.menu.style.display = 'flex';
+    };
+}
+if (ui.btnRenameWorld) {
+    ui.btnRenameWorld.onclick = openRenameModal;
+}
+if (ui.btnDeleteWorld) {
+    ui.btnDeleteWorld.onclick = deleteSelectedWorld;
+}
+if (ui.btnRenameConfirm) {
+    ui.btnRenameConfirm.onclick = confirmRenameWorld;
+}
+if (ui.btnRenameCancel) {
+    ui.btnRenameCancel.onclick = closeRenameModal;
+}
+if (ui.renameInput) {
+    ui.renameInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            confirmRenameWorld();
+        } else if (e.key === "Escape") {
+            e.preventDefault();
+            closeRenameModal();
+        }
+    });
+}
 
 /**
  * 保存された座標・視点データを安全に検証・クランプする
@@ -4676,7 +4926,7 @@ async function prewarmSpawnChunks(updateProgressFn, startPct, endPct) {
     updateChunks();
 }
 
-// 3. 生成開始
+// 5. 新規ワールド生成開始
 document.getElementById('btn-start-game').onclick = async () => {
     if (isLaunchingWorld) return;
     isLaunchingWorld = true;
@@ -4684,9 +4934,23 @@ document.getElementById('btn-start-game').onclick = async () => {
     try {
         ui.menu.style.display = 'none';
         ui.config.style.display = 'none';
+        if (ui.worldSelect) ui.worldSelect.style.display = 'none';
         ui.loading.style.display = 'flex';
-        const seed = applySeed(ui.seedInput.value);
-        await startGame(seed);
+
+        const worldName = (ui.nameInput && ui.nameInput.value.trim())
+            ? ui.nameInput.value.trim().slice(0, 40)
+            : "新しい世界";
+        const rawSeed = ui.seedInput ? ui.seedInput.value.trim() : "";
+        const seedSource = rawSeed === ""
+            ? undefined
+            : (/^-?\d+$/.test(rawSeed) ? Number(rawSeed) : rawSeed);
+        const seed = applySeed(seedSource);
+
+        await startGame(seed, null, null, 0, null, null, null, null, {
+            worldName,
+            gameMode: configSelectedGameMode,
+            dimension: "overworld"
+        });
     } catch (error) {
         console.error("新規ワールド生成中にエラーが発生しました:", error);
         alert("ワールドの生成に失敗しました。ページを再読み込みしてください。");
@@ -4696,24 +4960,31 @@ document.getElementById('btn-start-game').onclick = async () => {
     }
 };
 
-// 保存データから再開（連打防止・即時ローディング遷移・ホットバー完全復元版）
-document.getElementById('btn-load-saved').onclick = async () => {
+// 6. タイトル画面の「世界を選択」ボタン
+document.getElementById('btn-load-saved').onclick = () => {
     if (isLaunchingWorld) return;
+    openWorldSelectScreen();
+};
+
+// 7. 選択したワールドを読み込んで起動
+async function launchSelectedWorld() {
+    if (isLaunchingWorld || !selectedWorldUid) return;
     isLaunchingWorld = true;
 
     try {
-        // 押下直後にローディング画面へ切り替え、DB読込中の無反応感を排除
         ui.config.style.display = 'none';
         ui.menu.style.display = 'none';
+        if (ui.worldSelect) ui.worldSelect.style.display = 'none';
+        closeRenameModal();
         ui.loading.style.display = 'flex';
 
         const fill = document.getElementById('loading-fill');
         if (fill) fill.style.width = '5%';
 
-        // 1. データの読み込みを待機
-        const saveData = await loadFullSaveData();
+        const targetMeta = cachedWorldList.find((w) => w.worldUid === selectedWorldUid);
+        const targetDim = targetMeta?.dimension || "overworld";
+        const saveData = await loadWorldData(selectedWorldUid, targetDim);
 
-        // 2. データの存在チェック
         if (saveData) {
             const restoredTime = (typeof saveData.gameTime === 'number' && Number.isFinite(saveData.gameTime))
                 ? ((saveData.gameTime % TICKS_PER_DAY) + TICKS_PER_DAY) % TICKS_PER_DAY
@@ -4722,7 +4993,7 @@ document.getElementById('btn-load-saved').onclick = async () => {
             const startPos = sanitizeSavedPosition(saveData.pos);
 
             console.log(
-                `[Load] ロード成功: Seed=${saveData.seed}, Time=${Math.floor(restoredTime)}, ` +
+                `[Load] ロード成功: Name=${saveData.worldName}, Seed=${saveData.seed}, Time=${Math.floor(restoredTime)}, ` +
                 `Chunks=${saveData.chunks?.size || 0}件, Hotbar=${saveData.playerState?.hotbarKeys?.filter(Boolean).length || 0}個`
             );
 
@@ -4734,28 +5005,49 @@ document.getElementById('btn-load-saved').onclick = async () => {
                 saveData.worldUid || null,
                 saveData.playerState || null,
                 saveData.simulationState || null,
-                saveData.worldEntitiesState || null
+                saveData.worldEntitiesState || null,
+                {
+                    worldName: saveData.worldName || "新しい世界",
+                    gameMode: saveData.gameMode || GAME_MODES.CREATIVE,
+                    dimension: saveData.dimension || "overworld"
+                }
             );
         } else {
             ui.loading.style.display = 'none';
-            ui.menu.style.display = 'flex';
+            if (ui.worldSelect) ui.worldSelect.style.display = 'flex';
             isLaunchingWorld = false;
-            alert("セーブデータが見つかりませんでした。");
+            alert("選択したワールドのデータが見つかりませんでした。");
         }
     } catch (error) {
         console.error("ロード中にエラーが発生しました:", error);
         ui.loading.style.display = 'none';
-        ui.menu.style.display = 'flex';
+        if (ui.worldSelect) ui.worldSelect.style.display = 'flex';
         isLaunchingWorld = false;
         alert("データの読み込みに失敗しました。IndexedDBの状態を確認してください。");
     }
-};
+}
 
-// ワールド一意識別子（新規作成時の前ワールドチャンク混入防止＆同一ワールド差分セーブ判定用）
+if (ui.btnPlaySelected) {
+    ui.btnPlaySelected.onclick = launchSelectedWorld;
+}
+
+// ワールド一意識別子・名前・ディメンション管理
 let currentWorldUid = null;
+let currentWorldName = "新しい世界";
+let currentDimension = "overworld";
 let isWorldSavedToDB = false;
 
-async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 0, savedWorldUid = null, savedPlayerState = null, savedSimulationState = null, savedWorldEntitiesState = null) {
+async function startGame(
+    seed,
+    savedPos = null,
+    savedChunks = null,
+    savedTime = 0,
+    savedWorldUid = null,
+    savedPlayerState = null,
+    savedSimulationState = null,
+    savedWorldEntitiesState = null,
+    worldOptions = null
+) {
     const fill = document.getElementById('loading-fill');
 
     const updateProgress = async (percent) => {
@@ -4805,6 +5097,10 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     const hasSavedChunks = (savedChunks instanceof Map && savedChunks.size > 0);
     const isLoadedWorld = (savedPos !== null) || (savedWorldUid !== null) || hasSavedChunks;
     currentWorldUid = isLoadedWorld ? (savedWorldUid || `legacy_${seed}`) : generateWorldUid();
+    currentWorldName = (worldOptions && typeof worldOptions.worldName === "string" && worldOptions.worldName.trim())
+        ? worldOptions.worldName.trim().slice(0, 40)
+        : "新しい世界";
+    currentDimension = (worldOptions && worldOptions.dimension) ? worldOptions.dimension : "overworld";
     isWorldSavedToDB = isLoadedWorld;
 
     ChunkSaveManager.playerModifiedKeys.clear();
@@ -4836,6 +5132,14 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     FallingBlockManager.clear();
     PlayerData.reset();
     PhysicsEngine.reset();
+
+    const initialGameMode = (worldOptions && worldOptions.gameMode === GAME_MODES.SURVIVAL)
+        ? GAME_MODES.SURVIVAL
+        : GAME_MODES.CREATIVE;
+    PlayerData.setGameMode(initialGameMode);
+    if (initialGameMode === GAME_MODES.SURVIVAL) {
+        flightMode = false;
+    }
 
     worldTickCount = 0;
     worldTickAccumulator = 0;
@@ -4889,6 +5193,11 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
         }
     }
 
+    if (!PlayerData.data.abilities.mayfly) {
+        flightMode = false;
+    }
+    ContainerUI.updateSurvivalHUD(PlayerData.data);
+
     // --- 4.5. スポーン周囲チャンク事前生成（開始直後の空中浮遊・地面ポップイン防止） ---
     await prewarmSpawnChunks(updateProgress, 70, 95);
 
@@ -4907,8 +5216,13 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     setTimeout(() => {
         ui.config.style.display = 'none';
         ui.menu.style.display = 'none';
+        if (ui.worldSelect) ui.worldSelect.style.display = 'none';
+        closeRenameModal();
         ui.loading.style.display = 'none';
-        addChatMessage(isLoadedWorld ? "セーブデータをロードしました" : "世界を新しく生成しました", "#ffff00");
+        addChatMessage(
+            isLoadedWorld ? `「${currentWorldName}」をロードしました` : `「${currentWorldName}」を生成しました`,
+            "#ffff00"
+        );
         animate();
     }, 100);
 }
@@ -4980,6 +5294,9 @@ async function saveCurrentWorld() {
         };
         const result = await saveWorldData({
             seed: s,
+            worldName: currentWorldName,
+            gameMode: PlayerData.data.gameMode,
+            dimension: currentDimension,
             playerPos: pPos,
             chunkManager: ChunkSaveManager,
             gameTime,
@@ -4991,6 +5308,7 @@ async function saveCurrentWorld() {
         });
 
         currentWorldUid = result.worldUid;
+        currentWorldName = result.worldName;
         isWorldSavedToDB = true;
 
         console.log(

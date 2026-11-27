@@ -22,7 +22,7 @@
 
       <div class="menu-buttons">
         <button id="btn-to-world-config" class="mc-button">新しい世界を作成</button>
-        <button id="btn-load-saved" class="mc-button">保存した世界から再開</button>
+        <button id="btn-load-saved" class="mc-button">世界を選択</button>
 
         <div class="mc-button-row">
           <button id="btn-open-settings" class="mc-button half">設定...</button>
@@ -57,18 +57,56 @@
     </div>
 
     <div id="world-config" class="overlay-screen" style="display:none;">
-      <h2 class="mc-title" style="font-size: 40px; margin-bottom: 30px;">世界の設定</h2>
+      <h2 class="mc-title" style="font-size: 36px; margin-bottom: 20px;">新しい世界を作成</h2>
 
-      <div class="config-content" style="margin-bottom: 20px;">
+      <div class="config-content" style="margin-bottom: 18px;">
         <div class="config-group">
-          <p class="mc-label" style="text-align: left; margin-bottom: 5px;">シード値:</p>
+          <p class="mc-label">ワールド名:</p>
+          <input type="text" id="world-name" class="mc-input" maxlength="40" placeholder="新しい世界">
+        </div>
+
+        <div class="config-group">
+          <p class="mc-label">シード値:</p>
           <input type="text" id="world-seed" class="mc-input" placeholder="空欄でランダム生成">
+        </div>
+
+        <div class="config-group">
+          <button id="btn-config-gamemode" class="mc-button" type="button">ゲームモード: クリエイティブ</button>
         </div>
       </div>
 
       <div class="menu-buttons">
         <button id="btn-start-game" class="mc-button">生成開始！</button>
         <button id="btn-back-to-menu" class="mc-button">キャンセル</button>
+      </div>
+    </div>
+
+    <div id="world-select" class="overlay-screen" style="display:none;">
+      <h2 class="mc-title" style="font-size: 32px; margin-bottom: 14px;">世界を選択</h2>
+
+      <div id="world-list" class="world-list-box"></div>
+
+      <div class="world-select-actions">
+        <div class="mc-button-row world-btn-row">
+          <button id="btn-play-selected" class="mc-button half" disabled>選択した世界をプレイ</button>
+          <button id="btn-world-create-new" class="mc-button half">新しい世界を作成</button>
+        </div>
+        <div class="mc-button-row world-btn-row">
+          <button id="btn-rename-world" class="mc-button third" disabled>名前を変更</button>
+          <button id="btn-delete-world" class="mc-button third" disabled>削除</button>
+          <button id="btn-world-select-back" class="mc-button third">戻る</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="world-rename-modal" class="overlay-screen modal-backdrop" style="display:none;">
+      <div class="mc-modal-box">
+        <h3 class="mc-modal-title">ワールド名を変更</h3>
+        <input type="text" id="world-rename-input" class="mc-input modal-input" maxlength="40" placeholder="新しいワールド名">
+        <div class="mc-button-row modal-btn-row">
+          <button id="btn-rename-confirm" class="mc-button half">保存</button>
+          <button id="btn-rename-cancel" class="mc-button half">キャンセル</button>
+        </div>
       </div>
     </div>
 
