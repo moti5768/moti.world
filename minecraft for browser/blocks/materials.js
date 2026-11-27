@@ -8,12 +8,22 @@ import * as THREE from '../build/three.module.js';
    ====================================================== */
 
 const ERROR_TEXTURE = (() => {
-    const data = new Uint8Array([
-        255, 0, 255, 255, 0, 0, 0, 255,
-        0, 0, 0, 255, 255, 0, 255, 255
-    ]); // 2x2 マゼンタ/ブラック
-    const tex = new THREE.DataTexture(data, 2, 2, THREE.RGBAFormat);
+    const canvas = document.createElement('canvas');
+    canvas.width = 2;
+    canvas.height = 2;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+        ctx.fillStyle = '#ff00ff';
+        ctx.fillRect(0, 0, 1, 1);
+        ctx.fillRect(1, 1, 1, 1);
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(1, 0, 1, 1);
+        ctx.fillRect(0, 1, 1, 1);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
     tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.needsUpdate = true;
@@ -39,7 +49,9 @@ export function cachedLoadTexture(path, fallback = null) {
 
     const placeholder = new THREE.Texture();
     placeholder.image = ERROR_TEXTURE.image;
-    placeholder.magFilter = ERROR_TEXTURE.magFilter;
+    placeholder.magFilter = THREE.NearestFilter;
+    placeholder.minFilter = THREE.NearestFilter;
+    placeholder.generateMipmaps = false;
     placeholder.wrapS = THREE.RepeatWrapping;
     placeholder.wrapT = THREE.RepeatWrapping;
     placeholder.needsUpdate = true;
@@ -55,6 +67,7 @@ export function cachedLoadTexture(path, fallback = null) {
             placeholder.image = tex.image;
             placeholder.magFilter = tex.magFilter;
             placeholder.minFilter = tex.minFilter;
+            placeholder.generateMipmaps = true;
             placeholder.wrapS = THREE.RepeatWrapping;
             placeholder.wrapT = THREE.RepeatWrapping;
             placeholder.needsUpdate = true;
@@ -82,7 +95,13 @@ export function cachedLoadTexture(path, fallback = null) {
 // 草側面オーバーレイ用: 画像が存在しない場合は自動フォールバック（赤黒エラーを出さない）
 const optionalOverlayCache = new Map();
 const EMPTY_OVERLAY_TEX = (() => {
-    const tex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat);
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
     tex.needsUpdate = true;
     return tex;
 })();
@@ -91,7 +110,10 @@ function loadOptionalOverlayTexture(path) {
     if (!path) return null;
     if (optionalOverlayCache.has(path)) return optionalOverlayCache.get(path);
 
-    const entry = { tex: EMPTY_OVERLAY_TEX, ready: { value: 0.0 } };
+    const entry = {
+        texUniform: { value: EMPTY_OVERLAY_TEX },
+        ready: { value: 0.0 }
+    };
     optionalOverlayCache.set(path, entry);
 
     textureLoader.load(
@@ -103,7 +125,7 @@ function loadOptionalOverlayTexture(path) {
             tex.wrapT = THREE.RepeatWrapping;
             tex.generateMipmaps = true;
             tex.needsUpdate = true;
-            entry.tex = tex;
+            entry.texUniform.value = tex;
             entry.ready.value = 1.0;
         },
         undefined,
@@ -135,7 +157,7 @@ function onBeforeCompileBlock(shader, mat) {
         shader.uniforms.u_defaultBiomeTint = { value: defaultTint };
     }
     if (biomeTintMode === 2 && u && u.overlayEntry) {
-        shader.uniforms.u_overlayMap = { value: u.overlayEntry.tex };
+        shader.uniforms.u_overlayMap = u.overlayEntry.texUniform;
         shader.uniforms.u_hasOverlayMap = u.overlayEntry.ready;
     }
 

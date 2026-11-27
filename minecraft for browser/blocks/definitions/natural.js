@@ -133,7 +133,7 @@ defineBlocks({
     },
 
     DIRT: { name: "dirt", textures: { all: "textures/blocks/dirt.png" } },
-    SAND: { name: "sand", textures: { all: "textures/blocks/sand.png" } },
+    SAND: { name: "sand", isFallingBlock: true, textures: { all: "textures/blocks/sand.png" } },
     SANDSTONE: {
         name: "sandstone",
         textures: {
@@ -143,7 +143,7 @@ defineBlocks({
         }
     },
     SNOW: { name: "snow", textures: { all: "textures/blocks/snow.png" } },
-    GRAVEL: { name: "gravel", textures: { all: "textures/blocks/gravel.png" } },
+    GRAVEL: { name: "gravel", isFallingBlock: true, textures: { all: "textures/blocks/gravel.png" } },
 
     LOG_OAK: {
         name: "log_oak",

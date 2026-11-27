@@ -19,9 +19,12 @@ import {
 } from './blocks.js';
 import { createRedstoneEngine } from './redstone_engine.js';
 import { createFluidEngine } from './fluid_engine.js';
+
 import { createPlayerData, GAME_MODES } from './entities/player_data.js';
 import { createEntityManager } from './entities/entity_manager.js';
+import { createFallingBlockManager } from './entities/falling_block_manager.js';
 import { MOB_TYPES } from './entities/mob_registry.js';
+
 import { createBlockEntityManager } from './blocks/block_entity.js';
 import { createPistonAnimator } from './blocks/piston_animator.js';
 import { createChestAnimator } from './blocks/chest_animator.js';
@@ -2743,6 +2746,7 @@ function setWorldBlock(wx, wy, wz, newRaw, options = null) {
 
             if (notifyRedstone) RedstoneEngine.onBlockChanged(bx, by, bz, oldRaw);
             if (notifyFluid) FluidEngine.onBlockChanged(bx, by, bz);
+            checkFallingBlocksNear(bx, by, bz);
 
             for (let i = 0; i < extraCoords.length; i++) {
                 const pos = extraCoords[i];
@@ -2785,6 +2789,7 @@ function notifyWorldBlockChanged(wx, wy, wz, oldRaw = 0, newRaw = null) {
             notifyNeighborsNC(bx, by, bz);
             RedstoneEngine.onBlockChanged(bx, by, bz, oldRaw);
             FluidEngine.onBlockChanged(bx, by, bz);
+            checkFallingBlocksNear(bx, by, bz);
 
             for (let i = 0; i < extraCoords.length; i++) {
                 const pos = extraCoords[i];
@@ -3191,6 +3196,7 @@ function interactWithBlock(action) {
     notifyNeighborsNC(bx, by, bz);
     RedstoneEngine.onBlockChanged(bx, by, bz, voxel);
     FluidEngine.onBlockChanged(bx, by, bz);
+    checkFallingBlocksNear(bx, by, bz);
 
     // --- 6. チャンク・UI更新（光が変わった全チャンクを含め重複なしで再構築） ---
     updateAffectedChunks({ x: bx, y: by, z: bz }, false, _lightDirtySet);
@@ -3870,6 +3876,26 @@ const EntityManager = createEntityManager({
     getPlayerPosition: () => (player ? player.position : null)
 });
 
+const FallingBlockManager = createFallingBlockManager({
+    scene,
+    chunkHeight: CHUNK_HEIGHT,
+    blockTypes: BLOCK_TYPES,
+    blockConfigFastArray: _blockConfigFastArray,
+    getWorldRawLoaded: _getWorldRawLoaded,
+    setWorldBlock,
+    getBlockMaterialsFast,
+    getWorldLightCell: _getWorldLightCell,
+    lightLevelFactors: LIGHT_LEVEL_FACTORS,
+    createBreakParticles: createMinecraftBreakParticles,
+    tickScheduler: TickScheduler,
+    isChunkLoaded: (cx, cz) => loadedChunks.has(encodeChunkKey(cx, cz))
+});
+
+function checkFallingBlocksNear(wx, wy, wz) {
+    FallingBlockManager.scheduleCheck(wx, wy, wz);
+    FallingBlockManager.scheduleCheck(wx, wy + 1, wz);
+}
+
 let isContainerOpen = false;
 
 const ContainerUI = createContainerUI({
@@ -4275,6 +4301,7 @@ function runWorldTick(pCx, pCz) {
     try {
         gameTime = (gameTime + TIME_SPEED) % TICKS_PER_DAY;
         EntityManager.tick();
+        FallingBlockManager.tick();
         BlockEntityManager.tick();
         processEntityBlockSteps();
         isHandlingScheduledTicks = true;
@@ -4384,6 +4411,7 @@ function animate() {
     const worldTickAlpha = isPaused ? 0 : (worldTickAccumulator * WORLD_TPS);
     const renderGameTime = (gameTime + worldTickAlpha * TIME_SPEED) % TICKS_PER_DAY;
     EntityManager.updateRenderInterpolation(isPaused ? 1.0 : worldTickAlpha);
+    FallingBlockManager.updateRenderInterpolation(isPaused ? 1.0 : worldTickAlpha);
     const currentSkyFactor = SkySystem.update(renderGameTime);
 
     const curPCx = getChunkCoord(player.position.x);
@@ -4805,6 +4833,7 @@ async function startGame(seed, savedPos = null, savedChunks = null, savedTime = 
     PistonAnimator.clear();
     ChestAnimator.clear();
     EntityManager.clear();
+    FallingBlockManager.clear();
     PlayerData.reset();
     PhysicsEngine.reset();
 
